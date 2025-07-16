@@ -1,0 +1,5 @@
+backends:
+  - name: test-backend-movies
+    root_dir: /mnt/v/media/movies
+  - name: test-backend-tv
+    root_dir: /mnt/v/media/tv

@@ -1,10 +1,34 @@
+use crate::config::get_config;
 use anyhow::Result;
 use std::fs;
-use std::path::PathBuf;
+use std::sync::OnceLock;
 use tokio::io::AsyncWriteExt;
 
 const BASE_URL: &str = "https://johnvansickle.com/ffmpeg/releases";
-const DOWNLOAD_DIR: &str = ".lyra/ffmpeg";
+
+static FFMPEG_CONFIG: OnceLock<FfmpegConfig> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+pub struct FfmpegConfig {
+    pub ffmpeg_path: String,
+    pub ffprobe_path: String,
+}
+
+pub fn get_ffmpeg_path() -> String {
+    FFMPEG_CONFIG
+        .get()
+        .expect("ffmpeg not initialized - call ensure_ffmpeg() first")
+        .ffmpeg_path
+        .clone()
+}
+
+pub fn get_ffprobe_path() -> String {
+    FFMPEG_CONFIG
+        .get()
+        .expect("ffmpeg not initialized - call ensure_ffmpeg() first")
+        .ffprobe_path
+        .clone()
+}
 
 fn get_platform_url() -> Result<String> {
     let arch = std::env::consts::ARCH;
@@ -21,8 +45,8 @@ fn get_platform_url() -> Result<String> {
 }
 
 /// (ffmpeg_path, ffprobe_path)
-pub async fn get_ffmpeg() -> Result<(String, String)> {
-    let download_dir = PathBuf::from(DOWNLOAD_DIR);
+pub async fn ensure_ffmpeg() -> Result<()> {
+    let download_dir = get_config().get_ffmpeg_dir();
 
     // Check if ffmpeg and ffprobe already exist
     let ffmpeg_path = download_dir.join("ffmpeg");
@@ -30,10 +54,12 @@ pub async fn get_ffmpeg() -> Result<(String, String)> {
 
     if ffmpeg_path.exists() && ffprobe_path.exists() {
         // Both binaries exist, return their paths
-        return Ok((
-            ffmpeg_path.to_string_lossy().to_string(),
-            ffprobe_path.to_string_lossy().to_string(),
-        ));
+        FFMPEG_CONFIG.get_or_init(|| FfmpegConfig {
+            ffmpeg_path: ffmpeg_path.to_string_lossy().to_string(),
+            ffprobe_path: ffprobe_path.to_string_lossy().to_string(),
+        });
+
+        return Ok(());
     }
 
     // Create download directory
@@ -119,8 +145,10 @@ pub async fn get_ffmpeg() -> Result<(String, String)> {
 
     tracing::info!("ffmpeg and ffprobe successfully downloaded and extracted");
 
-    Ok((
-        ffmpeg_path.to_string_lossy().to_string(),
-        ffprobe_path.to_string_lossy().to_string(),
-    ))
+    FFMPEG_CONFIG.get_or_init(|| FfmpegConfig {
+        ffmpeg_path: ffmpeg_path.to_string_lossy().to_string(),
+        ffprobe_path: ffprobe_path.to_string_lossy().to_string(),
+    });
+
+    Ok(())
 }

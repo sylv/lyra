@@ -7,7 +7,12 @@
   - If I watch S01E01, automatically cache S01E02 or the rest of the season
   - Run intro/outro extraction, thumbnail generation etc once local
   - Automatically move local stuff to a remote mount (or delete it if from a read-only mount) to make room
-- Chapter extraction on request
+- Include IMDb IDs in database because they're universal and will allow for more metadata providers in the future
+- Download images on match instead of on request
+- Share media items (shows, seasons, etc) with users through one-time links without needing an account
+- Support matching different episode orderings
+  - Not sure how to do this yet, with episode names it would be possible but otherwise it might be hard
+  - If there are multiple complete seasons on disk we can use that maybe?
 - On-demand whisper subtitles
   - WebVTT with HLS is segmented, so we can abuse that
 
@@ -16,3 +21,19 @@
 - HLS implementation
   - Not even close to spec compliant, but seems to work
   - Need a better way to test segment splitting without running the entire thing
+
+## todo
+
+- Subtitle support
+- Chapter support
+- Support for hardware transcoding
+- Homepage with keep watching, recommendations, etc
+- Cache ffprobe results
+- Extract codec tag for hls.js to use
+- Support playing different editions properly
+- Support for other backends (WebDAV, S3 to start)
+- Split reader/writer pool to avoid `DATABASE LOCKED` errors?
+- Thumbhash images + store height/width to prevent layout shifts
+  - Blocked because sqlx provides no good way to load nested structs/relations
+  - sea-orm would work but not sure how relations are serialized, probably needs juno changes
+- TMDb attribution

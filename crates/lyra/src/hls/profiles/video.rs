@@ -1,15 +1,15 @@
-use crate::profiles::{ProfileContext, StreamType, TranscodingProfile};
+use super::{ProfileContext, StreamType, TranscodingProfile};
 use easy_ffprobe::{Stream, StreamKinds};
 
-pub struct AacAudioProfile;
+pub struct CopyVideoProfile;
 
-impl TranscodingProfile for AacAudioProfile {
+impl TranscodingProfile for CopyVideoProfile {
     fn stream_type(&self) -> StreamType {
-        StreamType::Audio
+        StreamType::Video
     }
 
     fn name(&self) -> &str {
-        "aac"
+        "copy"
     }
 
     fn get_args(&self, context: &ProfileContext) -> Vec<String> {
@@ -28,9 +28,7 @@ impl TranscodingProfile for AacAudioProfile {
             "-i".into(), context.input_path.to_string_lossy().into(),
             "-copyts".into(),
             "-map".into(), stream_map,
-            "-c:0".into(), "aac".into(),
-            "-ac".into(), "2".into(),
-            "-ab".into(), "128k".into(),
+            "-c:0".into(), "copy".into(),
             "-start_at_zero".into(),
             "-avoid_negative_ts".into(), "make_non_negative".into(),
             "-f".into(), "hls".into(),
@@ -45,8 +43,11 @@ impl TranscodingProfile for AacAudioProfile {
     }
 
     fn enable_for(&self, stream: &Stream) -> bool {
-        match stream.stream {
-            StreamKinds::Audio(_) => true,
+        match &stream.stream {
+            StreamKinds::Video(stream) => match stream.codec_name.as_str() {
+                "h264" | "hevc" => true,
+                _ => false,
+            },
             _ => false,
         }
     }
