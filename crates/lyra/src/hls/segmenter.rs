@@ -1,4 +1,4 @@
-use crate::{
+use crate::hls::{
     TARGET_DURATION,
     profiles::{ProfileContext, TranscodingProfile},
 };
@@ -118,7 +118,7 @@ impl Segmenter {
             outdir: self.segment_dir.clone(),
             segment_idx: segment_id,
             segment_duration: TARGET_DURATION,
-            start_time_offset: segment_id as f64 * TARGET_DURATION,
+            start_time_offset: (segment_id - 1) as f64 * TARGET_DURATION,
             stream_idx: self.stream_idx,
         };
 
@@ -219,7 +219,7 @@ impl FfmpegHandle {
                     current_segment.store(segment_id, Ordering::Relaxed);
                     notifier.notify_waiters();
 
-                    println!(
+                    tracing::debug!(
                         "loaded segment: {}, wanted_segment: {}",
                         segment_id,
                         wanted_segment.load(Ordering::Relaxed)
