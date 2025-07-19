@@ -1,4 +1,5 @@
 import type { FC, ReactNode } from "react";
+import { cn } from "../lib/utils";
 
 interface FilterButtonProps {
 	children: ReactNode;
@@ -13,11 +14,7 @@ export const FilterButton: FC<FilterButtonProps> = ({
 }) => {
 	return (
 		<button
-			className={`flex rounded-lg px-4 py-0.5 text-sm gap-2 items-center transition-colors ${
-				active
-					? "bg-indigo-600 text-white"
-					: "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-			}`}
+			className={cn(`flex rounded-lg px-4 py-0.5 text-sm gap-2 items-center transition-colors border border-zinc-700/50 text-zinc-200`, active ? 'bg-zinc-200/15' : 'hover:bg-zinc-200/10')}
 			type="button"
 			onClick={onClick}
 		>

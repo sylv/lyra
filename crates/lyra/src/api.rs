@@ -69,6 +69,8 @@ async fn get_all_media(
         }
     }
 
+    query_builder.push(" ORDER BY release_date DESC");
+
     let media = query_builder
         .build_query_as::<Media>()
         .fetch_all(&state.pool)

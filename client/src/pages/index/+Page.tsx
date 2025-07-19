@@ -5,6 +5,8 @@ import { getPathForMedia } from "../../lib/getPathForMedia.js";
 import { trpc } from "../trpc.js";
 import { useState, useEffect, useMemo } from "react";
 import type { GetAllMediaFilter, MediaType } from "../../@generated/server.js";
+import { MediaPoster } from "../../components/media-poster.jsx";
+import { Item } from "@radix-ui/react-accordion";
 
 export default function Page() {
 	const [search, setSearch] = useState("");
@@ -30,11 +32,8 @@ export default function Page() {
 		[debouncedSearch, selectedMediaTypes],
 	);
 
-	const [media] = trpc.get_all_media.useSuspenseQuery(
+	const {data: media } = trpc.get_all_media.useQuery(
 		{ filter },
-		{
-			refetchInterval: 5000,
-		},
 	);
 
 	const handleMediaTypeToggle = (mediaType: MediaType) => {
@@ -51,8 +50,8 @@ export default function Page() {
 				<input
 					type="text"
 					placeholder="Search"
-					className="bg-zinc-800 rounded-lg px-4 py-2 text-sm max-w-sm outline-none"
-					value={search}
+					className="border border-zinc-700/50 text-zinc-200 rounded-lg px-4 py-2 text-sm max-w-sm outline-none focus:bg-zinc-400/15 hover:bg-zinc-400/10 transition-colors"
+					value={search} 
 					onChange={(e) => setSearch(e.target.value)}
 				/>
 				<div className="flex flex-wrap gap-2">
@@ -75,13 +74,10 @@ export default function Page() {
 				</div>
 			</div>
 			<div className="m-4 flex flex-wrap gap-4">
-				{media.map(({ media, default_connection }) => {
-					const path = getPathForMedia(media);
-					return (
-						<a key={media.id} href={path}>
-							<Poster imageUrl={media.poster_url} alt={media.name} />
-						</a>
-					);
+				{media?.map((item) => {
+				return (
+					<MediaPoster item={item} key={item.media.id} />
+				)	
 				})}
 			</div>
 		</div>

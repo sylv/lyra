@@ -1,7 +1,7 @@
 import type { FC, ReactNode } from "react";
 import type { MediaWithFirstConnection } from "../@generated/server";
 import { FileWarningIcon, PlayIcon } from "lucide-react";
-import { setPlayerMedia } from "./player/player-state";
+import { setPlayerFullscreen, setPlayerMedia } from "./player/player-state";
 
 interface PlayWrapperProps {
 	media: MediaWithFirstConnection;
@@ -17,6 +17,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, media }) => {
 					className="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"
 					onClick={() => {
 						setPlayerMedia(media);
+						setPlayerFullscreen(true);
 					}}
 				>
 					<PlayIcon className="h-10 w-10 text-white" />

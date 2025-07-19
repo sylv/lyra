@@ -3,6 +3,8 @@ import type { MediaDetails } from "../@generated/server";
 import { PlayWrapper } from "./play-wrapper";
 import { Poster } from "./poster";
 import TMDBLogo from "../../assets/tmdb-primary-short-blue.svg";
+import { useDynamicBackground } from "../hooks/use-background";
+import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 
 interface MediaHeaderProps {
 	details: MediaDetails;
@@ -26,8 +28,14 @@ const getTMDBUrl = (mediaType: string, tmdbParentId: number) => {
 };
 
 export const MediaHeader: FC<MediaHeaderProps> = ({ details }) => {
+	useDynamicBackground(
+		details.media.background_url
+			? getImageProxyUrl(details.media.background_url, 200)
+			: null,
+	);
+
 	return (
-		<div className="bg-zinc-900 py-6">
+		<div className="bg-zinc-800/30 border-700/30 p-6 border-b">
 			<div className="flex gap-6 container mx-auto">
 				<PlayWrapper media={details}>
 					<Poster
@@ -56,7 +64,7 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ details }) => {
 					</div>
 					<div className="flex gap-2">
 						<a
-							className="bg-zinc-950 px-4 py-1 rounded-lg flex items-center gap-2 text-sm text-zinc-400 hover:bg-zinc-950/60 hover:text-zinc-300 transition-colors"
+							className="bg-zinc-700/30 px-4 py-1 rounded-lg flex items-center gap-2 text-sm text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
 							target="_blank"
 							rel="noreferrer"
 							href={getTMDBUrl(

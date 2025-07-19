@@ -24,7 +24,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({
 	showSeasonInfo = false,
 }) => {
 	return (
-		<div className="group flex gap-4 p-4 hover:bg-zinc-800/10 rounded-lg transition-colors border border-zinc-800/50">
+		<div className="group flex gap-4 p-4 hover:bg-zinc-800/10 rounded-lg transition-colors border border-zinc-700/40">
 			<div className="relative flex-shrink-0 rounded-md overflow-hidden">
 				<PlayWrapper media={episode}>
 					<Thumbnail
