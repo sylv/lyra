@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
+import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 
 const BASE_CLASSES =
 	"rounded-lg aspect-[2/3] from-zinc-800 to-zinc-900 bg-gradient-to-br shrink-0";
@@ -26,14 +27,14 @@ export const Poster: FC<PosterProps> = ({
 				)}
 			>
 				<ImageIcon />
-				<span className="text-sm">{alt}</span>
+				<span className="text-sm text-center font-semibold">{alt}</span>
 			</div>
 		);
 	}
 
 	return (
 		<img
-			src={`/api/image-proxy/${encodeURIComponent(imageUrl)}?height=400`}
+			src={getImageProxyUrl(imageUrl, 400)}
 			alt={alt}
 			className={clsx(BASE_CLASSES, className)}
 			loading="lazy"

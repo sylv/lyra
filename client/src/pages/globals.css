@@ -3,6 +3,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme {
+	--color-amethyst-50: #ffffff;
+	--color-amethyst-100: #ffffff;
+	--color-amethyst-200: #f9ecff;
+	--color-amethyst-300: #eac4ff;
+	--color-amethyst-400: #dc9bff;
+	--color-amethyst-500: #ce72ff;
+	--color-amethyst-600: #bb3aff;
+	--color-amethyst-700: #a702ff;
+	--color-amethyst-800: #8300c9;
+	--color-amethyst-900: #5e0091;
+	--color-amethyst-950: #4c0075;
+}
+
 :root {
 	--radius: 0.625rem;
 	--background: oklch(1 0 0);

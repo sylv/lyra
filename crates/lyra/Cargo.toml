@@ -34,7 +34,7 @@ lru = "0.12"
 ratelimit = "0.10.0"
 juno = { git = "https://github.com/sylv/juno.git", branch = "main" }
 specta = { version = "2.0.0-rc.22", features = ["derive"] }
-image = { version = "0.24", features = ["jpeg", "webp"] }
+image = { version = "0.24", features = ["jpeg"] }
 sha2 = "0.10"
 hex = "0.4.3"
 tokio-util = "0.7.15"
@@ -42,3 +42,12 @@ futures-util = "0.3.31"
 thumbhash = "0.1.0"
 rand = "0.9.1"
 tempfile = "3.20.0"
+
+# force the image crate to use a release build even if we're in debug mode
+# otherwise images are painfully slow to load
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.zune-core]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3

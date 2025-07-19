@@ -5,22 +5,12 @@ import type { FC, ReactNode } from "react";
 import { Suspense, useMemo, useState } from "react";
 import { IconText } from "../components/icon-text";
 import { ThemeProvider } from "../components/theme-provider";
-import {
-	Sidebar,
-	SidebarContent,
-	SidebarGroup,
-	SidebarGroupContent,
-	SidebarGroupLabel,
-	SidebarInset,
-	SidebarMenu,
-	SidebarMenuButton,
-	SidebarMenuItem,
-	SidebarProvider,
-} from "../components/ui/sidebar";
 import { Toaster } from "../components/ui/sonner";
 import "./globals.css";
 import { trpc } from "./trpc";
 import { Player } from "../components/player/player";
+import { DynamicBackground } from "../components/dynamic-background";
+import { Sidebar } from "../components/sidebar";
 
 // todo: use httpBatchLink once juno supports batching
 export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
@@ -39,32 +29,12 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 		<ThemeProvider>
 			<trpc.Provider client={trpcClient} queryClient={queryClient}>
 				<QueryClientProvider client={queryClient}>
-					<SidebarProvider>
-						<Sidebar>
-							<SidebarContent>
-								<SidebarGroup>
-									<SidebarGroupLabel>Lyra</SidebarGroupLabel>
-									<SidebarGroupContent>
-										<SidebarMenu>
-											<SidebarMenuItem>
-												<SidebarMenuButton asChild>
-													<a href="/">
-														<HomeIcon />
-														<span>Home</span>
-													</a>
-												</SidebarMenuButton>
-											</SidebarMenuItem>
-										</SidebarMenu>
-									</SidebarGroupContent>
-								</SidebarGroup>
-							</SidebarContent>
-						</Sidebar>
-						<SidebarInset>
-							<Suspense fallback={<Fallback />}>{children}</Suspense>
-							<Toaster />
-							<Player />
-						</SidebarInset>
-					</SidebarProvider>
+					<Sidebar>
+						<Suspense fallback={<Fallback />}>{children}</Suspense>
+						<Player />
+					</Sidebar>
+					<DynamicBackground />
+					<Toaster />
 				</QueryClientProvider>
 			</trpc.Provider>
 		</ThemeProvider>
