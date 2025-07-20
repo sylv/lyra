@@ -11,6 +11,7 @@ import { trpc } from "./trpc";
 import { Player } from "../components/player/player";
 import { DynamicBackground } from "../components/dynamic-background";
 import { Sidebar } from "../components/sidebar";
+import { TooltipProvider } from "@radix-ui/react-tooltip";
 
 // todo: use httpBatchLink once juno supports batching
 export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
@@ -29,12 +30,14 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 		<ThemeProvider>
 			<trpc.Provider client={trpcClient} queryClient={queryClient}>
 				<QueryClientProvider client={queryClient}>
-					<Sidebar>
-						<Suspense fallback={<Fallback />}>{children}</Suspense>
-						<Player />
-					</Sidebar>
-					<DynamicBackground />
-					<Toaster />
+					<TooltipProvider>
+						<Sidebar>
+							<Suspense fallback={<Fallback />}>{children}</Suspense>
+							<Player />
+						</Sidebar>
+						<DynamicBackground />
+						<Toaster />
+					</TooltipProvider>
 				</QueryClientProvider>
 			</trpc.Provider>
 		</ThemeProvider>

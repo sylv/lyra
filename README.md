@@ -37,5 +37,7 @@
   - Blocked because sqlx provides no good way to load nested structs/relations
   - sea-orm would work but not sure how relations are serialized, probably needs juno changes
   - Images should pick a random gradient at first, then transition to the thumbhash once loaded, then transition to the actual image with crossfade
+  - Can probably only be done once switched to GraphQL
 - TMDb attribution
 - Segmenters are never cleaned up
+- Switch to GraphQL, things like poster loading are a pain as-is
