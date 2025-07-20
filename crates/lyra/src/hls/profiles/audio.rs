@@ -32,7 +32,7 @@ impl TranscodingProfile for AacAudioProfile {
             "-ac".into(), "2".into(),
             "-ab".into(), "128k".into(),
             "-start_at_zero".into(),
-            "-avoid_negative_ts".into(), "make_non_negative".into(),
+            "-avoid_negative_ts".into(), "disabled".into(),
             "-f".into(), "hls".into(),
             "-start_number".into(), context.segment_idx.to_string(),
             "-hls_flags".into(), "temp_file".into(),
