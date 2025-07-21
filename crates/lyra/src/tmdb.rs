@@ -161,6 +161,8 @@ pub struct TvShowDetails {
     pub name: String,
     pub overview: Option<String>,
     pub first_air_date: Option<String>,
+    pub last_air_date: Option<String>,
+    pub in_production: bool,
     pub vote_average: Option<f64>,
     pub poster_path: Option<String>,
     pub backdrop_path: Option<String>,
@@ -191,4 +193,5 @@ pub struct TvEpisode {
     pub runtime: Option<i64>,
     pub vote_average: Option<f64>,
     pub still_path: Option<String>,
+    pub air_date: Option<String>,
 }

@@ -1,0 +1,73 @@
+type File {
+	id: Int!
+	backendName: String!
+	key: String!
+	pendingAutoMatch: Int!
+	unavailableSince: Int
+	editionName: String
+	resolution: Int
+	sizeBytes: Int
+	scannedAt: Int!
+}
+
+type Media {
+	id: Int!
+	name: String!
+	description: String
+	posterUrl: String
+	backgroundUrl: String
+	thumbnailUrl: String
+	parentId: Int
+	mediaType: MediaType!
+	imdbParentId: String
+	imdbItemId: String
+	tmdbParentId: Int!
+	tmdbItemId: Int!
+	rating: Float
+	startDate: Int
+	endDate: Int
+	runtimeMinutes: Int
+	seasonNumber: Int
+	episodeNumber: Int
+	"""
+	Gets the default file connection for this media item, including child connections.
+	(this is what should be played if the user hits "play" on this media item)
+	"""
+	defaultConnection: File
+	"""
+	Gets file connections that are directly connected to this media item (excluding child connections)
+	"""
+	directConnections: [File!]!
+	seasons: [Int!]!
+	parent: Media
+}
+
+input MediaFilter {
+	parentId: Int
+	seasonNumbers: [Int!]
+	search: String
+	mediaTypes: [MediaType!]
+}
+
+enum MediaType {
+	MOVIE
+	SHOW
+	EPISODE
+}
+
+type Query {
+	mediaList(filter: MediaFilter!): [Media!]!
+	media(mediaId: Int!): Media!
+}
+
+"""
+Directs the executor to include this field or fragment only when the `if` argument is true.
+"""
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Directs the executor to skip this field or fragment when the `if` argument is true.
+"""
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+schema {
+	query: Query
+}

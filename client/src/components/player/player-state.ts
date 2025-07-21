@@ -1,8 +1,9 @@
+import { type FragmentOf } from "gql.tada";
 import { create } from "zustand/react";
-import type { MediaWithFirstConnection } from "../../@generated/server";
+import type { PlayerFrag } from "./player";
 
 interface PlayerState {
-	currentMedia: MediaWithFirstConnection | null;
+	currentMedia: FragmentOf<typeof PlayerFrag> | null;
 	isFullscreen: boolean | null;
 	volume: number;
 	isMuted: boolean;
@@ -17,7 +18,7 @@ export const playerState = create<PlayerState>(() => ({
 	isLoading: false,
 }));
 
-export const setPlayerMedia = (media: MediaWithFirstConnection | null) => {
+export const setPlayerMedia = (media: FragmentOf<typeof PlayerFrag> | null) => {
 	playerState.setState((prev) => ({
 		currentMedia: media,
 		isFullscreen: prev.currentMedia ? prev.isFullscreen : true,

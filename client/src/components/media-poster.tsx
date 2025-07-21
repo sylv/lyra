@@ -1,18 +1,31 @@
 import type { FC } from "react";
-import type { MediaWithFirstConnection } from "../@generated/server";
-import { getPathForMedia } from "../lib/getPathForMedia";
+import { getPathForMedia, GetPathForMediaFrag } from "../lib/getPathForMedia";
 import { Poster } from "./poster";
+import { graphql, readFragment, type FragmentOf } from "gql.tada";
 
 interface MediaPosterProps {
-	item: MediaWithFirstConnection;
+	media: FragmentOf<typeof MediaPosterFrag>;
 }
 
-export const MediaPoster: FC<MediaPosterProps> = ({ item }) => {
-	const path = getPathForMedia(item.media);
+export const MediaPosterFrag = graphql(
+	`
+	fragment MediaPoster on Media {
+		id
+		name
+		posterUrl
+		...GetPathForMedia
+	}
+`,
+	[GetPathForMediaFrag],
+);
+
+export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw }) => {
+	const media = readFragment(MediaPosterFrag, mediaRaw);
+	const path = getPathForMedia(media);
 
 	return (
-		<a key={item.media.id} href={path}>
-			<Poster imageUrl={item.media.poster_url} alt={item.media.name} />
+		<a key={media.id} href={path}>
+			<Poster imageUrl={media.posterUrl} alt={media.name} />
 		</a>
 	);
 };

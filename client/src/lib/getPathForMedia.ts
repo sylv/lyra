@@ -1,22 +1,27 @@
-import type { Media } from "../@generated/server";
+import { graphql, readFragment, type FragmentOf } from "gql.tada";
 
-export const getPathForMedia = (media: Media) => {
-	switch (media.media_type) {
-		case "Show":
+export const GetPathForMediaFrag = graphql(`
+	fragment GetPathForMedia on Media {
+		id
+		mediaType
+		parentId
+		seasonNumber
+		episodeNumber
+	}
+`);
+
+export const getPathForMedia = (mediaRaw: FragmentOf<typeof GetPathForMediaFrag>) => {
+	const media = readFragment(GetPathForMediaFrag, mediaRaw);
+	switch (media.mediaType) {
+		case "SHOW":
 			return `/series/${media.id}`;
-		case "Movie":
+		case "MOVIE":
 			return `/movie/${media.id}`;
-		case "Season":
-			if (media.season_number == null) {
-				return `/series/${media.parent_id}`;
+		case "EPISODE":
+			if (media.seasonNumber == null || media.episodeNumber == null) {
+				return `/series/${media.parentId}`;
 			}
 
-			return `/series/${media.parent_id}/season/${media.season_number}`;
-		case "Episode":
-			if (media.season_number == null || media.episode_number == null) {
-				return `/series/${media.parent_id}`;
-			}
-
-			return `/series/${media.parent_id}/season/${media.season_number}/episode/${media.episode_number}`;
+			return `/series/${media.parentId}/season/${media.seasonNumber}/episode/${media.episodeNumber}`;
 	}
 };

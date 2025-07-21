@@ -1,48 +1,44 @@
-use sqlx::SqlitePool;
+use sea_orm::entity::prelude::*;
 
-pub struct MediaConnection {
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
+#[sea_orm(table_name = "media_connection")]
+pub struct Model {
+    #[sea_orm(primary_key)]
     pub media_id: i64,
+    #[sea_orm(primary_key)]
     pub file_id: i64,
 }
 
-impl MediaConnection {
-    pub async fn create(pool: &SqlitePool, media_id: i64, file_id: i64) -> Result<(), sqlx::Error> {
-        sqlx::query!(
-            "INSERT OR IGNORE INTO media_connection (media_id, file_id) VALUES (?, ?)",
-            media_id,
-            file_id
-        )
-        .execute(pool)
-        .await?;
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::file::Entity",
+        from = "Column::FileId",
+        to = "super::file::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    File,
+    #[sea_orm(
+        belongs_to = "super::media::Entity",
+        from = "Column::MediaId",
+        to = "super::media::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Media,
+}
 
-        Ok(())
-    }
-
-    pub async fn find_by_file_id(
-        pool: &SqlitePool,
-        file_id: i64,
-    ) -> Result<Vec<MediaConnection>, sqlx::Error> {
-        let connections = sqlx::query_as!(
-            MediaConnection,
-            "SELECT media_id, file_id FROM media_connection WHERE file_id = ?",
-            file_id
-        )
-        .fetch_all(pool)
-        .await?;
-        Ok(connections)
-    }
-
-    pub async fn find_by_media_id(
-        pool: &SqlitePool,
-        media_id: i64,
-    ) -> Result<Vec<MediaConnection>, sqlx::Error> {
-        let connections = sqlx::query_as!(
-            MediaConnection,
-            "SELECT media_id, file_id FROM media_connection WHERE media_id = ?",
-            media_id
-        )
-        .fetch_all(pool)
-        .await?;
-        Ok(connections)
+impl Related<super::file::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::File.def()
     }
 }
+
+impl Related<super::media::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Media.def()
+    }
+}
+
+impl ActiveModelBehavior for ActiveModel {}

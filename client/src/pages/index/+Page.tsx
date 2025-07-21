@@ -1,12 +1,22 @@
+import { graphql } from "gql.tada";
 import { ArrowDownNarrowWide, ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { FilterButton } from "../../components/filter-button.jsx";
-import { Poster } from "../../components/poster.jsx";
-import { getPathForMedia } from "../../lib/getPathForMedia.js";
-import { trpc } from "../trpc.js";
-import { useState, useEffect, useMemo } from "react";
-import type { GetAllMediaFilter, MediaType } from "../../@generated/server.js";
-import { MediaPoster } from "../../components/media-poster.jsx";
-import { Item } from "@radix-ui/react-accordion";
+import { MediaPoster, MediaPosterFrag } from "../../components/media-poster.jsx";
+import type { MediaFilter, MediaType } from "../../@generated/enums.js";
+import { useQuery } from "@apollo/client";
+
+const Query = graphql(
+	`
+	query GetAllMedia($filter: MediaFilter!) {
+		mediaList(filter: $filter) {
+			id
+			...MediaPoster
+		}
+	}
+`,
+	[MediaPosterFrag],
+);
 
 export default function Page() {
 	const [search, setSearch] = useState("");
@@ -23,24 +33,22 @@ export default function Page() {
 	}, [search]);
 
 	// prepare the query parameters
-	const filter: GetAllMediaFilter = useMemo(
+	const filter: MediaFilter = useMemo(
 		() => ({
-			parent_id: null,
+			parentId: null,
 			search: debouncedSearch.trim() || null,
-			media_types: selectedMediaTypes.length > 0 ? selectedMediaTypes : null,
+			mediaTypes: selectedMediaTypes.length > 0 ? selectedMediaTypes : null,
 		}),
 		[debouncedSearch, selectedMediaTypes],
 	);
 
-	const {data: media } = trpc.get_all_media.useQuery(
-		{ filter },
-	);
+	const { data } = useQuery(Query, {
+		variables: { filter },
+	});
 
 	const handleMediaTypeToggle = (mediaType: MediaType) => {
 		setSelectedMediaTypes((prev) =>
-			prev.includes(mediaType)
-				? prev.filter((type) => type !== mediaType)
-				: [...prev, mediaType],
+			prev.includes(mediaType) ? prev.filter((type) => type !== mediaType) : [...prev, mediaType],
 		);
 	};
 
@@ -51,20 +59,14 @@ export default function Page() {
 					type="text"
 					placeholder="Search"
 					className="border border-zinc-700/50 text-zinc-200 rounded-lg px-4 py-2 text-sm max-w-sm outline-none focus:bg-zinc-400/15 hover:bg-zinc-400/10 transition-colors"
-					value={search} 
+					value={search}
 					onChange={(e) => setSearch(e.target.value)}
 				/>
 				<div className="flex flex-wrap gap-2">
-					<FilterButton
-						onClick={() => handleMediaTypeToggle("Show")}
-						active={selectedMediaTypes.includes("Show")}
-					>
+					<FilterButton onClick={() => handleMediaTypeToggle("SHOW")} active={selectedMediaTypes.includes("SHOW")}>
 						Series
 					</FilterButton>
-					<FilterButton
-						onClick={() => handleMediaTypeToggle("Movie")}
-						active={selectedMediaTypes.includes("Movie")}
-					>
+					<FilterButton onClick={() => handleMediaTypeToggle("MOVIE")} active={selectedMediaTypes.includes("MOVIE")}>
 						Movies
 					</FilterButton>
 					<FilterButton onClick={() => {}}>
@@ -74,10 +76,8 @@ export default function Page() {
 				</div>
 			</div>
 			<div className="m-4 flex flex-wrap gap-4">
-				{media?.map((item) => {
-				return (
-					<MediaPoster item={item} key={item.media.id} />
-				)	
+				{data?.mediaList.map((item) => {
+					return <MediaPoster media={item} key={item.id} />;
 				})}
 			</div>
 		</div>

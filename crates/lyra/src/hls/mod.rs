@@ -1,5 +1,5 @@
 use crate::config::get_config;
-use crate::entities::file::File;
+use crate::entities::file;
 use crate::hls::profiles::StreamType;
 use crate::hls::profiles::TranscodingProfile;
 use crate::hls::profiles::audio::AacAudioProfile;
@@ -14,6 +14,7 @@ use axum::{
     routing::get,
 };
 use easy_ffprobe::{Config, Format, Stream, StreamKinds};
+use sea_orm::EntityTrait;
 use std::cmp::Ordering;
 use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
@@ -57,7 +58,8 @@ async fn get_master_playlist(
     Path(file_id): Path<i64>,
 ) -> Result<String, (StatusCode, &'static str)> {
     let config = get_config();
-    let file = File::find_by_id(&state.pool, file_id)
+    let file = file::Entity::find_by_id(file_id)
+        .one(&state.pool)
         .await
         .map_err(|err| {
             tracing::error!("Error finding file: {:?}", err);
@@ -155,7 +157,8 @@ async fn get_stream_playlist(
     Path((file_id, stream_type, stream_idx, profile_name)): Path<(i64, String, u64, String)>,
 ) -> Result<String, (StatusCode, &'static str)> {
     let config = get_config();
-    let file = File::find_by_id(&state.pool, file_id)
+    let file = file::Entity::find_by_id(file_id)
+        .one(&state.pool)
         .await
         .map_err(|err| {
             tracing::error!("Error finding file: {:?}", err);
@@ -231,7 +234,8 @@ async fn get_segment(
     )>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let config = get_config();
-    let file = File::find_by_id(&state.pool, file_id)
+    let file = file::Entity::find_by_id(file_id)
+        .one(&state.pool)
         .await
         .map_err(|err| {
             tracing::error!("Error finding file: {:?}", err);

@@ -27,7 +27,14 @@
       "@/*": [
         "./src/*"
       ]
-    }
+    },
+    "plugins": [
+      {
+        "name": "gql.tada/ts-plugin",
+        "schema": "../crates/lyra/schema.gql",
+        "tadaOutputLocation": "./src/@generated/gql.d.ts"
+      }
+    ]
   },
   "exclude": [
     "dist"

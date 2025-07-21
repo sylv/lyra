@@ -8,6 +8,7 @@
     "run": "NODE_ENV=production node dist/server/index.js"
   },
   "dependencies": {
+    "@apollo/client": "^3.13.8",
     "@hookform/resolvers": "^5.0.1",
     "@radix-ui/react-accordion": "^1.2.3",
     "@radix-ui/react-checkbox": "^1.1.4",
@@ -21,9 +22,6 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.1.8",
     "@tanstack/react-query": "^5.79.0",
-    "@trpc/client": "^11.1.4",
-    "@trpc/react-query": "^11.1.4",
-    "@trpc/server": "^11.1.4",
     "@vitejs/plugin-react": "^4.3.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -52,6 +50,7 @@
     "@types/react-dom": "^19.0.4",
     "babel-plugin-react-compiler": "^19.0.0-beta-e993439-20250405",
     "cross-env": "^7.0.3",
+    "gql.tada": "^1.8.12",
     "shadcn": "^2.4.0-canary.17",
     "tailwindcss": "^4.0.17",
     "tsx": "^4.19.3",

@@ -41,3 +41,6 @@
 - TMDb attribution
 - Segmenters are never cleaned up
 - Switch to GraphQL, things like poster loading are a pain as-is
+- Scanner improvements
+  - Batch file inserts
+  - Use concurrent folder scanning to improve network performance
