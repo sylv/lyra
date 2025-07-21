@@ -1,4 +1,4 @@
-import { type FragmentOf } from "gql.tada";
+import type { FragmentOf } from "gql.tada";
 import { create } from "zustand/react";
 import type { PlayerFrag } from "./player";
 

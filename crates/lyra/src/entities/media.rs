@@ -70,23 +70,11 @@ impl Model {
     ) -> Result<Option<file::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         if self.media_type == MediaType::Show {
-            // let result = sqlx::query_as!(
-            //     File,
-            //     "SELECT file.id, backend_name, key, pending_auto_match, unavailable_since, edition_name
-            //     FROM file
-            //     LEFT JOIN media_connection ON file.id = media_connection.file_id
-            //     LEFT JOIN media ON media_connection.media_id = media.id
-            //     WHERE media.id = ?
-            //     ORDER BY media.season_number DESC, media.episode_number DESC
-            //     LIMIT 1",
-            //     self.id
-            // )
-            // .fetch_optional(pool)
-            // .await?;
+            // essentially we find the first episode, sorted by season/episode number, that has a file connection
             let result = file::Entity::find()
                 .join(JoinType::LeftJoin, file::Relation::MediaConnection.def())
                 .join(JoinType::LeftJoin, media_connection::Relation::Media.def())
-                .filter(media_connection::Column::MediaId.eq(self.id))
+                .filter(media::Column::ParentId.eq(self.id))
                 .order_by_desc(media::Column::SeasonNumber)
                 .order_by_desc(media::Column::EpisodeNumber)
                 .limit(1)
@@ -95,17 +83,6 @@ impl Model {
 
             Ok(result)
         } else {
-            // let result = sqlx::query_as!(
-            //     File,
-            //     "SELECT id, backend_name, key, pending_auto_match, unavailable_since, edition_name
-            //     FROM file
-            //     LEFT JOIN media_connection ON file.id = media_connection.file_id
-            //     WHERE media_connection.media_id = ?
-            //     LIMIT 1",
-            //     self.id
-            // )
-            // .fetch_optional(pool)
-            // .await?;
             let result = file::Entity::find()
                 .join(JoinType::LeftJoin, file::Relation::MediaConnection.def())
                 .filter(media_connection::Column::MediaId.eq(self.id))
