@@ -1,36 +1,35 @@
-use crate::entities::media::{MediaType, UpsertMedia};
-use crate::entities::media_connection::MediaConnection;
+use crate::entities::media::{self, MediaType};
+use crate::entities::{file, media_connection};
 use crate::tmdb::{TMDB_IMAGE_BASE_URL, TMDBClient};
-use sqlx::{SqlitePool, types::chrono};
+use sea_orm::sea_query::OnConflict;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
-pub async fn start_matcher(pool: SqlitePool) -> anyhow::Result<()> {
+pub async fn start_matcher(pool: DatabaseConnection) -> anyhow::Result<()> {
     info!("Starting matcher");
     let tmdb_client = TMDBClient::new();
     loop {
-        let file = sqlx::query_as::<_, File>(
-            r#"
-            SELECT id, key
-            FROM file
-            WHERE pending_auto_match = 1
-            LIMIT 1
-            "#,
-        )
-        .fetch_optional(&pool)
-        .await?;
+        let file = file::Entity::find()
+            .filter(file::Column::PendingAutoMatch.eq(1))
+            .order_by_asc(file::Column::Id)
+            .one(&pool)
+            .await?;
 
         match file {
             Some(file) => {
                 info!("processing unmatched file '{}'", file.key);
                 match process_file(&pool, &file, &tmdb_client).await {
                     Ok(_) => {
-                        sqlx::query!(
-                            "UPDATE file SET pending_auto_match = 0 WHERE id = ?",
-                            file.id
-                        )
-                        .execute(&pool)
+                        file::Entity::update(file::ActiveModel {
+                            id: Set(file.id),
+                            pending_auto_match: Set(0),
+                            ..Default::default()
+                        })
+                        .exec(&pool)
                         .await?;
                     }
                     Err(e) => {
@@ -46,15 +45,9 @@ pub async fn start_matcher(pool: SqlitePool) -> anyhow::Result<()> {
     }
 }
 
-#[derive(sqlx::FromRow)]
-struct File {
-    id: i64,
-    key: String,
-}
-
 async fn process_file(
-    pool: &SqlitePool,
-    file: &File,
+    pool: &DatabaseConnection,
+    file: &file::Model,
     tmdb_client: &TMDBClient,
 ) -> anyhow::Result<()> {
     let metadata = torrent_name_parser::Metadata::from(&file.key)?;
@@ -69,7 +62,7 @@ async fn process_file(
 }
 
 async fn process_movie(
-    pool: &SqlitePool,
+    pool: &DatabaseConnection,
     file_key: &str,
     file_id: i64,
     metadata: &torrent_name_parser::Metadata,
@@ -101,28 +94,56 @@ async fn process_movie(
         .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
         .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
 
-    let mut upsert_media =
-        UpsertMedia::new(movie_details.title, MediaType::Movie, movie_details.id);
-    upsert_media.description = movie_details.overview;
-    upsert_media.rating = movie_details.vote_average;
-    upsert_media.release_date = release_date;
-    upsert_media.runtime_minutes = movie_details.runtime;
-    upsert_media.poster_url = movie_details
+    let poster_url = movie_details
         .poster_path
         .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
-    upsert_media.background_url = movie_details
+    let background_url = movie_details
         .backdrop_path
         .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
 
-    let media = upsert_media.upsert(pool).await?;
+    let media = media::ActiveModel {
+        media_type: Set(MediaType::Movie),
+        tmdb_parent_id: Set(movie_details.id),
+        tmdb_item_id: Set(movie_details.id),
+        name: Set(movie_details.title),
+        description: Set(movie_details.overview),
+        rating: Set(movie_details.vote_average),
+        start_date: Set(release_date),
+        runtime_minutes: Set(movie_details.runtime),
+        poster_url: Set(poster_url),
+        background_url: Set(background_url),
+        ..Default::default()
+    };
 
-    MediaConnection::create(pool, media.id, file_id).await?;
+    // let media = media.insert(pool).await?;
+    let media = media::Entity::insert(media)
+        .on_conflict(
+            OnConflict::columns([media::Column::TmdbParentId, media::Column::TmdbItemId])
+                .update_columns([
+                    media::Column::Name,
+                    media::Column::Description,
+                    media::Column::Rating,
+                    media::Column::StartDate,
+                    media::Column::RuntimeMinutes,
+                    media::Column::PosterUrl,
+                    media::Column::BackgroundUrl,
+                ])
+                .to_owned(),
+        )
+        .exec_with_returning(pool)
+        .await?;
+
+    let connection = media_connection::ActiveModel {
+        media_id: Set(media.id),
+        file_id: Set(file_id),
+    };
+    connection.insert(pool).await?;
 
     Ok(())
 }
 
 async fn process_show(
-    pool: &SqlitePool,
+    pool: &DatabaseConnection,
     file_key: &str,
     file_id: i64,
     metadata: &torrent_name_parser::Metadata,
@@ -187,63 +208,150 @@ async fn process_show(
         season_number_i64
     );
 
-    let release_date = show_details
+    let start_date = show_details
         .first_air_date
         .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
         .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
 
-    // Create or update the show
-    let mut show = UpsertMedia::new(show_details.name, MediaType::Show, show_details.id);
-    show.description = show_details.overview;
-    show.rating = show_details.vote_average;
-    show.release_date = release_date;
-    show.poster_url = show_details
+    let end_date = show_details
+        .last_air_date
+        .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
+
+    // // Create or update the show
+    // let mut show = UpsertMedia::new(show_details.name, MediaType::Show);
+    // show.description = show_details.overview;
+    // show.rating = show_details.vote_average;
+    // show.start_date = start_date;
+    // show.tmdb_parent_id = Some(show_details.id);
+    // show.tmdb_item_id = Some(show_details.id);
+
+    let poster_url = show_details
         .poster_path
         .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
-    show.background_url = show_details
+    let background_url = show_details
         .backdrop_path
         .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
-    let show = show.upsert(pool).await?;
+
+    let mut show = media::ActiveModel {
+        media_type: Set(MediaType::Show),
+        tmdb_parent_id: Set(show_details.id),
+        tmdb_item_id: Set(show_details.id),
+        name: Set(show_details.name),
+        description: Set(show_details.overview),
+        rating: Set(show_details.vote_average),
+        start_date: Set(start_date),
+        poster_url: Set(poster_url),
+        background_url: Set(background_url),
+        ..Default::default()
+    };
+
+    // only set end_date if the show has ended
+    if show_details.in_production {
+        show.end_date = Set(None);
+    } else {
+        show.end_date = Set(end_date);
+    }
+
+    let show = media::Entity::insert(show)
+        .on_conflict(
+            OnConflict::columns([media::Column::TmdbParentId, media::Column::TmdbItemId])
+                .update_columns([
+                    media::Column::Name,
+                    media::Column::Description,
+                    media::Column::Rating,
+                    media::Column::StartDate,
+                    media::Column::RuntimeMinutes,
+                    media::Column::PosterUrl,
+                    media::Column::BackgroundUrl,
+                ])
+                .to_owned(),
+        )
+        .exec_with_returning(pool)
+        .await?;
 
     let season_details = tmdb_client
         .get_tv_season_details(show_details.id, season_number_i64)
         .await?;
 
-    // Create or update the season
-    let mut season = UpsertMedia::new(season_details.name, MediaType::Season, show_details.id);
-    season.description = season_details.overview;
-    season.parent_id = Some(show.id);
-    season.season_number = Some(season_number_i64);
+    // insert all episodes of this season, not just the ones we have files for
+    for episode_details in season_details.episodes {
+        // let mut episode = UpsertMedia::new(episode_details.name.clone(), MediaType::Episode);
+        // let release_date = episode_details
+        //     .air_date
+        //     .as_ref()
+        //     .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
+        //     .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
 
-    let season = season.upsert(pool).await?;
+        // episode.start_date = release_date;
 
-    // insert ALL episodes of this season, not just the ones we have files for
-    for episode_details in &season_details.episodes {
-        let mut episode = UpsertMedia::new(
-            episode_details.name.clone(),
-            MediaType::Episode,
-            show_details.id,
-        );
-        episode.description = episode_details.overview.clone();
-        episode.parent_id = Some(season.id);
-        episode.season_number = Some(season_number_i64);
-        episode.episode_number = Some(episode_details.episode_number);
-        episode.runtime_minutes = episode_details.runtime;
-        episode.rating = episode_details.vote_average;
-        episode.tmdb_item_id = Some(episode_details.id);
-        episode.thumbnail_url = episode_details
+        // episode.description = episode_details.overview.clone();
+        // episode.parent_id = Some(show.id);
+        // episode.season_number = Some(season_number_i64);
+        // episode.episode_number = Some(episode_details.episode_number);
+        // episode.runtime_minutes = episode_details.runtime;
+        // episode.rating = episode_details.vote_average;
+        // episode.tmdb_parent_id = Some(show_details.id);
+        // episode.tmdb_item_id = Some(episode_details.id);
+        // episode.thumbnail_url = episode_details
+        //     .still_path
+        //     .as_ref()
+        //     .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
+
+        let release_date = episode_details
+            .air_date
+            .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
+            .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
+
+        let thumbnail_url = episode_details
             .still_path
             .as_ref()
             .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
 
-        let episode = episode.upsert(pool).await?;
+        let episode = media::ActiveModel {
+            media_type: Set(MediaType::Episode),
+            tmdb_parent_id: Set(show_details.id),
+            tmdb_item_id: Set(episode_details.id),
+            name: Set(episode_details.name),
+            description: Set(episode_details.overview),
+            rating: Set(episode_details.vote_average),
+            start_date: Set(release_date),
+            thumbnail_url: Set(thumbnail_url),
+            parent_id: Set(Some(show.id)),
+            season_number: Set(Some(season_number_i64)),
+            episode_number: Set(Some(episode_details.episode_number)),
+            runtime_minutes: Set(episode_details.runtime),
+            ..Default::default()
+        };
+
+        let episode = media::Entity::insert(episode)
+            .on_conflict(
+                OnConflict::columns([media::Column::TmdbParentId, media::Column::TmdbItemId])
+                    .update_columns([
+                        media::Column::Name,
+                        media::Column::Description,
+                        media::Column::Rating,
+                        media::Column::StartDate,
+                        media::Column::RuntimeMinutes,
+                        media::Column::PosterUrl,
+                        media::Column::BackgroundUrl,
+                    ])
+                    .to_owned(),
+            )
+            .exec_with_returning(pool)
+            .await?;
 
         // Connect the file to the episode if this episode is in the file
         if metadata
             .episodes()
             .contains(&(episode_details.episode_number as i32))
         {
-            MediaConnection::create(pool, episode.id, file_id).await?;
+            let connection = media_connection::ActiveModel {
+                media_id: Set(episode.id),
+                file_id: Set(file_id),
+            };
+
+            connection.insert(pool).await?;
         }
     }
 

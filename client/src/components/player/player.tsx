@@ -28,6 +28,7 @@ import {
 	setPlayerMuted,
 	setPlayerVolume,
 } from "./player-state";
+import { graphql, readFragment } from "gql.tada";
 
 const formatTime = (seconds: number): string => {
 	if (!seconds || Number.isNaN(seconds)) return "0:00";
@@ -36,8 +37,25 @@ const formatTime = (seconds: number): string => {
 	return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
+export const PlayerFrag = graphql(`
+	fragment Player on Media {
+		id
+		name
+		seasonNumber
+		episodeNumber
+		parent {
+			name
+		}
+		defaultConnection {
+			id
+		}
+	}
+`);
+
 export const Player = () => {
-	const { currentMedia, isFullscreen, volume, isMuted, isLoading } = useStore(playerState);
+	const { currentMedia: currentMediaRef, isFullscreen, volume, isMuted, isLoading } = useStore(playerState);
+	const currentMedia = readFragment(PlayerFrag, currentMediaRef);
+
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [duration, setDuration] = useState<number | null>(null);
 	const [currentTime, setCurrentTime] = useState<number | null>(null);
@@ -55,7 +73,7 @@ export const Player = () => {
 	useEffect(() => {
 		if (!videoRef.current || !currentMedia) return;
 
-		if (!currentMedia.default_connection) {
+		if (!currentMedia.defaultConnection) {
 			setErrorMessage("This file isn't available right now");
 			return;
 		}
@@ -67,7 +85,7 @@ export const Player = () => {
 
 			setErrorMessage(null);
 			setPlayerLoading(true);
-			const hlsUrl = `/api/hls/stream/${currentMedia.default_connection.id}/index.m3u8`;
+			const hlsUrl = `/api/hls/stream/${currentMedia.defaultConnection.id}/index.m3u8`;
 			hlsRef.current = new Hls();
 			hlsRef.current.on(Hls.Events.ERROR, (event, data) => {
 				console.error("HLS error:", event, data);
@@ -398,11 +416,21 @@ export const Player = () => {
 								<ArrowLeft className="w-6 h-6" />
 							</PlayerButton>
 						)}
-						<div>
-							{/* todo */}
-							<h2 className="text-xl font-semibold">Show: Season 1</h2>
-							<p className="text-sm text-gray-300">Episode 4: Episode Name</p>
-						</div>
+						{currentMedia.parent && currentMedia.seasonNumber && currentMedia.episodeNumber ? (
+							<div>
+								<h2 className="text-xl font-semibold">
+									{currentMedia.parent.name}: Season {currentMedia.seasonNumber}
+								</h2>
+								<p className="text-sm text-gray-300">
+									Episode {currentMedia.episodeNumber}: {currentMedia.name}
+								</p>
+							</div>
+						) : (
+							<div>
+								{/* todo */}
+								<h2 className="text-xl font-semibold">{currentMedia.name}</h2>
+							</div>
+						)}
 					</div>
 					<div className="flex items-center gap-3 text-white">
 						<PlayerButton

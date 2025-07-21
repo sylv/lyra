@@ -1,5 +1,8 @@
 use crate::config::{Backend, get_config};
-use sqlx::SqlitePool;
+use crate::entities::file;
+use sea_orm::sea_query::OnConflict;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait};
+use sea_orm::{QueryFilter, Set};
 use std::path::Path as StdPath;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -45,7 +48,7 @@ impl ScanProgress {
     }
 }
 
-pub async fn start_scanner(pool: SqlitePool) {
+pub async fn start_scanner(pool: DatabaseConnection) {
     let config = get_config();
     let mut interval = interval(Duration::from_secs(4 * 60 * 60)); // 4 hours
 
@@ -67,7 +70,7 @@ pub async fn start_scanner(pool: SqlitePool) {
     }
 }
 
-async fn scan_backend(pool: &SqlitePool, backend: &Backend) -> anyhow::Result<()> {
+async fn scan_backend(pool: &DatabaseConnection, backend: &Backend) -> anyhow::Result<()> {
     let scan_start_time = chrono::Utc::now().timestamp();
     let mut progress = ScanProgress::new();
 
@@ -96,7 +99,7 @@ async fn scan_backend(pool: &SqlitePool, backend: &Backend) -> anyhow::Result<()
 }
 
 async fn scan_directory(
-    pool: &SqlitePool,
+    pool: &DatabaseConnection,
     backend_name: &str,
     root_dir: &StdPath,
     current_dir: &StdPath,
@@ -140,7 +143,7 @@ async fn scan_directory(
 }
 
 async fn scan_file(
-    pool: &SqlitePool,
+    pool: &DatabaseConnection,
     backend_name: &str,
     path: &PathBuf,
     root_dir: &StdPath,
@@ -173,23 +176,22 @@ async fn scan_file(
             .to_string();
 
         let size_bytes_i64 = metadata.len() as i64;
-        sqlx::query!(
-            r#"
-                INSERT INTO file (backend_name, key, size_bytes, scanned_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT (backend_name, key) DO UPDATE SET
-                    size_bytes = ?,
-                    scanned_at = ?
-                "#,
-            backend_name,
-            relative_path,
-            size_bytes_i64,
-            scan_start_time,
-            size_bytes_i64,
-            scan_start_time
-        )
-        .execute(pool)
-        .await?;
+        let file = file::ActiveModel {
+            backend_name: Set(backend_name.to_string()),
+            key: Set(relative_path),
+            size_bytes: Set(Some(size_bytes_i64)),
+            scanned_at: Set(scan_start_time),
+            ..Default::default()
+        };
+        // file.insert(pool).await?;
+        file::Entity::insert(file)
+            .on_conflict(
+                OnConflict::columns([file::Column::BackendName, file::Column::Key])
+                    .update_columns([file::Column::SizeBytes, file::Column::ScannedAt])
+                    .to_owned(),
+            )
+            .exec_with_returning(pool)
+            .await?;
 
         progress.files_imported += 1;
         progress.bytes_imported += metadata.len();
@@ -199,24 +201,20 @@ async fn scan_file(
 }
 
 async fn mark_missing_files_unavailable(
-    pool: &SqlitePool,
+    pool: &DatabaseConnection,
     backend_name: &str,
     scan_start_time: i64,
 ) -> anyhow::Result<()> {
-    sqlx::query!(
-        r#"
-        UPDATE file 
-        SET unavailable_since = ?1
-        WHERE 
-            backend_name = ?2 AND
-            scanned_at < ?1 AND
-            unavailable_since IS NULL
-        "#,
-        scan_start_time,
-        backend_name,
-    )
-    .execute(pool)
-    .await?;
+    file::Entity::update_many()
+        .set(file::ActiveModel {
+            unavailable_since: Set(Some(scan_start_time)),
+            ..Default::default()
+        })
+        .filter(file::Column::BackendName.eq(backend_name))
+        .filter(file::Column::ScannedAt.lt(scan_start_time))
+        .filter(file::Column::UnavailableSince.is_null())
+        .exec(pool)
+        .await?;
 
     Ok(())
 }

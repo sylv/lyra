@@ -1,4 +1,6 @@
 {
     "biome.lsp.bin": "client/node_modules/.bin/biome",
-    "biome.requireConfiguration": true
+    "biome.requireConfiguration": true,
+    "typescript.tsdk": "client/node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true
 }

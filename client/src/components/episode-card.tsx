@@ -1,11 +1,11 @@
+import { graphql, readFragment, type FragmentOf } from "gql.tada";
+import { Clock } from "lucide-react";
 import type { FC } from "react";
-import type { MediaWithFirstConnection } from "../@generated/server";
-import { PlayWrapper } from "./play-wrapper";
-import { PlayIcon, Clock } from "lucide-react";
+import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
 import { Thumbnail } from "./thumbnail";
 
 interface EpisodeCardProps {
-	episode: MediaWithFirstConnection;
+	episode: FragmentOf<typeof EpisodeCardFrag>;
 	showSeasonInfo?: boolean;
 }
 
@@ -19,38 +19,46 @@ const formatRuntime = (minutes: number | null) => {
 	return `${mins}m`;
 };
 
-export const EpisodeCard: FC<EpisodeCardProps> = ({
-	episode,
-	showSeasonInfo = false,
-}) => {
+export const EpisodeCardFrag = graphql(
+	`
+	fragment EpisodeCard on Media {
+		id
+		name
+		description
+		thumbnailUrl
+		seasonNumber
+		episodeNumber
+		runtimeMinutes
+		...PlayWrapper
+	}
+`,
+	[PlayWrapperFrag],
+);
+
+export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef, showSeasonInfo = false }) => {
+	const episode = readFragment(EpisodeCardFrag, episodeRef);
+
 	return (
 		<div className="group flex gap-4 p-4 hover:bg-zinc-800/10 rounded-lg transition-colors border border-zinc-700/40">
 			<div className="relative flex-shrink-0 rounded-md overflow-hidden">
 				<PlayWrapper media={episode}>
-					<Thumbnail
-						imageUrl={episode.media.thumbnail_url}
-						alt={episode.media.name}
-						className="aspect-[16/9] h-36 object-cover"
-					/>
+					<Thumbnail imageUrl={episode.thumbnailUrl} alt={episode.name} className="aspect-[16/9] h-36 object-cover" />
 				</PlayWrapper>
 			</div>
 			<div className="flex-1 min-w-0">
 				<h3 className="font-semibold text-white mb-1">
 					<span className="text-zinc-400 text-sm font-normal mr-2">
-						{showSeasonInfo ? `S${episode.media.season_number}` : ""}E
-						{episode.media.episode_number}
+						{showSeasonInfo ? `S${episode.seasonNumber}` : ""}E{episode.episodeNumber}
 					</span>
-					{episode.media.name}
+					{episode.name}
 				</h3>
-				{episode.media.runtime_minutes && (
+				{episode.runtimeMinutes && (
 					<div className="flex items-center gap-1 text-sm text-zinc-400 mb-2">
 						<Clock className="w-4 h-4" />
-						{formatRuntime(episode.media.runtime_minutes)}
+						{formatRuntime(episode.runtimeMinutes)}
 					</div>
 				)}
-				<p className="text-sm text-zinc-300 line-clamp-3">
-					{episode.media.description || "No description available"}
-				</p>
+				<p className="text-sm text-zinc-300 line-clamp-3">{episode.description || "No description available"}</p>
 			</div>
 		</div>
 	);

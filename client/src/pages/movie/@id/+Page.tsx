@@ -1,17 +1,27 @@
 import { usePageContext } from "vike-react/usePageContext";
-import { MediaHeader } from "../../../components/media-header";
-import { trpc } from "../../trpc";
+import { MediaHeader, MediaHeaderFrag } from "../../../components/media-header";
+import { graphql } from "gql.tada";
+import { useSuspenseQuery } from "@apollo/client";
+
+const Query = graphql(
+	`
+	query GetMediaById($mediaId: Int!) {
+		media(mediaId: $mediaId) {
+			...MediaHeader
+		}
+	}
+`,
+	[MediaHeaderFrag],
+);
 
 export default function Page() {
 	const pageContext = usePageContext();
 	const mediaId = +pageContext.routeParams.id;
-	const [details] = trpc.get_media_by_id.useSuspenseQuery({
-		media_id: mediaId,
+	const { data } = useSuspenseQuery(Query, {
+		variables: {
+			mediaId: mediaId,
+		},
 	});
 
-	return (
-		<>
-			<MediaHeader details={details} />
-		</>
-	);
+	return <MediaHeader media={data.media} />;
 }
