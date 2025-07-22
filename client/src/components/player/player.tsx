@@ -374,13 +374,6 @@ export const Player = () => {
 				disablePictureInPicture
 			/>
 
-			{/* Loading indicator */}
-			{isLoading && (
-				<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-					<Loader2 className="w-12 h-12 text-white animate-spin" />
-				</div>
-			)}
-
 			{/* Overlay controls */}
 			<div
 				className="absolute inset-0 cursor-pointer select-none"
@@ -543,9 +536,16 @@ export const Player = () => {
 				</div>
 			</div>
 
+			{/* Loading indicator */}
+			{isLoading && (
+				<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+					<Loader2 className="w-12 h-12 text-white animate-spin" />
+				</div>
+			)}
+
 			{errorMessage && (
 				<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-					<div className="text-white text-center p-4 pointer-events-auto">
+					<div className="text-white text-center p-4 mt-24 pointer-events-auto">
 						<p>{errorMessage}</p>
 					</div>
 				</div>

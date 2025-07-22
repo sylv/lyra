@@ -35,12 +35,8 @@ export const DynamicBackground: FC = () => {
 	}, [backgroundUrl]);
 
 	return (
-		<div className="fixed inset-0 pointer-events-none h-dvw w-dvw blur-3xl opacity-10">
-			<img
-				src={defaultDynamicBackground}
-				aria-hidden
-				className="fixed object-cover h-full w-full"
-			/>
+		<div className="fixed inset-0 scale-[1.05] pointer-events-none h-dvw w-dvw blur-3xl opacity-10">
+			<img src={defaultDynamicBackground} aria-hidden className="fixed object-cover h-full w-full" />
 			{current && (
 				<img
 					src={current}
