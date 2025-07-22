@@ -105,15 +105,19 @@ async fn main() {
     };
 
     let app = Router::new()
-        .nest("/hls", hls::get_hls_router())
-        .nest("/image-proxy", proxy::get_proxy_router())
-        .nest("/graphql", graphql)
+        .nest("/api/hls", hls::get_hls_router())
+        .nest("/api/image-proxy", proxy::get_proxy_router())
+        .nest("/api/graphql", graphql)
         .with_state(AppState {
             segmenters: Arc::new(Mutex::new(HashMap::new())),
             profiles: hls::get_profiles(),
             pool: pool,
         });
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    let config = get_config();
+    let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
+        .await
+        .unwrap();
+
     axum::serve(listener, app).await.unwrap();
 }
