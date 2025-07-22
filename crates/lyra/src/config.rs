@@ -9,6 +9,8 @@ pub struct Config {
     pub ffmpeg_dir: Option<PathBuf>,
     pub backends: Vec<Backend>,
     pub tmdb_api_key: String,
+    pub host: String,
+    pub port: u16,
 }
 
 impl Config {
@@ -61,6 +63,8 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         .add_source(config::File::with_name("lyra"))
         .set_default("data_dir", ".lyra")?
         .set_default("tmdb_api_key", "f81a38fe9eba82e5dc3695a7406068bd")?
+        .set_default("host", "127.0.0.1")?
+        .set_default("port", "8000")?
         .build()
         .unwrap();
 
