@@ -351,7 +351,17 @@ async fn process_show(
                 file_id: Set(file_id),
             };
 
-            connection.insert(pool).await?;
+            media_connection::Entity::insert(connection)
+                .on_conflict(
+                    OnConflict::columns([
+                        media_connection::Column::MediaId,
+                        media_connection::Column::FileId,
+                    ])
+                    .do_nothing()
+                    .to_owned(),
+                )
+                .exec_without_returning(pool)
+                .await?;
         }
     }
 

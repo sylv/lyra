@@ -162,3 +162,7 @@
 		-webkit-text-fill-color: hsl(var(--foreground)) !important;
 	}
 }
+
+.no-scrollbar {
+	scrollbar-width: none;
+}

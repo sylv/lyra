@@ -1,4 +1,4 @@
-use crate::{AppState, config::get_config, error::AppError};
+use crate::{AppState, RequestAuth, config::get_config, error::AppError};
 use axum::{
     Router,
     body::Body,
@@ -29,6 +29,7 @@ pub struct TranscodeParams {
 }
 
 async fn proxy_image(
+    _auth: RequestAuth,
     Path(url): Path<String>,
     Query(params): Query<TranscodeParams>,
 ) -> Result<impl IntoResponse, AppError> {

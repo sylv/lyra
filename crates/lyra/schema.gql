@@ -10,6 +10,16 @@ type File {
 	scannedAt: Int!
 }
 
+type Invite {
+	code: String!
+	permissions: Int!
+	createdBy: String!
+	createdAt: Int!
+	expiresAt: Int!
+	usedAt: Int
+	usedBy: String
+}
+
 type Media {
 	id: Int!
 	name: String!
@@ -29,6 +39,8 @@ type Media {
 	runtimeMinutes: Int
 	seasonNumber: Int
 	episodeNumber: Int
+	createdAt: Int!
+	updatedAt: Int
 	"""
 	Gets the default file connection for this media item, including child connections.
 	(this is what should be played if the user hits "play" on this media item)
@@ -55,6 +67,22 @@ enum MediaType {
 	EPISODE
 }
 
+type Model {
+	id: String!
+	username: String!
+	permissions: Int!
+	defaultSubtitleBcp47: String
+	defaultAudioBcp47: String
+	subtitlesEnabled: Int!
+	createdAt: Int!
+	lastLoginAt: Int
+}
+
+type Mutation {
+	signup(username: String!, password: String!, inviteCode: String): Model!
+	createInvite(permissions: Int!): Invite!
+}
+
 type Query {
 	mediaList(filter: MediaFilter!): [Media!]!
 	media(mediaId: Int!): Media!
@@ -70,4 +98,5 @@ Directs the executor to skip this field or fragment when the `if` argument is tr
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 schema {
 	query: Query
+	mutation: Mutation
 }

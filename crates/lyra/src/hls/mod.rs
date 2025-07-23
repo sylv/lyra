@@ -1,3 +1,4 @@
+use crate::RequestAuth;
 use crate::config::get_config;
 use crate::entities::file;
 use crate::hls::profiles::StreamType;
@@ -54,6 +55,7 @@ pub fn get_hls_router() -> Router<AppState> {
 }
 
 async fn get_master_playlist(
+    _user: RequestAuth,
     State(state): State<AppState>,
     Path(file_id): Path<i64>,
 ) -> Result<String, (StatusCode, &'static str)> {
@@ -153,6 +155,7 @@ async fn get_master_playlist(
 }
 
 async fn get_stream_playlist(
+    _user: RequestAuth,
     State(state): State<AppState>,
     Path((file_id, stream_type, stream_idx, profile_name)): Path<(i64, String, u64, String)>,
 ) -> Result<String, (StatusCode, &'static str)> {
@@ -224,6 +227,7 @@ async fn get_stream_playlist(
 }
 
 async fn get_segment(
+    _user: RequestAuth,
     State(state): State<AppState>,
     Path((file_id, stream_type, stream_idx, profile_name, segment_name)): Path<(
         i64,
