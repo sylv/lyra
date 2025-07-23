@@ -20,6 +20,8 @@ CREATE TABLE media (
     runtime_minutes INTEGER,
     season_number INTEGER,
     episode_number INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER,
 
     FOREIGN KEY (parent_id) REFERENCES media(id),
     UNIQUE (tmdb_parent_id, tmdb_item_id),
@@ -47,7 +49,42 @@ CREATE TABLE file (
     edition_name TEXT, -- eg, "Director's Cut" or null, parsed from the file name (eg, "{edition=Director's Cut}")
     resolution INTEGER, -- eg, 1080 or 2160, parsed from the file name
     size_bytes INTEGER,
-    scanned_at INTEGER NOT NULL
+    scanned_at INTEGER NOT NULL,
+
+    UNIQUE (backend_name, key)
 ) STRICT;
 
-CREATE UNIQUE INDEX file_backend_key_unique ON file (backend_name, key); 
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    permissions INTEGER NOT NULL,
+    default_subtitle_bcp47 TEXT, -- eg "en-US"
+    default_audio_bcp47 TEXT,
+    subtitles_enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    last_login_at INTEGER
+) STRICT;
+
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    expires_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES users(id)
+) STRICT;
+
+CREATE TABLE invites (
+    code TEXT PRIMARY KEY,
+    permissions INTEGER NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER,
+    used_by TEXT,
+
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    FOREIGN KEY (used_by) REFERENCES users(id)
+) STRICT;

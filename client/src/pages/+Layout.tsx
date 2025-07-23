@@ -9,6 +9,7 @@ import { Sidebar } from "../components/sidebar";
 import { ThemeProvider } from "../components/theme-provider";
 import { Toaster } from "../components/ui/sonner";
 import "./globals.css";
+import { SetupWrapper } from "../components/setup/setup-wrapper";
 
 const client = new ApolloClient({
 	uri: "/api/graphql",
@@ -21,13 +22,17 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 			<TooltipProvider>
 				<ApolloProvider client={client}>
 					<Suspense fallback={<Fallback />}>
-						<Sidebar>
-							{children}
-							<Player />
-						</Sidebar>
+						<SetupWrapper>
+							<Sidebar>
+								{children}
+								<Player />
+							</Sidebar>
+						</SetupWrapper>
 						<Toaster />
 					</Suspense>
-					<DynamicBackground />
+					<div className="fixed inset-0 h-dvw w-dvw">
+						<DynamicBackground />
+					</div>
 				</ApolloProvider>
 			</TooltipProvider>
 		</ThemeProvider>

@@ -16,14 +16,22 @@
 - On-demand whisper subtitles
   - WebVTT with HLS is segmented, so we can abuse that
 
-## notes
+## developer notes
 
 - HLS implementation
   - Not even close to spec compliant, but seems to work
   - Need a better way to test segment splitting without running the entire thing
+- The entire GraphQL API requires auth
+  - During setup, there is a special init endpoint that returns a setup token if no users exist yet
+  - Logins are handled by raw JSON that bypasses the auth
+  - Every other endpoint requires authentication
 
 ## todo
 
+- ffmpeg segmenter is inconsistent, seeking forward then back will cause the player to freeze/skip a few seconds
+  - i dont think this is a keyframe issue
+  - possibly related to how seeking is done and it being offset, especially toward the end of the file, because the hls muxer can split += 0.01s from the intended position
+- Auto-fullscreen on player open does not fullscreen the browser, only the player
 - Subtitle support
 - Chapter support
 - Support for hardware transcoding
@@ -44,3 +52,11 @@
 - Scanner improvements
   - Batch file inserts
   - Use concurrent folder scanning to improve network performance
+- Setup needs lots of work
+  - Errors are not shown properly
+  - It abruptly closes the modal once setup is complete, instead showing some tips/where to find settigns would be good
+  - Needs a library setup step and for libraries to be moved to db
+  - There is no way to add new users
+  - There is no way to use invite code
+  - There is no way to create invites
+- Filters/search should be persisted in query params

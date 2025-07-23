@@ -13,6 +13,7 @@ impl IntoResponse for AppError {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({
+                "status_code": StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
                 "error_message": self.0.to_string(),
             })),
         )
