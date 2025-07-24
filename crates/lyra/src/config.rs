@@ -11,6 +11,7 @@ pub struct Config {
     pub tmdb_api_key: String,
     pub host: String,
     pub port: u16,
+    pub clear_transcode_cache_on_start: bool,
 }
 
 impl Config {
@@ -65,11 +66,17 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         .set_default("tmdb_api_key", "f81a38fe9eba82e5dc3695a7406068bd")?
         .set_default("host", "127.0.0.1")?
         .set_default("port", "8000")?
+        .set_default("clear_transcode_cache_on_start", false)?
         .build()
         .unwrap();
 
     let config: Config = config.try_deserialize()?;
     assert!(!config.backends.is_empty(), "no backends configured");
+
+    if config.clear_transcode_cache_on_start {
+        tracing::info!("clearing transcode cache");
+        std::fs::remove_dir_all(&config.get_transcode_cache_dir())?;
+    }
 
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.get_transcode_cache_dir())?;

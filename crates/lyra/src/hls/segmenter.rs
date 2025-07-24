@@ -118,7 +118,7 @@ impl Segmenter {
             outdir: self.segment_dir.clone(),
             segment_idx: segment_id,
             segment_duration: TARGET_DURATION,
-            start_time_offset: (segment_id - 1) as f64 * TARGET_DURATION,
+            start_time_offset: segment_id as f64 * TARGET_DURATION,
             stream_idx: self.stream_idx,
         };
 
