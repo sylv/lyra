@@ -1,3 +1,4 @@
+clear_transcode_cache_on_start: true
 backends:
   - name: test-backend-movies
     root_dir: /mnt/v/media/movies

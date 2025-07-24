@@ -4,7 +4,7 @@ use crate::entities::file;
 use crate::hls::profiles::StreamType;
 use crate::hls::profiles::TranscodingProfile;
 use crate::hls::profiles::audio::AacAudioProfile;
-use crate::hls::profiles::video::CopyVideoProfile;
+use crate::hls::profiles::video::{CopyVideoProfile, H264VideoProfile};
 use crate::hls::segmenter::Segmenter;
 use crate::{AppState, ffmpeg};
 use axum::{
@@ -29,6 +29,7 @@ pub mod segmenter;
 pub fn get_profiles() -> Vec<Arc<Box<dyn TranscodingProfile + Send + Sync>>> {
     vec![
         Arc::new(Box::new(CopyVideoProfile)),
+        Arc::new(Box::new(H264VideoProfile)),
         Arc::new(Box::new(AacAudioProfile)),
     ]
 }
@@ -212,13 +213,13 @@ async fn get_stream_playlist(
     let target_duration = Duration::from_secs_f64(TARGET_DURATION);
     while remaining_duration > Duration::from_secs(0) {
         let segment_duration = remaining_duration.min(target_duration);
-        segment_index += 1;
 
         let segment_path = format!("{}.ts\n\n", segment_index);
         playlist.push_str(&format!("#EXTINF:{:.2}\n", segment_duration.as_secs_f64()));
         playlist.push_str(segment_path.as_str());
 
         remaining_duration -= segment_duration;
+        segment_index += 1;
     }
 
     playlist.push_str("#EXT-X-ENDLIST\n");

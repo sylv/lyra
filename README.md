@@ -60,3 +60,5 @@
   - There is no way to use invite code
   - There is no way to create invites
 - Filters/search should be persisted in query params
+- HLS playlist should be piped out and parsed to find new segments over watching disk
+- Ffmpeg sometimes crashes and does not recover
