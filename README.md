@@ -60,5 +60,6 @@
   - There is no way to use invite code
   - There is no way to create invites
 - Filters/search should be persisted in query params
-- HLS playlist should be piped out and parsed to find new segments over watching disk
 - Ffmpeg sometimes crashes and does not recover
+- The segmenters `JUMP_SIZE` and `BUFFER_SIZE` options should be determined by how long segments take to generate
+- Increasing the length of subtitle segments would make sense

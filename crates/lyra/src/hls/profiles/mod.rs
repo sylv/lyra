@@ -2,11 +2,13 @@ use easy_ffprobe::Stream;
 use std::path::PathBuf;
 
 pub mod audio;
+pub mod subtitle;
 pub mod video;
 
 pub enum StreamType {
     Video,
     Audio,
+    Subtitle,
 }
 
 impl StreamType {
@@ -14,6 +16,7 @@ impl StreamType {
         match self {
             StreamType::Video => "video",
             StreamType::Audio => "audio",
+            StreamType::Subtitle => "subtitle",
         }
     }
 
@@ -21,6 +24,7 @@ impl StreamType {
         match s {
             "video" => Some(StreamType::Video),
             "audio" => Some(StreamType::Audio),
+            "subtitle" => Some(StreamType::Subtitle),
             _ => None,
         }
     }

@@ -1802,6 +1802,7 @@ dependencies = [
  "once_cell",
  "rand 0.9.1",
  "ratelimit",
+ "regex",
  "reqwest",
  "sea-orm",
  "serde",

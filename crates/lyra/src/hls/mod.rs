@@ -4,6 +4,7 @@ use crate::entities::file;
 use crate::hls::profiles::StreamType;
 use crate::hls::profiles::TranscodingProfile;
 use crate::hls::profiles::audio::AacAudioProfile;
+use crate::hls::profiles::subtitle::WebVttSubtitleProfile;
 use crate::hls::profiles::video::{CopyVideoProfile, H264VideoProfile};
 use crate::hls::segmenter::Segmenter;
 use crate::{AppState, ffmpeg};
@@ -31,6 +32,7 @@ pub fn get_profiles() -> Vec<Arc<Box<dyn TranscodingProfile + Send + Sync>>> {
         Arc::new(Box::new(CopyVideoProfile)),
         Arc::new(Box::new(H264VideoProfile)),
         Arc::new(Box::new(AacAudioProfile)),
+        Arc::new(Box::new(WebVttSubtitleProfile)),
     ]
 }
 
@@ -103,10 +105,14 @@ async fn get_master_playlist(
             continue;
         }
 
-        // sort audio first, then video, then other
+        // sort video first, then audio, then subtitle
         profiles.sort_by(|a, b| match (a.stream_type(), b.stream_type()) {
             (StreamType::Video, StreamType::Audio) => Ordering::Less,
+            (StreamType::Video, StreamType::Subtitle) => Ordering::Less,
             (StreamType::Audio, StreamType::Video) => Ordering::Greater,
+            (StreamType::Audio, StreamType::Subtitle) => Ordering::Less,
+            (StreamType::Subtitle, StreamType::Video) => Ordering::Greater,
+            (StreamType::Subtitle, StreamType::Audio) => Ordering::Greater,
             _ => Ordering::Equal,
         });
 
@@ -128,6 +134,7 @@ async fn get_master_playlist(
                 StreamKinds::Video(ref video) => {
                     let mut flags = vec![];
                     flags.push("AUDIO=\"group_audio\"".to_string());
+                    flags.push("SUBTITLES=\"group_subtitles\"".to_string());
                     let header = format!("#EXT-X-STREAM-INF:{}\n", flags.join(","));
                     playlist.push_str(&header);
                     playlist.push_str(&playlist_path);
@@ -139,6 +146,19 @@ async fn get_master_playlist(
                     flags.push("GROUP-ID=\"group_audio\"".to_string());
                     flags.push(format!("NAME=\"audio_{}\"", stream_idx));
                     flags.push("DEFAULT=YES".to_string());
+                    flags.push(format!("URI=\"{}\"", playlist_path));
+                    let header = format!("#EXT-X-MEDIA:{}", flags.join(","));
+                    playlist.push_str(&header);
+                    playlist.push_str("\n\n");
+                }
+                StreamKinds::Subtitle(ref subtitle) => {
+                    let mut flags = vec![];
+                    flags.push("TYPE=SUBTITLES".to_string());
+                    flags.push("GROUP-ID=\"group_subtitles\"".to_string());
+                    flags.push(format!("NAME=\"subtitle_{}\"", stream_idx));
+                    flags.push("DEFAULT=NO".to_string());
+                    flags.push("AUTOSELECT=NO".to_string());
+                    flags.push("FORCED=NO".to_string());
                     flags.push(format!("URI=\"{}\"", playlist_path));
                     let header = format!("#EXT-X-MEDIA:{}", flags.join(","));
                     playlist.push_str(&header);
@@ -209,12 +229,16 @@ async fn get_stream_playlist(
     };
 
     let mut segment_index = 0;
+    let file_extension = match stream_type.as_str() {
+        "subtitle" => "vtt",
+        _ => "ts",
+    };
 
     let target_duration = Duration::from_secs_f64(TARGET_DURATION);
     while remaining_duration > Duration::from_secs(0) {
         let segment_duration = remaining_duration.min(target_duration);
 
-        let segment_path = format!("{}.ts\n\n", segment_index);
+        let segment_path = format!("{}.{}\n\n", segment_index, file_extension);
         playlist.push_str(&format!("#EXTINF:{:.2}\n", segment_duration.as_secs_f64()));
         playlist.push_str(segment_path.as_str());
 
@@ -262,7 +286,7 @@ async fn get_segment(
         .next()
         .unwrap()
         .parse::<usize>()
-        .unwrap();
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid segment name"))?;
 
     let segment_dir = get_config()
         .get_transcode_cache_dir()
@@ -271,7 +295,10 @@ async fn get_segment(
         .join(&profile_name)
         .join(&stream_idx.to_string());
 
-    let segmenter_key = format!("{}:video:{}:{}", file_id, profile_name, stream_idx);
+    let segmenter_key = format!(
+        "{}:{}:{}:{}",
+        file_id, stream_type, profile_name, stream_idx
+    );
     let segmenter = {
         let mut segmenters = state.segmenters.lock().await;
         if !segmenters.contains_key(&segmenter_key) {
@@ -315,7 +342,14 @@ async fn get_segment(
     tokio::io::AsyncReadExt::read_to_end(&mut segment, &mut buffer)
         .await
         .unwrap();
-    Ok(([(axum::http::header::CONTENT_TYPE, "video/mp2t")], buffer).into_response())
+
+    // Set content type based on stream type
+    let content_type = match stream_type.as_str() {
+        "subtitle" => "text/vtt",
+        _ => "video/mp2t",
+    };
+
+    Ok(([(axum::http::header::CONTENT_TYPE, content_type)], buffer).into_response())
 }
 
 fn get_stream_duration(stream: &Stream, format: &Format) -> Option<Duration> {

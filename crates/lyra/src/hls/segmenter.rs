@@ -1,12 +1,13 @@
 use crate::hls::{
     TARGET_DURATION,
-    profiles::{ProfileContext, TranscodingProfile},
+    profiles::{ProfileContext, StreamType, TranscodingProfile},
 };
 use anyhow::Result;
 use easy_ffprobe::Stream;
 use nix::{sys::signal::Signal::SIGSTOP, unistd::Pid};
-use notify::{EventKind, RecursiveMode, Watcher};
+use regex::Regex;
 use std::{
+    io::{BufRead, BufReader},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{
@@ -22,7 +23,7 @@ use tokio::{
 };
 
 const JUMP_SIZE: usize = 5;
-const BUFFER_SIZE: usize = 2;
+const BUFFER_SIZE: usize = 4;
 
 pub struct Segmenter {
     ffmpeg_path: String,
@@ -56,7 +57,15 @@ impl Segmenter {
     }
 
     pub async fn get_segment(&self, segment_id: usize) -> Result<File> {
-        let segment_path = self.segment_dir.join(format!("{}.ts", segment_id));
+        let file_extension = match self.profile.stream_type() {
+            StreamType::Subtitle => "vtt",
+            _ => "ts",
+        };
+
+        let segment_path = self
+            .segment_dir
+            .join(format!("seg-{}.{}", segment_id, file_extension));
+
         if segment_path.exists() {
             let handle = File::open(segment_path).await?;
             return Ok(handle);
@@ -81,23 +90,13 @@ impl Segmenter {
                 // if the current ffmpeg segment is within JUMP_SIZE of the segment_id, we just wait for it to be written
                 // otherwise, we need to kill ffmpeg and restart it at the new position
                 let args = self.get_args_for_position(segment_id);
-                *ffmpeg = FfmpegHandle::new(
-                    self.segment_dir.clone(),
-                    self.ffmpeg_path.clone(),
-                    args,
-                    segment_id,
-                );
+                *ffmpeg = FfmpegHandle::new(self.ffmpeg_path.clone(), args, segment_id);
                 ffmpeg
             }
         } else {
             tracing::debug!("no ffmpeg handle, creating new one");
             let args = self.get_args_for_position(segment_id);
-            let ffmpeg = FfmpegHandle::new(
-                self.segment_dir.clone(),
-                self.ffmpeg_path.clone(),
-                args,
-                segment_id,
-            );
+            let ffmpeg = FfmpegHandle::new(self.ffmpeg_path.clone(), args, segment_id);
             *ffmpeg_lock = Some(ffmpeg);
             ffmpeg_lock.as_mut().unwrap()
         };
@@ -107,6 +106,7 @@ impl Segmenter {
             .wait_for_segment(segment_id, &segment_path)
             .await?;
 
+        tracing::info!("opening segment {}", segment_path.display());
         let handle = File::open(segment_path).await?;
         Ok(handle)
     }
@@ -136,84 +136,46 @@ struct FfmpegHandle {
 }
 
 impl FfmpegHandle {
-    fn new(
-        segment_dir: PathBuf,
-        ffmpeg_path: String,
-        ffmpeg_args: Vec<String>,
-        wanted_segment: usize,
-    ) -> Self {
+    fn new(ffmpeg_path: String, ffmpeg_args: Vec<String>, wanted_segment: usize) -> Self {
         let current_segment = Arc::new(AtomicUsize::new(0));
         let wanted_segment = Arc::new(AtomicUsize::new(wanted_segment));
         let notifier = Arc::new(Notify::new());
         let is_paused = Arc::new(AtomicBool::new(false));
 
         tracing::info!("starting ffmpeg with args: {:?}", ffmpeg_args);
-        let handle = Command::new(ffmpeg_path)
+        let mut handle = Command::new(ffmpeg_path)
             .args(ffmpeg_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
 
+        let stdout = handle.stdout.take().expect("Failed to open stdout");
         let handle_pid = Pid::from_raw(handle.id() as i32);
-        let watcher_handle = tokio::spawn({
+
+        let watcher_handle = tokio::task::spawn_blocking({
             let current_segment = current_segment.clone();
             let wanted_segment = wanted_segment.clone();
             let notifier = notifier.clone();
             let is_paused = is_paused.clone();
-            async move {
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<notify::Result<notify::Event>>(100);
-                let mut watcher = notify::recommended_watcher(move |event| {
-                    let _ = tx.blocking_send(event);
-                })
-                .expect("failed to create watcher");
+            move || {
+                let reader = BufReader::new(stdout);
+                let re = Regex::new(r"seg-([0-9]+)\.([a-z]+)").unwrap();
+                for line in reader.lines() {
+                    let line = match line {
+                        Ok(line) => line,
+                        Err(e) => {
+                            tracing::error!("failed to read line from ffmpeg stdout: {}", e);
+                            break;
+                        }
+                    };
 
-                watcher
-                    .watch(&segment_dir, RecursiveMode::NonRecursive)
-                    .expect("failed to watch segment directory");
-
-                while let Some(event) = rx.recv().await {
-                    let Ok(event) = event else {
-                        tracing::warn!(event = ?event, "segmenter watch error");
+                    let Some(captures) = re.captures(&line) else {
+                        tracing::info!("ignoring line from ffmpeg stdout: {}", line);
                         continue;
                     };
 
-                    // we need either Modify or Create
-                    match event.kind {
-                        EventKind::Modify(_) => {
-                            tracing::debug!(event = ?event, "segment renamed");
-                        }
-                        EventKind::Create(_) => {
-                            tracing::debug!(event = ?event, "segment created");
-                        }
-                        _ => {
-                            tracing::trace!(event = ?event, "ignoring event");
-                            continue;
-                        }
-                    }
-
-                    let Some(file_name) = event
-                        .paths
-                        .iter()
-                        .find(|p| p.extension().unwrap_or_default() == "ts")
-                    else {
-                        continue;
-                    };
-
-                    if file_name.extension().unwrap_or_default() != "ts" {
-                        tracing::trace!(event = ?event, "ignoring non-ts file");
-                        continue;
-                    }
-
-                    let Ok(segment_id) = file_name
-                        .file_stem()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .parse::<usize>()
-                    else {
-                        panic!("failed to parse segment id from file name: {:?}", file_name);
-                    };
+                    let segment_id = captures.get(1).unwrap().as_str().parse::<usize>().unwrap();
 
                     tracing::info!("segment {} created", segment_id);
                     current_segment.store(segment_id, Ordering::Relaxed);

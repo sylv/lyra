@@ -60,6 +60,7 @@ argon2 = { version = "^0.5.3", default-features = false, features = [
 axum-extra = { version = "0.10.1", features = ["cookie"] }
 ulid = "1.2.1"
 cookie = "0.18.1"
+regex = "1.11.1"
 
 # force the image crate to use a release build even if we're in debug mode
 # otherwise images are painfully slow to load
