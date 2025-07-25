@@ -1,6 +1,6 @@
 import type { FragmentOf } from "gql.tada";
 import { create } from "zustand/react";
-import type { PlayerFrag } from "./player";
+import type { PlayerFrag } from "./player-wrapper";
 
 interface PlayerState {
 	currentMedia: FragmentOf<typeof PlayerFrag> | null;
@@ -25,10 +25,10 @@ export const setPlayerMedia = (media: FragmentOf<typeof PlayerFrag> | null) => {
 	}));
 };
 
-export const setPlayerFullscreen = (isFullscreen: boolean) => {
-	playerState.setState({
-		isFullscreen,
-	});
+export const togglePlayerFullscreen = (isFullscreen?: boolean) => {
+	playerState.setState((prev) => ({
+		isFullscreen: isFullscreen ?? !prev.isFullscreen,
+	}));
 };
 
 export const setPlayerVolume = (volume: number) => {

@@ -1,15 +1,15 @@
+import { ApolloClient, ApolloProvider, InMemoryCache } from "@apollo/client";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import type { FC, ReactNode } from "react";
 import { Suspense } from "react";
-import { ApolloClient, ApolloProvider, InMemoryCache } from "@apollo/client";
 import { DynamicBackground } from "../components/dynamic-background";
 import { Fallback } from "../components/fallback";
-import { Player } from "../components/player/player";
+import { PlayerWrapper } from "../components/player/player-wrapper";
+import { SetupWrapper } from "../components/setup/setup-wrapper";
 import { Sidebar } from "../components/sidebar";
 import { ThemeProvider } from "../components/theme-provider";
 import { Toaster } from "../components/ui/sonner";
 import "./globals.css";
-import { SetupWrapper } from "../components/setup/setup-wrapper";
 
 const client = new ApolloClient({
 	uri: "/api/graphql",
@@ -25,7 +25,7 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 						<SetupWrapper>
 							<Sidebar>
 								{children}
-								<Player />
+								<PlayerWrapper />
 							</Sidebar>
 						</SetupWrapper>
 						<Toaster />
