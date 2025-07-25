@@ -13,10 +13,9 @@ impl TranscodingProfile for AacAudioProfile {
     }
 
     fn get_args(&self, context: &ProfileContext) -> Vec<String> {
-        let seg_template = context.outdir.join("%d.ts").to_string_lossy().into_owned();
-        let playlist_path = context
+        let seg_template = context
             .outdir
-            .join("playlist.m3u8")
+            .join("seg-%d.ts")
             .to_string_lossy()
             .into_owned();
         let stream_map = format!("0:{}", context.stream_idx);
@@ -38,7 +37,7 @@ impl TranscodingProfile for AacAudioProfile {
             "-hls_flags".into(), "temp_file".into(),
             "-hls_time".into(), context.segment_duration.to_string(),
             "-hls_segment_filename".into(), seg_template,
-            playlist_path
+            "pipe:1".into(),
         ];
 
         args
