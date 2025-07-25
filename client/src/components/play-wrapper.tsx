@@ -2,7 +2,7 @@ import type { FC, ReactNode } from "react";
 import { FileWarningIcon, PlayIcon } from "lucide-react";
 import { setPlayerMedia } from "./player/player-state";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
-import { PlayerFrag } from "./player/player";
+import { PlayerFrag } from "./player/player-wrapper";
 
 interface PlayWrapperProps {
 	media: FragmentOf<typeof PlayWrapperFrag>;
