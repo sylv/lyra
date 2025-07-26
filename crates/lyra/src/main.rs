@@ -300,45 +300,44 @@ where
     ) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
 
-        let cookie_jar = CookieJar::from_headers(&parts.headers);
-        let session_id = cookie_jar.get("session").map(|c| c.value());
-        if session_id.is_none() {
-            let setup_code = parts
-                .headers
-                .get("x-setup-code")
-                .map(|h| h.to_str().unwrap())
-                .and_then(|c| c.parse::<u32>().ok());
+        let setup_code = parts
+            .headers
+            .get("x-setup-code")
+            .map(|h| h.to_str().unwrap())
+            .and_then(|c| c.parse::<u32>().ok());
 
-            if let Some(setup_code) = setup_code {
-                let now = Utc::now().timestamp();
-                let last_attempt = state.last_setup_code_attempt.load(Ordering::Relaxed);
-                if now - last_attempt < 2 {
-                    return Err(AuthError::TooManyAttempts);
-                }
-
-                if setup_code != state.setup_code {
-                    return Err(AuthError::Unauthenticated);
-                }
-
-                let user_count = users::Entity::find()
-                    .count(&state.pool)
-                    .await
-                    .map_err(|_| AuthError::InternalError)?;
-                if user_count > 0 {
-                    tracing::warn!("setup code attempted but user already exists");
-                    return Err(AuthError::Unauthenticated);
-                }
-
-                return Ok(RequestAuth {
-                    user: None,
-                    permissions: Permissions::CREATE_USER,
-                });
+        if let Some(setup_code) = setup_code {
+            let now = Utc::now().timestamp();
+            let last_attempt = state.last_setup_code_attempt.load(Ordering::Relaxed);
+            if now - last_attempt < 2 {
+                return Err(AuthError::TooManyAttempts);
             }
 
-            return Err(AuthError::Unauthenticated);
+            if setup_code != state.setup_code {
+                tracing::warn!("setup code incorrect");
+                return Err(AuthError::Unauthenticated);
+            }
+
+            let user_count = users::Entity::find()
+                .count(&state.pool)
+                .await
+                .map_err(|_| AuthError::InternalError)?;
+            if user_count > 0 {
+                tracing::warn!("setup code attempted but user already exists");
+                return Err(AuthError::Unauthenticated);
+            }
+
+            return Ok(RequestAuth {
+                user: None,
+                permissions: Permissions::CREATE_USER,
+            });
         }
 
-        let session_id = session_id.unwrap();
+        let cookie_jar = CookieJar::from_headers(&parts.headers);
+        let Some(session_id) = cookie_jar.get("session").map(|c| c.value()) else {
+            return Err(AuthError::Unauthenticated);
+        };
+
         let Some((session, Some(user))) = sessions::Entity::find_by_id(session_id)
             .find_also_related(users::Entity)
             .one(&state.pool)
