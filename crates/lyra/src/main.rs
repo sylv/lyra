@@ -227,7 +227,7 @@ async fn main() {
 
     let matcher_pool = pool.clone();
     tokio::spawn(async move {
-        matcher::start_matcher(matcher_pool)
+        matcher::worker::start_matcher(matcher_pool)
             .await
             .expect("matcher failed");
     });

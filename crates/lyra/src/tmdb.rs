@@ -53,14 +53,14 @@ impl TMDBClient {
         {
             let mut cache = self.cache.lock().unwrap();
             if let Some(cached_response) = cache.get(&cache_key) {
-                tracing::info!("cache hit for {}", cache_key);
+                tracing::debug!("cache hit for {}", cache_key);
                 return Ok(serde_json::from_str(cached_response)?);
             }
         }
 
         self.wait_for_rate_limit().await;
 
-        tracing::info!("cache miss for {}", cache_key);
+        tracing::debug!("cache miss for {}", cache_key);
         let res = self.client.get(url).send().await?.error_for_status()?;
         let json_text = res.text().await?;
 
@@ -106,12 +106,28 @@ impl TMDBClient {
         self.get("/search/tv", &params).await
     }
 
-    pub async fn get_movie_details(&self, movie_id: i64) -> Result<MovieDetails> {
-        self.get(&format!("/movie/{}", movie_id), &[]).await
+    pub async fn get_movie_details(
+        &self,
+        movie_id: i64,
+        with_external_ids: bool,
+    ) -> Result<MovieDetails> {
+        let mut params = vec![];
+        if with_external_ids {
+            params.push(("append_to_response", "external_ids"));
+        }
+        self.get(&format!("/movie/{}", movie_id), &params).await
     }
 
-    pub async fn get_tv_show_details(&self, tv_id: i64) -> Result<TvShowDetails> {
-        self.get(&format!("/tv/{}", tv_id), &[]).await
+    pub async fn get_tv_show_details(
+        &self,
+        tv_id: i64,
+        with_external_ids: bool,
+    ) -> Result<TvShowDetails> {
+        let mut params = vec![];
+        if with_external_ids {
+            params.push(("append_to_response", "external_ids"));
+        }
+        self.get(&format!("/tv/{}", tv_id), &params).await
     }
 
     pub async fn get_tv_season_details(
@@ -122,6 +138,11 @@ impl TMDBClient {
         self.get(&format!("/tv/{}/season/{}", tv_id, season_number), &[])
             .await
     }
+
+    pub async fn find_by_imdb_id(&self, imdb_id: &str) -> Result<FindResult> {
+        let params = vec![("external_source", "imdb_id")];
+        self.get(&format!("/find/{}", imdb_id), &params).await
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -130,10 +151,17 @@ pub struct SearchResponse<T> {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct FindResult {
+    pub movie_results: Vec<MovieSearchResult>,
+    pub tv_results: Vec<TvSearchResult>,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct MovieSearchResult {
     pub id: i64,
     pub title: String,
     pub release_date: Option<String>,
+    pub popularity: Option<f64>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -141,6 +169,7 @@ pub struct TvSearchResult {
     pub id: i64,
     pub name: String,
     pub first_air_date: Option<String>,
+    pub popularity: Option<f64>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -153,6 +182,7 @@ pub struct MovieDetails {
     pub vote_average: Option<f64>,
     pub poster_path: Option<String>,
     pub backdrop_path: Option<String>,
+    pub external_ids: Option<ExternalIds>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -166,7 +196,10 @@ pub struct TvShowDetails {
     pub vote_average: Option<f64>,
     pub poster_path: Option<String>,
     pub backdrop_path: Option<String>,
+    pub number_of_episodes: Option<i32>,
+    pub number_of_seasons: Option<i32>,
     pub seasons: Vec<TvSeason>,
+    pub external_ids: Option<ExternalIds>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -194,4 +227,11 @@ pub struct TvEpisode {
     pub vote_average: Option<f64>,
     pub still_path: Option<String>,
     pub air_date: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct ExternalIds {
+    pub imdb_id: Option<String>,
+    pub tvdb_id: Option<i64>,
+    pub wikidata_id: Option<String>,
 }
