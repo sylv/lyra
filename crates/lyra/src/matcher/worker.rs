@@ -1,6 +1,7 @@
 use crate::entities::media::{self, MediaType};
 use crate::entities::{file, media_connection};
-use crate::tmdb::{TMDB_IMAGE_BASE_URL, TMDBClient};
+use crate::matcher::matcher::{MatchResult, match_file_to_metadata};
+use crate::tmdb::{MovieDetails, TMDB_IMAGE_BASE_URL, TMDBClient, TvShowDetails};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
@@ -50,12 +51,34 @@ async fn process_file(
     file: &file::Model,
     tmdb_client: &TMDBClient,
 ) -> anyhow::Result<()> {
-    let metadata = torrent_name_parser::Metadata::from(&file.key)?;
+    let matched = match_file_to_metadata(tmdb_client, &file.key).await?;
 
-    if metadata.is_show() {
-        process_show(pool, &file.key, file.id, &metadata, tmdb_client).await?;
-    } else {
-        process_movie(pool, &file.key, file.id, &metadata, tmdb_client).await?;
+    match matched {
+        Some(MatchResult::Movie(movie)) => {
+            tracing::debug!(
+                "matched '{}' to movie '{}' ({})",
+                file.key,
+                movie.title,
+                movie.id
+            );
+            process_movie(pool, file.id, movie).await?;
+        }
+        Some(MatchResult::Series { show, parsed }) => {
+            tracing::debug!(
+                "matched '{}' to series '{}' ({})",
+                file.key,
+                show.name,
+                show.id
+            );
+            let season = parsed
+                .season_number
+                .expect("series should have a season number");
+            let episodes = parsed.episodes;
+            process_show(pool, file.id, show, season, episodes, tmdb_client).await?;
+        }
+        None => {
+            warn!("no match found for '{}'", file.key);
+        }
     }
 
     Ok(())
@@ -63,32 +86,9 @@ async fn process_file(
 
 async fn process_movie(
     pool: &DatabaseConnection,
-    file_key: &str,
     file_id: i64,
-    metadata: &torrent_name_parser::Metadata,
-    tmdb_client: &TMDBClient,
+    movie_details: MovieDetails,
 ) -> anyhow::Result<()> {
-    let search_results = tmdb_client
-        .search_movie(
-            metadata.title(),
-            metadata.year().map(|y| y.to_string()).as_deref(),
-        )
-        .await?;
-
-    let Some(movie_result) = search_results.results.first() else {
-        warn!("no movie results found for '{}'", metadata.title());
-        return Ok(());
-    };
-
-    tracing::info!(
-        "matched file '{}' to movie '{} ({})'",
-        file_key,
-        movie_result.title,
-        movie_result.id
-    );
-
-    let movie_details = tmdb_client.get_movie_details(movie_result.id).await?;
-
     let release_date = movie_details
         .release_date
         .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
@@ -101,10 +101,17 @@ async fn process_movie(
         .backdrop_path
         .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
 
+    let imdb_id = movie_details
+        .external_ids
+        .as_ref()
+        .and_then(|ids| ids.imdb_id.as_ref())
+        .map(|id| id.to_string());
+
     let media = media::ActiveModel {
         media_type: Set(MediaType::Movie),
         tmdb_parent_id: Set(movie_details.id),
         tmdb_item_id: Set(movie_details.id),
+        imdb_parent_id: Set(imdb_id),
         name: Set(movie_details.title),
         description: Set(movie_details.overview),
         rating: Set(movie_details.vote_average),
@@ -144,70 +151,12 @@ async fn process_movie(
 
 async fn process_show(
     pool: &DatabaseConnection,
-    file_key: &str,
     file_id: i64,
-    metadata: &torrent_name_parser::Metadata,
+    show_details: TvShowDetails,
+    season_number: i32,
+    episodes: Vec<i32>,
     tmdb_client: &TMDBClient,
 ) -> anyhow::Result<()> {
-    let search_results = tmdb_client
-        .search_tv(
-            metadata.title(),
-            metadata.year().map(|y| y.to_string()).as_deref(),
-        )
-        .await?;
-
-    let Some(season_number) = metadata.season() else {
-        return Ok(());
-    };
-    let season_number_i64 = season_number as i64;
-
-    // Find a show result that has the required season number
-    let mut show_result = None;
-    let mut show_details = None;
-
-    for result in &search_results.results {
-        let details = tmdb_client.get_tv_show_details(result.id).await?;
-
-        // Check if this show has the required season number
-        if details
-            .seasons
-            .iter()
-            .any(|s| s.season_number == season_number_i64)
-        {
-            show_result = Some(result);
-            show_details = Some(details);
-            break;
-        } else {
-            tracing::debug!(
-                "skipping show '{}' ({}) - only has {} seasons, but file requires season {}",
-                result.name,
-                result.id,
-                details.seasons.len(),
-                season_number_i64
-            );
-        }
-    }
-
-    let (show_result, show_details) = match (show_result, show_details) {
-        (Some(result), Some(details)) => (result, details),
-        _ => {
-            warn!(
-                "no show results found for '{}' with season {}",
-                metadata.title(),
-                season_number_i64
-            );
-            return Ok(());
-        }
-    };
-
-    tracing::info!(
-        "matched file '{}' to show '{} ({})' with season {}",
-        file_key,
-        show_result.name,
-        show_result.id,
-        season_number_i64
-    );
-
     let start_date = show_details
         .first_air_date
         .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
@@ -218,14 +167,6 @@ async fn process_show(
         .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
         .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
 
-    // // Create or update the show
-    // let mut show = UpsertMedia::new(show_details.name, MediaType::Show);
-    // show.description = show_details.overview;
-    // show.rating = show_details.vote_average;
-    // show.start_date = start_date;
-    // show.tmdb_parent_id = Some(show_details.id);
-    // show.tmdb_item_id = Some(show_details.id);
-
     let poster_url = show_details
         .poster_path
         .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
@@ -233,10 +174,17 @@ async fn process_show(
         .backdrop_path
         .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
 
+    let imdb_id = show_details
+        .external_ids
+        .as_ref()
+        .and_then(|ids| ids.imdb_id.as_ref())
+        .map(|id| id.to_string());
+
     let mut show = media::ActiveModel {
         media_type: Set(MediaType::Show),
         tmdb_parent_id: Set(show_details.id),
         tmdb_item_id: Set(show_details.id),
+        imdb_parent_id: Set(imdb_id),
         name: Set(show_details.name),
         description: Set(show_details.overview),
         rating: Set(show_details.vote_average),
@@ -270,34 +218,24 @@ async fn process_show(
         .exec_with_returning(pool)
         .await?;
 
-    let season_details = tmdb_client
-        .get_tv_season_details(show_details.id, season_number_i64)
-        .await?;
+    let season_details = match tmdb_client
+        .get_tv_season_details(show_details.id, season_number as i64)
+        .await
+    {
+        Ok(details) => details,
+        Err(e) => {
+            // todo: this is to handle tmdb season/episode misalignment (eg, imdb lists dandadan as having 2 seasons but tmdb defaults to showing 1)
+            // we should handle 404 explicitly, and in the future still import it somehow
+            warn!(
+                "failed to get season {} details for show {}: {}",
+                season_number, show_details.id, e
+            );
+            return Ok(());
+        }
+    };
 
     // insert all episodes of this season, not just the ones we have files for
     for episode_details in season_details.episodes {
-        // let mut episode = UpsertMedia::new(episode_details.name.clone(), MediaType::Episode);
-        // let release_date = episode_details
-        //     .air_date
-        //     .as_ref()
-        //     .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
-        //     .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
-
-        // episode.start_date = release_date;
-
-        // episode.description = episode_details.overview.clone();
-        // episode.parent_id = Some(show.id);
-        // episode.season_number = Some(season_number_i64);
-        // episode.episode_number = Some(episode_details.episode_number);
-        // episode.runtime_minutes = episode_details.runtime;
-        // episode.rating = episode_details.vote_average;
-        // episode.tmdb_parent_id = Some(show_details.id);
-        // episode.tmdb_item_id = Some(episode_details.id);
-        // episode.thumbnail_url = episode_details
-        //     .still_path
-        //     .as_ref()
-        //     .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
-
         let release_date = episode_details
             .air_date
             .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
@@ -318,7 +256,7 @@ async fn process_show(
             start_date: Set(release_date),
             thumbnail_url: Set(thumbnail_url),
             parent_id: Set(Some(show.id)),
-            season_number: Set(Some(season_number_i64)),
+            season_number: Set(Some(season_number as i64)),
             episode_number: Set(Some(episode_details.episode_number)),
             runtime_minutes: Set(episode_details.runtime),
             ..Default::default()
@@ -342,10 +280,7 @@ async fn process_show(
             .await?;
 
         // Connect the file to the episode if this episode is in the file
-        if metadata
-            .episodes()
-            .contains(&(episode_details.episode_number as i32))
-        {
+        if episodes.contains(&(episode_details.episode_number as i32)) {
             let connection = media_connection::ActiveModel {
                 media_id: Set(episode.id),
                 file_id: Set(file_id),
