@@ -18,10 +18,11 @@ export const getPathForMedia = (mediaRaw: FragmentOf<typeof GetPathForMediaFrag>
 		case "MOVIE":
 			return `/movie/${media.id}`;
 		case "EPISODE":
-			if (media.seasonNumber == null || media.episodeNumber == null) {
-				return `/series/${media.parentId}`;
-			}
+			// if (media.seasonNumber == null || media.episodeNumber == null) {
+			// 	return `/series/${media.parentId}`;
+			// }
 
-			return `/series/${media.parentId}/season/${media.seasonNumber}/episode/${media.episodeNumber}`;
+			// return `/series/${media.parentId}/season/${media.seasonNumber}/episode/${media.episodeNumber}`;
+			return `/series/${media.parentId}`;
 	}
 };
