@@ -3,8 +3,7 @@ import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
 import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 
-const BASE_CLASSES =
-	"rounded-lg from-zinc-800 to-zinc-900 bg-gradient-to-br shrink-0";
+const BASE_CLASSES = "rounded-lg bg-zinc-700/30 shrink-0 aspect-[16/9] object-cover select-none";
 
 interface ThumbnailProps {
 	imageUrl: string | null | undefined;
@@ -12,11 +11,7 @@ interface ThumbnailProps {
 	className?: string;
 }
 
-export const Thumbnail: FC<ThumbnailProps> = ({
-	imageUrl,
-	alt,
-	className = "h-38",
-}) => {
+export const Thumbnail: FC<ThumbnailProps> = ({ imageUrl, alt, className = "h-38" }) => {
 	if (!imageUrl) {
 		return (
 			<div

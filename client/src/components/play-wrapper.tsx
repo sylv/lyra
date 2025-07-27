@@ -60,7 +60,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, media: mediaRaw })
 				</Fragment>
 			)}
 			{!media.defaultConnection && (
-				<div className="absolute top-0 left-0 w-full h-full flex items-center justify-center gap-2 p-3 bg-black/60">
+				<div className="absolute top-0 left-0 w-full h-full flex items-center justify-center gap-2 p-3 bg-black/60 select-none">
 					<FileWarningIcon className="h-6 w-6 text-orange-500" />
 					<p className="text-sm font-semibold text-orange-100">Unavailable</p>
 				</div>
