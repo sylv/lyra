@@ -43,7 +43,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef, showSea
 		<div className="group flex gap-4 p-4 hover:bg-zinc-800/10 rounded-lg transition-colors border border-zinc-700/40">
 			<div className="relative flex-shrink-0 rounded-md overflow-hidden">
 				<PlayWrapper media={episode}>
-					<Thumbnail imageUrl={episode.thumbnailUrl} alt={episode.name} className="aspect-[16/9] h-36 object-cover" />
+					<Thumbnail imageUrl={episode.thumbnailUrl} alt={episode.name} className="h-36 " />
 				</PlayWrapper>
 			</div>
 			<div className="flex-1 min-w-0">
