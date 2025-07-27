@@ -46,10 +46,6 @@ type Media {
 	(this is what should be played if the user hits "play" on this media item)
 	"""
 	defaultConnection: File
-	"""
-	Gets file connections that are directly connected to this media item (excluding child connections)
-	"""
-	directConnections: [File!]!
 	seasons: [Int!]!
 	parent: Media
 	watchState: WatchState

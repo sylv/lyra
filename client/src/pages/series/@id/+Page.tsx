@@ -1,12 +1,13 @@
 import { ArrowDownNarrowWide, ChevronDown } from "lucide-react";
-import { useState } from "react";
 import { usePageContext } from "vike-react/usePageContext";
-import { EpisodeCard, EpisodeCardFrag } from "../../../components/episode-card";
-import { FilterButton } from "../../../components/filter-button";
-import { MediaHeader, MediaHeaderFrag } from "../../../components/media-header";
+import { EpisodeCard, EpisodeCardFrag, EpisodeCardSkeleton } from "../../../components/episode-card";
+import { FilterButton, FilterButtonSkeleton } from "../../../components/filter-button";
+import { MediaHeader, MediaHeaderFrag, MediaHeaderSkeleton } from "../../../components/media-header";
 import { graphql } from "gql.tada";
-import { useQuery, useSuspenseQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client";
 import { useQueryState } from "../../../hooks/use-query-state";
+import { Fragment } from "react/jsx-runtime";
+import { Skeleton } from "../../../components/skeleton";
 
 const Query = graphql(
 	`
@@ -41,21 +42,44 @@ const EpisodesQuery = graphql(
 export default function Page() {
 	const pageContext = usePageContext();
 	const mediaId = +pageContext.routeParams.id;
-	const { data } = useSuspenseQuery(Query, {
+	const { data, loading } = useQuery(Query, {
 		variables: {
 			mediaId: mediaId,
 		},
 	});
 
 	const [selectedSeasons, setSelectedSeasons] = useQueryState<number[]>("seasons", [1]);
-	const isAllSeasons = selectedSeasons.length === data.media.seasons.length;
 
-	const { data: episodes } = useQuery(EpisodesQuery, {
+	const { data: episodes, loading: episodesLoading } = useQuery(EpisodesQuery, {
 		variables: {
 			showId: mediaId,
 			seasonNumbers: selectedSeasons,
 		},
 	});
+
+	if (loading || !data) {
+		return (
+			<Fragment>
+				<MediaHeaderSkeleton />
+				<div className="container mx-auto">
+					<div className="flex gap-2 py-4 flex-wrap">
+						{Array.from({ length: 5 }).map((_, i) => (
+							<FilterButtonSkeleton key={`filter-skeleton-${i}`} />
+						))}
+					</div>
+					<div className="pb-8">
+						<div className="space-y-2">
+							{Array.from({ length: 6 }).map((_, i) => (
+								<EpisodeCardSkeleton key={`episode-skeleton-${i}`} />
+							))}
+						</div>
+					</div>
+				</div>
+			</Fragment>
+		);
+	}
+
+	const isAllSeasons = selectedSeasons.length === data.media.seasons.length;
 
 	const sortedSeasons = [...data.media.seasons].sort((a, b) => a - b);
 	const sortedEpisodes = [...(episodes?.mediaList ?? [])].sort((a, b) => {
@@ -71,7 +95,7 @@ export default function Page() {
 	});
 
 	return (
-		<>
+		<Fragment>
 			<MediaHeader media={data.media} />
 			<div className="container mx-auto">
 				<div className="flex gap-2 py-4 flex-wrap">
@@ -112,7 +136,13 @@ export default function Page() {
 					</FilterButton>
 				</div>
 				<div className="pb-8">
-					{sortedEpisodes[0] ? (
+					{episodesLoading ? (
+						<div className="space-y-2">
+							{Array.from({ length: 6 }).map((_, i) => (
+								<EpisodeCardSkeleton key={`episode-loading-${i}`} />
+							))}
+						</div>
+					) : sortedEpisodes[0] ? (
 						<div className="space-y-2">
 							{sortedEpisodes.map((episode) => (
 								<EpisodeCard key={episode.id} episode={episode} showSeasonInfo={selectedSeasons.length > 1} />
@@ -125,6 +155,6 @@ export default function Page() {
 					)}
 				</div>
 			</div>
-		</>
+		</Fragment>
 	);
 }

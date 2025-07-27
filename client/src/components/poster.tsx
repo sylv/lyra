@@ -3,8 +3,7 @@ import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
 import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 
-const BASE_CLASSES =
-	"rounded-lg aspect-[2/3] from-zinc-800 to-zinc-900 bg-gradient-to-br shrink-0";
+const BASE_CLASSES = "rounded-lg aspect-[2/3] from-zinc-800 to-zinc-900 bg-gradient-to-br shrink-0";
 
 interface PosterProps {
 	imageUrl: string | null | undefined;
@@ -12,17 +11,13 @@ interface PosterProps {
 	className?: string;
 }
 
-export const Poster: FC<PosterProps> = ({
-	imageUrl,
-	alt,
-	className = "h-64",
-}) => {
+export const Poster: FC<PosterProps> = ({ imageUrl, alt, className = "h-64" }) => {
 	if (!imageUrl) {
 		return (
 			<div
 				className={clsx(
 					BASE_CLASSES,
-					"flex flex-col justify-center items-center gap-2 text-zinc-500 p-4 overflow-hidden shrink-0",
+					"flex flex-col justify-center items-center gap-2 text-zinc-500 p-4 overflow-hidden",
 					className,
 				)}
 			>
