@@ -1,6 +1,7 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { useEffect, useMemo, useRef, useState, type FC } from "react";
 import { MediaPoster, MediaPosterFrag } from "./media-poster";
+import { Skeleton } from "./skeleton";
 
 export const MediaListFrag = graphql(
 	`
@@ -13,14 +14,15 @@ export const MediaListFrag = graphql(
 );
 
 interface MediaListProps {
-	media: FragmentOf<typeof MediaListFrag>[];
+	media?: FragmentOf<typeof MediaListFrag>[];
+	loading: boolean;
 }
 
 const POSTER_WIDTH = 185;
 const GAP_SIZE = 28;
 
-export const MediaList: FC<MediaListProps> = ({ media: mediaRaw }) => {
-	const media = readFragment(MediaListFrag, mediaRaw);
+export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading }) => {
+	const media = mediaRaw ? readFragment(MediaListFrag, mediaRaw) : [];
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [posterWidth, setPosterWidth] = useState(0);
 	const [postersPerRow, setPostersPerRow] = useState(0);
@@ -86,6 +88,28 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw }) => {
 		return newRows;
 	}, [media, postersPerRow]);
 
+	if (!media || loading) {
+		return (
+			<div ref={containerRef} className="w-full">
+				{Array.from({ length: 6 }).map((_, index) => (
+					<div key={`skeleton-row-${index}`} className="flex mb-6" style={{ gap: GAP_SIZE }}>
+						{Array.from({ length: postersPerRow }).map((_, index) => (
+							<div key={`skeleton-${index}`} className="flex flex-col gap-2">
+								<Skeleton
+									className="aspect-[2/3] w-full rounded-md"
+									style={{
+										width: posterWidth,
+									}}
+								/>
+								<Skeleton className="h-2 w-1/2 rounded-lg" />
+							</div>
+						))}
+					</div>
+				))}
+			</div>
+		);
+	}
+
 	// This initial render with opacity-0 is a trick to measure the container's width
 	// without causing a visible layout shift before the real content is rendered.
 	if (posterWidth === 0 || postersPerRow === 0) {
@@ -93,7 +117,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw }) => {
 	}
 
 	return (
-		<div ref={containerRef} className="w-full transition-opacity duration-300 ease-in-out opacity-100">
+		<div ref={containerRef} className="w-full">
 			{rows.map((row, index) => (
 				<div key={`row-${index}-${row.length}`} className="flex mb-6" style={{ gap: GAP_SIZE }}>
 					{row.map((mediaItem) => (

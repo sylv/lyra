@@ -24,6 +24,7 @@ impl media::Model {
                 .join(JoinType::LeftJoin, file::Relation::MediaConnection.def())
                 .join(JoinType::LeftJoin, media_connection::Relation::Media.def())
                 .filter(media::Column::ParentId.eq(self.id))
+                .filter(file::Column::UnavailableSince.is_null())
                 .order_by_asc(media::Column::SeasonNumber)
                 .order_by_asc(media::Column::EpisodeNumber)
                 .limit(1)
@@ -41,21 +42,6 @@ impl media::Model {
 
             Ok(result)
         }
-    }
-
-    /// Gets file connections that are directly connected to this media item (excluding child connections)
-    pub async fn direct_connections(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Vec<file::Model>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let result = file::Entity::find()
-            .join(JoinType::LeftJoin, media::Relation::MediaConnection.def())
-            .filter(media_connection::Column::MediaId.eq(self.id))
-            .all(pool)
-            .await?;
-
-        Ok(result)
     }
 
     pub async fn seasons(&self, ctx: &Context<'_>) -> Result<Vec<i64>, sea_orm::DbErr> {

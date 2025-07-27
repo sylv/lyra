@@ -1,9 +1,10 @@
+import { graphql, readFragment, type FragmentOf } from "gql.tada";
+import type React from "react";
 import type { FC } from "react";
 import { getPathForMedia, GetPathForMediaFrag } from "../lib/getPathForMedia";
-import { Poster } from "./poster";
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
-import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
 import { cn } from "../lib/utils";
+import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
+import { Poster } from "./poster";
 
 interface MediaPosterProps {
 	media: FragmentOf<typeof MediaPosterFrag>;

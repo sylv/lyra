@@ -18,6 +18,9 @@
             },
             "style": {
                 "noNonNullAssertion": "off"
+            },
+            "suspicious": {
+                "noArrayIndexKey": "off"
             }
         }
     }

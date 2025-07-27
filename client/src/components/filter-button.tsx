@@ -1,5 +1,6 @@
 import type { FC, ReactNode } from "react";
 import { cn } from "../lib/utils";
+import { Skeleton } from "./skeleton";
 
 interface FilterButtonProps {
 	children: ReactNode;
@@ -7,20 +8,23 @@ interface FilterButtonProps {
 	onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
-export const FilterButton: FC<FilterButtonProps> = ({
-	children,
-	onClick,
-	active = false,
-}) => {
+export const FilterButton: FC<FilterButtonProps> = ({ children, onClick, active = false }) => {
 	return (
 		<button
-			className={cn(`flex rounded-lg px-4 py-0.5 text-sm gap-2 items-center transition-colors border border-zinc-700/50 text-zinc-200`, active ? 'bg-zinc-200/15' : 'hover:bg-zinc-200/10')}
+			className={cn(
+				`flex rounded-lg px-4 py-0.5 text-sm gap-2 items-center transition-colors border border-zinc-700/50 text-zinc-200`,
+				active ? "bg-zinc-200/15" : "hover:bg-zinc-200/10",
+			)}
 			type="button"
 			onClick={onClick}
 		>
 			{children}
 		</button>
 	);
+};
+
+export const FilterButtonSkeleton: FC = () => {
+	return <Skeleton className="h-6 w-16 rounded-lg" />;
 };
 
 // todo: "FilterSelect" component that drops down and, if an option is selected, expands to show an "X" on the right side to remove it.

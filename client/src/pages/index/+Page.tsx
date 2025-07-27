@@ -43,7 +43,7 @@ export default function Page() {
 		[debouncedSearch, selectedMediaTypes],
 	);
 
-	const { data } = useQuery(Query, {
+	const { data, loading } = useQuery(Query, {
 		variables: { filter },
 	});
 
@@ -78,7 +78,9 @@ export default function Page() {
 					</FilterButton>
 				</div>
 			</div>
-			<div className="m-4 flex flex-wrap gap-4">{data && <MediaList media={data.mediaList} />}</div>
+			<div className="m-4 flex flex-wrap gap-4">
+				<MediaList media={data?.mediaList} loading={loading} />
+			</div>
 		</div>
 	);
 }

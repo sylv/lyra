@@ -3,6 +3,7 @@ import { Clock } from "lucide-react";
 import type { FC } from "react";
 import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
 import { Thumbnail } from "./thumbnail";
+import { Skeleton } from "./skeleton";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -59,6 +60,30 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef, showSea
 					</div>
 				)}
 				<p className="text-sm text-zinc-300 line-clamp-3">{episode.description || "No description available"}</p>
+			</div>
+		</div>
+	);
+};
+
+export const EpisodeCardSkeleton: FC = () => {
+	return (
+		<div className="group flex gap-4 p-4 hover:bg-zinc-800/10 rounded-lg transition-colors border border-zinc-700/40">
+			<div className="relative flex-shrink-0 rounded-md overflow-hidden">
+				<Skeleton className="aspect-[16/9] h-36 rounded-md" />
+			</div>
+			<div className="flex-1 min-w-0">
+				<div className="mb-1">
+					<Skeleton className="h-5 w-3/4" />
+				</div>
+				<div className="flex items-center gap-1 mb-2">
+					<Skeleton className="w-4 h-4 rounded-sm" />
+					<Skeleton className="h-4 w-12" />
+				</div>
+				<div className="space-y-1">
+					<Skeleton className="h-4 w-full" />
+					<Skeleton className="h-4 w-full" />
+					<Skeleton className="h-4 w-2/3" />
+				</div>
 			</div>
 		</div>
 	);

@@ -1,7 +1,7 @@
-import { usePageContext } from "vike-react/usePageContext";
-import { MediaHeader, MediaHeaderFrag } from "../../../components/media-header";
+import { useQuery } from "@apollo/client";
 import { graphql } from "gql.tada";
-import { useSuspenseQuery } from "@apollo/client";
+import { usePageContext } from "vike-react/usePageContext";
+import { MediaHeader, MediaHeaderFrag, MediaHeaderSkeleton } from "../../../components/media-header";
 
 const Query = graphql(
 	`
@@ -17,11 +17,15 @@ const Query = graphql(
 export default function Page() {
 	const pageContext = usePageContext();
 	const mediaId = +pageContext.routeParams.id;
-	const { data } = useSuspenseQuery(Query, {
+	const { loading, data } = useQuery(Query, {
 		variables: {
 			mediaId: mediaId,
 		},
 	});
+
+	if (loading || !data) {
+		return <MediaHeaderSkeleton />;
+	}
 
 	return <MediaHeader media={data.media} />;
 }

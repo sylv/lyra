@@ -31,13 +31,13 @@ export const PlayWrapperFrag = graphql(
 export const PlayWrapper: FC<PlayWrapperProps> = ({ children, media: mediaRaw }) => {
 	const media = readFragment(PlayWrapperFrag, mediaRaw);
 	return (
-		<div className="relative shrink rounded-lg overflow-hidden group">
+		<div className="relative shrink-0 rounded-lg overflow-hidden group/play">
 			{media.defaultConnection && (
 				<button
 					type="button"
 					className={cn(
 						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 opacity-0 cursor-pointer rounded-lg",
-						"group-hover:opacity-100 group-hover:border-1 border-white/50 transition-all duration-100",
+						"group-hover/play:opacity-100 group-hover/play:border-1 border-white/50 transition-all duration-100",
 					)}
 					onClick={() => {
 						const path = getPathForMedia(media);
