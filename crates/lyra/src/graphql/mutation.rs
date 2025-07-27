@@ -1,5 +1,5 @@
 use crate::entities::users::Permissions;
-use crate::entities::{invites, users};
+use crate::entities::{invites, users, watch_state};
 use crate::{PermissionGuard, RequestAuth};
 use argon2::{
     Argon2,
@@ -8,6 +8,7 @@ use argon2::{
 use async_graphql::{Context, Object};
 use chrono::Utc;
 use rand::RngCore;
+use sea_orm::sea_query::OnConflict;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 use sea_orm::{PaginatorTrait, Set};
 
@@ -126,5 +127,54 @@ impl Mutation {
         .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
         Ok(invite)
+    }
+
+    async fn update_watch_state(
+        &self,
+        ctx: &Context<'_>,
+        media_id: i64,
+        progress_percentage: f32,
+        user_id: Option<String>,
+    ) -> Result<watch_state::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+
+        let user_id = if let Some(user_id) = user_id {
+            if !auth.has_permission(Permissions::EDIT_OTHERS_WATCH_STATE) {
+                return Err(async_graphql::Error::new(
+                    "Lacking permission to edit watch state for other users".to_string(),
+                ));
+            }
+
+            user_id
+        } else {
+            let user = auth
+                .user
+                .as_ref()
+                .ok_or_else(|| async_graphql::Error::new("No user in context".to_string()))?;
+
+            user.id.clone()
+        };
+
+        let watch_state = watch_state::Entity::insert(watch_state::ActiveModel {
+            media_id: Set(media_id),
+            user_id: Set(user_id),
+            progress_percentage: Set(progress_percentage),
+            updated_at: Set(Utc::now().timestamp()),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::columns([watch_state::Column::MediaId, watch_state::Column::UserId])
+                .update_columns([
+                    watch_state::Column::ProgressPercentage,
+                    watch_state::Column::UpdatedAt,
+                ])
+                .to_owned(),
+        )
+        .exec_with_returning(pool)
+        .await
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        Ok(watch_state)
     }
 }

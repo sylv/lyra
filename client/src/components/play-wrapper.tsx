@@ -1,6 +1,6 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { FileWarningIcon, PlayIcon } from "lucide-react";
-import type { FC, ReactNode } from "react";
+import { Fragment, type FC, type ReactNode } from "react";
 import { navigate } from "vike/client/router";
 import { getPathForMedia, GetPathForMediaFrag } from "../lib/getPathForMedia";
 import { setPlayerMedia } from "./player/player-state";
@@ -19,6 +19,9 @@ export const PlayWrapperFrag = graphql(
 		...GetPathForMedia
 		defaultConnection {
 			id
+		}
+		watchState {
+			progressPercentage
 		}
 	}
 `,
@@ -44,6 +47,17 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, media: mediaRaw })
 				>
 					<PlayIcon className="h-10 w-10 text-white" />
 				</button>
+			)}
+			{media.watchState && (
+				<Fragment>
+					<div
+						className="z-10 absolute bottom-0 left-0 bg-white/80 h-1"
+						style={{
+							width: `${media.watchState.progressPercentage * 100}%`,
+						}}
+					/>
+					<div className="z-10 absolute bottom-0 left-0 right-0 bg-white/20 h-1" />
+				</Fragment>
 			)}
 			{!media.defaultConnection && (
 				<div className="absolute top-0 left-0 w-full h-full flex items-center justify-center gap-2 p-3 bg-black/60">

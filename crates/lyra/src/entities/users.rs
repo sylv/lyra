@@ -38,5 +38,6 @@ bitflags! {
         const ADMIN = 1 << 0;
         const CREATE_INVITE = 1 << 1;
         const CREATE_USER = 1 << 2;
+        const EDIT_OTHERS_WATCH_STATE = 1 << 3;
     }
 }

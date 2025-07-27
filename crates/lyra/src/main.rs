@@ -68,6 +68,12 @@ impl RequestAuth {
     pub fn has_permission(&self, permission: Permissions) -> bool {
         self.permissions.contains(permission)
     }
+
+    pub fn get_user_or_err(&self) -> Result<&users::Model, async_graphql::Error> {
+        self.user
+            .as_ref()
+            .ok_or_else(|| async_graphql::Error::new("No user in context".to_string()))
+    }
 }
 
 #[derive(Clone, FromRef)]

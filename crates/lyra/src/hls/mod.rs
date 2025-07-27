@@ -22,7 +22,7 @@ use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
 use tower_http::cors::CorsLayer;
 
-pub const TARGET_DURATION: f64 = 5.0;
+pub const TARGET_DURATION: f64 = 8.0;
 
 pub mod profiles;
 pub mod segmenter;
