@@ -1,8 +1,11 @@
-import type { FC, ReactNode } from "react";
-import { FileWarningIcon, PlayIcon } from "lucide-react";
-import { setPlayerMedia } from "./player/player-state";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
+import { FileWarningIcon, PlayIcon } from "lucide-react";
+import type { FC, ReactNode } from "react";
+import { navigate } from "vike/client/router";
+import { getPathForMedia, GetPathForMediaFrag } from "../lib/getPathForMedia";
+import { setPlayerMedia } from "./player/player-state";
 import { PlayerFrag } from "./player/player-wrapper";
+import { cn } from "../lib/utils";
 
 interface PlayWrapperProps {
 	media: FragmentOf<typeof PlayWrapperFrag>;
@@ -13,24 +16,30 @@ export const PlayWrapperFrag = graphql(
 	`
 	fragment PlayWrapper on Media {
 		...Player
+		...GetPathForMedia
 		defaultConnection {
 			id
 		}
 	}
 `,
-	[PlayerFrag],
+	[PlayerFrag, GetPathForMediaFrag],
 );
 
 export const PlayWrapper: FC<PlayWrapperProps> = ({ children, media: mediaRaw }) => {
 	const media = readFragment(PlayWrapperFrag, mediaRaw);
 	return (
-		<div className="relative shrink-0 rounded-lg overflow-hidden group">
+		<div className="relative shrink rounded-lg overflow-hidden group">
 			{media.defaultConnection && (
 				<button
 					type="button"
-					className="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 cursor-pointer"
+					className={cn(
+						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 opacity-0 cursor-pointer rounded-lg",
+						"group-hover:opacity-100 group-hover:border-1 border-white/50 transition-all duration-100",
+					)}
 					onClick={() => {
+						const path = getPathForMedia(media);
 						setPlayerMedia(media);
+						navigate(path);
 					}}
 				>
 					<PlayIcon className="h-10 w-10 text-white" />
