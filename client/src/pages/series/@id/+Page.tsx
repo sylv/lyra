@@ -6,6 +6,7 @@ import { FilterButton } from "../../../components/filter-button";
 import { MediaHeader, MediaHeaderFrag } from "../../../components/media-header";
 import { graphql } from "gql.tada";
 import { useQuery, useSuspenseQuery } from "@apollo/client";
+import { useQueryState } from "../../../hooks/use-query-state";
 
 const Query = graphql(
 	`
@@ -46,7 +47,7 @@ export default function Page() {
 		},
 	});
 
-	const [selectedSeasons, setSelectedSeasons] = useState<number[]>([1]);
+	const [selectedSeasons, setSelectedSeasons] = useQueryState<number[]>("seasons", [1]);
 	const isAllSeasons = selectedSeasons.length === data.media.seasons.length;
 
 	const { data: episodes } = useQuery(EpisodesQuery, {
@@ -92,13 +93,11 @@ export default function Page() {
 							active={!isAllSeasons && selectedSeasons.includes(season)}
 							onClick={(event) => {
 								if (event.ctrlKey) {
-									setSelectedSeasons((prev) => {
-										if (prev.includes(season)) {
-											return prev.filter((s) => s !== season);
-										}
+									const newSeasons = selectedSeasons.includes(season)
+										? selectedSeasons.filter((s) => s !== season)
+										: [...selectedSeasons, season];
 
-										return [...prev, season];
-									});
+									setSelectedSeasons(newSeasons);
 								} else {
 									setSelectedSeasons([season]);
 								}

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type FC } from "react";
+import { useEffect, useRef, useState, type FC } from "react";
 import { useStore } from "zustand/react";
 import defaultDynamicBackground from "../../assets/default-dynamic-background.svg";
 import { backgroundStore } from "../hooks/use-background";

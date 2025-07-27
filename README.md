@@ -31,7 +31,6 @@
 - ffmpeg segmenter is inconsistent, seeking forward then back will cause the player to freeze/skip a few seconds
   - i dont think this is a keyframe issue
   - possibly related to how seeking is done and it being offset, especially toward the end of the file, because the hls muxer can split += 0.01s from the intended position
-- Auto-fullscreen on player open does not fullscreen the browser, only the player
 - Subtitle support
 - Chapter support
 - Support for hardware transcoding
@@ -48,7 +47,6 @@
   - Can probably only be done once switched to GraphQL
 - TMDb attribution
 - Segmenters are never cleaned up
-- Switch to GraphQL, things like poster loading are a pain as-is
 - Scanner improvements
   - Batch file inserts
   - Use concurrent folder scanning to improve network performance
@@ -59,7 +57,6 @@
   - There is no way to add new users
   - There is no way to use invite code
   - There is no way to create invites
-- Filters/search should be persisted in query params
 - Ffmpeg sometimes crashes and does not recover
 - The segmenters `JUMP_SIZE` and `BUFFER_SIZE` options should be determined by how long segments take to generate
 - Increasing the length of subtitle segments would make sense

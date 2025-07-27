@@ -1,27 +1,28 @@
+import { useQuery } from "@apollo/client";
 import { graphql } from "gql.tada";
 import { ArrowDownNarrowWide, ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { FilterButton } from "../../components/filter-button.jsx";
-import { MediaPoster, MediaPosterFrag } from "../../components/media-poster.jsx";
 import type { MediaFilter, MediaType } from "../../@generated/enums.js";
-import { useQuery } from "@apollo/client";
+import { FilterButton } from "../../components/filter-button.jsx";
+import { MediaList, MediaListFrag } from "../../components/media-list.jsx";
+import { useQueryState } from "../../hooks/use-query-state.js";
 
 const Query = graphql(
 	`
 	query GetAllMedia($filter: MediaFilter!) {
 		mediaList(filter: $filter) {
 			id
-			...MediaPoster
+			...MediaList
 		}
 	}
 `,
-	[MediaPosterFrag],
+	[MediaListFrag],
 );
 
 export default function Page() {
-	const [search, setSearch] = useState("");
-	const [debouncedSearch, setDebouncedSearch] = useState("");
-	const [selectedMediaTypes, setSelectedMediaTypes] = useState<MediaType[]>([]);
+	const [search, setSearch] = useQueryState("search", "");
+	const [selectedMediaTypes, setSelectedMediaTypes] = useQueryState<MediaType[]>("mediaTypes", []);
+	const [debouncedSearch, setDebouncedSearch] = useState(search);
 
 	// debounce search input
 	useEffect(() => {
@@ -47,9 +48,11 @@ export default function Page() {
 	});
 
 	const handleMediaTypeToggle = (mediaType: MediaType) => {
-		setSelectedMediaTypes((prev) =>
-			prev.includes(mediaType) ? prev.filter((type) => type !== mediaType) : [...prev, mediaType],
-		);
+		const nextMediaTypes = selectedMediaTypes.includes(mediaType)
+			? selectedMediaTypes.filter((type) => type !== mediaType)
+			: [...selectedMediaTypes, mediaType];
+
+		setSelectedMediaTypes(nextMediaTypes);
 	};
 
 	return (
@@ -75,11 +78,7 @@ export default function Page() {
 					</FilterButton>
 				</div>
 			</div>
-			<div className="m-4 flex flex-wrap gap-4">
-				{data?.mediaList.map((item) => {
-					return <MediaPoster media={item} key={item.id} />;
-				})}
-			</div>
+			<div className="m-4 flex flex-wrap gap-4">{data && <MediaList media={data.mediaList} />}</div>
 		</div>
 	);
 }
