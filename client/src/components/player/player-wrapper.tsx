@@ -16,6 +16,10 @@ export const PlayerFrag = graphql(`
 		defaultConnection {
 			id
 		}
+		watchState {
+			progressPercentage
+			updatedAt
+		}
 	}
 `);
 

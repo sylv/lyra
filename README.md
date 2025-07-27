@@ -61,3 +61,5 @@
 - The segmenters `JUMP_SIZE` and `BUFFER_SIZE` options should be determined by how long segments take to generate
 - Increasing the length of subtitle segments would make sense
 - "fullscreen_on_play" persisted user option that determines if clicking play auto-fullscreens the player
+- Easy way to import watch states from plex and maybe jellyfin
+- Easy way to import/export watch states from/to a csv

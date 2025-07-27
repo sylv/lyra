@@ -58,7 +58,7 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 		<div className="bg-zinc-800/30 border-700/30 p-6 border-b">
 			<div className="flex gap-6 container mx-auto">
 				<PlayWrapper media={media}>
-					<Poster imageUrl={media.posterUrl} alt={media.name} />
+					<Poster imageUrl={media.posterUrl} alt={media.name} className="w-48" />
 				</PlayWrapper>
 				<div className="flex flex-col gap-2 justify-between">
 					<div className="flex flex-col gap-2">

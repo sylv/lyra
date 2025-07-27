@@ -52,6 +52,7 @@ type Media {
 	directConnections: [File!]!
 	seasons: [Int!]!
 	parent: Media
+	watchState: WatchState
 }
 
 input MediaFilter {
@@ -81,11 +82,20 @@ type Model {
 type Mutation {
 	signup(username: String!, password: String!, inviteCode: String): Model!
 	createInvite(permissions: Int!): Invite!
+	updateWatchState(mediaId: Int!, progressPercentage: Float!, userId: String): WatchState!
 }
 
 type Query {
 	mediaList(filter: MediaFilter!): [Media!]!
 	media(mediaId: Int!): Media!
+}
+
+type WatchState {
+	mediaId: Int!
+	userId: String!
+	progressPercentage: Float!
+	createdAt: Int!
+	updatedAt: Int!
 }
 
 """

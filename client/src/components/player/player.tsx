@@ -2,7 +2,8 @@
 /** biome-ignore-all lint/a11y/useSemanticElements: <explanation> */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
-import { readFragment, type FragmentOf } from "gql.tada";
+import { useMutation } from "@apollo/client";
+import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import Hls from "hls.js";
 import { ArrowLeft, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
@@ -21,6 +22,15 @@ import {
 import { PlayerFrag } from "./player-wrapper";
 
 const NUMBER_REGEX = /^\d$/;
+
+const UpdateWatchState = graphql(`
+	mutation UpdateWatchState($mediaId: Int!, $progressPercentage: Float!) {
+		updateWatchState(mediaId: $mediaId, progressPercentage: $progressPercentage) {
+			progressPercentage
+			updatedAt
+		}
+	}
+`);
 
 export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: mediaRef }) => {
 	const currentMedia = readFragment(PlayerFrag, mediaRef);
@@ -78,6 +88,52 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		videoRef.current.muted = isMuted;
 	}, [volume, isMuted]);
 
+	const [updateWatchState] = useMutation(UpdateWatchState);
+
+	// watch state handling
+	useEffect(() => {
+		if (!videoRef.current) return;
+		const video = videoRef.current;
+
+		const onVideoLoad = () => {
+			// load the watch state
+			// todo: prompt the user to see if they want to resume where they left off
+			if (currentMedia?.watchState) {
+				video.currentTime = currentMedia.watchState.progressPercentage * video.duration;
+			}
+		};
+
+		let lastUpdate = Date.now();
+		const onTimeUpdate = () => {
+			if (Date.now() - lastUpdate < 10_000) return;
+			lastUpdate = Date.now();
+			updateWatchState({
+				variables: {
+					mediaId: currentMedia.id,
+					progressPercentage: video.currentTime / video.duration,
+				},
+			}).catch((err) => {
+				console.error("failed to update watch state", err);
+			});
+		};
+
+		const onSeek = () => {
+			// on seek we don't want to "destroy" the watch state that already exists (eg, if the user seeks forward accidentally
+			// persisting that would be bad), so we reset the debounce timer forcing a ~10s delay in update
+			lastUpdate = Date.now();
+		};
+
+		video.addEventListener("timeupdate", onTimeUpdate);
+		video.addEventListener("loadedmetadata", onVideoLoad);
+		video.addEventListener("seeked", onSeek);
+
+		return () => {
+			video.removeEventListener("timeupdate", onTimeUpdate);
+			video.removeEventListener("loadedmetadata", onVideoLoad);
+			video.removeEventListener("seeked", onSeek);
+		};
+	}, [currentMedia?.id, videoRef]);
+
 	useEffect(() => {
 		if (!videoRef.current) return;
 
@@ -109,9 +165,9 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 
 		const handleLoadStart = () => setPlayerLoading(true);
 		const handleCanPlay = () => setPlayerLoading(false);
-		const handleLoadedData = () => setPlayerLoading(false);
 		const handleWaiting = () => setPlayerLoading(true);
 		const handlePlaying = () => setPlayerLoading(false);
+		const handleLoadedData = () => setPlayerLoading(false);
 
 		let lastUpdated = 0;
 		const debouncedUpdate = () => {
@@ -127,9 +183,9 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		videoRef.current.addEventListener("volumechange", updatePlayerData);
 		videoRef.current.addEventListener("loadstart", handleLoadStart);
 		videoRef.current.addEventListener("canplay", handleCanPlay);
-		videoRef.current.addEventListener("loadeddata", handleLoadedData);
 		videoRef.current.addEventListener("waiting", handleWaiting);
 		videoRef.current.addEventListener("playing", handlePlaying);
+		videoRef.current.addEventListener("loadeddata", handleLoadedData);
 
 		return () => {
 			const video = videoRef.current;

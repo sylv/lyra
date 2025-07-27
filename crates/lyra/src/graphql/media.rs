@@ -1,7 +1,10 @@
-use crate::entities::{
-    file,
-    media::{self, MediaType},
-    media_connection,
+use crate::{
+    RequestAuth,
+    entities::{
+        file,
+        media::{self, MediaType},
+        media_connection, watch_state,
+    },
 };
 use async_graphql::{ComplexObject, Context};
 use sea_orm::{JoinType, QueryOrder, QuerySelect, entity::prelude::*};
@@ -85,6 +88,28 @@ impl media::Model {
                     .await?;
 
                 Ok(parent)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub async fn watch_state(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<watch_state::Model>, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+
+        match self.media_type {
+            MediaType::Episode | MediaType::Movie => {
+                let pool = ctx.data_unchecked::<DatabaseConnection>();
+                let result = watch_state::Entity::find()
+                    .filter(watch_state::Column::MediaId.eq(self.id))
+                    .filter(watch_state::Column::UserId.eq(user.id.clone()))
+                    .one(pool)
+                    .await?;
+
+                Ok(result)
             }
             _ => Ok(None),
         }
