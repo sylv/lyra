@@ -26,6 +26,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::Mutex;
+use tokio::{signal, task::JoinHandle};
 
 mod auth;
 mod config;
@@ -135,12 +136,12 @@ async fn main() {
 
     let pool = DatabaseConnection::from(pool);
     let scanner_pool = pool.clone();
-    tokio::spawn(async move {
+    let scanner_handle = tokio::spawn(async move {
         scanner::start_scanner(scanner_pool).await;
     });
 
     let matcher_pool = pool.clone();
-    tokio::spawn(async move {
+    let matcher_handle = tokio::spawn(async move {
         matcher::worker::start_matcher(matcher_pool)
             .await
             .expect("matcher failed");
@@ -210,5 +211,39 @@ async fn main() {
         .await
         .unwrap();
 
-    axum::serve(listener, app).await.unwrap();
+    tracing::info!("Server starting on {}:{}", config.host, config.port);
+    tracing::info!("Press Ctrl+C to shutdown gracefully");
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(matcher_handle, scanner_handle))
+        .await
+        .unwrap();
+
+    tracing::info!("Server shutdown complete");
+}
+
+async fn shutdown_signal(matcher_handle: JoinHandle<()>, scanner_handle: JoinHandle<()>) {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    tokio::select! {
+        _ = matcher_handle => {},
+        _ = scanner_handle => {},
+        _ = ctrl_c => {
+            tracing::info!("Received Ctrl+C");
+        },
+        _ = terminate => {
+            tracing::info!("Received termination signal");
+        },
+    }
 }
