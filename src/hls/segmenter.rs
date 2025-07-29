@@ -146,7 +146,7 @@ impl FfmpegHandle {
         let mut handle = Command::new(ffmpeg_path)
             .args(ffmpeg_args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::inherit())
             .spawn()
             .unwrap();
 

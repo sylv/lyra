@@ -46,9 +46,29 @@ fn get_platform_url() -> Result<String> {
 
 /// (ffmpeg_path, ffprobe_path)
 pub async fn ensure_ffmpeg() -> Result<()> {
-    let download_dir = get_config().get_ffmpeg_dir();
+    let config = get_config();
+
+    if config.ffmpeg_path.is_some() || config.ffprobe_path.is_some() {
+        match (config.ffmpeg_path.clone(), config.ffprobe_path.clone()) {
+            (Some(ffmpeg_path), Some(ffprobe_path)) => {
+                tracing::info!("using ffmpeg and ffprobe from config");
+                FFMPEG_CONFIG.get_or_init(|| FfmpegConfig {
+                    ffmpeg_path,
+                    ffprobe_path,
+                });
+
+                return Ok(());
+            }
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "ffmpeg_path and ffprobe_path must both or neither be set"
+                ));
+            }
+        }
+    }
 
     // Check if ffmpeg and ffprobe already exist
+    let download_dir = config.get_ffmpeg_dir();
     let ffmpeg_path = download_dir.join("ffmpeg");
     let ffprobe_path = download_dir.join("ffprobe");
 

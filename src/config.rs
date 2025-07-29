@@ -11,6 +11,8 @@ pub struct Config {
     pub tmdb_api_key: String,
     pub host: String,
     pub port: u16,
+    pub ffmpeg_path: Option<String>,
+    pub ffprobe_path: Option<String>,
     pub clear_transcode_cache_on_start: bool,
 }
 
@@ -61,7 +63,7 @@ pub fn get_config() -> &'static Config {
 fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     let config = config::Config::builder()
         .add_source(config::Environment::with_prefix("lyra"))
-        .add_source(config::File::with_name("lyra"))
+        .add_source(config::File::with_name("lyra.yml"))
         .set_default("data_dir", ".lyra")?
         .set_default("tmdb_api_key", "f81a38fe9eba82e5dc3695a7406068bd")?
         .set_default("host", "127.0.0.1")?
@@ -72,8 +74,9 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
 
     let config: Config = config.try_deserialize()?;
     assert!(!config.backends.is_empty(), "no backends configured");
+    tracing::info!("loaded config: {:?}", config);
 
-    if config.clear_transcode_cache_on_start {
+    if config.clear_transcode_cache_on_start && config.get_transcode_cache_dir().exists() {
         tracing::info!("clearing transcode cache");
         std::fs::remove_dir_all(&config.get_transcode_cache_dir())?;
     }

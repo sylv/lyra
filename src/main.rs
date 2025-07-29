@@ -220,7 +220,7 @@ async fn main() {
         .await
         .expect("Failed to connect to SQLite");
 
-    sqlx::migrate!("../../migrations")
+    sqlx::migrate!("./migrations")
         .run(&pool)
         .await
         .expect("Failed to run migrations");
@@ -252,11 +252,8 @@ async fn main() {
     // write the schema to a file in dev
     #[cfg(debug_assertions)]
     {
-        use std::path::PathBuf;
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let schema_path = manifest_dir.join("schema.gql");
         let schema_str = schema.sdl();
-        std::fs::write(schema_path, schema_str).unwrap();
+        std::fs::write("schema.gql", schema_str).unwrap();
     }
 
     let setup_code = rand::random_range(100_000..=999_999);
@@ -270,7 +267,8 @@ async fn main() {
         );
     }
 
-    let app = Router::new()
+    #[allow(unused_mut)]
+    let mut app = Router::new()
         .nest("/api/hls", hls::get_hls_router())
         .nest("/api/image-proxy", proxy::get_proxy_router())
         .route("/api/graphql", get(get_graphql).post(post_graphql))
@@ -284,6 +282,20 @@ async fn main() {
             setup_code,
             last_setup_code_attempt: Arc::new(AtomicI64::new(0)),
         });
+
+    #[cfg(feature = "static")]
+    {
+        use tower_http::services::{ServeDir, ServeFile};
+
+        let static_path = std::env::var("LYRA_STATIC_PATH")
+            .expect("LYRA_STATIC_PATH not set with static feature");
+        let index_path = static_path.clone() + "/index.html";
+        let serve_dir = ServeDir::new(static_path)
+            .not_found_service(ServeFile::new(index_path))
+            .precompressed_gzip();
+
+        app = app.fallback_service(serve_dir)
+    }
 
     let config = get_config();
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
