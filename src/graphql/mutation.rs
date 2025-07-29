@@ -1,6 +1,7 @@
+use crate::RequestAuth;
+use crate::auth::PermissionGuard;
 use crate::entities::users::Permissions;
 use crate::entities::{invites, users, watch_state};
-use crate::{PermissionGuard, RequestAuth};
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
@@ -110,8 +111,7 @@ impl Mutation {
 
         let user = ctx
             .data::<RequestAuth>()?
-            .user
-            .as_ref()
+            .get_user()
             .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
 
         let invite = invites::Entity::insert(invites::ActiveModel {
@@ -149,8 +149,7 @@ impl Mutation {
             user_id
         } else {
             let user = auth
-                .user
-                .as_ref()
+                .get_user()
                 .ok_or_else(|| async_graphql::Error::new("No user in context".to_string()))?;
 
             user.id.clone()
