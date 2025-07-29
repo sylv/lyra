@@ -63,3 +63,4 @@
 - "fullscreen_on_play" persisted user option that determines if clicking play auto-fullscreens the player
 - Easy way to import watch states from plex and maybe jellyfin
 - Easy way to import/export watch states from/to a csv
+- Search should find episodes by name

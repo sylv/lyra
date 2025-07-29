@@ -1,0 +1,17 @@
+*
+!*/src
+!*/Cargo.toml
+!parser/data
+!src
+!migrations
+!client/src
+!client/assets
+!client/tsconfig.json
+!client/vite.config.ts
+!client/package.json
+!package.json
+!bun.lock
+!Cargo.toml
+!Cargo.lock
+!Dockerfile
+!README.md
