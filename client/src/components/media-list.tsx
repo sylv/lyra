@@ -16,16 +16,36 @@ export const MediaListFrag = graphql(
 interface MediaListProps {
 	media?: FragmentOf<typeof MediaListFrag>[];
 	loading: boolean;
+	onLoadMore?: () => void;
 }
 
 const POSTER_WIDTH = 185;
 const GAP_SIZE = 28;
 
-export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading }) => {
+export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoadMore }) => {
 	const media = mediaRaw ? readFragment(MediaListFrag, mediaRaw) : [];
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [posterWidth, setPosterWidth] = useState(0);
 	const [postersPerRow, setPostersPerRow] = useState(0);
+	const loadMoreRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!onLoadMore || !loadMoreRef.current) return;
+
+		const observer = new IntersectionObserver((entries) => {
+			entries.forEach((entry) => {
+				if (entry.isIntersecting) {
+					onLoadMore();
+				}
+			});
+		});
+
+		observer.observe(loadMoreRef.current);
+
+		return () => {
+			observer.disconnect();
+		};
+	}, [onLoadMore]);
 
 	/**
 	 * Calculates the optimal number of posters per row and their exact width.
@@ -117,7 +137,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading }) => {
 	}
 
 	return (
-		<div ref={containerRef} className="w-full">
+		<div ref={containerRef} className="w-full relative">
 			{rows.map((row, index) => (
 				<div key={`row-${index}-${row.length}`} className="flex mb-6" style={{ gap: GAP_SIZE }}>
 					{row.map((mediaItem) => (
@@ -125,6 +145,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading }) => {
 					))}
 				</div>
 			))}
+			<div className="absolute bottom-0 left-0 right-0 h-[110vh] pointer-events-none z-10" ref={loadMoreRef} />
 		</div>
 	);
 };

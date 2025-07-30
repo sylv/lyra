@@ -9,10 +9,16 @@ import { useQueryState } from "../../hooks/use-query-state.js";
 
 const Query = graphql(
 	`
-	query GetAllMedia($filter: MediaFilter!) {
-		mediaList(filter: $filter) {
-			id
-			...MediaList
+	query GetAllMedia($filter: MediaFilter!, $after: String) {
+		mediaList(filter: $filter, first: 45, after: $after) {
+			edges {
+				node {
+					...MediaList
+				}
+			}
+			pageInfo {
+				endCursor
+			}
 		}
 	}
 `,
@@ -21,7 +27,7 @@ const Query = graphql(
 
 export default function Page() {
 	const [search, setSearch] = useQueryState("search", "");
-	const [selectedMediaTypes, setSelectedMediaTypes] = useQueryState<MediaType[]>("mediaTypes", []);
+	const [selectedMediaTypes, setSelectedMediaTypes] = useQueryState<MediaType[]>("mediaTypes", ["MOVIE", "SHOW"]);
 	const [debouncedSearch, setDebouncedSearch] = useState(search);
 
 	// debounce search input
@@ -38,12 +44,12 @@ export default function Page() {
 		() => ({
 			parentId: null,
 			search: debouncedSearch.trim() || null,
-			mediaTypes: selectedMediaTypes.length > 0 ? selectedMediaTypes : null,
+			mediaTypes: selectedMediaTypes.length > 0 ? selectedMediaTypes : ["MOVIE", "SHOW"],
 		}),
 		[debouncedSearch, selectedMediaTypes],
 	);
 
-	const { data, loading } = useQuery(Query, {
+	const { data, loading, fetchMore } = useQuery(Query, {
 		variables: { filter },
 	});
 
@@ -79,7 +85,17 @@ export default function Page() {
 				</div>
 			</div>
 			<div className="m-4 flex flex-wrap gap-4">
-				<MediaList media={data?.mediaList} loading={loading} />
+				<MediaList
+					media={data?.mediaList?.edges?.map((edge) => edge.node)}
+					loading={loading}
+					onLoadMore={() => {
+						fetchMore({
+							variables: {
+								after: data?.mediaList?.pageInfo?.endCursor,
+							},
+						});
+					}}
+				/>
 			</div>
 		</div>
 	);

@@ -1,13 +1,12 @@
+import { useQuery } from "@apollo/client";
+import { graphql } from "gql.tada";
 import { ArrowDownNarrowWide, ChevronDown } from "lucide-react";
+import { Fragment } from "react/jsx-runtime";
 import { usePageContext } from "vike-react/usePageContext";
 import { EpisodeCard, EpisodeCardFrag, EpisodeCardSkeleton } from "../../../components/episode-card";
 import { FilterButton, FilterButtonSkeleton } from "../../../components/filter-button";
 import { MediaHeader, MediaHeaderFrag, MediaHeaderSkeleton } from "../../../components/media-header";
-import { graphql } from "gql.tada";
-import { useQuery } from "@apollo/client";
 import { useQueryState } from "../../../hooks/use-query-state";
-import { Fragment } from "react/jsx-runtime";
-import { Skeleton } from "../../../components/skeleton";
 
 const Query = graphql(
 	`
@@ -29,10 +28,14 @@ const EpisodesQuery = graphql(
 			parentId: $showId,
 			mediaTypes: [EPISODE]
 		}) {
-			id
-			seasonNumber
-			episodeNumber
-			...EpisodeCard
+			edges {
+				node {
+					id
+					seasonNumber
+					episodeNumber
+					...EpisodeCard
+				}
+			}
 		}
 	}
 `,
@@ -82,15 +85,15 @@ export default function Page() {
 	const isAllSeasons = selectedSeasons.length === data.media.seasons.length;
 
 	const sortedSeasons = [...data.media.seasons].sort((a, b) => a - b);
-	const sortedEpisodes = [...(episodes?.mediaList ?? [])].sort((a, b) => {
-		const seasonA = a.seasonNumber || 0;
-		const seasonB = b.seasonNumber || 0;
+	const sortedEpisodes = [...(episodes?.mediaList?.edges ?? [])].sort((a, b) => {
+		const seasonA = a.node.seasonNumber || 0;
+		const seasonB = b.node.seasonNumber || 0;
 		if (seasonA !== seasonB) {
 			return seasonA - seasonB;
 		}
 
-		const episodeA = a.episodeNumber || 0;
-		const episodeB = b.episodeNumber || 0;
+		const episodeA = a.node.episodeNumber || 0;
+		const episodeB = b.node.episodeNumber || 0;
 		return episodeA - episodeB;
 	});
 
@@ -145,7 +148,7 @@ export default function Page() {
 					) : sortedEpisodes[0] ? (
 						<div className="space-y-2">
 							{sortedEpisodes.map((episode) => (
-								<EpisodeCard key={episode.id} episode={episode} showSeasonInfo={selectedSeasons.length > 1} />
+								<EpisodeCard key={episode.node.id} episode={episode.node} showSeasonInfo={selectedSeasons.length > 1} />
 							))}
 						</div>
 					) : (

@@ -28,6 +28,8 @@
 
 ## todo
 
+- Timeline previews for local files
+- Use CLIP to encode screenshots every 5 seconds and then support reverse search for scenes (and searching by scene contents?)
 - ffmpeg segmenter is inconsistent, seeking forward then back will cause the player to freeze/skip a few seconds
   - i dont think this is a keyframe issue
   - possibly related to how seeking is done and it being offset, especially toward the end of the file, because the hls muxer can split += 0.01s from the intended position
