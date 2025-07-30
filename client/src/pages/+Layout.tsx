@@ -1,4 +1,5 @@
 import { ApolloClient, ApolloProvider, InMemoryCache } from "@apollo/client";
+import { relayStylePagination } from "@apollo/client/utilities";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import type { FC, ReactNode } from "react";
 import { Suspense } from "react";
@@ -13,7 +14,15 @@ import "./globals.css";
 
 const client = new ApolloClient({
 	uri: "/api/graphql",
-	cache: new InMemoryCache(),
+	cache: new InMemoryCache({
+		typePolicies: {
+			Query: {
+				fields: {
+					mediaList: relayStylePagination(["filter"]),
+				},
+			},
+		},
+	}),
 });
 
 export const Layout: FC<{ children: ReactNode }> = ({ children }) => {

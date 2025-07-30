@@ -35,6 +35,8 @@ pub struct Model {
     pub runtime_minutes: Option<i64>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
+    /// the time a file was linked to the media item (aka, added_at)
+    pub first_linked_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: Option<i64>,
 }
@@ -51,6 +53,8 @@ pub enum Relation {
     SelfRef,
     #[sea_orm(has_many = "super::media_connection::Entity")]
     MediaConnection,
+    #[sea_orm(has_many = "super::watch_state::Entity")]
+    WatchState,
 }
 
 impl Related<super::media_connection::Entity> for Entity {
