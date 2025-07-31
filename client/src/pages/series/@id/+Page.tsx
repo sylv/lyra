@@ -1,12 +1,13 @@
 import { useQuery } from "@apollo/client";
 import { graphql } from "gql.tada";
 import { ArrowDownNarrowWide, ChevronDown } from "lucide-react";
+import { useMemo } from "react";
 import { Fragment } from "react/jsx-runtime";
 import { usePageContext } from "vike-react/usePageContext";
+import { navigate } from "vike/client/router";
 import { EpisodeCard, EpisodeCardFrag, EpisodeCardSkeleton } from "../../../components/episode-card";
 import { FilterButton, FilterButtonSkeleton } from "../../../components/filter-button";
 import { MediaHeader, MediaHeaderFrag, MediaHeaderSkeleton } from "../../../components/media-header";
-import { useQueryState } from "../../../hooks/use-query-state";
 
 const Query = graphql(
 	`
@@ -22,7 +23,7 @@ const Query = graphql(
 
 const EpisodesQuery = graphql(
 	`
-	query GetEpisodes($showId: Int!, $seasonNumbers: [Int!]!) {
+	query GetEpisodes($showId: Int!, $seasonNumbers: [Int!]) {
 		mediaList(filter: {
 			seasonNumbers: $seasonNumbers,
 			parentId: $showId,
@@ -51,12 +52,35 @@ export default function Page() {
 		},
 	});
 
-	const [selectedSeasons, setSelectedSeasons] = useQueryState<number[]>("seasons", [1]);
+	const seasonFilter = useMemo(() => {
+		if (pageContext.urlParsed.search.seasons) {
+			if (pageContext.urlParsed.search.seasons === "all") {
+				return null;
+			}
+
+			return pageContext.urlParsed.search.seasons.split(",").map(Number);
+		}
+
+		return [1];
+	}, [pageContext.urlParsed.search.seasons]);
+
+	const isAllSeasons = seasonFilter === null;
+
+	const setSelectedSeasons = (seasons: number[] | null) => {
+		const url = new URL(window.location.href);
+		if (!seasons || seasons.length !== 0) {
+			const stringified = seasons ? seasons.sort().join(",") : "all";
+			url.searchParams.set("seasons", stringified);
+		} else {
+			url.searchParams.delete("seasons");
+		}
+		navigate(url.toString());
+	};
 
 	const { data: episodes, loading: episodesLoading } = useQuery(EpisodesQuery, {
 		variables: {
 			showId: mediaId,
-			seasonNumbers: selectedSeasons,
+			seasonNumbers: seasonFilter,
 		},
 	});
 
@@ -82,8 +106,6 @@ export default function Page() {
 		);
 	}
 
-	const isAllSeasons = selectedSeasons.length === data.media.seasons.length;
-
 	const sortedSeasons = [...data.media.seasons].sort((a, b) => a - b);
 	const sortedEpisodes = [...(episodes?.mediaList?.edges ?? [])].sort((a, b) => {
 		const seasonA = a.node.seasonNumber || 0;
@@ -105,11 +127,7 @@ export default function Page() {
 					<FilterButton
 						active={isAllSeasons}
 						onClick={() => {
-							if (isAllSeasons) {
-								setSelectedSeasons([]);
-							} else {
-								setSelectedSeasons(data.media.seasons);
-							}
+							setSelectedSeasons(null);
 						}}
 					>
 						All
@@ -117,12 +135,12 @@ export default function Page() {
 					{sortedSeasons.map((season) => (
 						<FilterButton
 							key={season}
-							active={!isAllSeasons && selectedSeasons.includes(season)}
+							active={!isAllSeasons && seasonFilter.includes(season)}
 							onClick={(event) => {
-								if (event.ctrlKey) {
-									const newSeasons = selectedSeasons.includes(season)
-										? selectedSeasons.filter((s) => s !== season)
-										: [...selectedSeasons, season];
+								if (event.ctrlKey && seasonFilter) {
+									const newSeasons = seasonFilter.includes(season)
+										? seasonFilter.filter((s) => s !== season)
+										: [...seasonFilter, season];
 
 									setSelectedSeasons(newSeasons);
 								} else {
@@ -148,7 +166,7 @@ export default function Page() {
 					) : sortedEpisodes[0] ? (
 						<div className="space-y-2">
 							{sortedEpisodes.map((episode) => (
-								<EpisodeCard key={episode.node.id} episode={episode.node} showSeasonInfo={selectedSeasons.length > 1} />
+								<EpisodeCard key={episode.node.id} episode={episode.node} />
 							))}
 						</div>
 					) : (

@@ -28,22 +28,9 @@ const Query = graphql(
 
 export default function Page() {
 	const [selectedMediaTypes, setSelectedMediaTypes] = useQueryState<MediaType[]>("mediaTypes", ["MOVIE", "SHOW"]);
-	// const [debouncedSearch, setDebouncedSearch] = useState(search);
-
-	// // debounce search input
-	// useEffect(() => {
-	// 	const timer = setTimeout(() => {
-	// 		setDebouncedSearch(search);
-	// 	}, 300);
-
-	// 	return () => clearTimeout(timer);
-	// }, [search]);
-
-	// prepare the query parameters
 	const filter: MediaFilter = useMemo(
 		() => ({
 			parentId: null,
-			// search: debouncedSearch.trim() || null,
 			mediaTypes: selectedMediaTypes.length > 0 ? selectedMediaTypes : ["MOVIE", "SHOW"],
 		}),
 		[selectedMediaTypes],
