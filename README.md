@@ -71,3 +71,4 @@
     - Animations
     - Maybe on search, divide the dialog. On the left show results, on the right show additional info (description, rating, etc) of the last hovered result
     - Empty state should contain tips, like which operators can be used, with a text face
+- `MediaFilterList` should probably handle per-page (eg, seasons or media types) filters and persist them in some way (url? local storage? both?)

@@ -2,6 +2,7 @@ import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { useEffect, useMemo, useRef, useState, type FC } from "react";
 import { MediaPoster, MediaPosterFrag } from "./media-poster";
 import { Skeleton } from "./skeleton";
+import { ViewLoader } from "./view-loader";
 
 export const MediaListFrag = graphql(
 	`
@@ -27,25 +28,6 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoad
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [posterWidth, setPosterWidth] = useState(0);
 	const [postersPerRow, setPostersPerRow] = useState(0);
-	const loadMoreRef = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		if (!onLoadMore || !loadMoreRef.current) return;
-
-		const observer = new IntersectionObserver((entries) => {
-			entries.forEach((entry) => {
-				if (entry.isIntersecting) {
-					onLoadMore();
-				}
-			});
-		});
-
-		observer.observe(loadMoreRef.current);
-
-		return () => {
-			observer.disconnect();
-		};
-	}, [onLoadMore]);
 
 	/**
 	 * Calculates the optimal number of posters per row and their exact width.
@@ -145,7 +127,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoad
 					))}
 				</div>
 			))}
-			<div className="absolute bottom-0 left-0 right-0 h-[110vh] pointer-events-none z-10" ref={loadMoreRef} />
+			<ViewLoader onLoadMore={onLoadMore} />
 		</div>
 	);
 };
