@@ -7,7 +7,6 @@ import { Skeleton } from "./skeleton";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
-	showSeasonInfo?: boolean;
 }
 
 const formatRuntime = (minutes: number | null) => {
@@ -36,7 +35,7 @@ export const EpisodeCardFrag = graphql(
 	[PlayWrapperFrag],
 );
 
-export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef, showSeasonInfo = false }) => {
+export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = readFragment(EpisodeCardFrag, episodeRef);
 
 	return (
@@ -49,7 +48,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef, showSea
 			<div className="flex-1 min-w-0">
 				<h3 className="font-semibold text-white mb-1">
 					<span className="text-zinc-400 text-sm font-normal mr-2">
-						{showSeasonInfo ? `S${episode.seasonNumber}` : ""}E{episode.episodeNumber}
+						S{episode.seasonNumber}E{episode.episodeNumber}
 					</span>
 					{episode.name}
 				</h3>

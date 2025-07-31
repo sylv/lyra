@@ -11,7 +11,7 @@ import { cn } from "../../lib/utils";
 import { Poster } from "../poster";
 import { Thumbnail } from "../thumbnail";
 
-export const useSearchStore = create<boolean>(() => true);
+export const useSearchStore = create<boolean>(() => false);
 
 export const setIsSearchOpen = (isOpen: boolean) => {
 	useSearchStore.setState(isOpen);
