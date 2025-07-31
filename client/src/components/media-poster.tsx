@@ -5,6 +5,7 @@ import { getPathForMedia, GetPathForMediaFrag } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
 import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
 import { Poster } from "./poster";
+import { Thumbnail } from "./thumbnail";
 
 interface MediaPosterProps {
 	media: FragmentOf<typeof MediaPosterFrag>;
@@ -18,6 +19,8 @@ export const MediaPosterFrag = graphql(
 		id
 		name
 		posterUrl
+		mediaType
+		thumbnailUrl
 		...GetPathForMedia
 		...PlayWrapper
 	}
@@ -32,7 +35,11 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 	return (
 		<div className={cn("flex flex-col gap-2 overflow-hidden truncate", className)} style={style}>
 			<PlayWrapper media={media}>
-				<Poster imageUrl={media.posterUrl} alt={media.name} className="w-full" />
+				{media.mediaType === "EPISODE" ? (
+					<Thumbnail imageUrl={media.thumbnailUrl} alt={media.name} className="w-full" />
+				) : (
+					<Poster imageUrl={media.posterUrl} alt={media.name} className="w-full" />
+				)}
 			</PlayWrapper>
 			<a
 				href={path}

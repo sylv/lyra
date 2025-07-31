@@ -1,10 +1,11 @@
 import { useQuery } from "@apollo/client";
 import { graphql } from "gql.tada";
 import { ArrowDownNarrowWide, ChevronDown } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { MediaFilter, MediaType } from "../../@generated/enums.js";
 import { FilterButton } from "../../components/filter-button.jsx";
 import { MediaList, MediaListFrag } from "../../components/media-list.jsx";
+import { setIsSearchOpen } from "../../components/search/search-modal.jsx";
 import { useQueryState } from "../../hooks/use-query-state.js";
 
 const Query = graphql(
@@ -26,27 +27,26 @@ const Query = graphql(
 );
 
 export default function Page() {
-	const [search, setSearch] = useQueryState("search", "");
 	const [selectedMediaTypes, setSelectedMediaTypes] = useQueryState<MediaType[]>("mediaTypes", ["MOVIE", "SHOW"]);
-	const [debouncedSearch, setDebouncedSearch] = useState(search);
+	// const [debouncedSearch, setDebouncedSearch] = useState(search);
 
-	// debounce search input
-	useEffect(() => {
-		const timer = setTimeout(() => {
-			setDebouncedSearch(search);
-		}, 300);
+	// // debounce search input
+	// useEffect(() => {
+	// 	const timer = setTimeout(() => {
+	// 		setDebouncedSearch(search);
+	// 	}, 300);
 
-		return () => clearTimeout(timer);
-	}, [search]);
+	// 	return () => clearTimeout(timer);
+	// }, [search]);
 
 	// prepare the query parameters
 	const filter: MediaFilter = useMemo(
 		() => ({
 			parentId: null,
-			search: debouncedSearch.trim() || null,
+			// search: debouncedSearch.trim() || null,
 			mediaTypes: selectedMediaTypes.length > 0 ? selectedMediaTypes : ["MOVIE", "SHOW"],
 		}),
-		[debouncedSearch, selectedMediaTypes],
+		[selectedMediaTypes],
 	);
 
 	const { data, loading, fetchMore } = useQuery(Query, {
@@ -68,8 +68,9 @@ export default function Page() {
 					type="text"
 					placeholder="Search"
 					className="border border-zinc-700/50 text-zinc-200 rounded-lg px-4 py-2 text-sm max-w-sm outline-none focus:bg-zinc-400/15 hover:bg-zinc-400/10 transition-colors"
-					value={search}
-					onChange={(e) => setSearch(e.target.value)}
+					// value={search}
+					// onChange={(e) => setSearch(e.target.value)}
+					onFocus={() => setIsSearchOpen(true)}
 				/>
 				<div className="flex flex-wrap gap-2">
 					<FilterButton onClick={() => handleMediaTypeToggle("SHOW")} active={selectedMediaTypes.includes("SHOW")}>
