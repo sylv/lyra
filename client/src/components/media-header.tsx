@@ -7,15 +7,11 @@ import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type { MediaType } from "../@generated/enums";
 import { Skeleton } from "./skeleton";
+import { formatReleaseYear } from "../lib/format-release-year";
 
 interface MediaHeaderProps {
 	media: FragmentOf<typeof MediaHeaderFrag>;
 }
-
-const formatYear = (input: number) => {
-	const date = new Date(input * 1000);
-	return date.getFullYear();
-};
 
 const getTMDBUrl = (mediaType: MediaType, tmdbParentId: number) => {
 	const baseUrl = "https://www.themoviedb.org";
@@ -66,10 +62,7 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 						<h1 className="text-2xl font-bold">
 							{media.name}
 							{media.startDate && (
-								<span className="text-zinc-400 ml-2 text-lg">
-									{formatYear(media.startDate)}
-									{media.endDate && ` - ${formatYear(media.endDate)}`}
-								</span>
+								<span className="text-zinc-400 ml-2 text-lg">{formatReleaseYear(media.startDate, media.endDate)}</span>
 							)}
 						</h1>
 						{media.runtimeMinutes && <p className="text-sm text-zinc-400">{media.runtimeMinutes} minutes</p>}

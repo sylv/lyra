@@ -65,4 +65,9 @@
 - "fullscreen_on_play" persisted user option that determines if clicking play auto-fullscreens the player
 - Easy way to import watch states from plex and maybe jellyfin
 - Easy way to import/export watch states from/to a csv
-- Search should find episodes by name
+- Search improvements
+  - Support operators like `type:show`, `season:3`, `parent_id:n`, `start_year:20200` etc
+  - Dialog feels rough, needs improvements
+    - Animations
+    - Maybe on search, divide the dialog. On the left show results, on the right show additional info (description, rating, etc) of the last hovered result
+    - Empty state should contain tips, like which operators can be used, with a text face

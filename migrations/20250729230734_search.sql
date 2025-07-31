@@ -21,3 +21,6 @@ END;
 CREATE TRIGGER media_fts5_delete AFTER DELETE ON media BEGIN
     DELETE FROM media_fts5 WHERE id = OLD.id;
 END;
+
+INSERT INTO media_fts5(id, name, description)
+SELECT id, name, description FROM media;
