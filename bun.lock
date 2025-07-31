@@ -27,7 +27,6 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "hls.js": "^1.6.7",
-        "immer": "^10.1.1",
         "input-otp": "^1.4.2",
         "lucide-react": "^0.485.0",
         "motion": "^12.23.6",

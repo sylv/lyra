@@ -4,6 +4,7 @@ import type { FC } from "react";
 import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
 import { Thumbnail } from "./thumbnail";
 import { Skeleton } from "./skeleton";
+import { TMDBRatingPill, TMDBRatingPillFrag } from "./tmdb-rating-pill";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -30,9 +31,10 @@ export const EpisodeCardFrag = graphql(
 		episodeNumber
 		runtimeMinutes
 		...PlayWrapper
+		...TMDBRatingPill
 	}
 `,
-	[PlayWrapperFrag],
+	[PlayWrapperFrag, TMDBRatingPillFrag],
 );
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
@@ -45,20 +47,27 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					<Thumbnail imageUrl={episode.thumbnailUrl} alt={episode.name} className="h-36 " />
 				</PlayWrapper>
 			</div>
-			<div className="flex-1 min-w-0">
-				<h3 className="font-semibold text-white mb-1">
-					<span className="text-zinc-400 text-sm font-normal mr-2">
-						S{episode.seasonNumber}E{episode.episodeNumber}
-					</span>
-					{episode.name}
-				</h3>
-				{episode.runtimeMinutes && (
-					<div className="flex items-center gap-1 text-sm text-zinc-400 mb-2">
-						<Clock className="w-4 h-4" />
-						{formatRuntime(episode.runtimeMinutes)}
+			<div className="flex flex-col justify-between gap-2">
+				<div className="flex-1 min-w-0">
+					<h3 className="font-semibold text-white mb-1">
+						<span className="text-zinc-400 text-sm font-normal mr-2">
+							S{episode.seasonNumber}E{episode.episodeNumber}
+						</span>
+						{episode.name}
+					</h3>
+					<div className="flex items-center gap-4 mb-2">
+						{episode.runtimeMinutes && (
+							<div className="flex items-center gap-1 text-sm text-zinc-400">
+								<Clock className="w-4 h-4" />
+								{formatRuntime(episode.runtimeMinutes)}
+							</div>
+						)}
 					</div>
-				)}
-				<p className="text-sm text-zinc-300 line-clamp-3">{episode.description || "No description available"}</p>
+					<p className="text-sm text-zinc-300 line-clamp-3">{episode.description || "No description available"}</p>
+				</div>
+				<div className="flex">
+					<TMDBRatingPill media={episode} mini />
+				</div>
 			</div>
 		</div>
 	);
