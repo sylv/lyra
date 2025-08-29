@@ -1,58 +1,23 @@
-type File {
-	id: Int!
-	backendName: String!
-	key: String!
-	pendingAutoMatch: Int!
-	unavailableSince: Int
-	editionName: String
-	resolution: Int
-	sizeBytes: Int
-	scannedAt: Int!
-}
-
-type Invite {
-	code: String!
-	permissions: Int!
-	createdBy: String!
-	createdAt: Int!
-	expiresAt: Int!
-	usedAt: Int
-	usedBy: String
-}
-
 type Media {
 	id: Int!
+	imdbId: String
+	tmdbId: Int
+	parentId: Int
+	kind: MediaKind!
 	name: String!
 	description: String
+	rating: Float
 	posterUrl: String
 	backgroundUrl: String
 	thumbnailUrl: String
-	parentId: Int
-	mediaType: MediaType!
-	imdbParentId: String
-	imdbItemId: String
-	tmdbParentId: Int!
-	tmdbItemId: Int!
-	rating: Float
-	startDate: Int
-	endDate: Int
-	runtimeMinutes: Int
 	seasonNumber: Int
 	episodeNumber: Int
-	"""
-	the time a file was linked to the media item (aka, added_at)
-	"""
-	firstLinkedAt: Int
+	runtimeMinutes: Int
+	releasedAt: Int
+	endedAt: Int
 	createdAt: Int!
 	updatedAt: Int
-	"""
-	Gets the default file connection for this media item, including child connections.
-	(this is what should be played if the user hits "play" on this media item)
-	"""
-	defaultConnection: File
-	seasons: [Int!]!
-	parent: Media
-	watchState: WatchState
+	firstLinkedAt: Int
 }
 
 type MediaConnection {
@@ -87,11 +52,17 @@ type MediaEdge {
 input MediaFilter {
 	parentId: Int
 	seasonNumbers: [Int!]
-	mediaTypes: [MediaType!]
+	kinds: [MediaKind!]
 	search: String
 	orderBy: MediaOrderBy
 	orderDirection: OrderDirection
 	watched: Boolean
+}
+
+enum MediaKind {
+	MOVIE
+	SHOW
+	EPISODE
 }
 
 enum MediaOrderBy {
@@ -102,26 +73,8 @@ enum MediaOrderBy {
 	SEASON_EPISODE
 }
 
-enum MediaType {
-	MOVIE
-	SHOW
-	EPISODE
-}
-
-type Model {
-	id: String!
-	username: String!
-	permissions: Int!
-	defaultSubtitleBcp47: String
-	defaultAudioBcp47: String
-	subtitlesEnabled: Int!
-	createdAt: Int!
-	lastLoginAt: Int
-}
-
 type Mutation {
-	signup(username: String!, password: String!, inviteCode: String): Model!
-	createInvite(permissions: Int!): Invite!
+	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
 	updateWatchState(mediaId: Int!, progressPercentage: Float!, userId: String): WatchState!
 }
 
@@ -157,9 +110,22 @@ type Query {
 	media(mediaId: Int!): Media!
 }
 
+type User {
+	id: String!
+	username: String!
+	passwordHash: String
+	inviteCode: String
+	permissions: Int!
+	defaultSubtitleBcp47: String
+	defaultAudioBcp47: String
+	subtitlesEnabled: Boolean!
+	createdAt: Int!
+}
+
 type WatchState {
-	mediaId: Int!
+	id: Int!
 	userId: String!
+	mediaId: Int!
 	progressPercentage: Float!
 	createdAt: Int!
 	updatedAt: Int!

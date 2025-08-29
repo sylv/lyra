@@ -137,7 +137,7 @@ async fn main() {
     let pool = DatabaseConnection::from(pool);
     let scanner_pool = pool.clone();
     let scanner_handle = tokio::spawn(async move {
-        scanner::start_scanner(scanner_pool).await;
+        scanner::start_scanner(scanner_pool).await.expect("scanner failed");
     });
 
     let matcher_pool = pool.clone();

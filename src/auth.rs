@@ -2,7 +2,7 @@ use crate::{
     AppState,
     entities::{
         sessions,
-        users::{self, Permissions},
+        users::{self, UserPerms},
     },
 };
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
@@ -26,18 +26,18 @@ use std::sync::atomic::Ordering;
 
 pub struct RequestAuth {
     user: Option<users::Model>,
-    permissions: Permissions,
+    permissions: UserPerms,
 }
 
 impl RequestAuth {
-    pub fn has_permission(&self, permission: Permissions) -> bool {
+    pub fn has_permission(&self, permission: UserPerms) -> bool {
         self.permissions.contains(permission)
     }
 
     pub fn get_user_or_err(&self) -> Result<&users::Model, async_graphql::Error> {
         self.user
             .as_ref()
-            .ok_or_else(|| async_graphql::Error::new("No user in context".to_string()))
+            .ok_or_else(|| AuthError::Unauthenticated.into())
     }
 
     pub fn get_user(&self) -> Option<&users::Model> {
@@ -87,7 +87,7 @@ where
 
             return Ok(RequestAuth {
                 user: None,
-                permissions: Permissions::CREATE_USER,
+                permissions: UserPerms::CREATE_USER,
             });
         }
 
@@ -109,7 +109,7 @@ where
             return Err(AuthError::SessionExpired);
         }
 
-        let permissions = Permissions::from_bits_truncate(user.permissions);
+        let permissions = UserPerms::from_bits_truncate(user.permissions);
         Ok(RequestAuth {
             user: Some(user),
             permissions,
@@ -143,11 +143,12 @@ pub enum AuthError {
     Unauthenticated,
     TooManyAttempts,
     InternalError,
+    UserStillPending
 }
 
-impl IntoResponse for AuthError {
-    fn into_response(self) -> Response {
-        let (status, error_message) = match self {
+impl AuthError {
+    fn to_response(&self) -> (StatusCode, &'static str) {
+        match self {
             AuthError::SessionExpired => (StatusCode::UNAUTHORIZED, "Session expired"),
             AuthError::Unauthenticated => (StatusCode::UNAUTHORIZED, "Unauthenticated"),
             AuthError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal error"),
@@ -159,8 +160,14 @@ impl IntoResponse for AuthError {
                 (StatusCode::FORBIDDEN, "Insufficient permissions")
             }
             AuthError::TooManyAttempts => (StatusCode::TOO_MANY_REQUESTS, "Too many attempts"),
-        };
+            AuthError::UserStillPending => (StatusCode::UNAUTHORIZED, "User is still pending account setup"),
+        }
+    }
+}
 
+impl IntoResponse for AuthError {
+    fn into_response(self) -> Response {
+        let (status, error_message) = self.to_response();
         let body = Json(json!({
             "status_code": status.as_u16(),
             "error_message": error_message,
@@ -170,10 +177,16 @@ impl IntoResponse for AuthError {
     }
 }
 
-pub struct PermissionGuard(Permissions);
+impl Into<async_graphql::Error> for AuthError {
+    fn into(self) -> async_graphql::Error {
+        async_graphql::Error::new(self.to_response().1)
+    }
+}
+
+pub struct PermissionGuard(UserPerms);
 
 impl PermissionGuard {
-    pub fn new(permissions: Permissions) -> Self {
+    pub fn new(permissions: UserPerms) -> Self {
         Self(permissions)
     }
 }
@@ -182,7 +195,7 @@ impl Guard for PermissionGuard {
     async fn check(&self, ctx: &Context<'_>) -> Result<(), async_graphql::Error> {
         let auth = ctx.data::<RequestAuth>()?;
         if !auth.has_permission(self.0) {
-            return Err(async_graphql::Error::new("Insufficient permissions"));
+            return Err(AuthError::InsufficientPermissions.into());
         }
 
         Ok(())
@@ -207,7 +220,12 @@ pub async fn post_login(
         .map_err(|_| AuthError::UnknownUserOrWrongCredentials)?
         .ok_or(AuthError::UnknownUserOrWrongCredentials)?;
 
-    let parsed_hash = PasswordHash::new(&user.password_hash).unwrap();
+    let Some(password_hash) = user.password_hash else {
+        // user is an invite user and does not have a password etc setup
+        return Err(AuthError::UserStillPending);
+    };
+
+    let parsed_hash = PasswordHash::new(&password_hash).unwrap();
     let argon2 = Argon2::default();
     let result = argon2.verify_password(body.password.as_bytes(), &parsed_hash);
     if result.is_err() {

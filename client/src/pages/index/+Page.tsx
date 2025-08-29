@@ -1,7 +1,7 @@
 import { useQuery } from "@apollo/client";
 import { graphql } from "gql.tada";
 import { useState } from "react";
-import type { MediaFilter, MediaType } from "../../@generated/enums.js";
+import type { MediaFilter, MediaKind } from "../../@generated/enums.js";
 import { FilterButton } from "../../components/filter-button.jsx";
 import { MediaFilterList } from "../../components/media-filter-list.jsx";
 import { MediaList, MediaListFrag } from "../../components/media-list.jsx";
@@ -43,17 +43,17 @@ export default function Page() {
 		},
 	});
 
-	const handleMediaTypeToggle = (mediaType: MediaType) => {
+	const handleMediaKindToggle = (mediaType: MediaKind) => {
 		if (!filter.mediaTypes) {
 			setFilter({ ...filter, mediaTypes: ["MOVIE", "SHOW"] });
 			return;
 		}
 
-		const nextMediaTypes = filter.mediaTypes.includes(mediaType)
+		const nextMediaKinds = filter.mediaTypes.includes(mediaType)
 			? filter.mediaTypes.filter((type) => type !== mediaType)
 			: [...filter.mediaTypes, mediaType];
 
-		setFilter({ ...filter, mediaTypes: nextMediaTypes });
+		setFilter({ ...filter, mediaTypes: nextMediaKinds });
 	};
 
 	return (
@@ -66,10 +66,10 @@ export default function Page() {
 					onFocus={() => setIsSearchOpen(true)}
 				/>
 				<div className="flex flex-wrap gap-2">
-					<FilterButton onClick={() => handleMediaTypeToggle("SHOW")} active={filter.mediaTypes?.includes("SHOW")}>
+					<FilterButton onClick={() => handleMediaKindToggle("SHOW")} active={filter.mediaTypes?.includes("SHOW")}>
 						Series
 					</FilterButton>
-					<FilterButton onClick={() => handleMediaTypeToggle("MOVIE")} active={filter.mediaTypes?.includes("MOVIE")}>
+					<FilterButton onClick={() => handleMediaKindToggle("MOVIE")} active={filter.mediaTypes?.includes("MOVIE")}>
 						Movies
 					</FilterButton>
 					<MediaFilterList value={filter} onChange={(newFilter) => setFilter({ ...filter, ...newFilter })} />

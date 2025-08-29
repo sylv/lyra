@@ -2,7 +2,7 @@ use crate::{
     RequestAuth,
     entities::{
         file,
-        media::{self, MediaType},
+        media::{self, MediaKind},
         media_connection, watch_state,
     },
 };
@@ -18,13 +18,13 @@ impl media::Model {
         ctx: &Context<'_>,
     ) -> Result<Option<file::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        if self.media_type == MediaType::Show {
+        if self.kind == MediaKind::Show {
             // essentially we find the first episode, sorted by season/episode number, that has a file connection
             let result = file::Entity::find()
                 .join(JoinType::LeftJoin, file::Relation::MediaConnection.def())
                 .join(JoinType::LeftJoin, media_connection::Relation::Media.def())
                 .filter(media::Column::ParentId.eq(self.id))
-                .filter(file::Column::UnavailableSince.is_null())
+                .filter(file::Column::UnavailableAt.is_null())
                 .order_by_asc(media::Column::SeasonNumber)
                 .order_by_asc(media::Column::EpisodeNumber)
                 .limit(1)
@@ -45,8 +45,8 @@ impl media::Model {
     }
 
     pub async fn seasons(&self, ctx: &Context<'_>) -> Result<Vec<i64>, sea_orm::DbErr> {
-        match self.media_type {
-            MediaType::Show => {
+        match self.kind {
+            MediaKind::Show => {
                 let pool = ctx.data_unchecked::<DatabaseConnection>();
                 let result: Vec<i64> = media::Entity::find()
                     .filter(media::Column::ParentId.eq(self.id))
@@ -64,12 +64,12 @@ impl media::Model {
     }
 
     pub async fn parent(&self, ctx: &Context<'_>) -> Result<Option<media::Model>, sea_orm::DbErr> {
-        match self.media_type {
-            MediaType::Episode => {
+        match self.kind {
+            MediaKind::Episode => {
                 let pool = ctx.data_unchecked::<DatabaseConnection>();
                 let parent = media::Entity::find()
                     .filter(media::Column::Id.eq(self.parent_id))
-                    .filter(media::Column::MediaType.eq(MediaType::Show))
+                    .filter(media::Column::Kind.eq(MediaKind::Show))
                     .one(pool)
                     .await?;
 
@@ -86,8 +86,8 @@ impl media::Model {
         let auth = ctx.data::<RequestAuth>()?;
         let user = auth.get_user_or_err()?;
 
-        match self.media_type {
-            MediaType::Episode | MediaType::Movie => {
+        match self.kind {
+            MediaKind::Episode | MediaKind::Movie => {
                 let pool = ctx.data_unchecked::<DatabaseConnection>();
                 let result = watch_state::Entity::find()
                     .filter(watch_state::Column::MediaId.eq(self.id))

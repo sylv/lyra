@@ -1,7 +1,7 @@
 use crate::{
     auth::RequestAuth,
     entities::{
-        media::{self, MediaType},
+        media::{self, MediaKind},
         watch_state,
     },
 };
@@ -20,7 +20,7 @@ use sea_orm::{
 pub struct MediaFilter {
     pub parent_id: Option<i64>,
     pub season_numbers: Option<Vec<i64>>,
-    pub media_types: Option<Vec<MediaType>>,
+    pub kinds: Option<Vec<MediaKind>>,
     pub search: Option<String>,
     pub order_by: Option<MediaOrderBy>,
     pub order_direction: Option<MediaOrderDirection>,
@@ -94,8 +94,8 @@ impl Query {
                     qb = qb.filter(media::Column::SeasonNumber.is_in(season_numbers));
                 }
 
-                if let Some(media_types) = filter.media_types {
-                    qb = qb.filter(media::Column::MediaType.is_in(media_types));
+                if let Some(kinds) = filter.kinds {
+                    qb = qb.filter(media::Column::Kind.is_in(kinds));
                 }
 
                 if let Some(watched) = filter.watched {
@@ -157,7 +157,7 @@ impl Query {
                     MediaOrderBy::ReleasedAt => {
                         // todo: for shows, sort by latest episode release date?
                         // or maybe that would make more sense as another order by?
-                        qb = qb.order_by(media::Column::StartDate, order_direction);
+                        qb = qb.order_by(media::Column::ReleasedAt, order_direction);
                     }
                     MediaOrderBy::Alphabetical => {
                         qb = qb.order_by(media::Column::Name, order_direction);

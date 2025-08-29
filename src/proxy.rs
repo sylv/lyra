@@ -37,12 +37,9 @@ async fn proxy_image(
         return Err(anyhow::anyhow!("URL not allowed: {}", url).into());
     }
 
-    let cache_path = get_cache_path(&url, None);
-    let mut file_path = if cache_path.exists() {
-        cache_path
-    } else {
-        download_and_cache_image(&url, &cache_path).await?;
-        cache_path
+    let mut file_path = get_cache_path(&url, None);
+    if !file_path.exists() {
+        download_and_cache_image(&url, &file_path).await?;
     };
 
     if params.height.is_some() || params.width.is_some() {

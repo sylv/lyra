@@ -1,4 +1,4 @@
-use crate::entities::media::{self, MediaType};
+use crate::entities::media::{self, MediaKind};
 use crate::entities::{file, media_connection};
 use crate::matcher::matcher::{MatchResult, match_file_to_metadata};
 use crate::tmdb::{MovieDetails, TMDB_IMAGE_BASE_URL, TMDBClient, TvShowDetails};
@@ -22,7 +22,7 @@ pub async fn start_matcher(pool: DatabaseConnection) -> anyhow::Result<()> {
 
         match file {
             Some(file) => {
-                info!("processing unmatched file '{}'", file.key);
+                info!("processing unmatched file '{}'", file.relative_path);
                 match process_file(&pool, &file, &tmdb_client).await {
                     Ok(_) => {
                         file::Entity::update(file::ActiveModel {
@@ -34,7 +34,7 @@ pub async fn start_matcher(pool: DatabaseConnection) -> anyhow::Result<()> {
                         .await?;
                     }
                     Err(e) => {
-                        warn!("failed to process file '{}': {}", file.key, e);
+                        warn!("failed to process file '{}': {}", file.relative_path, e);
                         sleep(Duration::from_secs(30)).await;
                     }
                 }
@@ -51,13 +51,13 @@ async fn process_file(
     file: &file::Model,
     tmdb_client: &TMDBClient,
 ) -> anyhow::Result<()> {
-    let matched = match_file_to_metadata(tmdb_client, &file.key).await?;
+    let matched = match_file_to_metadata(tmdb_client, &file.relative_path).await?;
 
     match matched {
         Some(MatchResult::Movie(movie)) => {
             tracing::debug!(
                 "matched '{}' to movie '{}' ({})",
-                file.key,
+                file.relative_path,
                 movie.title,
                 movie.id
             );
@@ -66,7 +66,7 @@ async fn process_file(
         Some(MatchResult::Series { show, parsed }) => {
             tracing::debug!(
                 "matched '{}' to series '{}' ({})",
-                file.key,
+                file.relative_path,
                 show.name,
                 show.id
             );
@@ -77,7 +77,7 @@ async fn process_file(
             process_show(pool, file.id, show, season, episodes, tmdb_client).await?;
         }
         None => {
-            warn!("no match found for '{}'", file.key);
+            warn!("no match found for '{}'", file.relative_path);
         }
     }
 
@@ -108,14 +108,13 @@ async fn process_movie(
         .map(|id| id.to_string());
 
     let media = media::ActiveModel {
-        media_type: Set(MediaType::Movie),
-        tmdb_parent_id: Set(movie_details.id),
-        tmdb_item_id: Set(movie_details.id),
-        imdb_parent_id: Set(imdb_id),
+        kind: Set(MediaKind::Movie),
+        tmdb_id: Set(Some(movie_details.id)),
+        imdb_id: Set(imdb_id),
         name: Set(movie_details.title),
         description: Set(movie_details.overview),
         rating: Set(movie_details.vote_average),
-        start_date: Set(release_date),
+        released_at: Set(release_date),
         runtime_minutes: Set(movie_details.runtime),
         poster_url: Set(poster_url),
         background_url: Set(background_url),
@@ -125,12 +124,12 @@ async fn process_movie(
     // let media = media.insert(pool).await?;
     let media = media::Entity::insert(media)
         .on_conflict(
-            OnConflict::columns([media::Column::TmdbParentId, media::Column::TmdbItemId])
+            OnConflict::columns([media::Column::TmdbId])
                 .update_columns([
                     media::Column::Name,
                     media::Column::Description,
                     media::Column::Rating,
-                    media::Column::StartDate,
+                    media::Column::ReleasedAt,
                     media::Column::RuntimeMinutes,
                     media::Column::PosterUrl,
                     media::Column::BackgroundUrl,
@@ -181,14 +180,13 @@ async fn process_show(
         .map(|id| id.to_string());
 
     let mut show = media::ActiveModel {
-        media_type: Set(MediaType::Show),
-        tmdb_parent_id: Set(show_details.id),
-        tmdb_item_id: Set(show_details.id),
-        imdb_parent_id: Set(imdb_id),
+        kind: Set(MediaKind::Show),
+        tmdb_id: Set(Some(show_details.id)),
+        imdb_id: Set(imdb_id),
         name: Set(show_details.name),
         description: Set(show_details.overview),
         rating: Set(show_details.vote_average),
-        start_date: Set(start_date),
+        released_at: Set(start_date),
         poster_url: Set(poster_url),
         background_url: Set(background_url),
         ..Default::default()
@@ -196,19 +194,19 @@ async fn process_show(
 
     // only set end_date if the show has ended
     if show_details.in_production {
-        show.end_date = Set(None);
+        show.ended_at = Set(None);
     } else {
-        show.end_date = Set(end_date);
+        show.ended_at = Set(end_date);
     }
 
     let show = media::Entity::insert(show)
         .on_conflict(
-            OnConflict::columns([media::Column::TmdbParentId, media::Column::TmdbItemId])
+            OnConflict::columns([media::Column::TmdbId])
                 .update_columns([
                     media::Column::Name,
                     media::Column::Description,
                     media::Column::Rating,
-                    media::Column::StartDate,
+                    media::Column::ReleasedAt,
                     media::Column::RuntimeMinutes,
                     media::Column::PosterUrl,
                     media::Column::BackgroundUrl,
@@ -247,13 +245,12 @@ async fn process_show(
             .map(|path| format!("{}{}", TMDB_IMAGE_BASE_URL, path));
 
         let episode = media::ActiveModel {
-            media_type: Set(MediaType::Episode),
-            tmdb_parent_id: Set(show_details.id),
-            tmdb_item_id: Set(episode_details.id),
+            kind: Set(MediaKind::Episode),
+            tmdb_id: Set(Some(episode_details.id)),
             name: Set(episode_details.name),
             description: Set(episode_details.overview),
             rating: Set(episode_details.vote_average),
-            start_date: Set(release_date),
+            released_at: Set(release_date),
             thumbnail_url: Set(thumbnail_url),
             parent_id: Set(Some(show.id)),
             season_number: Set(Some(season_number as i64)),
@@ -264,12 +261,12 @@ async fn process_show(
 
         let episode = media::Entity::insert(episode)
             .on_conflict(
-                OnConflict::columns([media::Column::TmdbParentId, media::Column::TmdbItemId])
+                OnConflict::columns([media::Column::TmdbId])
                     .update_columns([
                         media::Column::Name,
                         media::Column::Description,
                         media::Column::Rating,
-                        media::Column::StartDate,
+                        media::Column::ReleasedAt,
                         media::Column::RuntimeMinutes,
                         media::Column::PosterUrl,
                         media::Column::BackgroundUrl,

@@ -1,12 +1,12 @@
-use crate::config::{Backend, get_config};
-use crate::entities::file;
+use crate::config::{get_config};
+use crate::entities::{file, library};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait};
 use sea_orm::{QueryFilter, Set};
 use std::path::Path as StdPath;
 use std::path::PathBuf;
 use std::time::Instant;
-use tokio::time::{Duration, interval};
+use tokio::time::{sleep, Duration};
 use tracing::info;
 
 const MIN_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50MB 
@@ -48,59 +48,56 @@ impl ScanProgress {
     }
 }
 
-pub async fn start_scanner(pool: DatabaseConnection) {
-    let config = get_config();
-    let mut interval = interval(Duration::from_secs(4 * 60 * 60)); // 4 hours
-
-    #[cfg(not(debug_assertions))]
-    {
-        // grace period in case we're in a crash loop or something, hitting each backend
-        // on startup repeatedly would be rude, but in dev its convenient
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
-
+pub async fn start_scanner(pool: DatabaseConnection) -> anyhow::Result<()> {
     loop {
-        interval.tick().await;
-        info!("Starting file scan");
-        for backend in &config.backends {
-            scan_backend(&pool, backend)
-                .await
-                .expect("failed to scan backend")
+        let config = get_config();
+        let scan_ago_filter = chrono::Utc::now()
+            - chrono::Duration::seconds(config.library_scan_interval);
+        let to_scan = library::Entity::find()
+            .filter(library::Column::LastScannedAt.lt(scan_ago_filter))
+            .one(&pool)
+            .await?;
+
+        if let Some(library) = to_scan {
+            scan_backend(&pool, &library).await?;
+        } else {
+            sleep(Duration::from_secs(30)).await;
         }
     }
 }
 
-async fn scan_backend(pool: &DatabaseConnection, backend: &Backend) -> anyhow::Result<()> {
+async fn scan_backend(pool: &DatabaseConnection, library: &library::Model) -> anyhow::Result<()> {
     let scan_start_time = chrono::Utc::now().timestamp();
     let mut progress = ScanProgress::new();
+    let library_path = PathBuf::from(&library.path);
 
     info!(
-        "Scanning directory: {} for backend: {}",
-        &backend.root_dir.display(),
-        backend.name
+        "Scanning directory: {} for library: {}",
+        library_path.display(),
+        library.name
     );
 
     scan_directory(
         pool,
-        &backend.name,
-        &backend.root_dir,
-        &backend.root_dir,
+        &library,
+        &library_path,
+        &library_path,
         scan_start_time,
         &mut progress,
     )
     .await?;
 
-    mark_missing_files_unavailable(pool, &backend.name, scan_start_time).await?;
+    mark_missing_files_unavailable(pool, &library, scan_start_time).await?;
 
-    progress.log_progress_if_needed(&backend.name);
-    tracing::info!("Scan completed for backend '{}'", backend.name);
+    progress.log_progress_if_needed(&library.name);
+    tracing::info!("Scan completed for backend '{}'", library.name);
 
     Ok(())
 }
 
 async fn scan_directory(
     pool: &DatabaseConnection,
-    backend_name: &str,
+    library: &library::Model,
     root_dir: &StdPath,
     current_dir: &StdPath,
     scan_start_time: i64,
@@ -108,7 +105,7 @@ async fn scan_directory(
 ) -> anyhow::Result<()> {
     let mut entries = tokio::fs::read_dir(current_dir).await?;
     progress.directories_seen += 1;
-    progress.log_progress_if_needed(backend_name);
+    progress.log_progress_if_needed(&library.name);
 
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
@@ -116,7 +113,7 @@ async fn scan_directory(
             progress.files_seen += 1;
             Box::pin(scan_directory(
                 pool,
-                backend_name,
+                library,
                 root_dir,
                 &path,
                 scan_start_time,
@@ -127,7 +124,7 @@ async fn scan_directory(
             progress.files_seen += 1;
             scan_file(
                 pool,
-                backend_name,
+                library,
                 &path,
                 root_dir,
                 scan_start_time,
@@ -136,7 +133,7 @@ async fn scan_directory(
             .await?;
         }
 
-        progress.log_progress_if_needed(backend_name);
+        progress.log_progress_if_needed(&library.name);
     }
 
     Ok(())
@@ -144,7 +141,7 @@ async fn scan_directory(
 
 async fn scan_file(
     pool: &DatabaseConnection,
-    backend_name: &str,
+    library: &library::Model,
     path: &PathBuf,
     root_dir: &StdPath,
     scan_start_time: i64,
@@ -177,8 +174,8 @@ async fn scan_file(
 
         let size_bytes_i64 = metadata.len() as i64;
         let file = file::ActiveModel {
-            backend_name: Set(backend_name.to_string()),
-            key: Set(relative_path),
+            library_id: Set(library.id),
+            relative_path: Set(relative_path),
             size_bytes: Set(Some(size_bytes_i64)),
             scanned_at: Set(scan_start_time),
             ..Default::default()
@@ -186,7 +183,7 @@ async fn scan_file(
         // file.insert(pool).await?;
         file::Entity::insert(file)
             .on_conflict(
-                OnConflict::columns([file::Column::BackendName, file::Column::Key])
+                OnConflict::columns([file::Column::LibraryId, file::Column::RelativePath])
                     .update_columns([file::Column::SizeBytes, file::Column::ScannedAt])
                     .to_owned(),
             )
@@ -202,17 +199,17 @@ async fn scan_file(
 
 async fn mark_missing_files_unavailable(
     pool: &DatabaseConnection,
-    backend_name: &str,
+    library: &library::Model,
     scan_start_time: i64,
 ) -> anyhow::Result<()> {
     file::Entity::update_many()
         .set(file::ActiveModel {
-            unavailable_since: Set(Some(scan_start_time)),
+            unavailable_at: Set(Some(scan_start_time)),
             ..Default::default()
         })
-        .filter(file::Column::BackendName.eq(backend_name))
+        .filter(file::Column::LibraryId.eq(library.id))
         .filter(file::Column::ScannedAt.lt(scan_start_time))
-        .filter(file::Column::UnavailableSince.is_null())
+        .filter(file::Column::UnavailableAt.is_null())
         .exec(pool)
         .await?;
 

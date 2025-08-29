@@ -1,63 +1,31 @@
+use crate::entities::users::UserPerms;
 use crate::RequestAuth;
 use crate::auth::PermissionGuard;
-use crate::entities::users::Permissions;
-use crate::entities::{invites, users, watch_state};
+use crate::entities::{users, watch_state};
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 use async_graphql::{Context, Object};
 use chrono::Utc;
-use rand::RngCore;
 use sea_orm::sea_query::OnConflict;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
-use sea_orm::{PaginatorTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter};
+use sea_orm::{Set};
 
 pub struct Mutation;
 
 #[Object]
 impl Mutation {
-    #[graphql(guard = PermissionGuard::new(Permissions::CREATE_USER))]
+    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
     async fn signup(
         &self,
         ctx: &Context<'_>,
         username: String,
         password: String,
+        permissions: Option<u32>,
         invite_code: Option<String>,
     ) -> Result<users::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        let (invite, permissions) = if let Some(invite_code) = invite_code {
-            let invite = invites::Entity::find_by_id(invite_code)
-                .one(pool)
-                .await
-                .map_err(|e| async_graphql::Error::new(e.to_string()))?
-                .ok_or_else(|| async_graphql::Error::new("Invalid invite code".to_string()))?;
-
-            if invite.used_at.is_some() {
-                return Err(async_graphql::Error::new(
-                    "Invite code already used".to_string(),
-                ));
-            }
-
-            if invite.expires_at < Utc::now().timestamp() {
-                return Err(async_graphql::Error::new("Invite code expired".to_string()));
-            }
-
-            let permissions = invite.permissions;
-            (Some(invite), permissions)
-        } else {
-            // if the user does not have an invite, we only allow user creation if no
-            // users exist.
-            let users = users::Entity::find().count(pool).await?;
-            if users > 0 {
-                return Err(async_graphql::Error::new(
-                    "No invite code provided and users already exist".to_string(),
-                ));
-            }
-
-            (None, Permissions::ADMIN.bits())
-        };
-
         let password_hash = {
             let argon2 = Argon2::default();
             let salt = SaltString::generate(&mut OsRng);
@@ -66,67 +34,53 @@ impl Mutation {
                 .to_string()
         };
 
-        let tx = pool.begin().await?;
-        let id = ulid::Ulid::new().to_string();
-        let user = users::Entity::insert(users::ActiveModel {
-            id: Set(id),
-            username: Set(username),
-            password_hash: Set(password_hash),
-            permissions: Set(permissions),
-            ..Default::default()
-        })
-        .exec_with_returning(&tx)
-        .await
-        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        if let Some(invite_code) = invite_code {
+            // this handles accepting an invite for an existing user.
+            let blank_user = users::Entity::find()
+                .filter(users::Column::InviteCode.eq(invite_code))
+                .one(pool)
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        if let Some(invite) = invite {
-            invites::Entity::update(invites::ActiveModel {
-                code: Set(invite.code),
-                used_at: Set(Some(Utc::now().timestamp())),
-                used_by: Set(Some(user.id.clone())),
+            let Some(blank_user) = blank_user else {
+                return Err(async_graphql::Error::new("Invite code already used".to_string()));
+            };
+
+            if permissions.is_some() {
+                return Err(async_graphql::Error::new("Permissions cannot be set when accepting an invite".to_string()));
+            }
+
+            let mut blank_user = blank_user.into_active_model();
+            blank_user.password_hash = Set(Some(password_hash));
+            blank_user.invite_code = Set(None);
+            let user = blank_user.insert(pool).await?;
+            Ok(user)
+        } else {
+            // this handles creating a new user once a user already exists, aka inviting
+            // people. invites are just users with no password yet, which allows you to setup
+            // their account before they can sign in.
+            let auth = ctx.data::<RequestAuth>()?;
+            if !auth.has_permission(UserPerms::CREATE_USER) {
+                return Err(async_graphql::Error::new(
+                    "No invite code provided and users already exist".to_string(),
+                ));
+            }
+
+            let id = ulid::Ulid::new().to_string();
+            let permissions = permissions.unwrap_or(UserPerms::empty().bits());
+            let user = users::Entity::insert(users::ActiveModel {
+                id: Set(id),
+                username: Set(username),
+                password_hash: Set(Some(password_hash)),
+                permissions: Set(permissions),
                 ..Default::default()
             })
-            .filter(invites::Column::UsedBy.is_null())
-            .exec(&tx)
+            .exec_with_returning(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+            Ok(user)
         }
-
-        tx.commit().await?;
-        Ok(user)
-    }
-
-    #[graphql(guard = PermissionGuard::new(Permissions::CREATE_INVITE))]
-    async fn create_invite(
-        &self,
-        ctx: &Context<'_>,
-        permissions: u32,
-    ) -> Result<invites::Model, async_graphql::Error> {
-        let pool = ctx.data::<DatabaseConnection>()?;
-        let invite_code = {
-            let mut bytes = [0u8; 16];
-            rand::rng().fill_bytes(&mut bytes);
-            hex::encode(bytes)
-        };
-
-        let user = ctx
-            .data::<RequestAuth>()?
-            .get_user()
-            .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
-
-        let invite = invites::Entity::insert(invites::ActiveModel {
-            code: Set(invite_code),
-            permissions: Set(permissions),
-            created_by: Set(user.id.clone()),
-            created_at: Set(Utc::now().timestamp()),
-            expires_at: Set(Utc::now().timestamp() + 30 * 24 * 60 * 60),
-            ..Default::default()
-        })
-        .exec_with_returning(pool)
-        .await
-        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-
-        Ok(invite)
     }
 
     async fn update_watch_state(
@@ -140,7 +94,7 @@ impl Mutation {
         let auth = ctx.data::<RequestAuth>()?;
 
         let user_id = if let Some(user_id) = user_id {
-            if !auth.has_permission(Permissions::EDIT_OTHERS_WATCH_STATE) {
+            if !auth.has_permission(UserPerms::EDIT_OTHERS_WATCH_STATE) {
                 return Err(async_graphql::Error::new(
                     "Lacking permission to edit watch state for other users".to_string(),
                 ));

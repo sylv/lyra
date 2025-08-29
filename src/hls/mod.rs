@@ -1,3 +1,4 @@
+use crate::entities::library;
 use crate::RequestAuth;
 use crate::config::get_config;
 use crate::entities::file;
@@ -62,8 +63,8 @@ async fn get_master_playlist(
     State(state): State<AppState>,
     Path(file_id): Path<i64>,
 ) -> Result<String, (StatusCode, &'static str)> {
-    let config = get_config();
-    let file = file::Entity::find_by_id(file_id)
+    let (file, library) = file::Entity::find_by_id(file_id)
+        .find_also_related(library::Entity)
         .one(&state.pool)
         .await
         .map_err(|err| {
@@ -72,14 +73,12 @@ async fn get_master_playlist(
         })?
         .ok_or((StatusCode::NOT_FOUND, "File not found"))?;
 
-    if file.unavailable_since.is_some() {
+    if file.unavailable_at.is_some() {
         return Err((StatusCode::NOT_FOUND, "File is unavailable"));
     }
 
-    let backend = config
-        .get_backend_by_name(&file.backend_name)
-        .ok_or((StatusCode::NOT_FOUND, "Backend not found"))?;
-    let file_path = backend.root_dir.join(&file.key);
+    let library = library.unwrap();
+    let file_path = PathBuf::from(library.path).join(&file.relative_path);
 
     let ffprobe_path = ffmpeg::get_ffprobe_path();
     let probe_data =
@@ -180,8 +179,8 @@ async fn get_stream_playlist(
     State(state): State<AppState>,
     Path((file_id, stream_type, stream_idx, profile_name)): Path<(i64, String, u64, String)>,
 ) -> Result<String, (StatusCode, &'static str)> {
-    let config = get_config();
-    let file = file::Entity::find_by_id(file_id)
+    let (file, library) = file::Entity::find_by_id(file_id)
+        .find_also_related(library::Entity)
         .one(&state.pool)
         .await
         .map_err(|err| {
@@ -190,14 +189,12 @@ async fn get_stream_playlist(
         })?
         .ok_or((StatusCode::NOT_FOUND, "File not found"))?;
 
-    if file.unavailable_since.is_some() {
+    if file.unavailable_at.is_some() {
         return Err((StatusCode::NOT_FOUND, "File is unavailable"));
     }
 
-    let backend = config
-        .get_backend_by_name(&file.backend_name)
-        .ok_or((StatusCode::NOT_FOUND, "Backend not found"))?;
-    let file_path = backend.root_dir.join(&file.key);
+    let library = library.unwrap();
+    let file_path = PathBuf::from(library.path).join(&file.relative_path);
 
     let ffprobe_path = ffmpeg::get_ffprobe_path();
     let probe_data =
@@ -262,8 +259,8 @@ async fn get_segment(
         String,
     )>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let config = get_config();
-    let file = file::Entity::find_by_id(file_id)
+    let (file, library) = file::Entity::find_by_id(file_id)
+        .find_also_related(library::Entity)
         .one(&state.pool)
         .await
         .map_err(|err| {
@@ -272,14 +269,12 @@ async fn get_segment(
         })?
         .ok_or((StatusCode::NOT_FOUND, "File not found"))?;
 
-    if file.unavailable_since.is_some() {
+    if file.unavailable_at.is_some() {
         return Err((StatusCode::NOT_FOUND, "File is unavailable"));
     }
 
-    let backend = config
-        .get_backend_by_name(&file.backend_name)
-        .ok_or((StatusCode::NOT_FOUND, "Backend not found"))?;
-    let file_path = backend.root_dir.join(&file.key);
+    let library = library.unwrap();
+    let file_path = PathBuf::from(library.path).join(&file.relative_path);
 
     let segment_idx = segment_name
         .split('.')
