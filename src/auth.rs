@@ -27,6 +27,7 @@ use std::sync::atomic::Ordering;
 pub struct RequestAuth {
     user: Option<users::Model>,
     permissions: UserPerms,
+    is_setup: bool,
 }
 
 impl RequestAuth {
@@ -42,6 +43,10 @@ impl RequestAuth {
 
     pub fn get_user(&self) -> Option<&users::Model> {
         self.user.as_ref()
+    }
+
+    pub fn is_setup(&self) -> bool {
+        self.is_setup
     }
 }
 
@@ -88,6 +93,7 @@ where
             return Ok(RequestAuth {
                 user: None,
                 permissions: UserPerms::CREATE_USER,
+                is_setup: true,
             });
         }
 
@@ -113,6 +119,7 @@ where
         Ok(RequestAuth {
             user: Some(user),
             permissions,
+            is_setup: false,
         })
     }
 }
@@ -143,7 +150,7 @@ pub enum AuthError {
     Unauthenticated,
     TooManyAttempts,
     InternalError,
-    UserStillPending
+    UserStillPending,
 }
 
 impl AuthError {
@@ -160,7 +167,10 @@ impl AuthError {
                 (StatusCode::FORBIDDEN, "Insufficient permissions")
             }
             AuthError::TooManyAttempts => (StatusCode::TOO_MANY_REQUESTS, "Too many attempts"),
-            AuthError::UserStillPending => (StatusCode::UNAUTHORIZED, "User is still pending account setup"),
+            AuthError::UserStillPending => (
+                StatusCode::UNAUTHORIZED,
+                "User is still pending account setup",
+            ),
         }
     }
 }

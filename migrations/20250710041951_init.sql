@@ -21,8 +21,8 @@ CREATE TABLE media (
     updated_at INTEGER,
     
     CHECK (kind IN (0, 1, 2)),
-    CHECK (kind = 2 AND parent_id IS NOT NULL AND season_number IS NOT NULL AND episode_number IS NOT NULL),
-    CHECK (kind != 2 AND parent_id IS NULL)
+    CHECK (kind != 2 OR (parent_id IS NOT NULL AND season_number IS NOT NULL AND episode_number IS NOT NULL)),
+    CHECK (kind = 2 OR parent_id IS NULL)
 ) STRICT;
 
 -- this is mostly used as a target for tasks.

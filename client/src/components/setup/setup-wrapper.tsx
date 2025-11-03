@@ -1,38 +1,49 @@
-import { useEffect, useState, type FC, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
 import { ErrorBoundary } from "react-error-boundary";
-import useSWR from "swr";
 import { navigate } from "vike/client/router";
 import { SetupModal, type InitState } from "./setup-modal";
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+import { useApolloClient } from "@apollo/client";
 
 export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
-	const [refreshInterval, setRefreshInterval] = useState<number | undefined>(5000);
+	const fetching = useRef(false);
+	const client = useApolloClient();
+	const [data, setData] = useState<InitState | null>(null);
 	const [showModal, setShowModal] = useState(false);
-	const { data, mutate } = useSWR<InitState>("/api/init", fetcher, {
-		suspense: true,
-		refreshInterval: refreshInterval,
-	});
+
+	const fetchData = async () => {
+		if (fetching.current) return;
+		fetching.current = true;
+
+		try {
+			const res = await fetch("/api/init");
+			const data = await res.json();
+			setData(data);
+			return data;
+		} finally {
+			fetching.current = false;
+		}
+	};
+
+	useEffect(() => {
+		fetchData();
+	}, []);
 
 	useEffect(() => {
 		if (!data) return;
-		switch (data.state) {
-			case "ready":
-				// we don't close the modal because the modal will do it on its own
-				// if it doesn't want to show the user some additional information after setup
-				setRefreshInterval(undefined);
-				break;
-			case "login":
-				setRefreshInterval(10000);
-				setShowModal(true);
-				break;
-			case "create_first_user":
-				setRefreshInterval(5000);
-				navigate("/");
-				setShowModal(true);
-				break;
+		if (data.state === "ready") {
+			if (showModal) {
+				setShowModal(false);
+				client.refetchQueries({ include: "all" });
+			}
+		} else {
+			setShowModal(true);
+			navigate("/");
 		}
 	}, [data]);
+
+	const mutate = async () => {
+		await fetchData();
+	};
 
 	// todo: this error boundary should probably be elsewhere or be generic and inserted
 	// in a couple places (eg, here, the parent component, the player maybe)
@@ -43,7 +54,7 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 			)}
 		>
 			{children}
-			{showModal && data && <SetupModal state={data} mutate={mutate} onClose={() => setShowModal(false)} />}
+			{showModal && data && <SetupModal state={data} mutate={mutate} />}
 		</ErrorBoundary>
 	);
 };

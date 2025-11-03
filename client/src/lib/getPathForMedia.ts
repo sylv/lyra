@@ -3,7 +3,7 @@ import { graphql, readFragment, type FragmentOf } from "gql.tada";
 export const GetPathForMediaFrag = graphql(`
 	fragment GetPathForMedia on Media {
 		id
-		mediaType
+		kind
 		parentId
 		seasonNumber
 	}
@@ -11,7 +11,7 @@ export const GetPathForMediaFrag = graphql(`
 
 export const getPathForMedia = (mediaRaw: FragmentOf<typeof GetPathForMediaFrag>) => {
 	const media = readFragment(GetPathForMediaFrag, mediaRaw);
-	switch (media.mediaType) {
+	switch (media.kind) {
 		case "SHOW":
 			return `/series/${media.id}`;
 		case "MOVIE":

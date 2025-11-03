@@ -247,12 +247,12 @@ async fn process_show(
         let episode = media::ActiveModel {
             kind: Set(MediaKind::Episode),
             tmdb_id: Set(Some(episode_details.id)),
+            parent_id: Set(Some(show.id)),
             name: Set(episode_details.name),
             description: Set(episode_details.overview),
             rating: Set(episode_details.vote_average),
             released_at: Set(release_date),
             thumbnail_url: Set(thumbnail_url),
-            parent_id: Set(Some(show.id)),
             season_number: Set(Some(season_number as i64)),
             episode_number: Set(Some(episode_details.episode_number)),
             runtime_minutes: Set(episode_details.runtime),

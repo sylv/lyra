@@ -1,16 +1,18 @@
-use crate::entities::users::UserPerms;
 use crate::RequestAuth;
 use crate::auth::PermissionGuard;
-use crate::entities::{users, watch_state};
+use crate::entities::users::UserPerms;
+use crate::entities::{library, users, watch_state};
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 use async_graphql::{Context, Object};
 use chrono::Utc;
+use sea_orm::Set;
 use sea_orm::sea_query::OnConflict;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter};
-use sea_orm::{Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+};
 
 pub struct Mutation;
 
@@ -43,11 +45,15 @@ impl Mutation {
                 .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
             let Some(blank_user) = blank_user else {
-                return Err(async_graphql::Error::new("Invite code already used".to_string()));
+                return Err(async_graphql::Error::new(
+                    "Invite code already used".to_string(),
+                ));
             };
 
             if permissions.is_some() {
-                return Err(async_graphql::Error::new("Permissions cannot be set when accepting an invite".to_string()));
+                return Err(async_graphql::Error::new(
+                    "Permissions cannot be set when accepting an invite".to_string(),
+                ));
             }
 
             let mut blank_user = blank_user.into_active_model();
@@ -67,7 +73,14 @@ impl Mutation {
             }
 
             let id = ulid::Ulid::new().to_string();
-            let permissions = permissions.unwrap_or(UserPerms::empty().bits());
+            let permissions = permissions.unwrap_or_else(|| {
+                if auth.is_setup() {
+                    UserPerms::ADMIN.bits()
+                } else {
+                    UserPerms::empty().bits()
+                }
+            });
+
             let user = users::Entity::insert(users::ActiveModel {
                 id: Set(id),
                 username: Set(username),
@@ -129,5 +142,32 @@ impl Mutation {
         .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
         Ok(watch_state)
+    }
+
+    async fn create_library(
+        &self,
+        ctx: &Context<'_>,
+        name: String,
+        path: String,
+    ) -> Result<library::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+
+        if !auth.has_permission(UserPerms::ADMIN) {
+            return Err(async_graphql::Error::new(
+                "Lacking permission to create libraries".to_string(),
+            ));
+        }
+
+        let library = library::Entity::insert(library::ActiveModel {
+            name: Set(name),
+            path: Set(path),
+            ..Default::default()
+        })
+        .exec_with_returning(pool)
+        .await
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        Ok(library)
     }
 }

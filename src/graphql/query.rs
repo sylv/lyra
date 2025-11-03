@@ -1,6 +1,7 @@
 use crate::{
     auth::RequestAuth,
     entities::{
+        library,
         media::{self, MediaKind},
         watch_state,
     },
@@ -9,12 +10,15 @@ use async_graphql::{
     Context, Enum, InputObject, Object,
     connection::{self, EmptyFields},
 };
+use lazy_static::lazy_static;
+use regex::Regex;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, RelationTrait,
     prelude::Expr,
     sea_query::{Alias, SelectStatement},
 };
+use tokio::task::spawn_blocking;
 
 #[derive(Debug, InputObject, serde::Deserialize)]
 pub struct MediaFilter {
@@ -88,6 +92,8 @@ impl Query {
 
                 if let Some(parent_id) = filter.parent_id {
                     qb = qb.filter(media::Column::ParentId.eq(parent_id));
+                } else {
+                    qb = qb.filter(media::Column::ParentId.is_null());
                 }
 
                 if let Some(season_numbers) = filter.season_numbers {
@@ -217,5 +223,55 @@ impl Query {
             .ok_or_else(|| async_graphql::Error::new("Media not found".to_string()))?;
 
         Ok(media)
+    }
+
+    /// Used during library setup to pick the library path
+    async fn list_files(&self, path: String) -> Result<Vec<String>, async_graphql::Error> {
+        if !path.starts_with('/') || path.contains("..") || path.contains("/.") {
+            return Err(async_graphql::Error::new("Invalid path".to_string()));
+        }
+
+        spawn_blocking(|| {
+            lazy_static! {
+                static ref SKIP_PATTERN: Regex =
+                    Regex::new(r"^/(etc|proc|sys|dev|run|boot|lib|lib64|sbin|bin|var)").unwrap();
+            }
+
+            let mut dirs = std::fs::read_dir(path)?
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name.starts_with(".") {
+                        return None;
+                    }
+
+                    let full_path = e.path().to_string_lossy().to_string();
+                    if SKIP_PATTERN.is_match(&full_path) {
+                        return None;
+                    }
+
+                    Some(name)
+                })
+                .collect::<Vec<_>>();
+
+            dirs.sort();
+            Ok(dirs)
+        })
+        .await?
+    }
+
+    async fn libraries(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<library::Model>, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let libraries = library::Entity::find()
+            .all(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        Ok(libraries)
     }
 }

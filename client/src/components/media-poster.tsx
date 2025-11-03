@@ -19,7 +19,7 @@ export const MediaPosterFrag = graphql(
 		id
 		name
 		posterUrl
-		mediaType
+		kind
 		thumbnailUrl
 		...GetPathForMedia
 		...PlayWrapper
@@ -35,7 +35,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 	return (
 		<div className={cn("flex flex-col gap-2 overflow-hidden truncate", className)} style={style}>
 			<PlayWrapper media={media}>
-				{media.mediaType === "EPISODE" ? (
+				{media.kind === "EPISODE" ? (
 					<Thumbnail imageUrl={media.thumbnailUrl} alt={media.name} className="w-full" />
 				) : (
 					<Poster imageUrl={media.posterUrl} alt={media.name} className="w-full" />

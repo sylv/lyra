@@ -24,16 +24,15 @@ const Query = graphql(
             edges {
                 node {
                     id
-                    mediaType
+                    kind
                     description
                     rating
-                    startDate
-                    endDate
+                    releasedAt
+                    endedAt
 					thumbnailUrl
 					posterUrl
 					name
                     parent {
-                        id
                         name
                     }
 					...GetPathForMedia
@@ -64,24 +63,24 @@ export const SearchModal: FC = () => {
 
 		const groups = new Map<string, (typeof data.mediaList.edges)[number]["node"][]>();
 		for (const edge of data.mediaList.edges) {
-			const group = groups.get(edge.node.mediaType);
+			const group = groups.get(edge.node.kind);
 			if (group) {
 				group.push(edge.node);
 			} else {
-				groups.set(edge.node.mediaType, [edge.node]);
+				groups.set(edge.node.kind, [edge.node]);
 			}
 		}
 
 		return Array.from(groups.entries())
-			.map(([mediaType, nodes]) => ({
-				mediaType,
+			.map(([kind, nodes]) => ({
+				kind,
 				nodes,
 			}))
 			.sort((a, b) => {
 				// force episodes to be last, normally they match the most but are not relevant
 				// otherwise we use the original ordering (ie, if a movie is first, the movie group shows first)
-				if (a.mediaType === "EPISODE") return 1;
-				if (b.mediaType === "EPISODE") return -1;
+				if (a.kind === "EPISODE") return 1;
+				if (b.kind === "EPISODE") return -1;
 				return 0;
 			});
 	}, [data]);
@@ -113,11 +112,11 @@ export const SearchModal: FC = () => {
 
 				<div className="h-full p-6 space-y-4 w-full overflow-y-auto pb-24">
 					{groups.map((group) => (
-						<div key={group.mediaType}>
-							<h2 className="mb-1 text-xs font-semibold text-zinc-500">{group.mediaType}S</h2>
+						<div key={group.kind}>
+							<h2 className="mb-1 text-xs font-semibold text-zinc-500">{group.kind}S</h2>
 							<div className="grid grid-cols-2 gap-3">
 								{group.nodes.map((node) => {
-									const subheader = node.parent ? node.parent.name : formatReleaseYear(node.startDate, node.endDate);
+									const subheader = node.parent ? node.parent.name : formatReleaseYear(node.releasedAt, node.endedAt);
 									const path = getPathForMedia(node);
 
 									return (
@@ -134,7 +133,7 @@ export const SearchModal: FC = () => {
 											}}
 										>
 											<div className="flex items-center gap-5">
-												{node.mediaType === "EPISODE" ? (
+												{node.kind === "EPISODE" ? (
 													<Thumbnail imageUrl={node.thumbnailUrl} alt={node.name} className="h-26 rounded-r-none" />
 												) : (
 													<Poster imageUrl={node.posterUrl} alt={node.name} className="h-26 rounded-r-none" />

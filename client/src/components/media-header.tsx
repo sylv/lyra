@@ -19,8 +19,8 @@ export const MediaHeaderFrag = graphql(
 		name
 		posterUrl
 		backgroundUrl
-		startDate
-		endDate
+		releasedAt
+		endedAt
 		runtimeMinutes
 		description
 		...PlayWrapper
@@ -46,8 +46,8 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 					<div className="flex flex-col gap-2">
 						<h1 className="text-2xl font-bold">
 							{media.name}
-							{media.startDate && (
-								<span className="text-zinc-400 ml-2 text-lg">{formatReleaseYear(media.startDate, media.endDate)}</span>
+							{media.releasedAt && (
+								<span className="text-zinc-400 ml-2 text-lg">{formatReleaseYear(media.releasedAt, media.endedAt)}</span>
 							)}
 						</h1>
 						{media.runtimeMinutes && <p className="text-sm text-zinc-400">{media.runtimeMinutes} minutes</p>}

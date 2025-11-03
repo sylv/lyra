@@ -10,30 +10,34 @@ interface TMDBRatingPillProps {
 
 export const TMDBRatingPillFrag = graphql(`
 	fragment TMDBRatingPill on Media {
-		mediaType
-		tmdbParentId
+		kind
+		tmdbId
 		rating
         seasonNumber
         episodeNumber
+		parent {
+			tmdbId
+		}
 	}
 `);
 
 export const TMDBRatingPill: FC<TMDBRatingPillProps> = ({ media: mediaRaw, mini }) => {
 	const media = readFragment(TMDBRatingPillFrag, mediaRaw);
 	const url = useMemo(() => {
-		if (media.mediaType === "MOVIE") {
-			return `https://www.themoviedb.org/movie/${media.tmdbParentId}`;
+		const tmdbId = media.parent ? media.parent.tmdbId : media.tmdbId;
+		if (media.kind === "MOVIE") {
+			return `https://www.themoviedb.org/movie/${tmdbId}`;
 		}
 
-		if (media.mediaType === "SHOW") {
-			return `https://www.themoviedb.org/tv/${media.tmdbParentId}`;
+		if (media.kind === "SHOW") {
+			return `https://www.themoviedb.org/tv/${tmdbId}`;
 		}
 
-		if (media.mediaType === "EPISODE") {
-			return `https://www.themoviedb.org/tv/${media.tmdbParentId}/season/${media.seasonNumber}/episode/${media.episodeNumber}`;
+		if (media.kind === "EPISODE") {
+			return `https://www.themoviedb.org/tv/${tmdbId}/season/${media.seasonNumber}/episode/${media.episodeNumber}`;
 		}
 
-		throw new Error(`Do not know how to get TMDb url for ${media.mediaType}`);
+		throw new Error(`Do not know how to get TMDb url for ${media.kind}`);
 	}, [media]);
 
 	return (

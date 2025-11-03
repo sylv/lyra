@@ -29,31 +29,31 @@ const Query = graphql(
 export default function Page() {
 	const [filter, setFilter] = useState<MediaFilter>({
 		parentId: null,
-		mediaTypes: [],
+		kinds: [],
 		orderBy: "ADDED_AT",
 	});
 
-	const useFilterTypes = filter.mediaTypes && filter.mediaTypes.length > 0;
+	const useFilterTypes = filter.kinds && filter.kinds.length > 0;
 	const { data, loading, fetchMore } = useQuery(Query, {
 		variables: {
 			filter: {
 				...filter,
-				mediaTypes: useFilterTypes ? filter.mediaTypes : ["MOVIE", "SHOW"],
+				kinds: useFilterTypes ? filter.kinds : ["MOVIE", "SHOW"],
 			},
 		},
 	});
 
-	const handleMediaKindToggle = (mediaType: MediaKind) => {
-		if (!filter.mediaTypes) {
-			setFilter({ ...filter, mediaTypes: ["MOVIE", "SHOW"] });
+	const handleMediaKindToggle = (kind: MediaKind) => {
+		if (!filter.kinds) {
+			setFilter({ ...filter, kinds: ["MOVIE", "SHOW"] });
 			return;
 		}
 
-		const nextMediaKinds = filter.mediaTypes.includes(mediaType)
-			? filter.mediaTypes.filter((type) => type !== mediaType)
-			: [...filter.mediaTypes, mediaType];
+		const nextMediaKinds = filter.kinds.includes(kind)
+			? filter.kinds.filter((type) => type !== kind)
+			: [...filter.kinds, kind];
 
-		setFilter({ ...filter, mediaTypes: nextMediaKinds });
+		setFilter({ ...filter, kinds: nextMediaKinds });
 	};
 
 	return (
@@ -66,10 +66,10 @@ export default function Page() {
 					onFocus={() => setIsSearchOpen(true)}
 				/>
 				<div className="flex flex-wrap gap-2">
-					<FilterButton onClick={() => handleMediaKindToggle("SHOW")} active={filter.mediaTypes?.includes("SHOW")}>
+					<FilterButton onClick={() => handleMediaKindToggle("SHOW")} active={filter.kinds?.includes("SHOW")}>
 						Series
 					</FilterButton>
-					<FilterButton onClick={() => handleMediaKindToggle("MOVIE")} active={filter.mediaTypes?.includes("MOVIE")}>
+					<FilterButton onClick={() => handleMediaKindToggle("MOVIE")} active={filter.kinds?.includes("MOVIE")}>
 						Movies
 					</FilterButton>
 					<MediaFilterList value={filter} onChange={(newFilter) => setFilter({ ...filter, ...newFilter })} />

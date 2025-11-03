@@ -1,4 +1,4 @@
-use crate::config::{get_config};
+use crate::config::get_config;
 use crate::entities::{file, library};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait};
@@ -6,7 +6,7 @@ use sea_orm::{QueryFilter, Set};
 use std::path::Path as StdPath;
 use std::path::PathBuf;
 use std::time::Instant;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use tracing::info;
 
 const MIN_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50MB 
@@ -51,17 +51,20 @@ impl ScanProgress {
 pub async fn start_scanner(pool: DatabaseConnection) -> anyhow::Result<()> {
     loop {
         let config = get_config();
-        let scan_ago_filter = chrono::Utc::now()
-            - chrono::Duration::seconds(config.library_scan_interval);
+        let scan_ago_filter = chrono::Utc::now().timestamp() - config.library_scan_interval;
         let to_scan = library::Entity::find()
-            .filter(library::Column::LastScannedAt.lt(scan_ago_filter))
+            .filter(
+                library::Column::LastScannedAt
+                    .lt(scan_ago_filter)
+                    .or(library::Column::LastScannedAt.is_null()),
+            )
             .one(&pool)
             .await?;
 
         if let Some(library) = to_scan {
             scan_backend(&pool, &library).await?;
         } else {
-            sleep(Duration::from_secs(30)).await;
+            sleep(Duration::from_secs(5)).await;
         }
     }
 }
@@ -87,7 +90,25 @@ async fn scan_backend(pool: &DatabaseConnection, library: &library::Model) -> an
     )
     .await?;
 
-    mark_missing_files_unavailable(pool, &library, scan_start_time).await?;
+    file::Entity::update_many()
+        .set(file::ActiveModel {
+            unavailable_at: Set(Some(scan_start_time)),
+            ..Default::default()
+        })
+        .filter(file::Column::LibraryId.eq(library.id))
+        .filter(file::Column::ScannedAt.lt(scan_start_time))
+        .filter(file::Column::UnavailableAt.is_null())
+        .exec(pool)
+        .await?;
+
+    let now = chrono::Utc::now().timestamp();
+    library::Entity::update(library::ActiveModel {
+        id: Set(library.id),
+        last_scanned_at: Set(Some(now)),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?;
 
     progress.log_progress_if_needed(&library.name);
     tracing::info!("Scan completed for backend '{}'", library.name);
@@ -122,15 +143,7 @@ async fn scan_directory(
             .await?;
         } else if path.is_file() {
             progress.files_seen += 1;
-            scan_file(
-                pool,
-                library,
-                &path,
-                root_dir,
-                scan_start_time,
-                progress,
-            )
-            .await?;
+            scan_file(pool, library, &path, root_dir, scan_start_time, progress).await?;
         }
 
         progress.log_progress_if_needed(&library.name);
@@ -193,25 +206,6 @@ async fn scan_file(
         progress.files_imported += 1;
         progress.bytes_imported += metadata.len();
     }
-
-    Ok(())
-}
-
-async fn mark_missing_files_unavailable(
-    pool: &DatabaseConnection,
-    library: &library::Model,
-    scan_start_time: i64,
-) -> anyhow::Result<()> {
-    file::Entity::update_many()
-        .set(file::ActiveModel {
-            unavailable_at: Set(Some(scan_start_time)),
-            ..Default::default()
-        })
-        .filter(file::Column::LibraryId.eq(library.id))
-        .filter(file::Column::ScannedAt.lt(scan_start_time))
-        .filter(file::Column::UnavailableAt.is_null())
-        .exec(pool)
-        .await?;
 
     Ok(())
 }

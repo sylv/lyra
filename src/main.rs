@@ -1,7 +1,7 @@
 use crate::{
     auth::RequestAuth,
     config::get_config,
-    entities::users::{self},
+    entities::{library, users::{self}},
     error::AppError,
     hls::{profiles::TranscodingProfile, segmenter::Segmenter},
 };
@@ -74,6 +74,7 @@ async fn post_graphql(
 pub enum InitState {
     Login,
     CreateFirstUser,
+    CreateFirstLibrary,
     Ready,
 }
 
@@ -95,6 +96,13 @@ async fn get_init_state(
                 "state": InitState::CreateFirstUser
             })));
         }
+    }
+
+    let library_count = library::Entity::find().count(&state.pool).await?;
+    if library_count == 0 {
+        return Ok(Json(json!({
+            "state": InitState::CreateFirstLibrary
+        })));
     }
 
     // server is setup and user can do things.

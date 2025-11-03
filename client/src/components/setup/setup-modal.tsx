@@ -3,18 +3,20 @@ import { useMemo, useState, type FC } from "react";
 import { DynamicBackground } from "../dynamic-background";
 import { CreateAccountForm } from "./steps/create-account-form";
 import { LoginForm } from "./steps/login-form";
-import { useApolloClient } from "@apollo/client";
+import { CreateLibraryStep } from "./steps/create-library-step";
 
-export type InitState = { state: "login" } | { state: "create_first_user"; setup_token: string } | { state: "ready" };
+export type InitState =
+	| { state: "login" }
+	| { state: "create_first_user"; setup_token: string }
+	| { state: "create_first_library" }
+	| { state: "ready" };
 
 interface SetupModalProps {
 	state: InitState;
-	mutate: () => Promise<InitState | undefined>;
-	onClose: () => void;
+	mutate: () => Promise<void>;
 }
 
-export const SetupModal: FC<SetupModalProps> = ({ state, mutate, onClose }) => {
-	const client = useApolloClient();
+export const SetupModal: FC<SetupModalProps> = ({ state, mutate }) => {
 	const [stepId, setStepId] = useState<string | null>(null);
 	const stepDescription = useMemo(() => {
 		switch (state.state) {
@@ -24,22 +26,14 @@ export const SetupModal: FC<SetupModalProps> = ({ state, mutate, onClose }) => {
 			case "create_first_user":
 				setStepId("create_first_user");
 				return "Create your first account";
+			case "create_first_library":
+				setStepId("create_first_library");
+				return "Set up your media libraries";
 			case "ready":
 				setStepId(null);
 				return "You're all set!";
 		}
 	}, [state]);
-
-	const handleRefetch = async () => {
-		const nextState = await mutate();
-		if (!nextState) return;
-		if (nextState.state === "ready") {
-			// todo: if the current state is not "login", keep the modal open
-			// and show some post-setup info (like where to find settings)
-			client.refetchQueries({ include: "all" });
-			onClose();
-		}
-	};
 
 	return (
 		<Dialog open={true}>
@@ -56,7 +50,8 @@ export const SetupModal: FC<SetupModalProps> = ({ state, mutate, onClose }) => {
 								}}
 							/>
 						)}
-						{stepId === "login" && <LoginForm refetch={handleRefetch} />}
+						{stepId === "create_first_library" && <CreateLibraryStep refetch={mutate} />}
+						{stepId === "login" && <LoginForm refetch={mutate} />}
 					</div>
 					<div className="fixed inset-0 pointer-events-none">
 						<DynamicBackground />

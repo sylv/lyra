@@ -13,7 +13,7 @@ pub enum MediaKind {
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, SimpleObject)]
-#[graphql(name = "Media")]
+#[graphql(name = "Media", complex)]
 #[sea_orm(table_name = "media")]
 pub struct Model {
     #[sea_orm(primary_key)]

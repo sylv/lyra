@@ -55,7 +55,7 @@ export default function Page() {
 	const [filter, setFilter] = useState<MediaFilter>(() => {
 		const base: MediaFilter = {
 			orderBy: "SEASON_EPISODE",
-			mediaTypes: ["EPISODE"],
+			kinds: ["EPISODE"],
 			parentId: mediaId,
 		};
 
