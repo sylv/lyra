@@ -1,385 +1,256 @@
-use crate::entities::library;
-use crate::RequestAuth;
-use crate::config::get_config;
-use crate::entities::file;
-use crate::hls::profiles::StreamType;
-use crate::hls::profiles::TranscodingProfile;
-use crate::hls::profiles::audio::AacAudioProfile;
-use crate::hls::profiles::subtitle::WebVttSubtitleProfile;
-use crate::hls::profiles::video::{CopyVideoProfile, H264VideoProfile};
-use crate::hls::segmenter::Segmenter;
-use crate::{AppState, ffmpeg};
+use std::fmt::Write as _;
+use std::path::PathBuf;
+
+use anyhow::{Context, Result};
 use axum::{
     Router,
-    extract::{Path, State},
-    http::StatusCode,
+    body::Body,
+    extract::{Path as AxumPath, State},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
-use easy_ffprobe::{Config, Format, Stream, StreamKinds};
-use sea_orm::EntityTrait;
-use std::cmp::Ordering;
-use std::time::Duration;
-use std::{path::PathBuf, sync::Arc};
-use tower_http::cors::CorsLayer;
+use nightfall::{
+    error::NightfallError,
+    patch::{init_segment::patch_init_segment, segment::patch_segment},
+};
+use tokio::{
+    fs::{create_dir_all, read, remove_dir_all},
+    io::{AsyncBufReadExt, BufReader},
+    process::Command,
+};
+use tower_http::cors::{Any, CorsLayer};
 
-pub const TARGET_DURATION: f64 = 8.0;
+use crate::{AppState, error::AppError, ffprobe::probe};
 
-pub mod profiles;
-pub mod segmenter;
+const SEGMENT_DURATION: f64 = 5.0;
+const TEST_FILE: &str = "placeholder.mkv";
+const SEGMENT_ROOT: &str = "/tmp/lyra-hls";
 
-pub fn get_profiles() -> Vec<Arc<Box<dyn TranscodingProfile + Send + Sync>>> {
-    vec![
-        Arc::new(Box::new(CopyVideoProfile)),
-        Arc::new(Box::new(H264VideoProfile)),
-        Arc::new(Box::new(AacAudioProfile)),
-        Arc::new(Box::new(WebVttSubtitleProfile)),
-    ]
-}
-
-pub fn get_hls_router() -> Router<AppState> {
-    let mut router = Router::new()
-        .route("/stream/{file_id}/index.m3u8", get(get_master_playlist))
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/hls/{file_id}/index.m3u8", get(playlist_handler))
+        .route("/hls/{file_id}/init.mp4", get(init_handler))
         .route(
-            "/stream/{file_id}/{stream_type}/{stream_idx}/{profile}/index.m3u8",
-            get(get_stream_playlist),
+            "/hls/{file_id}/segments/{segment_name}",
+            get(segment_handler),
         )
-        .route(
-            "/stream/{file_id}/{stream_type}/{stream_idx}/{profile}/{segment}",
-            get(get_segment),
-        );
-
-    #[cfg(debug_assertions)]
-    {
-        // helps with testing hls endpoints on other sites (ie, hls demo site)
-        router = router.layer(CorsLayer::permissive());
-    }
-
-    router
+        .layer(cors_layer())
 }
 
-async fn get_master_playlist(
-    _user: RequestAuth,
-    State(state): State<AppState>,
-    Path(file_id): Path<i64>,
-) -> Result<String, (StatusCode, &'static str)> {
-    let (file, library) = file::Entity::find_by_id(file_id)
-        .find_also_related(library::Entity)
-        .one(&state.pool)
-        .await
-        .map_err(|err| {
-            tracing::error!("Error finding file: {:?}", err);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Error finding file")
-        })?
-        .ok_or((StatusCode::NOT_FOUND, "File not found"))?;
-
-    if file.unavailable_at.is_some() {
-        return Err((StatusCode::NOT_FOUND, "File is unavailable"));
-    }
-
-    let library = library.unwrap();
-    let file_path = PathBuf::from(library.path).join(&file.relative_path);
-
-    let ffprobe_path = ffmpeg::get_ffprobe_path();
-    let probe_data =
-        easy_ffprobe::ffprobe_config(Config::new().ffprobe_bin(&ffprobe_path), &file_path)
-            .map_err(|err| {
-                tracing::error!("Error probing file: {:?}", err);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Error probing file")
-            })?;
-
-    let mut playlist = String::new();
-    playlist.push_str("#EXTM3U\n");
-    playlist.push_str("#EXT-X-VERSION:7\n\n");
-
-    for stream in probe_data.streams {
-        let mut profiles = state
-            .profiles
-            .iter()
-            .filter(|p| p.enable_for(&stream))
-            .collect::<Vec<_>>();
-
-        if profiles.is_empty() {
-            tracing::warn!(stream = ?stream, "no profiles enabled for stream");
-            continue;
-        }
-
-        // sort video first, then audio, then subtitle
-        profiles.sort_by(|a, b| match (a.stream_type(), b.stream_type()) {
-            (StreamType::Video, StreamType::Audio) => Ordering::Less,
-            (StreamType::Video, StreamType::Subtitle) => Ordering::Less,
-            (StreamType::Audio, StreamType::Video) => Ordering::Greater,
-            (StreamType::Audio, StreamType::Subtitle) => Ordering::Less,
-            (StreamType::Subtitle, StreamType::Video) => Ordering::Greater,
-            (StreamType::Subtitle, StreamType::Audio) => Ordering::Greater,
-            _ => Ordering::Equal,
-        });
-
-        for profile in profiles.into_iter() {
-            let profile_name = profile.name();
-            let stream_type = profile.stream_type();
-            let stream_idx = stream.index;
-
-            let playlist_path = format!(
-                "{}/{}/{}/index.m3u8",
-                stream_type.as_str(),
-                stream_idx,
-                profile_name,
-            );
-
-            // todo: codec, resolution, bandwidth, language, etc.
-            // todo: use proper names/languages
-            match stream.stream {
-                StreamKinds::Video(ref video) => {
-                    let mut flags = vec![];
-                    flags.push("AUDIO=\"group_audio\"".to_string());
-                    flags.push("SUBTITLES=\"group_subtitles\"".to_string());
-                    let header = format!("#EXT-X-STREAM-INF:{}\n", flags.join(","));
-                    playlist.push_str(&header);
-                    playlist.push_str(&playlist_path);
-                    playlist.push_str("\n\n");
-                }
-                StreamKinds::Audio(ref audio) => {
-                    let mut flags = vec![];
-                    flags.push("TYPE=AUDIO".to_string());
-                    flags.push("GROUP-ID=\"group_audio\"".to_string());
-                    flags.push(format!("NAME=\"audio_{}\"", stream_idx));
-                    flags.push("DEFAULT=YES".to_string());
-                    flags.push(format!("URI=\"{}\"", playlist_path));
-                    let header = format!("#EXT-X-MEDIA:{}", flags.join(","));
-                    playlist.push_str(&header);
-                    playlist.push_str("\n\n");
-                }
-                StreamKinds::Subtitle(ref subtitle) => {
-                    let mut flags = vec![];
-                    flags.push("TYPE=SUBTITLES".to_string());
-                    flags.push("GROUP-ID=\"group_subtitles\"".to_string());
-                    flags.push(format!("NAME=\"subtitle_{}\"", stream_idx));
-                    flags.push("DEFAULT=NO".to_string());
-                    flags.push("AUTOSELECT=NO".to_string());
-                    flags.push("FORCED=NO".to_string());
-                    flags.push(format!("URI=\"{}\"", playlist_path));
-                    let header = format!("#EXT-X-MEDIA:{}", flags.join(","));
-                    playlist.push_str(&header);
-                    playlist.push_str("\n\n");
-                }
-                _ => {
-                    tracing::warn!(stream = ?stream, "unknown stream type");
-                    continue;
-                }
-            };
-        }
-    }
-
-    Ok(playlist)
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_headers(Any)
+        .allow_methods(Any)
+        .allow_origin(Any)
 }
 
-async fn get_stream_playlist(
-    _user: RequestAuth,
-    State(state): State<AppState>,
-    Path((file_id, stream_type, stream_idx, profile_name)): Path<(i64, String, u64, String)>,
-) -> Result<String, (StatusCode, &'static str)> {
-    let (file, library) = file::Entity::find_by_id(file_id)
-        .find_also_related(library::Entity)
-        .one(&state.pool)
-        .await
-        .map_err(|err| {
-            tracing::error!("Error finding file: {:?}", err);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Error finding file")
-        })?
-        .ok_or((StatusCode::NOT_FOUND, "File not found"))?;
-
-    if file.unavailable_at.is_some() {
-        return Err((StatusCode::NOT_FOUND, "File is unavailable"));
-    }
-
-    let library = library.unwrap();
-    let file_path = PathBuf::from(library.path).join(&file.relative_path);
-
-    let ffprobe_path = ffmpeg::get_ffprobe_path();
-    let probe_data =
-        easy_ffprobe::ffprobe_config(Config::new().ffprobe_bin(&ffprobe_path), &file_path)
-            .map_err(|err| {
-                tracing::error!("Error probing file: {:?}", err);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Error probing file")
-            })?;
-
-    let Some(stream) = probe_data.streams.iter().find(|s| s.index == stream_idx) else {
-        tracing::error!(stream_idx, "stream not found");
-        return Err((StatusCode::NOT_FOUND, "Stream not found"));
-    };
-
-    tracing::info!("stream: {:?}", stream);
+async fn playlist_handler(
+    State(_state): State<AppState>,
+    AxumPath(file_id): AxumPath<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let _ = file_id; // TODO: wire file IDs to real paths
+    let info = probe(TEST_FILE)?;
+    let total_seconds = info.duration.as_secs_f64();
+    let segments = (total_seconds / SEGMENT_DURATION).ceil() as u32;
 
     let mut playlist = String::new();
-    playlist.push_str("#EXTM3U\n");
-    playlist.push_str("#EXT-X-VERSION:7\n");
-    playlist.push_str(&format!(
-        "#EXT-X-TARGETDURATION:{}\n",
-        TARGET_DURATION.ceil() as u32
-    ));
-    playlist.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
-    playlist.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n\n");
+    writeln!(
+        &mut playlist,
+        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:{SEGMENT_DURATION:.0}\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"init.mp4\""
+    )
+    .unwrap();
 
-    let Some(mut remaining_duration) = get_stream_duration(&stream, &probe_data.format) else {
-        panic!("no stream duration found on {:#?}", stream);
-    };
-
-    let mut segment_index = 0;
-    let file_extension = match stream_type.as_str() {
-        "subtitle" => "vtt",
-        _ => "ts",
-    };
-
-    let target_duration = Duration::from_secs_f64(TARGET_DURATION);
-    while remaining_duration > Duration::from_secs(0) {
-        let segment_duration = remaining_duration.min(target_duration);
-
-        let segment_path = format!("{}.{}\n\n", segment_index, file_extension);
-        playlist.push_str(&format!("#EXTINF:{:.2}\n", segment_duration.as_secs_f64()));
-        playlist.push_str(segment_path.as_str());
-
-        remaining_duration -= segment_duration;
-        segment_index += 1;
+    for idx in 0..segments {
+        writeln!(
+            &mut playlist,
+            "#EXTINF:{SEGMENT_DURATION:.3},\nsegments/segment_{idx}.m4s"
+        )
+        .unwrap();
     }
-
     playlist.push_str("#EXT-X-ENDLIST\n");
 
-    Ok(playlist)
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")
+        .body(Body::from(playlist))
+        .unwrap())
 }
 
-async fn get_segment(
-    _user: RequestAuth,
-    State(state): State<AppState>,
-    Path((file_id, stream_type, stream_idx, profile_name, segment_name)): Path<(
-        i64,
-        String,
-        usize,
-        String,
-        String,
-    )>,
-) -> Result<Response, (StatusCode, &'static str)> {
-    let (file, library) = file::Entity::find_by_id(file_id)
-        .find_also_related(library::Entity)
-        .one(&state.pool)
-        .await
-        .map_err(|err| {
-            tracing::error!("Error finding file: {:?}", err);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Error finding file")
-        })?
-        .ok_or((StatusCode::NOT_FOUND, "File not found"))?;
-
-    if file.unavailable_at.is_some() {
-        return Err((StatusCode::NOT_FOUND, "File is unavailable"));
-    }
-
-    let library = library.unwrap();
-    let file_path = PathBuf::from(library.path).join(&file.relative_path);
-
-    let segment_idx = segment_name
-        .split('.')
-        .next()
-        .unwrap()
-        .parse::<usize>()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid segment name"))?;
-
-    let segment_dir = get_config()
-        .get_transcode_cache_dir()
-        .join(&file_id.to_string())
-        .join(&stream_type)
-        .join(&profile_name)
-        .join(&stream_idx.to_string());
-
-    let segmenter_key = format!(
-        "{}:{}:{}:{}",
-        file_id, stream_type, profile_name, stream_idx
-    );
-    let segmenter = {
-        let mut segmenters = state.segmenters.lock().await;
-        if !segmenters.contains_key(&segmenter_key) {
-            // todo: this means holding the segmenters lock while we probe the file
-            let ffprobe_path = ffmpeg::get_ffprobe_path();
-            let probe_data =
-                easy_ffprobe::ffprobe_config(Config::new().ffprobe_bin(&ffprobe_path), &file_path)
-                    .map_err(|err| {
-                        tracing::error!("Error probing file: {:?}", err);
-                        (StatusCode::INTERNAL_SERVER_ERROR, "Error probing file")
-                    })?;
-
-            let probe_data = Arc::new(probe_data);
-            let profile = state
-                .profiles
-                .iter()
-                .find(|p| p.name() == profile_name)
-                .unwrap();
-
-            let ffmpeg_path = ffmpeg::get_ffmpeg_path();
-            let segmenter = Segmenter::new(
-                ffmpeg_path.clone(),
-                segment_dir,
-                profile.clone(),
-                PathBuf::from(file_path.clone()),
-                probe_data.streams[stream_idx].clone(),
-                stream_idx,
-            );
-            segmenters.insert(segmenter_key.clone(), Arc::new(segmenter));
-        }
-
-        segmenters.get(&segmenter_key).unwrap().clone()
-    };
-
-    let mut segment = segmenter.get_segment(segment_idx).await.map_err(|err| {
-        tracing::error!("Error getting segment: {:?}", err);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Error getting segment")
-    })?;
-
-    let mut buffer = Vec::new();
-    tokio::io::AsyncReadExt::read_to_end(&mut segment, &mut buffer)
-        .await
-        .unwrap();
-
-    // Set content type based on stream type
-    let content_type = match stream_type.as_str() {
-        "subtitle" => "text/vtt",
-        _ => "video/mp2t",
-    };
-
-    Ok(([(axum::http::header::CONTENT_TYPE, content_type)], buffer).into_response())
+async fn init_handler(
+    State(_state): State<AppState>,
+    AxumPath(file_id): AxumPath<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let _ = file_id;
+    let (init_path, _) = ensure_segment(TEST_FILE, 0).await?;
+    let bytes = read(init_path).await?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "video/mp4")
+        .body(Body::from(bytes))
+        .unwrap())
 }
 
-fn get_stream_duration(stream: &Stream, format: &Format) -> Option<Duration> {
-    let duration = stream.duration();
-    if let Some(duration) = duration {
-        return Some(duration);
+async fn segment_handler(
+    State(_state): State<AppState>,
+    AxumPath((file_id, segment_name)): AxumPath<(String, String)>,
+) -> Result<impl IntoResponse, AppError> {
+    let _ = file_id;
+    let segment_num = segment_name
+        .trim_start_matches("segment_")
+        .trim_end_matches(".m4s")
+        .parse::<u64>()
+        .context("invalid segment number")?;
+
+    let (_, seg_path) = ensure_segment(TEST_FILE, segment_num).await?;
+    let bytes = read(seg_path).await?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "video/iso.segment")
+        .body(Body::from(bytes))
+        .unwrap())
+}
+
+pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, PathBuf)> {
+    let outdir = segment_dir(segment);
+    if outdir.exists() {
+        remove_dir_all(&outdir).await?;
+    }
+    create_dir_all(&outdir).await?;
+
+    let seg_template = outdir.join("segment_%d.m4s");
+    let init_path = outdir.join("init.mp4");
+
+    let start_ss = (segment as f64 * SEGMENT_DURATION).to_string();
+
+    let mut args = vec![
+        "-y".into(),
+        "-ss".into(),
+        start_ss,
+        "-i".into(),
+        file_path.to_string(),
+        "-copyts".into(),
+        "-map".into(),
+        "0:0".into(),
+        "-c:0".into(),
+        "copy".into(),
+        "-start_at_zero".into(),
+        "-vsync".into(),
+        "passthrough".into(),
+        "-avoid_negative_ts".into(),
+        "disabled".into(),
+        "-max_muxing_queue_size".into(),
+        "2048".into(),
+        "-f".into(),
+        "hls".into(),
+        "-start_number".into(),
+        segment.to_string(),
+        "-hls_flags".into(),
+        "temp_file".into(),
+        "-max_delay".into(),
+        "5000000".into(),
+        "-hls_fmp4_init_filename".into(),
+        init_path.to_string_lossy().into_owned(),
+        "-hls_time".into(),
+        SEGMENT_DURATION.to_string(),
+        "-hls_segment_type".into(),
+        "fmp4".into(),
+        "-hls_segment_filename".into(),
+        seg_template.to_string_lossy().into_owned(),
+    ];
+
+    if segment > 0 {
+        args.push("-hls_segment_options".into());
+        args.push("movflags=frag_custom+dash+delay_moov+frag_discont".into());
+    } else {
+        args.push("-hls_segment_options".into());
+        args.push("movflags=frag_custom+dash+delay_moov".into());
     }
 
-    // todo: this is a hack, for some reason "duration_ts" is not always available
-    // but "duration" usually is
-    let from_stream = match &stream.stream {
-        StreamKinds::Video(v) => {
-            if let Some(tags) = &v.tags {
-                tags.tags.duration
-            } else {
-                None
+    args.extend(["-loglevel".into(), "info".into(), "pipe:1".into()]);
+
+    let mut child = Command::new("ffmpeg")
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let stdout = child.stdout.take().context("missing ffmpeg stdout")?;
+    let mut reader = BufReader::new(stdout).lines();
+
+    let mut init_done = false;
+    let mut seg_done = false;
+    let mut next_seg_done = false;
+    while let Some(line) = reader.next_line().await? {
+        match get_line_type(&line) {
+            Some(LineKind::Init) => {
+                tracing::debug!("Received init segment");
+                init_done = true;
+            }
+            Some(LineKind::Segment(seg_num)) if seg_num == segment => {
+                tracing::debug!("Received target segment: {}", seg_num);
+                seg_done = true
+            }
+            Some(LineKind::Segment(seg_num)) if seg_num == segment + 1 => {
+                tracing::debug!("Received next segment: {}", seg_num);
+                next_seg_done = true
+            }
+            Some(LineKind::Segment(seg_num)) => assert!(
+                seg_num <= segment,
+                "received segment {seg_num} > requested {segment}"
+            ),
+            None => {}
+        }
+
+        if init_done && seg_done && next_seg_done {
+            tracing::debug!("All segments received, breaking");
+            break;
+        }
+    }
+
+    let seg_path = outdir.join(format!("segment_{segment}.m4s"));
+    assert!(init_path.exists(), "init not created");
+    assert!(seg_path.exists(), "segment not created");
+
+    child.kill().await?;
+    apply_patches(&init_path, &seg_path, segment as u32).await?;
+
+    Ok((init_path, seg_path))
+}
+
+fn segment_dir(segment: u64) -> PathBuf {
+    PathBuf::from(format!("{SEGMENT_ROOT}/seg_{segment}"))
+}
+
+async fn apply_patches(init: &PathBuf, segment: &PathBuf, seq: u32) -> Result<()> {
+    match patch_segment(segment.clone(), seq).await {
+        Ok(_) => Ok(()),
+        Err(NightfallError::PartialSegment(_)) => {
+            patch_init_segment(init.clone(), segment.clone(), seq).await?;
+            Ok(())
+        }
+        Err(e) => Err(anyhow::Error::new(e)),
+    }
+}
+
+enum LineKind {
+    Init,
+    Segment(u64),
+}
+
+fn get_line_type(line: &str) -> Option<LineKind> {
+    if line.starts_with("#EXT-X-MAP:URI=") {
+        return Some(LineKind::Init);
+    }
+    if line.starts_with("segment_") && line.ends_with(".m4s") {
+        if let Some(num_str) = line
+            .strip_prefix("segment_")
+            .and_then(|s| s.strip_suffix(".m4s"))
+        {
+            if let Ok(num) = num_str.parse::<u64>() {
+                return Some(LineKind::Segment(num));
             }
         }
-        StreamKinds::Audio(v) => {
-            if let Some(tags) = &v.tags {
-                tags.tags.duration
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
-
-    if let Some(duration) = from_stream {
-        return Some(duration);
     }
-
-    if let Some(duration) = format.duration {
-        return Some(duration);
-    }
-
     None
 }
