@@ -1215,7 +1215,6 @@ dependencies = [
 [[package]]
 name = "mp4"
 version = "0.8.2"
-source = "git+https://github.com/vgarleanu/mp4-rust#27f62343cdf4fc7fe94c455135d6210c77e17f9a"
 dependencies = [
  "byteorder",
  "bytes 0.5.6",

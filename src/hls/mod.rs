@@ -23,9 +23,12 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::{AppState, error::AppError, ffprobe::probe};
 
-const SEGMENT_DURATION: f64 = 5.0;
-const TEST_FILE: &str = "placeholder.mkv";
-const SEGMENT_ROOT: &str = "/tmp/lyra-hls";
+// const SEGMENT_DURATION: f64 = 5.0;
+const SEGMENT_DURATION: f64 = 2.0;
+// const TEST_FILE: &str = "placeholder.mkv";
+// const TEST_FILE: &str = "placeholder.mkv";
+const TEST_FILE: &str = "test.mkv";
+pub const SEGMENT_ROOT: &str = "/tmp/lyra-hls";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -123,38 +126,26 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
 
     let start_ss = (segment as f64 * SEGMENT_DURATION).to_string();
 
+    #[rustfmt::skip]
     let mut args = vec![
         "-y".into(),
-        "-ss".into(),
-        start_ss,
-        "-i".into(),
-        file_path.to_string(),
+        "-ss".into(), start_ss.clone(),
+        "-i".into(), file_path.to_string(),
+        "-ss".into(), start_ss,
+        "-map".into(), "0:0".into(),
+        "-c:0".into(), "copy".into(),
         "-copyts".into(),
-        "-map".into(),
-        "0:0".into(),
-        "-c:0".into(),
-        "copy".into(),
         "-start_at_zero".into(),
-        "-vsync".into(),
-        "passthrough".into(),
-        "-avoid_negative_ts".into(),
-        "disabled".into(),
-        "-max_muxing_queue_size".into(),
-        "2048".into(),
-        "-f".into(),
-        "hls".into(),
-        "-start_number".into(),
-        segment.to_string(),
-        "-hls_flags".into(),
-        "temp_file".into(),
-        "-max_delay".into(),
-        "5000000".into(),
-        "-hls_fmp4_init_filename".into(),
-        init_path.to_string_lossy().into_owned(),
-        "-hls_time".into(),
-        SEGMENT_DURATION.to_string(),
-        "-hls_segment_type".into(),
-        "fmp4".into(),
+        "-vsync".into(), "passthrough".into(),
+        "-avoid_negative_ts".into(), "disabled".into(),
+        "-max_muxing_queue_size".into(), "2048".into(),
+        "-f".into(), "hls".into(),
+        "-start_number".into(), segment.to_string(),
+        "-hls_flags".into(), "temp_file+split_by_time".into(),
+        "-hls_time".into(), SEGMENT_DURATION.to_string(),
+        "-max_delay".into(), "5000000".into(),
+        "-hls_fmp4_init_filename".into(), init_path.to_string_lossy().into_owned(),
+        "-hls_segment_type".into(), "fmp4".into(),
         "-hls_segment_filename".into(),
         seg_template.to_string_lossy().into_owned(),
     ];
@@ -167,7 +158,8 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
         args.push("movflags=frag_custom+dash+delay_moov".into());
     }
 
-    args.extend(["-loglevel".into(), "info".into(), "pipe:1".into()]);
+    args.extend(["-loglevel".into(), "info".into()]);
+    args.push("pipe:1".into());
 
     let mut child = Command::new("ffmpeg")
         .args(&args)
@@ -177,11 +169,15 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
 
     let stdout = child.stdout.take().context("missing ffmpeg stdout")?;
     let mut reader = BufReader::new(stdout).lines();
+    let mut playlist_raw = String::new();
 
     let mut init_done = false;
     let mut seg_done = false;
     let mut next_seg_done = false;
     while let Some(line) = reader.next_line().await? {
+        playlist_raw.push_str(&line);
+        playlist_raw.push('\n');
+
         match get_line_type(&line) {
             Some(LineKind::Init) => {
                 tracing::debug!("Received init segment");
@@ -207,6 +203,9 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
             break;
         }
     }
+
+    // dump the playlist info for debugging
+    std::fs::write("playlist.m3u8", playlist_raw)?;
 
     let seg_path = outdir.join(format!("segment_{segment}.m4s"));
     assert!(init_path.exists(), "init not created");
@@ -253,4 +252,17 @@ fn get_line_type(line: &str) -> Option<LineKind> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn ensure_segment_produces_files() {
+        let _ = ensure_segment(super::TEST_FILE, 0)
+            .await
+            .expect("segment 0");
+    }
 }

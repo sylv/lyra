@@ -24,8 +24,11 @@ regex = "1.11.1"
 lazy_static = "1.5.0"
 glob = "0.3.3"
 sha2 = "0.10.9"
-mp4 = { git = "https://github.com/vgarleanu/mp4-rust" }
+mp4 = { path = "vendor/mp4" }
 nightfall = { git = "https://github.com/Dusk-Labs/nightfall.git", version = "0.3.12-rc4" }
 
 [features]
 static = []
+
+[patch."https://github.com/vgarleanu/mp4-rust"]
+mp4 = { path = "vendor/mp4" }

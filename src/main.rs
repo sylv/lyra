@@ -1,3 +1,4 @@
+use crate::hls::SEGMENT_ROOT;
 use async_graphql::{Schema, SimpleObject, http::GraphiQLSource};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
@@ -42,6 +43,13 @@ async fn post_graphql(State(state): State<AppState>, req: GraphQLRequest) -> Gra
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+
+    if std::path::Path::new(SEGMENT_ROOT).exists() {
+        tracing::info!("cleaned up existing segment root");
+        std::fs::remove_dir_all(SEGMENT_ROOT).expect("failed to clean segment root");
+    } else {
+        tracing::info!("segment root does not exist");
+    }
 
     let start = Instant::now();
     let files: Arc<Vec<TestFile>> = Arc::new(vec![]);
