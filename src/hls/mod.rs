@@ -1,6 +1,7 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+use crate::{AppState, error::AppError};
 use anyhow::{Context, Result};
 use axum::{
     Router,
@@ -10,10 +11,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use nightfall::{
-    error::NightfallError,
-    patch::{init_segment::patch_init_segment, segment::patch_segment},
-};
 use tokio::{
     fs::{create_dir_all, read, remove_dir_all},
     io::{AsyncBufReadExt, BufReader},
@@ -21,13 +18,14 @@ use tokio::{
 };
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::{AppState, error::AppError, ffprobe::probe};
+pub struct Segment {
+    pub id: usize,
+    pub start: f64,
+    pub duration: f64,
+}
 
-// const SEGMENT_DURATION: f64 = 5.0;
-const SEGMENT_DURATION: f64 = 2.0;
-// const TEST_FILE: &str = "placeholder.mkv";
-// const TEST_FILE: &str = "placeholder.mkv";
-const TEST_FILE: &str = "test.mkv";
+const TARGET_SEGMENT_DURATION: f64 = 6.0;
+pub const TEST_FILE: &str = "test.mkv";
 pub const SEGMENT_ROOT: &str = "/tmp/lyra-hls";
 
 pub fn router() -> Router<AppState> {
@@ -49,28 +47,32 @@ fn cors_layer() -> CorsLayer {
 }
 
 async fn playlist_handler(
-    State(_state): State<AppState>,
-    AxumPath(file_id): AxumPath<String>,
+    State(state): State<AppState>,
+    AxumPath(_file_id): AxumPath<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let _ = file_id; // TODO: wire file IDs to real paths
-    let info = probe(TEST_FILE)?;
-    let total_seconds = info.duration.as_secs_f64();
-    let segments = (total_seconds / SEGMENT_DURATION).ceil() as u32;
-
     let mut playlist = String::new();
+    let segments = get_segment_times(&state.keyframes).await?;
+    let max_segment_duration = segments
+        .iter()
+        .map(|s| s.duration)
+        .fold(0.0_f64, f64::max)
+        .ceil();
+
     writeln!(
         &mut playlist,
-        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:{SEGMENT_DURATION:.0}\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"init.mp4\""
+        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:{max_segment_duration:.0}\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"init.mp4\""
     )
     .unwrap();
-
-    for idx in 0..segments {
+    for segment in segments.iter() {
+        writeln!(&mut playlist, "#EXT-X-DISCONTINUITY").unwrap();
         writeln!(
             &mut playlist,
-            "#EXTINF:{SEGMENT_DURATION:.3},\nsegments/segment_{idx}.m4s"
+            "#EXTINF:{:.3},\nsegments/segment_{}.m4s",
+            segment.duration, segment.id
         )
         .unwrap();
     }
+
     playlist.push_str("#EXT-X-ENDLIST\n");
 
     Ok(Response::builder()
@@ -81,11 +83,12 @@ async fn playlist_handler(
 }
 
 async fn init_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     AxumPath(file_id): AxumPath<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let _ = file_id;
-    let (init_path, _) = ensure_segment(TEST_FILE, 0).await?;
+    let first_seg = get_segment_from_id(&state.keyframes, 0).await?;
+    let (init_path, _) = ensure_segment(TEST_FILE, &first_seg).await?;
     let bytes = read(init_path).await?;
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -95,17 +98,18 @@ async fn init_handler(
 }
 
 async fn segment_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     AxumPath((file_id, segment_name)): AxumPath<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let _ = file_id;
     let segment_num = segment_name
         .trim_start_matches("segment_")
         .trim_end_matches(".m4s")
-        .parse::<u64>()
+        .parse::<usize>()
         .context("invalid segment number")?;
 
-    let (_, seg_path) = ensure_segment(TEST_FILE, segment_num).await?;
+    let segment = get_segment_from_id(&state.keyframes, segment_num).await?;
+    let (_, seg_path) = ensure_segment(TEST_FILE, &segment).await?;
     let bytes = read(seg_path).await?;
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -114,8 +118,57 @@ async fn segment_handler(
         .unwrap())
 }
 
-pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, PathBuf)> {
-    let outdir = segment_dir(segment);
+async fn get_segment_times(keyframes: &[f64]) -> Result<Vec<Segment>> {
+    // ffmpeg cuts on the first keyframe *after* hls_time has elapsed from the
+    // start of the current segment. We mimic that by measuring elapsed time
+    // from the current segment start to each subsequent keyframe and cutting
+    // when the threshold is met or exceeded.
+    if keyframes.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut segments = Vec::new();
+    let mut segment_start = keyframes[0];
+    let mut segment_id = 0;
+
+    for &keyframe_ts in keyframes.iter().skip(1) {
+        let elapsed = keyframe_ts - segment_start;
+        if elapsed >= TARGET_SEGMENT_DURATION {
+            segments.push(Segment {
+                id: segment_id,
+                start: segment_start,
+                duration: elapsed,
+            });
+
+            segment_id += 1;
+            segment_start = keyframe_ts;
+        }
+    }
+
+    if let Some(&last_keyframe) = keyframes.last() {
+        let elapsed = last_keyframe - segment_start;
+        if elapsed > 0.0 {
+            segments.push(Segment {
+                id: segment_id,
+                start: segment_start,
+                duration: elapsed,
+            });
+        }
+    }
+
+    Ok(segments)
+}
+
+async fn get_segment_from_id(keyframes: &[f64], id: usize) -> Result<Segment> {
+    let segment_times = get_segment_times(keyframes).await?;
+    Ok(segment_times
+        .into_iter()
+        .find(|s| s.id == id)
+        .expect("segment does not exist"))
+}
+
+pub async fn ensure_segment(file_path: &str, segment: &Segment) -> Result<(PathBuf, PathBuf)> {
+    let outdir = segment_dir(segment.id);
     if outdir.exists() {
         remove_dir_all(&outdir).await?;
     }
@@ -124,14 +177,14 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
     let seg_template = outdir.join("segment_%d.m4s");
     let init_path = outdir.join("init.mp4");
 
-    let start_ss = (segment as f64 * SEGMENT_DURATION).to_string();
+    let start_ss = segment.start;
+    tracing::info!("segment {} starts at {}", segment.id, start_ss);
 
     #[rustfmt::skip]
-    let mut args = vec![
+    let mut args: Vec<String> = vec![
         "-y".into(),
-        "-ss".into(), start_ss.clone(),
+        "-ss".into(), start_ss.to_string(),
         "-i".into(), file_path.to_string(),
-        "-ss".into(), start_ss,
         "-map".into(), "0:0".into(),
         "-c:0".into(), "copy".into(),
         "-copyts".into(),
@@ -140,9 +193,9 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
         "-avoid_negative_ts".into(), "disabled".into(),
         "-max_muxing_queue_size".into(), "2048".into(),
         "-f".into(), "hls".into(),
-        "-start_number".into(), segment.to_string(),
-        "-hls_flags".into(), "temp_file+split_by_time".into(),
-        "-hls_time".into(), SEGMENT_DURATION.to_string(),
+        "-start_number".into(), segment.id.to_string(),
+        "-hls_flags".into(), "temp_file".into(),
+        "-hls_time".into(), TARGET_SEGMENT_DURATION.to_string(),
         "-max_delay".into(), "5000000".into(),
         "-hls_fmp4_init_filename".into(), init_path.to_string_lossy().into_owned(),
         "-hls_segment_type".into(), "fmp4".into(),
@@ -150,14 +203,10 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
         seg_template.to_string_lossy().into_owned(),
     ];
 
-    if segment > 0 {
-        args.push("-hls_segment_options".into());
-        args.push("movflags=frag_custom+dash+delay_moov+frag_discont".into());
-    } else {
-        args.push("-hls_segment_options".into());
-        args.push("movflags=frag_custom+dash+delay_moov".into());
-    }
-
+    args.extend([
+        "-hls_segment_options".into(),
+        "movflags=faststart:use_editlist=0".into(),
+    ]);
     args.extend(["-loglevel".into(), "info".into()]);
     args.push("pipe:1".into());
 
@@ -183,17 +232,19 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
                 tracing::debug!("Received init segment");
                 init_done = true;
             }
-            Some(LineKind::Segment(seg_num)) if seg_num == segment => {
+            Some(LineKind::Segment(seg_num)) if seg_num == segment.id => {
                 tracing::debug!("Received target segment: {}", seg_num);
                 seg_done = true
             }
-            Some(LineKind::Segment(seg_num)) if seg_num == segment + 1 => {
+            Some(LineKind::Segment(seg_num)) if seg_num == segment.id + 1 => {
                 tracing::debug!("Received next segment: {}", seg_num);
                 next_seg_done = true
             }
             Some(LineKind::Segment(seg_num)) => assert!(
-                seg_num <= segment,
-                "received segment {seg_num} > requested {segment}"
+                seg_num <= segment.id,
+                "received segment {} > requested {}",
+                seg_num,
+                segment.id
             ),
             None => {}
         }
@@ -204,37 +255,22 @@ pub async fn ensure_segment(file_path: &str, segment: u64) -> Result<(PathBuf, P
         }
     }
 
-    // dump the playlist info for debugging
-    std::fs::write("playlist.m3u8", playlist_raw)?;
-
-    let seg_path = outdir.join(format!("segment_{segment}.m4s"));
+    let seg_path = outdir.join(format!("segment_{}.m4s", segment.id));
     assert!(init_path.exists(), "init not created");
     assert!(seg_path.exists(), "segment not created");
 
     child.kill().await?;
-    apply_patches(&init_path, &seg_path, segment as u32).await?;
 
     Ok((init_path, seg_path))
 }
 
-fn segment_dir(segment: u64) -> PathBuf {
-    PathBuf::from(format!("{SEGMENT_ROOT}/seg_{segment}"))
-}
-
-async fn apply_patches(init: &PathBuf, segment: &PathBuf, seq: u32) -> Result<()> {
-    match patch_segment(segment.clone(), seq).await {
-        Ok(_) => Ok(()),
-        Err(NightfallError::PartialSegment(_)) => {
-            patch_init_segment(init.clone(), segment.clone(), seq).await?;
-            Ok(())
-        }
-        Err(e) => Err(anyhow::Error::new(e)),
-    }
+fn segment_dir(segid: usize) -> PathBuf {
+    PathBuf::from(format!("{SEGMENT_ROOT}/seg_{segid}"))
 }
 
 enum LineKind {
     Init,
-    Segment(u64),
+    Segment(usize),
 }
 
 fn get_line_type(line: &str) -> Option<LineKind> {
@@ -246,23 +282,10 @@ fn get_line_type(line: &str) -> Option<LineKind> {
             .strip_prefix("segment_")
             .and_then(|s| s.strip_suffix(".m4s"))
         {
-            if let Ok(num) = num_str.parse::<u64>() {
+            if let Ok(num) = num_str.parse::<usize>() {
                 return Some(LineKind::Segment(num));
             }
         }
     }
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore]
-    async fn ensure_segment_produces_files() {
-        let _ = ensure_segment(super::TEST_FILE, 0)
-            .await
-            .expect("segment 0");
-    }
 }

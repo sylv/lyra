@@ -1,4 +1,7 @@
-use crate::hls::SEGMENT_ROOT;
+use crate::{
+    get_keyframes::get_keyframes,
+    hls::{SEGMENT_ROOT, TEST_FILE},
+};
 use async_graphql::{Schema, SimpleObject, http::GraphiQLSource};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
@@ -12,6 +15,7 @@ use tracing::info;
 
 mod error;
 mod ffprobe;
+mod get_keyframes;
 mod graphql;
 mod hls;
 
@@ -22,6 +26,7 @@ type AppSchema =
 pub struct AppState {
     files: Arc<Vec<TestFile>>,
     schema: Arc<AppSchema>,
+    keyframes: Vec<f64>,
 }
 
 #[derive(Clone, SimpleObject)]
@@ -51,6 +56,9 @@ async fn main() {
         tracing::info!("segment root does not exist");
     }
 
+    let keyframes = get_keyframes(TEST_FILE).await.unwrap();
+    info!("extracted keyframes: {:?}", &keyframes[..20]);
+
     let start = Instant::now();
     let files: Arc<Vec<TestFile>> = Arc::new(vec![]);
     info!("loaded {} files in {:?}", files.len(), start.elapsed());
@@ -72,6 +80,7 @@ async fn main() {
         .with_state(AppState {
             files,
             schema: Arc::new(schema),
+            keyframes,
         });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
