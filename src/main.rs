@@ -83,11 +83,13 @@ async fn main() {
             keyframes,
         });
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+    let bind_addr =
+        std::env::var("LYRA_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
         .expect("bind http listener");
 
-    info!("Server starting on 0.0.0.0:3000");
+    info!("Server starting on {bind_addr}");
     info!("Press Ctrl+C to shutdown gracefully");
 
     axum::serve(listener, app).await.expect("server failure");

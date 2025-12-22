@@ -1,0 +1,13 @@
+{
+  "name": "lyra-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "hls.js": "^1.5.8",
+    "playwright-core": "^1.44.1"
+  }
+}
