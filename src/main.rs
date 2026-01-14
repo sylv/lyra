@@ -15,7 +15,6 @@ use std::{
 };
 use serde::Deserialize;
 use tokio::process::Command as TokioCommand;
-use tokio_util::io::ReaderStream;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, warn};
 
@@ -200,6 +199,12 @@ async fn init_handler(State(state): State<Arc<AppState>>) -> Result<Response, St
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
+    if let Err(err) = tokio::fs::create_dir_all(".segments").await {
+        warn!(?err, "failed to create .segments directory");
+    } else if let Err(err) = tokio::fs::write(".segments/init.mp4", &bytes).await {
+        warn!(?err, "failed to write init segment to disk");
+    }
+
     info!("init segment generation finished");
     *cache = Some(bytes.clone());
     Ok(Response::builder()
@@ -270,24 +275,31 @@ async fn segment_handler(
         .stderr(Stdio::inherit());
 
     let mut child = command.spawn().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let stdout = child.stdout.take().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let segment_id = id;
-    tokio::spawn(async move {
-        if let Ok(status) = child.wait().await {
-            if !status.success() {
-                warn!(segment_id, "ffmpeg exited with status {status}");
-            } else {
-                info!(segment_id, "segment generation finished");
-            }
-        }
-    });
+    let mut stdout = child.stdout.take().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut bytes = Vec::new();
+    tokio::io::AsyncReadExt::read_to_end(&mut stdout, &mut bytes)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let status = child.wait().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !status.success() {
+        warn!(segment_id = id, "ffmpeg exited with status {status}");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
-    let stream = ReaderStream::new(stdout);
-    let body = axum::body::Body::from_stream(stream);
+    if let Err(err) = tokio::fs::create_dir_all(".segments").await {
+        warn!(segment_id = id, ?err, "failed to create .segments directory");
+    } else {
+        let path = format!(".segments/segment-{id}.mp4");
+        if let Err(err) = tokio::fs::write(&path, &bytes).await {
+            warn!(segment_id = id, ?err, "failed to write segment to disk");
+        }
+    }
+
+    info!(segment_id = id, "segment generation finished");
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "video/mp4")
-        .body(body)
+        .body(axum::body::Body::from(bytes))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
@@ -442,6 +454,9 @@ fn build_playlist(segments: &[Segment]) -> String {
     playlist.push_str("#EXT-X-MAP:URI=\"/init.mp4\"\n");
 
     for (index, segment) in segments.iter().enumerate() {
+        if index > 0 {
+            playlist.push_str("#EXT-X-DISCONTINUITY\n");
+        }
         playlist.push_str(&format!("#EXTINF:{:.3},\n", segment.duration));
         playlist.push_str(&format!("/segments/{index}\n"));
     }
