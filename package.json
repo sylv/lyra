@@ -1,0 +1,7 @@
+{
+  "dependencies": {},
+  "devDependencies": {
+    "hls.js": "^1.6.15",
+    "puppeteer": "^24.35.0"
+  }
+}
