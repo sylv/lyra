@@ -159,6 +159,17 @@ async function setupPlayer(page) {
     window.__consoleWarnings = [];
     window.__consoleErrors = [];
 
+    const originalConsoleWarn = console.warn.bind(console);
+    const originalConsoleError = console.error.bind(console);
+    console.warn = (...args) => {
+      window.__consoleWarnings.push(args.map(String).join(" "));
+      originalConsoleWarn(...args);
+    };
+    console.error = (...args) => {
+      window.__consoleErrors.push(args.map(String).join(" "));
+      originalConsoleError(...args);
+    };
+
     const video = document.getElementById("video");
     video.muted = true;
     video.autoplay = true;
@@ -188,7 +199,8 @@ async function setupPlayer(page) {
     };
 
     const hls = new Hls({
-      enableWorker: true,
+      // Keep logs on the main thread so Puppeteer can capture warnings.
+      enableWorker: false,
       debug: true,
       logger,
     });

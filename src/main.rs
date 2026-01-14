@@ -28,6 +28,7 @@ struct AppState {
     input: PathBuf,
     segments: Arc<Vec<Segment>>,
     playlist: Arc<String>,
+    audio_index: usize,
     init_cache: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
 }
 
@@ -51,13 +52,19 @@ struct ProbeFormat {
 #[derive(Deserialize)]
 struct ProbeStream {
     codec_type: Option<String>,
+    tags: Option<ProbeTags>,
+}
+
+#[derive(Deserialize)]
+struct ProbeTags {
+    language: Option<String>,
 }
 
 #[derive(Debug)]
 struct StreamInfo {
     duration: f64,
-    has_audio: bool,
     has_video: bool,
+    audio_index: usize,
 }
 
 #[tokio::main]
@@ -65,18 +72,14 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let input = input_path()?;
-    let info = probe_streams(&input)?;
-    if !info.has_video {
+    let stream_info = probe_streams(&input)?;
+    if !stream_info.has_video {
         bail!("no video stream found in input");
     }
-    if !info.has_audio {
-        bail!("no audio stream found in input (AAC required for now)");
-    }
-
     info!(
-        duration = info.duration,
-        has_audio = info.has_audio,
-        has_video = info.has_video,
+        duration = stream_info.duration,
+        has_video = stream_info.has_video,
+        audio_index = stream_info.audio_index,
         "ffprobe stream info"
     );
 
@@ -85,13 +88,14 @@ async fn main() -> Result<()> {
         warn!("no keyframes found; falling back to a single segment");
     }
 
-    let segments = build_segments(&keyframes, info.duration, SEGMENT_DURATION);
+    let segments = build_segments(&keyframes, stream_info.duration, SEGMENT_DURATION);
     let playlist = build_playlist(&segments);
 
     let state = Arc::new(AppState {
         input,
         segments: Arc::new(segments),
         playlist: Arc::new(playlist),
+        audio_index: stream_info.audio_index,
         init_cache: Arc::new(tokio::sync::Mutex::new(None)),
     });
 
@@ -108,7 +112,7 @@ async fn main() -> Result<()> {
         .with_state(state)
         .layer(cors);
 
-    let addr: SocketAddr = ([0, 0, 0, 0], 4422).into();
+    let addr: SocketAddr = ([127, 0, 0, 1], 4422).into();
     info!("listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
@@ -160,11 +164,19 @@ async fn init_handler(State(state): State<Arc<AppState>>) -> Result<Response, St
             "-map",
             "0:v:0",
             "-map",
-            "0:a:0",
+            &format!("0:a:{}", state.audio_index),
+            "-dn",
+            "-sn",
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
             "-c:v",
             "copy",
             "-c:a",
             "aac",
+            "-ac",
+            "2",
             "-f",
             "mp4",
             "-movflags",
@@ -235,11 +247,19 @@ async fn segment_handler(
             "-map",
             "0:v:0",
             "-map",
-            "0:a:0",
+            &format!("0:a:{}", state.audio_index),
+            "-dn",
+            "-sn",
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
             "-c:v",
             "copy",
             "-c:a",
             "aac",
+            "-ac",
+            "2",
             "-f",
             "mp4",
             "-movflags",
@@ -285,7 +305,7 @@ fn probe_streams(input: &Path) -> Result<StreamInfo> {
             "-show_entries",
             "format=duration",
             "-show_entries",
-            "stream=codec_type",
+            "stream=codec_type:stream_tags=language",
             "-of",
             "json",
         ])
@@ -308,20 +328,54 @@ fn probe_streams(input: &Path) -> Result<StreamInfo> {
         .parse::<f64>()
         .context("ffprobe duration parse failed")?;
 
-    let mut has_audio = false;
     let mut has_video = false;
-    for stream in info.streams {
+    let mut audio_index = None;
+    let mut audio_pos = 0usize;
+    let mut audio_languages = Vec::new();
+    for stream in info.streams.iter() {
         match stream.codec_type.as_deref() {
-            Some("audio") => has_audio = true,
-            Some("video") => has_video = true,
+            Some("audio") => {
+                if let Some(lang) = stream
+                    .tags
+                    .as_ref()
+                    .and_then(|tags| tags.language.as_deref())
+                {
+                    audio_languages.push(lang.to_string());
+                } else {
+                    audio_languages.push("und".to_string());
+                }
+                if audio_index.is_none()
+                    && stream
+                        .tags
+                        .as_ref()
+                        .and_then(|tags| tags.language.as_deref())
+                        == Some("eng")
+                {
+                    audio_index = Some(audio_pos);
+                }
+                audio_pos = audio_pos.saturating_add(1);
+            }
+            Some("video") => {
+                has_video = true;
+            }
             _ => {}
         }
     }
 
+    let audio_index = audio_index.with_context(|| {
+        if audio_languages.is_empty() {
+            "no English (eng) audio stream found (no audio streams detected)".to_string()
+        } else {
+            format!(
+                "no English (eng) audio stream found (languages: {})",
+                audio_languages.join(", ")
+            )
+        }
+    })?;
     Ok(StreamInfo {
         duration,
-        has_audio,
         has_video,
+        audio_index,
     })
 }
 
