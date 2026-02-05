@@ -1,31 +1,3 @@
-pub fn seconds_to_pts(seconds: f64, time_base_num: i64, time_base_den: i64) -> i64 {
-    // pts = seconds / (time_base_num / time_base_den) = seconds * time_base_den / time_base_num
-    let pts = seconds * (time_base_den as f64) / (time_base_num as f64);
-    round_to_even(pts)
-}
-
-fn round_to_even(value: f64) -> i64 {
-    // Banker's rounding (ties to even) to match Jellyfin PTS handling.
-    let floor = value.floor();
-    let frac = value - floor;
-    if (frac - 0.5).abs() < 1e-9 {
-        let base = floor as i64;
-        if base % 2 == 0 { base } else { base + 1 }
-    } else {
-        value.round() as i64
-    }
-}
-
-fn append_query_param(base: &str, key: &str, value: i64) -> String {
-    if base.is_empty() {
-        format!("?{}={}", key, value)
-    } else if base.contains('?') {
-        format!("{}&{}={}", base, key, value)
-    } else {
-        format!("?{}={}", key, value)
-    }
-}
-
 /// Compute segment lengths in PTS units by cutting at keyframes at/after each desired cut point.
 /// keyframes_pts must be sorted ascending.
 pub fn compute_segments_from_keyframes_pts(
@@ -55,15 +27,13 @@ pub fn compute_segments_from_keyframes_pts(
 
     let tail_pts = total_duration_pts - last_keyframe;
     segments.push(tail_pts);
-
     Ok(segments)
 }
 
 /// Create an fMP4 HLS VOD playlist using PTS-based keyframe cuts.
 ///
-/// - `time_base_num/den` are the stream time base (e.g., 1/90000).
 /// - `endpoint_prefix` is like "hls1/main/".
-/// - `query_string` should include any existing query (e.g., "?SegmentContainer=mp4"),
+/// - `endpoint_suffix` is like ".mp4".
 ///   and this function will append `startPts=<pts>` for each segment.
 pub fn create_fmp4_hls_playlist_from_keyframes_pts(
     keyframes_pts: &[i64],
@@ -72,60 +42,36 @@ pub fn create_fmp4_hls_playlist_from_keyframes_pts(
     time_base_num: i64,
     time_base_den: i64,
     endpoint_prefix: &str,
-    query_string: &str,
+    endpoint_suffix: &str,
 ) -> Result<String, String> {
-    if time_base_num <= 0 || time_base_den <= 0 {
-        return Err("time_base must be positive".to_string());
-    }
-
     let segments_pts = compute_segments_from_keyframes_pts(
         keyframes_pts,
         total_duration_pts,
         desired_segment_length_pts,
     )?;
 
-    let mut out = String::new();
-    out.push_str("#EXTM3U\n");
-    out.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
-    out.push_str("#EXT-X-VERSION:7\n");
-
-    let mut max_seg_seconds = 0.0f64;
-    for &seg_pts in &segments_pts {
-        let seconds = (seg_pts as f64) * (time_base_num as f64) / (time_base_den as f64);
-        if seconds > max_seg_seconds {
-            max_seg_seconds = seconds;
-        }
-    }
-
-    let target_duration = max_seg_seconds.ceil() as i64;
-    out.push_str(&format!("#EXT-X-TARGETDURATION:{}\n", target_duration));
-    out.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
-
+    let mut playlist = String::new();
+    playlist.push_str("#EXTM3U\n");
+    playlist.push_str("#EXT-X-VERSION:7\n");
+    playlist.push_str("#EXT-X-TARGETDURATION:7\n");
+    playlist.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+    playlist.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
+    playlist.push_str("#EXT-X-INDEPENDENT-SEGMENTS\n");
     // fMP4 init segment (no startPts on init).
-    out.push_str("#EXT-X-MAP:URI=\"");
-    out.push_str(endpoint_prefix);
-    out.push_str("init.mp4");
-    out.push_str(query_string);
-    out.push_str("\"\n");
+    playlist.push_str(&format!("#EXT-X-MAP:URI=\"{}init.mp4{}\"\n", endpoint_prefix, endpoint_suffix));
 
-    let mut current_start_pts: i64 = 0;
+    let mut start_pts = 0i64;
     for (i, &seg_pts) in segments_pts.iter().enumerate() {
-        let seg_seconds = (seg_pts as f64) * (time_base_num as f64) / (time_base_den as f64);
-
-        out.push_str(&format!("#EXTINF:{:.6}, nodesc\n", seg_seconds));
-
-        let qs = append_query_param(query_string, "startPts", current_start_pts);
-        out.push_str(endpoint_prefix);
-        out.push_str(&i.to_string());
-        out.push_str(".m4s");
-        out.push_str(&qs);
-        out.push('\n');
-
-        current_start_pts += seg_pts;
+        let dur_seconds = (seg_pts as f64) * (time_base_num as f64) / (time_base_den as f64);
+        playlist.push_str(&format!("#EXTINF:{:.6},\n", dur_seconds));
+        playlist.push_str(&format!(
+            "{}{}.m4s{}?startPts={}\n",
+            endpoint_prefix, i, endpoint_suffix, start_pts
+        ));
+        start_pts += seg_pts;
     }
-
-    out.push_str("#EXT-X-ENDLIST\n");
-    Ok(out)
+    playlist.push_str("#EXT-X-ENDLIST\n");
+    Ok(playlist)
 }
 
 /// Convenience wrapper for ffprobe keyframe timestamps provided as seconds (f64).
@@ -137,11 +83,8 @@ pub fn create_fmp4_hls_playlist_from_keyframes_seconds(
     time_base_num: i64,
     time_base_den: i64,
     endpoint_prefix: &str,
-    query_string: &str,
+    endpoint_suffix: &str,
 ) -> Result<String, String> {
-    if time_base_num <= 0 || time_base_den <= 0 {
-        return Err("time_base must be positive".to_string());
-    }
     if total_duration_seconds <= 0.0 || desired_segment_length_seconds <= 0.0 {
         return Err("Invalid segment length or duration".to_string());
     }
@@ -164,6 +107,45 @@ pub fn create_fmp4_hls_playlist_from_keyframes_seconds(
         time_base_num,
         time_base_den,
         endpoint_prefix,
-        query_string,
+        endpoint_suffix,
     )
+}
+
+/// Create an fMP4 HLS VOD playlist using fixed segment length in seconds.
+pub fn create_fmp4_hls_playlist_fixed_seconds(
+    total_duration_seconds: f64,
+    desired_segment_length_seconds: f64,
+    endpoint_prefix: &str,
+    endpoint_suffix: &str,
+) -> Result<String, String> {
+    if total_duration_seconds <= 0.0 || desired_segment_length_seconds <= 0.0 {
+        return Err("Invalid segment length or duration".to_string());
+    }
+
+    let mut playlist = String::new();
+    playlist.push_str("#EXTM3U\n");
+    playlist.push_str("#EXT-X-VERSION:7\n");
+    playlist.push_str("#EXT-X-TARGETDURATION:7\n");
+    playlist.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+    playlist.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
+    playlist.push_str("#EXT-X-INDEPENDENT-SEGMENTS\n");
+    playlist.push_str(&format!("#EXT-X-MAP:URI=\"{}init.mp4{}\"\n", endpoint_prefix, endpoint_suffix));
+
+    let mut cursor = 0.0f64;
+    let mut index = 0u64;
+    while cursor < total_duration_seconds {
+        let remaining = total_duration_seconds - cursor;
+        let dur = remaining.min(desired_segment_length_seconds);
+        playlist.push_str(&format!("#EXTINF:{:.6},\n", dur));
+        playlist.push_str(&format!("{}{}.m4s{}\n", endpoint_prefix, index, endpoint_suffix));
+        cursor += dur;
+        index += 1;
+    }
+    playlist.push_str("#EXT-X-ENDLIST\n");
+    Ok(playlist)
+}
+
+pub fn seconds_to_pts(seconds: f64, time_base_num: i64, time_base_den: i64) -> i64 {
+    let pts = seconds * (time_base_den as f64) / (time_base_num as f64);
+    pts.round() as i64
 }

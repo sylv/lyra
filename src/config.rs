@@ -1,0 +1,1 @@
+pub const TARGET_SEGMENT_SECONDS: f64 = 6.0;
