@@ -140,7 +140,7 @@ impl Profile for VideoH264Profile {
         // avoid_negative_ts=disabled keeps ffmpeg from shifting timestamps to start at 0,
         // which would desync from the keyframe-derived playlist positions.
         ffarg!(a, "-copyts");
-        ffarg!(a, "-avoid_negative_ts", "disabled");
+        ffarg!(a, "-avoid_negative_ts", "make_non_negative");
 
         // take just the stream we want
         ffarg!(a, "-map", format!("0:{}", ctx.stream.stream_index));
