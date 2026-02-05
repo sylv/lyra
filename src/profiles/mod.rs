@@ -16,7 +16,7 @@ pub use audio::AudioAacProfile;
 
 pub mod video;
 pub use video::VideoCopyProfile;
-pub use video::VideoH264Profile;
+// pub use video::VideoH264Profile;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ProfileType {

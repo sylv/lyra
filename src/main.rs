@@ -26,7 +26,7 @@ use crate::{
     ffmpeg::{
         ensure_ffmpeg_for_init, ensure_ffmpeg_for_segment, parse_segment_index, wait_for_file,
     },
-    profiles::{AudioAacProfile, Profile, VideoCopyProfile, VideoH264Profile},
+    profiles::{AudioAacProfile, Profile, VideoCopyProfile},
     state::{
         AppState, StreamProfileKey, build_master_playlist, build_stream_profiles,
         create_process_segment_dir, load_keyframes_if_needed, prepare_segments_root, probe_streams,
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
 
     let profiles: Vec<Arc<dyn Profile>> = vec![
         Arc::new(VideoCopyProfile),
-        Arc::new(VideoH264Profile),
+        // Arc::new(VideoH264Profile),
         Arc::new(AudioAacProfile),
     ];
 
