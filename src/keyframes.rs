@@ -54,8 +54,9 @@ fn try_load_cache(cache_path: &Path, file_size: u64) -> Result<Option<Vec<f64>>>
         Ok(data) => data,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(err) => {
-            return Err(err)
-                .with_context(|| format!("failed to read keyframe cache {}", cache_path.display()));
+            return Err(err).with_context(|| {
+                format!("failed to read keyframe cache {}", cache_path.display())
+            });
         }
     };
 
@@ -72,13 +73,13 @@ fn try_load_cache(cache_path: &Path, file_size: u64) -> Result<Option<Vec<f64>>>
         return Ok(None);
     }
 
-    if cache.keyframes.is_empty() {
-        warn!(
-            cache_path = %cache_path.display(),
-            "keyframe cache is empty"
-        );
-        return Ok(None);
-    }
+    // if cache.keyframes.is_empty() {
+    //     warn!(
+    //         cache_path = %cache_path.display(),
+    //         "keyframe cache is empty"
+    //     );
+    //     return Ok(None);
+    // }
 
     Ok(Some(cache.keyframes))
 }

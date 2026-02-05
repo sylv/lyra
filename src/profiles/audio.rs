@@ -57,12 +57,17 @@ impl Profile for AudioAacProfile {
         // because we're transcoding this isnt necessary, but if we don't our timestamps
         // may not align to the video timestamps, which hls.js does not like at all
         ffarg!(a, "-copyts");
-        ffarg!(a, "-avoid_negative_ts", "disabled");
+        // i have truly no idea why, but specifically for audio, this is necessary.
+        // otherwise it causes buffering right at the end of segments.
+        // hls.js does not seem to complain even though i believe this means the audio and video timestamps are very slighly misaligned?
+        // whatever man. ill figure out why this fixes it and what else it breaks at some point.
+        ffarg!(a, "-avoid_negative_ts", "make_non_negative");
 
         // hls stuff
         ffarg!(a, "-f", "hls");
         ffarg!(a, "-start_number", start_segment.to_string());
         ffarg!(a, "-hls_time", TARGET_SEGMENT_SECONDS.to_string());
+        ffarg!(a, "-hls_flags", "temp_file");
         ffarg!(a, "-hls_segment_filename", "%d.m4s");
         ffarg!(a, "-hls_fmp4_init_filename", "init.mp4");
         ffarg!(a, "-hls_segment_options", "movflags=+frag_discont");

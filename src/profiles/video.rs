@@ -74,12 +74,89 @@ impl Profile for VideoCopyProfile {
         ffarg!(a, "-f", "hls");
         ffarg!(a, "-hls_time", TARGET_SEGMENT_SECONDS.to_string());
         ffarg!(a, "-start_number", start_segment.to_string());
+        ffarg!(a, "-hls_flags", "temp_file");
         ffarg!(a, "-hls_segment_type", "fmp4");
         ffarg!(a, "-hls_segment_filename", "%d.m4s");
         ffarg!(a, "-hls_fmp4_init_filename", "init.mp4");
         ffarg!(a, "-hls_segment_options", "movflags=+frag_discont");
         ffarg!(a, "-hls_playlist_type", "vod");
         ffarg!(a, "-hls_list_size", "0");
+        ffarg!(a, "-y");
+        ffarg!(a, "pipe:1");
+
+        a
+    }
+}
+
+#[derive(Debug)]
+pub struct VideoH264Profile;
+
+impl Profile for VideoH264Profile {
+    fn display_name(&self) -> &'static str {
+        "Convert"
+    }
+
+    fn id_name(&self) -> &'static str {
+        "video_h264"
+    }
+
+    fn profile_type(&self) -> ProfileType {
+        ProfileType::Transcode
+    }
+
+    fn stream_type(&self) -> StreamType {
+        StreamType::Video
+    }
+
+    fn supports_stream(&self, ctx: &ProfileContext) -> bool {
+        if !ctx.stream.is_primary_video {
+            return false;
+        }
+
+        ctx.stream.stream_type == StreamType::Video
+    }
+
+    fn build_args(
+        &self,
+        ctx: &ProfileContext,
+        start_segment: i64,
+        start_seconds: f64,
+    ) -> Vec<OsString> {
+        let mut a: Vec<OsString> = Vec::new();
+
+        if start_segment > 0 {
+            // unlike copy, we can seek to the exact start position using exact seeks.
+            ffarg!(a, "-ss", format!("{start_seconds:.6}"));
+        }
+
+        // Input after -ss means "fast seek" (keyframe seek) for copy-mode segments.
+        ffarg!(a, "-i", ctx.input.clone().into_os_string());
+
+        // copy instead of transcode
+        ffarg!(a, "-codec:v", "libx264");
+        ffarg!(a, "-preset", "veryfast");
+
+        // copy original timestamps so our segment boundaries (from keyframes) align.
+        // avoid_negative_ts=disabled keeps ffmpeg from shifting timestamps to start at 0,
+        // which would desync from the keyframe-derived playlist positions.
+        ffarg!(a, "-copyts");
+        ffarg!(a, "-avoid_negative_ts", "disabled");
+
+        // take just the stream we want
+        ffarg!(a, "-map", format!("0:{}", ctx.stream.stream_index));
+
+        // hls stuff
+        ffarg!(a, "-f", "hls");
+        ffarg!(a, "-hls_time", TARGET_SEGMENT_SECONDS.to_string());
+        ffarg!(a, "-start_number", start_segment.to_string());
+        ffarg!(a, "-hls_flags", "temp_file");
+        ffarg!(a, "-hls_segment_type", "fmp4");
+        ffarg!(a, "-hls_segment_filename", "%d.m4s");
+        ffarg!(a, "-hls_fmp4_init_filename", "init.mp4");
+        ffarg!(a, "-hls_segment_options", "movflags=+frag_discont");
+        ffarg!(a, "-hls_playlist_type", "vod");
+        ffarg!(a, "-hls_list_size", "0");
+
         ffarg!(a, "-y");
         ffarg!(a, "pipe:1");
 

@@ -388,19 +388,38 @@ pub fn build_master_playlist(
         .iter()
         .find(|stream| stream.is_primary_video && stream.stream_type == StreamType::Video)
         .context("missing primary video stream")?;
-    let video_key = StreamProfileKey {
-        stream_id: primary_video.stream_id,
-        profile_id: "video_copy".to_string(),
-    };
-    if stream_profiles.contains_key(&video_key) {
+
+    let mut video_profiles: Vec<&StreamProfileState> = stream_profiles
+        .values()
+        .filter(|state| {
+            state.stream.stream_id == primary_video.stream_id
+                && state.profile.stream_type() == StreamType::Video
+        })
+        .map(|state| state.as_ref())
+        .collect();
+
+    video_profiles.sort_by(|a, b| {
+        let a_type = a.profile.profile_type();
+        let b_type = b.profile.profile_type();
+        a_type
+            .cmp(&b_type)
+            .then_with(|| a.profile.id_name().cmp(b.profile.id_name()))
+    });
+
+    for profile in video_profiles {
         let uri = format!(
             "/stream/{}/{}/index.m3u8",
-            primary_video.stream_id, "video_copy"
+            profile.stream.stream_id,
+            profile.profile.id_name()
         );
         let audio_attr = if has_audio { ",AUDIO=\"audio\"" } else { "" };
+        let bandwidth = match profile.profile.profile_type() {
+            ProfileType::Copy => 8_000_000,
+            ProfileType::Transcode => 4_000_000,
+        };
         playlist.push_str(&format!(
-            "#EXT-X-STREAM-INF:BANDWIDTH=8000000{}\n",
-            audio_attr
+            "#EXT-X-STREAM-INF:BANDWIDTH={}{}\n",
+            bandwidth, audio_attr
         ));
         playlist.push_str(&format!("{}\n", uri));
     }

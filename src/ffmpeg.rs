@@ -11,7 +11,7 @@ use tokio::{
     process::Command,
     time::{Instant, sleep},
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     profiles::ProfileContext,
@@ -26,7 +26,7 @@ pub async fn ensure_ffmpeg_for_init(state: &Arc<StreamProfileState>) -> Result<(
     let _guard = state.ffmpeg_ops.lock().await;
     let needs_start = {
         let mut ffmpeg = state.ffmpeg.lock().await;
-        update_child_status(&mut ffmpeg)?;
+        update_child_status(state, &mut ffmpeg)?;
         ffmpeg.child.is_none()
     };
 
@@ -81,14 +81,27 @@ pub async fn ensure_ffmpeg_for_segment(
     state
         .last_generated
         .store(last_generated, Ordering::Relaxed);
+    let segment_ready = {
+        let path = state
+            .segment_dir
+            .join(format!("{requested_segment}.m4s"));
+        match fs::metadata(&path).await {
+            Ok(metadata) => metadata.len() > 0,
+            Err(_) => false,
+        }
+    };
 
     let action = {
         let mut ffmpeg = state.ffmpeg.lock().await;
-        update_child_status(&mut ffmpeg)?;
+        update_child_status(state, &mut ffmpeg)?;
 
         if ffmpeg.child.is_none() {
             ffmpeg.last_requested_segment = requested_segment;
-            FfmpegAction::Start
+            if segment_ready {
+                FfmpegAction::None
+            } else {
+                FfmpegAction::Start
+            }
         } else if should_restart_ffmpeg(state, &ffmpeg, requested_segment, last_generated) {
             info!(
                 requested_segment,
@@ -267,7 +280,7 @@ async fn throttle_loop(state: Arc<StreamProfileState>) {
             break;
         }
 
-        update_child_status(&mut ffmpeg).ok();
+        update_child_status(&state, &mut ffmpeg).ok();
         if ffmpeg.child.is_none() {
             break;
         }
@@ -345,10 +358,26 @@ async fn find_last_generated(dir: &Path) -> Result<i64> {
     Ok(max_index)
 }
 
-fn update_child_status(ffmpeg: &mut FfmpegState) -> Result<()> {
+fn update_child_status(state: &StreamProfileState, ffmpeg: &mut FfmpegState) -> Result<()> {
     if let Some(child) = ffmpeg.child.as_mut() {
         if let Ok(Some(status)) = child.try_wait() {
-            warn!(?status, "ffmpeg exited");
+            let last_generated = state.last_generated.load(Ordering::Relaxed);
+            let last_index = state.segment_start_seconds.len() as i64 - 1;
+            if last_index >= 0 && last_generated >= last_index {
+                info!(
+                    ?status,
+                    last_generated,
+                    last_index,
+                    "ffmpeg exited after segment generation"
+                );
+            } else {
+                error!(
+                    ?status,
+                    last_generated,
+                    last_index,
+                    "ffmpeg exited prematurely"
+                );
+            }
             ffmpeg.child = None;
             ffmpeg.pid = None;
             ffmpeg.throttled = false;

@@ -26,7 +26,7 @@ use crate::{
     ffmpeg::{
         ensure_ffmpeg_for_init, ensure_ffmpeg_for_segment, parse_segment_index, wait_for_file,
     },
-    profiles::{AudioAacProfile, Profile, VideoCopyProfile},
+    profiles::{AudioAacProfile, Profile, VideoCopyProfile, VideoH264Profile},
     state::{
         AppState, StreamProfileKey, build_master_playlist, build_stream_profiles,
         create_process_segment_dir, load_keyframes_if_needed, prepare_segments_root, probe_streams,
@@ -50,8 +50,11 @@ async fn main() -> Result<()> {
     let (streams, primary_video_info, duration_seconds) = probe_streams(&input)?;
     let keyframes = load_keyframes_if_needed(&input, primary_video_info.is_some())?;
 
-    let profiles: Vec<Arc<dyn Profile>> =
-        vec![Arc::new(VideoCopyProfile), Arc::new(AudioAacProfile)];
+    let profiles: Vec<Arc<dyn Profile>> = vec![
+        Arc::new(VideoCopyProfile),
+        Arc::new(VideoH264Profile),
+        Arc::new(AudioAacProfile),
+    ];
 
     let stream_profiles = build_stream_profiles(
         &input,
@@ -88,8 +91,8 @@ async fn main() -> Result<()> {
         .with_state(state)
         .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    info!("listening on http://0.0.0.0:3000");
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:4422").await?;
+    info!("listening on http://0.0.0.0:4422");
     axum::serve(listener, app).await?;
 
     Ok(())
