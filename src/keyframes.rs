@@ -53,14 +53,14 @@ fn try_load_cache(cache_path: &Path, file_size: u64) -> Result<Option<Vec<f64>>>
     let data = match fs::read(cache_path) {
         Ok(data) => data,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(err).with_context(|| {
-            format!("failed to read keyframe cache {}", cache_path.display())
-        }),
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("failed to read keyframe cache {}", cache_path.display()));
+        }
     };
 
-    let cache: KeyframeCache = serde_json::from_slice(&data).with_context(|| {
-        format!("failed to parse keyframe cache {}", cache_path.display())
-    })?;
+    let cache: KeyframeCache = serde_json::from_slice(&data)
+        .with_context(|| format!("failed to parse keyframe cache {}", cache_path.display()))?;
 
     if cache.file_size != file_size {
         warn!(
@@ -88,8 +88,7 @@ fn write_cache(cache_path: &Path, file_size: u64, keyframes: &[f64]) -> Result<(
         file_size,
         keyframes: keyframes.to_vec(),
     };
-    let json = serde_json::to_vec_pretty(&cache)
-        .context("failed to serialize keyframe cache")?;
+    let json = serde_json::to_vec_pretty(&cache).context("failed to serialize keyframe cache")?;
     fs::write(cache_path, json)
         .with_context(|| format!("failed to write keyframe cache {}", cache_path.display()))?;
     info!(
@@ -104,6 +103,8 @@ fn probe_keyframes(input: &Path) -> Result<Vec<f64>> {
     info!("extracting keyframes");
     let output = Command::new("ffprobe")
         .args([
+            "-fflags",
+            "+genpts",
             "-v",
             "error",
             "-select_streams",
@@ -130,9 +131,7 @@ fn probe_keyframes(input: &Path) -> Result<Vec<f64>> {
 
     let mut times = Vec::new();
     for frame in frames.frames {
-        let value = frame
-            .best_effort_timestamp_time
-            .or(frame.pkt_pts_time);
+        let value = frame.best_effort_timestamp_time.or(frame.pkt_pts_time);
         if let Some(value) = value {
             if let Ok(parsed) = value.parse::<f64>() {
                 times.push(parsed);

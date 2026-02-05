@@ -25,7 +25,9 @@ lyra.yml
 node_modules/
 dist/
 test/
-test.mkv
 .parts
 segments/
 .segments/
+*.mkv
+*.mp4
+samples/
