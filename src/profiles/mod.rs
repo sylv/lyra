@@ -1,6 +1,16 @@
 use crate::model::{StreamDescriptor, StreamInfo, StreamType};
 use std::{ffi::OsString, path::PathBuf, sync::Arc};
 
+macro_rules! ffarg {
+    ($args:ident, $arg:expr) => {{
+        $args.push(::std::ffi::OsString::from($arg));
+    }};
+    ($args:ident, $arg:expr, $value:expr) => {{
+        $args.push(::std::ffi::OsString::from($arg));
+        $args.push(::std::ffi::OsString::from($value));
+    }};
+}
+
 pub mod audio;
 pub use audio::AudioAacProfile;
 
