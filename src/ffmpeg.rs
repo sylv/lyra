@@ -21,6 +21,7 @@ use crate::{
 const THROTTLE_AHEAD_SEGMENTS: i64 = 4;
 const UNTHROTTLE_WITHIN_SEGMENTS: i64 = 1;
 const SEEK_RESTART_THRESHOLD_SECONDS: f64 = 24.0;
+const FFMPEG_BIN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/bin/ffmpeg");
 
 pub async fn ensure_ffmpeg_for_init(state: &Arc<StreamProfileState>) -> Result<()> {
     let _guard = state.ffmpeg_ops.lock().await;
@@ -57,17 +58,14 @@ pub async fn ensure_ffmpeg_for_segment(
         requested_start_pts,
         "segment request received"
     );
-    let segment_count = state.segment_start_seconds.len() as i64;
+    let segment_count = state.segment_start_pts.len() as i64;
     if requested_segment >= segment_count {
         bail!("segment {requested_segment} out of range");
     }
 
     if let (Some(start_pts), Some(expected)) = (
         requested_start_pts,
-        state
-            .segment_start_pts
-            .as_ref()
-            .and_then(|list| list.get(requested_segment as usize)),
+        state.segment_start_pts.get(requested_segment as usize),
     ) {
         if *expected != start_pts {
             warn!(expected, start_pts, "segment startPts mismatch");
@@ -75,16 +73,12 @@ pub async fn ensure_ffmpeg_for_segment(
     }
 
     let _guard = state.ffmpeg_ops.lock().await;
-    let last_generated = find_last_generated(&state.segment_dir)
-        .await
-        .unwrap_or(-1);
+    let last_generated = find_last_generated(&state.segment_dir).await.unwrap_or(-1);
     state
         .last_generated
         .store(last_generated, Ordering::Relaxed);
     let segment_ready = {
-        let path = state
-            .segment_dir
-            .join(format!("{requested_segment}.m4s"));
+        let path = state.segment_dir.join(format!("{requested_segment}.m4s"));
         match fs::metadata(&path).await {
             Ok(metadata) => metadata.len() > 0,
             Err(_) => false,
@@ -158,12 +152,18 @@ pub fn parse_segment_index(name: &str) -> Option<i64> {
 }
 
 async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Result<()> {
-    let start_seconds = state.segment_start_seconds[start_segment as usize];
+    let start_pts = state.segment_start_pts[start_segment as usize];
+    let start_seconds = pts_to_seconds(
+        start_pts,
+        state.timeline_time_base_num,
+        state.timeline_time_base_den,
+    );
 
     info!(
         stream_id = state.stream.stream_id,
         profile = state.profile.id_name(),
         start_segment,
+        start_pts,
         start_seconds,
         "starting ffmpeg"
     );
@@ -177,15 +177,21 @@ async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Re
 
     let args = state
         .profile
-        .build_args(&ctx, start_segment, start_seconds);
+        .build_args(&ctx, start_segment, start_seconds, &state.hls_cuts);
 
     debug!(
         cwd = %state.segment_dir.display(),
+        ffmpeg_bin = FFMPEG_BIN,
         args = ?args,
         "ffmpeg args"
     );
 
-    let mut command = Command::new("ffmpeg");
+    let ffmpeg_bin = Path::new(FFMPEG_BIN);
+    if !ffmpeg_bin.exists() {
+        bail!("ffmpeg binary not found at {}", ffmpeg_bin.display());
+    }
+
+    let mut command = Command::new(ffmpeg_bin);
     command.current_dir(&state.segment_dir);
     command
         .args(&args)
@@ -273,7 +279,9 @@ async fn throttle_loop(state: Arc<StreamProfileState>) {
                 continue;
             }
         };
-        state.last_generated.store(last_generated, Ordering::Relaxed);
+        state
+            .last_generated
+            .store(last_generated, Ordering::Relaxed);
 
         let mut ffmpeg = state.ffmpeg.lock().await;
         if ffmpeg.child.is_none() {
@@ -362,20 +370,16 @@ fn update_child_status(state: &StreamProfileState, ffmpeg: &mut FfmpegState) -> 
     if let Some(child) = ffmpeg.child.as_mut() {
         if let Ok(Some(status)) = child.try_wait() {
             let last_generated = state.last_generated.load(Ordering::Relaxed);
-            let last_index = state.segment_start_seconds.len() as i64 - 1;
+            let last_index = state.segment_start_pts.len() as i64 - 1;
             if last_index >= 0 && last_generated >= last_index {
                 info!(
                     ?status,
-                    last_generated,
-                    last_index,
-                    "ffmpeg exited after segment generation"
+                    last_generated, last_index, "ffmpeg exited after segment generation"
                 );
             } else {
                 error!(
                     ?status,
-                    last_generated,
-                    last_index,
-                    "ffmpeg exited prematurely"
+                    last_generated, last_index, "ffmpeg exited prematurely"
                 );
             }
             ffmpeg.child = None;
@@ -406,9 +410,17 @@ fn should_restart_ffmpeg(
         return false;
     }
 
-    let requested_start = state.segment_start_seconds[requested_segment as usize];
-    let baseline_start = state.segment_start_seconds[baseline as usize];
-    requested_start - baseline_start > SEEK_RESTART_THRESHOLD_SECONDS
+    let requested_start = pts_to_av_time(
+        state.segment_start_pts[requested_segment as usize],
+        state.timeline_time_base_num,
+        state.timeline_time_base_den,
+    );
+    let baseline_start = pts_to_av_time(
+        state.segment_start_pts[baseline as usize],
+        state.timeline_time_base_num,
+        state.timeline_time_base_den,
+    );
+    requested_start - baseline_start > (SEEK_RESTART_THRESHOLD_SECONDS * 1_000_000.0) as i64
 }
 
 fn parse_segment_index_from_line(line: &str) -> Option<i64> {
@@ -421,4 +433,14 @@ enum FfmpegAction {
     None,
     Start,
     Restart,
+}
+
+fn pts_to_seconds(pts: i64, time_base_num: i64, time_base_den: i64) -> f64 {
+    (pts as f64) * (time_base_num as f64) / (time_base_den as f64)
+}
+
+fn pts_to_av_time(pts: i64, time_base_num: i64, time_base_den: i64) -> i64 {
+    let num = pts as i128 * time_base_num as i128 * 1_000_000i128;
+    let den = time_base_den as i128;
+    (num / den) as i64
 }

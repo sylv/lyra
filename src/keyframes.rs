@@ -14,17 +14,23 @@ struct ProbeFrames {
 
 #[derive(Deserialize)]
 struct ProbeFrame {
-    best_effort_timestamp_time: Option<String>,
-    pkt_pts_time: Option<String>,
+    best_effort_timestamp: Option<i64>,
+    pkt_pts: Option<i64>,
 }
 
 #[derive(Deserialize, Serialize)]
 struct KeyframeCache {
     file_size: u64,
+    keyframes: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+struct LegacyKeyframeCache {
+    file_size: u64,
     keyframes: Vec<f64>,
 }
 
-pub fn load_or_probe_keyframes(input: &Path) -> Result<Vec<f64>> {
+pub fn load_or_probe_keyframes(input: &Path) -> Result<Vec<i64>> {
     let file_size = fs::metadata(input)
         .with_context(|| format!("failed to stat {}", input.display()))?
         .len();
@@ -49,7 +55,7 @@ fn cache_path_for(input: &Path) -> PathBuf {
     PathBuf::from(format!("{path}-keyframes.json"))
 }
 
-fn try_load_cache(cache_path: &Path, file_size: u64) -> Result<Option<Vec<f64>>> {
+fn try_load_cache(cache_path: &Path, file_size: u64) -> Result<Option<Vec<i64>>> {
     let data = match fs::read(cache_path) {
         Ok(data) => data,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -60,8 +66,22 @@ fn try_load_cache(cache_path: &Path, file_size: u64) -> Result<Option<Vec<f64>>>
         }
     };
 
-    let cache: KeyframeCache = serde_json::from_slice(&data)
-        .with_context(|| format!("failed to parse keyframe cache {}", cache_path.display()))?;
+    let cache: KeyframeCache = match serde_json::from_slice(&data) {
+        Ok(cache) => cache,
+        Err(_) => {
+            let legacy: LegacyKeyframeCache = serde_json::from_slice(&data).with_context(|| {
+                format!("failed to parse keyframe cache {}", cache_path.display())
+            })?;
+            KeyframeCache {
+                file_size: legacy.file_size,
+                keyframes: legacy
+                    .keyframes
+                    .into_iter()
+                    .map(|value| value.round() as i64)
+                    .collect(),
+            }
+        }
+    };
 
     if cache.file_size != file_size {
         warn!(
@@ -84,7 +104,7 @@ fn try_load_cache(cache_path: &Path, file_size: u64) -> Result<Option<Vec<f64>>>
     Ok(Some(cache.keyframes))
 }
 
-fn write_cache(cache_path: &Path, file_size: u64, keyframes: &[f64]) -> Result<()> {
+fn write_cache(cache_path: &Path, file_size: u64, keyframes: &[i64]) -> Result<()> {
     let cache = KeyframeCache {
         file_size,
         keyframes: keyframes.to_vec(),
@@ -100,7 +120,7 @@ fn write_cache(cache_path: &Path, file_size: u64, keyframes: &[f64]) -> Result<(
     Ok(())
 }
 
-fn probe_keyframes(input: &Path) -> Result<Vec<f64>> {
+fn probe_keyframes(input: &Path) -> Result<Vec<i64>> {
     info!("extracting keyframes");
     let output = Command::new("ffprobe")
         .args([
@@ -114,7 +134,7 @@ fn probe_keyframes(input: &Path) -> Result<Vec<f64>> {
             "nokey",
             "-show_frames",
             "-show_entries",
-            "frame=best_effort_timestamp_time,pkt_pts_time",
+            "frame=best_effort_timestamp,pkt_pts",
             "-of",
             "json",
         ])
@@ -132,15 +152,13 @@ fn probe_keyframes(input: &Path) -> Result<Vec<f64>> {
 
     let mut times = Vec::new();
     for frame in frames.frames {
-        let value = frame.best_effort_timestamp_time.or(frame.pkt_pts_time);
-        if let Some(value) = value {
-            if let Ok(parsed) = value.parse::<f64>() {
-                times.push(parsed);
-            }
+        if let Some(value) = frame.best_effort_timestamp.or(frame.pkt_pts) {
+            times.push(value);
         }
     }
 
-    times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    times.sort_unstable();
+    times.dedup();
     info!(keyframes = times.len(), "keyframe extraction complete");
     Ok(times)
 }

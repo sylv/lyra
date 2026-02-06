@@ -158,7 +158,7 @@ async fn stream_segment_handler(
 
     let segment_index = parse_segment_index(&name).ok_or(StatusCode::NOT_FOUND)?;
     if segment_index >= 0 {
-        if segment_index as usize >= stream_profile.segment_start_seconds.len() {
+        if segment_index as usize >= stream_profile.segment_start_pts.len() {
             return Err(StatusCode::NOT_FOUND);
         }
         ensure_ffmpeg_for_segment(&stream_profile, segment_index, query.start_pts)

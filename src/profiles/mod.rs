@@ -28,7 +28,7 @@ pub struct ProfileContext {
     pub input: PathBuf,
     pub stream: StreamDescriptor,
     pub stream_info: Option<StreamInfo>,
-    pub keyframes: Option<Arc<Vec<f64>>>,
+    pub keyframes: Option<Arc<Vec<i64>>>,
 }
 
 pub trait Profile: Send + Sync {
@@ -42,5 +42,6 @@ pub trait Profile: Send + Sync {
         ctx: &ProfileContext,
         start_segment: i64,
         start_seconds: f64,
+        hls_cuts: &str,
     ) -> Vec<OsString>;
 }
