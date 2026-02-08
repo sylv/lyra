@@ -67,7 +67,6 @@ impl Profile for AudioAacProfile {
         ffarg!(a, "-hls_cuts", hls_cuts);
         ffarg!(a, "-hls_flags", "temp_file");
         ffarg!(a, "-hls_segment_filename", "%d.m4s");
-        ffarg!(a, "-hls_fmp4_init_filename", "init.mp4");
         ffarg!(a, "-hls_segment_options", "movflags=+frag_discont");
         ffarg!(a, "-hls_segment_type", "fmp4");
 
