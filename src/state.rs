@@ -14,7 +14,7 @@ use crate::{
     keyframes,
     model::{StreamDescriptor, StreamInfo, StreamType},
     playlist,
-    profiles::{Profile, ProfileContext, ProfileType},
+    profiles::{Profile, ProfileContext, ProfileType, SegmentLayout},
 };
 
 pub struct AppState {
@@ -112,6 +112,15 @@ struct FfprobeStream {
 #[derive(serde::Deserialize)]
 struct FfprobeFormat {
     duration: Option<String>,
+}
+
+#[derive(Clone)]
+struct SegmentTimeline {
+    start_pts: Vec<i64>,
+    total_duration_pts: i64,
+    time_base_num: i64,
+    time_base_den: i64,
+    hls_cuts: Arc<String>,
 }
 
 pub fn prepare_segments_root() -> Result<PathBuf> {
@@ -240,7 +249,7 @@ pub fn build_stream_profiles(
     profiles: &[Arc<dyn Profile>],
 ) -> Result<HashMap<StreamProfileKey, Arc<StreamProfileState>>> {
     let mut map = HashMap::new();
-    let shared_timeline = match (primary_video_info, keyframes.as_ref()) {
+    let keyframe_timeline = match (primary_video_info, keyframes.as_ref()) {
         (Some(info), Some(video_keyframes)) => {
             let total_duration_pts = playlist::seconds_to_pts(
                 info.duration_seconds,
@@ -258,15 +267,33 @@ pub fn build_stream_profiles(
                 desired_segment_length_pts,
             )?;
             let hls_cuts = build_hls_cuts_arg(&start_pts, info.time_base_num, info.time_base_den);
-            Some((
+            Some(SegmentTimeline {
                 start_pts,
                 total_duration_pts,
-                info.time_base_num,
-                info.time_base_den,
-                Arc::new(hls_cuts),
-            ))
+                time_base_num: info.time_base_num,
+                time_base_den: info.time_base_den,
+                hls_cuts: Arc::new(hls_cuts),
+            })
         }
         _ => None,
+    };
+    let fixed_timeline = {
+        let time_base_num = 1;
+        let time_base_den = 1_000_000;
+        let total_duration_pts =
+            playlist::seconds_to_pts(duration_seconds, time_base_num, time_base_den);
+        let desired_segment_length_pts =
+            playlist::seconds_to_pts(TARGET_SEGMENT_SECONDS, time_base_num, time_base_den);
+        let start_pts =
+            compute_segment_starts_fixed_pts(total_duration_pts, desired_segment_length_pts);
+        let hls_cuts = build_hls_cuts_arg(&start_pts, time_base_num, time_base_den);
+        SegmentTimeline {
+            start_pts,
+            total_duration_pts,
+            time_base_num,
+            time_base_den,
+            hls_cuts: Arc::new(hls_cuts),
+        }
     };
 
     for stream in streams {
@@ -303,118 +330,29 @@ pub fn build_stream_profiles(
                 profile.id_name()
             );
 
+            let timeline = match profile.segment_layout() {
+                SegmentLayout::Keyframe => {
+                    if let Some(timeline) = keyframe_timeline.as_ref() {
+                        timeline
+                    } else {
+                        warn!(
+                            stream_id = stream.stream_id,
+                            profile = profile.id_name(),
+                            "keyframe timeline unavailable; falling back to fixed 6-second timeline"
+                        );
+                        &fixed_timeline
+                    }
+                }
+                SegmentLayout::Fixed => &fixed_timeline,
+            };
+
             let (
                 playlist,
                 segment_start_pts,
                 timeline_time_base_num,
                 timeline_time_base_den,
                 hls_cuts,
-            ) = if let Some((
-                start_pts,
-                total_duration_pts,
-                time_base_num,
-                time_base_den,
-                shared_hls_cuts,
-            )) = &shared_timeline
-            {
-                let playlist = playlist::create_fmp4_hls_playlist_from_segment_starts_pts(
-                    start_pts,
-                    *total_duration_pts,
-                    *time_base_num,
-                    *time_base_den,
-                    &endpoint_prefix,
-                    "",
-                )
-                .map_err(|err| anyhow::anyhow!(err))?;
-                (
-                    playlist,
-                    start_pts.clone(),
-                    *time_base_num,
-                    *time_base_den,
-                    Arc::clone(shared_hls_cuts),
-                )
-            } else {
-                match profile.profile_type() {
-                    ProfileType::Copy => {
-                        let info = ctx
-                            .stream_info
-                            .as_ref()
-                            .context("missing stream info for copy profile")?;
-                        let keyframes = ctx
-                            .keyframes
-                            .as_ref()
-                            .context("missing keyframes for copy profile")?;
-                        let total_duration_pts = playlist::seconds_to_pts(
-                            info.duration_seconds,
-                            info.time_base_num,
-                            info.time_base_den,
-                        );
-                        let desired_segment_length_pts = playlist::seconds_to_pts(
-                            TARGET_SEGMENT_SECONDS,
-                            info.time_base_num,
-                            info.time_base_den,
-                        );
-                        let start_pts = compute_segment_starts_from_keyframes_pts(
-                            keyframes,
-                            total_duration_pts,
-                            desired_segment_length_pts,
-                        )?;
-                        let playlist = playlist::create_fmp4_hls_playlist_from_segment_starts_pts(
-                            &start_pts,
-                            total_duration_pts,
-                            info.time_base_num,
-                            info.time_base_den,
-                            &endpoint_prefix,
-                            "",
-                        )
-                        .map_err(|err| anyhow::anyhow!(err))?;
-                        let hls_cuts =
-                            build_hls_cuts_arg(&start_pts, info.time_base_num, info.time_base_den);
-                        (
-                            playlist,
-                            start_pts,
-                            info.time_base_num,
-                            info.time_base_den,
-                            Arc::new(hls_cuts),
-                        )
-                    }
-                    ProfileType::Transcode => {
-                        let time_base_num = 1;
-                        let time_base_den = 1_000_000;
-                        let total_duration_pts = playlist::seconds_to_pts(
-                            duration_seconds,
-                            time_base_num,
-                            time_base_den,
-                        );
-                        let desired_segment_length_pts = playlist::seconds_to_pts(
-                            TARGET_SEGMENT_SECONDS,
-                            time_base_num,
-                            time_base_den,
-                        );
-                        let start_pts = compute_segment_starts_fixed_pts(
-                            total_duration_pts,
-                            desired_segment_length_pts,
-                        );
-                        let playlist = playlist::create_fmp4_hls_playlist_from_segment_starts_pts(
-                            &start_pts,
-                            total_duration_pts,
-                            time_base_num,
-                            time_base_den,
-                            &endpoint_prefix,
-                            "",
-                        )
-                        .map_err(|err| anyhow::anyhow!(err))?;
-                        let hls_cuts = build_hls_cuts_arg(&start_pts, time_base_num, time_base_den);
-                        (
-                            playlist,
-                            start_pts,
-                            time_base_num,
-                            time_base_den,
-                            Arc::new(hls_cuts),
-                        )
-                    }
-                }
-            };
+            ) = build_stream_profile_playlist(timeline, &endpoint_prefix)?;
 
             let key = StreamProfileKey {
                 stream_id: stream.stream_id,
@@ -445,6 +383,28 @@ pub fn build_stream_profiles(
     }
 
     Ok(map)
+}
+
+fn build_stream_profile_playlist(
+    timeline: &SegmentTimeline,
+    endpoint_prefix: &str,
+) -> Result<(String, Vec<i64>, i64, i64, Arc<String>)> {
+    let playlist = playlist::create_fmp4_hls_playlist_from_segment_starts_pts(
+        &timeline.start_pts,
+        timeline.total_duration_pts,
+        timeline.time_base_num,
+        timeline.time_base_den,
+        endpoint_prefix,
+        "",
+    )
+    .map_err(|err| anyhow::anyhow!(err))?;
+    Ok((
+        playlist,
+        timeline.start_pts.clone(),
+        timeline.time_base_num,
+        timeline.time_base_den,
+        Arc::clone(&timeline.hls_cuts),
+    ))
 }
 
 pub fn build_master_playlist(

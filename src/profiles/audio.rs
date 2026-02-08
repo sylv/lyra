@@ -1,7 +1,7 @@
 use crate::{
     config::TARGET_SEGMENT_SECONDS,
     model::StreamType,
-    profiles::{Profile, ProfileContext, ProfileType},
+    profiles::{Profile, ProfileContext, ProfileType, SegmentLayout},
 };
 use std::ffi::OsString;
 
@@ -19,6 +19,10 @@ impl Profile for AudioAacProfile {
 
     fn profile_type(&self) -> ProfileType {
         ProfileType::Transcode
+    }
+
+    fn segment_layout(&self) -> SegmentLayout {
+        SegmentLayout::Fixed
     }
 
     fn stream_type(&self) -> StreamType {
@@ -64,7 +68,7 @@ impl Profile for AudioAacProfile {
         ffarg!(a, "-f", "hls");
         ffarg!(a, "-start_number", start_segment.to_string());
         ffarg!(a, "-hls_time", TARGET_SEGMENT_SECONDS.to_string());
-        ffarg!(a, "-hls_cuts", hls_cuts);
+        // ffarg!(a, "-hls_cuts", hls_cuts);
         ffarg!(a, "-hls_flags", "temp_file");
         ffarg!(a, "-hls_segment_filename", "%d.m4s");
         ffarg!(a, "-hls_segment_options", "movflags=+frag_discont");

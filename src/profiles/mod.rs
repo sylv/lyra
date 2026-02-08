@@ -16,12 +16,18 @@ pub use audio::AudioAacProfile;
 
 pub mod video;
 pub use video::VideoCopyProfile;
-// pub use video::VideoH264Profile;
+pub use video::VideoH264Profile;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ProfileType {
     Copy,
     Transcode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SegmentLayout {
+    Keyframe,
+    Fixed,
 }
 
 pub struct ProfileContext {
@@ -35,6 +41,7 @@ pub trait Profile: Send + Sync {
     fn display_name(&self) -> &'static str;
     fn id_name(&self) -> &'static str;
     fn profile_type(&self) -> ProfileType;
+    fn segment_layout(&self) -> SegmentLayout;
     fn stream_type(&self) -> StreamType;
     fn supports_stream(&self, ctx: &ProfileContext) -> bool;
     fn build_args(
