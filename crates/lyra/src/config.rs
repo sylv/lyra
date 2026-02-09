@@ -1,0 +1,67 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
+    pub data_dir: PathBuf,
+    pub transcode_cache_dir: Option<PathBuf>,
+    pub image_dir: Option<PathBuf>,
+    pub tmdb_api_key: String,
+    pub host: String,
+    pub port: u16,
+    pub clear_transcode_cache_on_start: bool,
+    pub library_scan_interval: i64,
+}
+
+impl Config {
+    pub fn get_transcode_cache_dir(&self) -> PathBuf {
+        if let Some(dir) = self.transcode_cache_dir.as_ref() {
+            dir.clone()
+        } else {
+            self.data_dir.join("transcode_cache")
+        }
+    }
+
+    pub fn get_image_dir(&self) -> PathBuf {
+        if let Some(dir) = self.image_dir.as_ref() {
+            dir.clone()
+        } else {
+            self.data_dir.join("image_cache")
+        }
+    }
+}
+
+static CONFIG: once_cell::sync::Lazy<Config> =
+    once_cell::sync::Lazy::new(|| load_config().expect("failed to load lyra config"));
+
+pub fn get_config() -> &'static Config {
+    &CONFIG
+}
+
+fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    let config = config::Config::builder()
+        .add_source(config::Environment::with_prefix("lyra"))
+        .add_source(config::File::with_name("lyra.yml").required(false))
+        .set_default("data_dir", ".lyra")?
+        .set_default("host", "127.0.0.1")?
+        .set_default("port", "8000")?
+        .set_default("tmdb_api_key", "f81a38fe9eba82e5dc3695a7406068bd")?
+        .set_default("clear_transcode_cache_on_start", false)?
+        .set_default("library_scan_interval", 4 * 60 * 60)? // 4 hours
+        .build()
+        .unwrap();
+
+    let config: Config = config.try_deserialize()?;
+    tracing::info!("loaded config: {:?}", config);
+
+    if config.clear_transcode_cache_on_start && config.get_transcode_cache_dir().exists() {
+        tracing::info!("clearing transcode cache");
+        std::fs::remove_dir_all(&config.get_transcode_cache_dir())?;
+    }
+
+    std::fs::create_dir_all(&config.data_dir)?;
+    std::fs::create_dir_all(&config.get_transcode_cache_dir())?;
+    std::fs::create_dir_all(&config.get_image_dir())?;
+
+    Ok(config)
+}
