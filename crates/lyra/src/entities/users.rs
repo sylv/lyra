@@ -18,9 +18,9 @@ pub struct Model {
     pub invite_code: Option<String>,
     pub permissions: u32,
     #[sea_orm(column_type = "Text", nullable)]
-    pub default_subtitle_bcp47: Option<String>,
+    pub default_subtitle_iso639_1: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub default_audio_bcp47: Option<String>,
+    pub default_audio_iso639_1: Option<String>,
     pub subtitles_enabled: bool,
     pub created_at: i64,
 }

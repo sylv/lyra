@@ -148,8 +148,8 @@ type User {
 	id: String!
 	username: String!
 	permissions: Int!
-	defaultSubtitleBcp47: String
-	defaultAudioBcp47: String
+	defaultSubtitleiso639_1: String
+	defaultAudioiso639_1: String
 	subtitlesEnabled: Boolean!
 	createdAt: Int!
 }

@@ -19,11 +19,6 @@ use crate::{
     profiles::{Profile, ProfileContext, ProfileType, SegmentLayout},
 };
 
-pub struct AppState {
-    pub master_playlist: String,
-    pub stream_profiles: HashMap<StreamProfileKey, Arc<StreamProfileState>>,
-}
-
 #[derive(Clone, Debug)]
 pub struct StreamProfileKey {
     pub stream_id: u32,
@@ -492,13 +487,6 @@ fn build_hls_cuts_arg(start_pts: &[i64], time_base_num: i64, time_base_den: i64)
         cuts.push_str(&pts_to_av_time(start, time_base_num, time_base_den).to_string());
     }
     cuts
-}
-
-pub fn load_keyframes_if_needed(
-    input: &Path,
-    has_primary_video: bool,
-) -> Result<Option<Arc<Vec<i64>>>> {
-    load_keyframes_if_needed_with_policy(input, has_primary_video, KeyframePolicy::ProbeIfMissing)
 }
 
 pub fn load_keyframes_if_needed_with_policy(

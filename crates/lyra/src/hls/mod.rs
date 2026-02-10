@@ -13,11 +13,7 @@ use axum::{
     routing::get,
 };
 use lyra_packager::{
-    KeyframePolicy, build_packager_state_with_keyframe_policy, default_profiles,
-    ffmpeg::{
-        ensure_ffmpeg_for_init, ensure_ffmpeg_for_segment, parse_segment_index, wait_for_file,
-    },
-    state::{AppState as PackagerState, StreamProfileKey},
+    KeyframePolicy, Package, Session, build_package_with_keyframe_policy, get_profiles,
 };
 use sea_orm::EntityTrait;
 use serde::Deserialize;
@@ -67,7 +63,7 @@ async fn get_master_playlist(
     Path(file_id): Path<i64>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let packager_state = get_or_build_packager_state(&state, file_id).await?;
-    let playlist = rewrite_playlist_for_file(&packager_state.master_playlist, file_id);
+    let playlist = rewrite_playlist_for_file(packager_state.master_playlist(), file_id);
 
     let mut response = Response::new(Body::from(playlist));
     response.headers_mut().insert(
@@ -104,17 +100,11 @@ async fn stream_playlist_response(
     profile_id: String,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let packager_state = get_or_build_packager_state(state, file_id).await?;
-    let key = StreamProfileKey {
-        stream_id,
-        profile_id,
-    };
-
-    let stream_profile = packager_state
-        .stream_profiles
-        .get(&key)
+    let session = packager_state
+        .get_session(stream_id, &profile_id)
         .ok_or((StatusCode::NOT_FOUND, "stream profile not found"))?;
 
-    let playlist = rewrite_playlist_for_file(&stream_profile.playlist, file_id);
+    let playlist = rewrite_playlist_for_file(session.playlist(), file_id);
     let mut response = Response::new(Body::from(playlist));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -176,25 +166,20 @@ async fn segment_response(
     requested_start_pts: Option<i64>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let packager_state = get_or_build_packager_state(state, file_id).await?;
-    let key = StreamProfileKey {
-        stream_id,
-        profile_id,
-    };
-
-    let stream_profile = packager_state
-        .stream_profiles
-        .get(&key)
+    let session = packager_state
+        .get_session(stream_id, &profile_id)
         .ok_or((StatusCode::NOT_FOUND, "stream profile not found"))?
         .clone();
 
-    let segment_index =
-        parse_segment_index(&segment_name).ok_or((StatusCode::NOT_FOUND, "segment not found"))?;
+    let segment_index = Session::parse_segment_name(&segment_name)
+        .ok_or((StatusCode::NOT_FOUND, "segment not found"))?;
 
     if segment_index >= 0 {
-        if segment_index as usize >= stream_profile.segment_start_pts.len() {
+        if !session.has_segment(segment_index) {
             return Err((StatusCode::NOT_FOUND, "segment not found"));
         }
-        ensure_ffmpeg_for_segment(&stream_profile, segment_index, requested_start_pts)
+        session
+            .ensure_segment(segment_index, requested_start_pts)
             .await
             .map_err(|err| {
                 tracing::warn!(error = %err, "segment request failed");
@@ -204,19 +189,17 @@ async fn segment_response(
                 )
             })?;
     } else {
-        ensure_ffmpeg_for_init(&stream_profile)
-            .await
-            .map_err(|err| {
-                tracing::warn!(error = %err, "init request failed");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "segment generation failed",
-                )
-            })?;
+        session.ensure_init().await.map_err(|err| {
+            tracing::warn!(error = %err, "init request failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "segment generation failed",
+            )
+        })?;
     }
 
-    let path = stream_profile.segment_dir.join(&segment_name);
-    wait_for_file(&path, Duration::from_secs(10))
+    let path = session
+        .wait_for_segment_file(&segment_name, Duration::from_secs(10))
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "segment not found"))?;
 
@@ -234,31 +217,33 @@ async fn segment_response(
 async fn get_or_build_packager_state(
     state: &AppState,
     file_id: i64,
-) -> Result<Arc<PackagerState>, (StatusCode, &'static str)> {
+) -> Result<Arc<Package>, (StatusCode, &'static str)> {
     if let Some(existing) = state.packager_states.lock().await.get(&file_id).cloned() {
         return Ok(existing);
     }
 
     let file_path = resolve_file_path(state, file_id).await?;
 
-    let profiles = default_profiles();
+    let profiles = get_profiles();
     let segments_root = get_config()
         .get_transcode_cache_dir()
         .join(file_id.to_string());
 
-    let packager_state = build_packager_state_with_keyframe_policy(
-        &file_path,
-        &profiles,
-        Some(&segments_root),
-        KeyframePolicy::CacheOnly,
-    )
-    .map_err(|err| {
-        tracing::error!(file_id, error = %err, "failed to build packager state");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to build stream state",
+    let packager_state = Arc::new(
+        build_package_with_keyframe_policy(
+            &file_path,
+            &profiles,
+            Some(&segments_root),
+            KeyframePolicy::CacheOnly,
         )
-    })?;
+        .map_err(|err| {
+            tracing::error!(file_id, error = %err, "failed to build packager state");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to build stream state",
+            )
+        })?,
+    );
 
     let mut states = state.packager_states.lock().await;
     let entry = states

@@ -84,8 +84,8 @@ CREATE TABLE users (
     password_hash TEXT,
     invite_code TEXT,
     permissions INTEGER NOT NULL,
-    default_subtitle_bcp47 TEXT, -- eg "en-US"
-    default_audio_bcp47 TEXT,
+    default_subtitle_iso639_1 TEXT, -- eg "en-US"
+    default_audio_iso639_1 TEXT,
     subtitles_enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 

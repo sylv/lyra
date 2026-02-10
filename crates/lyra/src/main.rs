@@ -15,7 +15,7 @@ use axum::{
     response::{Html, IntoResponse},
     routing::{get, post},
 };
-use lyra_packager::state::AppState as PackagerState;
+use lyra_packager::Package as PackagerState;
 use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait};
 use serde::Serialize;
 use serde_json::json;
