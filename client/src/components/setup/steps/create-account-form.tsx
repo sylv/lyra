@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: its cringe */
-import { useMutation, gql } from "@apollo/client";
+import { gql } from "@apollo/client";
+import { useMutation } from "@apollo/client/react";
 import { useState, type FC } from "react";
 import { SetupModalStep } from "../setup-modal-step";
 import { InputOtp } from "../../input-otp";

@@ -1,4 +1,4 @@
-import { useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client/react";
 import { graphql } from "gql.tada";
 import { usePageContext } from "vike-react/usePageContext";
 import { MediaHeader, MediaHeaderFrag, MediaHeaderSkeleton } from "../../../components/media-header";

@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@apollo/client";
+import { useMutation, useQuery } from "@apollo/client/react";
 import { graphql } from "gql.tada";
 import { Folder, Plus, X } from "lucide-react";
 import { useState, type FC } from "react";

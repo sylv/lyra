@@ -1,10 +1,9 @@
-import { useQuery } from "@apollo/client";
-import { graphql } from "gql.tada";
+import { useQuery } from "@apollo/client/react";
+import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
 import { Fragment } from "react/jsx-runtime";
 import { usePageContext } from "vike-react/usePageContext";
 import { navigate } from "vike/client/router";
-import type { NodeFilter } from "../../../@generated/enums";
 import { EpisodeCard, EpisodeCardFrag, EpisodeCardSkeleton } from "../../../components/episode-card";
 import { FilterButton, FilterButtonSkeleton } from "../../../components/filter-button";
 import { MediaFilterList } from "../../../components/media-filter-list";
@@ -42,6 +41,8 @@ const EpisodesQuery = graphql(
 `,
 	[EpisodeCardFrag],
 );
+
+type NodeFilter = VariablesOf<typeof EpisodesQuery>["filter"];
 
 export default function Page() {
 	const pageContext = usePageContext();
@@ -160,7 +161,7 @@ export default function Page() {
 							Season {season}
 						</FilterButton>
 					))}
-					<MediaFilterList value={filter} onChange={(filter) => setFilter(filter)} />
+					<MediaFilterList value={filter} onChange={(nextFilter) => setFilter((prev) => ({ ...prev, ...nextFilter }))} />
 				</div>
 				<div className="pb-8">
 					{episodesLoading ? (

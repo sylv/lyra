@@ -1,4 +1,6 @@
-import { ApolloClient, ApolloProvider, InMemoryCache } from "@apollo/client";
+import { ApolloClient, InMemoryCache } from "@apollo/client";
+import { HttpLink } from "@apollo/client/link/http";
+import { ApolloProvider } from "@apollo/client/react";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import type { FC, ReactNode } from "react";
@@ -14,7 +16,9 @@ import "./globals.css";
 import { SearchModal } from "../components/search/search-modal";
 
 const client = new ApolloClient({
-	uri: "/api/graphql",
+	link: new HttpLink({
+		uri: "/api/graphql",
+	}),
 	cache: new InMemoryCache({
 		typePolicies: {
 			Query: {

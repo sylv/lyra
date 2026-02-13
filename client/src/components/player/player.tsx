@@ -2,7 +2,7 @@
 /** biome-ignore-all lint/a11y/useSemanticElements: <explanation> */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
-import { useMutation } from "@apollo/client";
+import { useMutation } from "@apollo/client/react";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import Hls from "hls.js";
 import { ArrowLeft, Loader2, XIcon } from "lucide-react";
@@ -112,7 +112,7 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 					nodeId: currentMedia.id,
 					progressPercent: video.currentTime / video.duration,
 				},
-			}).catch((err) => {
+			}).catch((err: unknown) => {
 				console.error("failed to update watch state", err);
 			});
 		};

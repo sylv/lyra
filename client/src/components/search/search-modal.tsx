@@ -1,4 +1,4 @@
-import { useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client/react";
 import { Dialog, DialogContent, DialogOverlay } from "@radix-ui/react-dialog";
 import { graphql } from "gql.tada";
 import { Loader2 } from "lucide-react";

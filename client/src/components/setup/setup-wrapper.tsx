@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { navigate } from "vike/client/router";
 import { SetupModal, type InitState } from "./setup-modal";
-import { useApolloClient } from "@apollo/client";
+import { useApolloClient } from "@apollo/client/react";
 
 export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 	const fetching = useRef(false);
@@ -49,8 +49,10 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 	// in a couple places (eg, here, the parent component, the player maybe)
 	return (
 		<ErrorBoundary
-			FallbackComponent={(props) => (
-				<div className="h-full w-full flex items-center justify-center">Error: {props.error.message}</div>
+			FallbackComponent={({ error }) => (
+				<div className="h-full w-full flex items-center justify-center">
+					Error: {error instanceof Error ? error.message : String(error)}
+				</div>
 			)}
 		>
 			{children}

@@ -1,7 +1,6 @@
-import { useQuery } from "@apollo/client";
-import { graphql } from "gql.tada";
+import { useQuery } from "@apollo/client/react";
+import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
-import type { NodeFilter, NodeKind } from "../../@generated/enums.js";
 import { FilterButton } from "../../components/filter-button.jsx";
 import { MediaFilterList } from "../../components/media-filter-list.jsx";
 import { MediaList, MediaListFrag } from "../../components/media-list.jsx";
@@ -25,6 +24,9 @@ const Query = graphql(
 `,
 	[MediaListFrag],
 );
+
+type NodeFilter = VariablesOf<typeof Query>["filter"];
+type NodeKind = NonNullable<NonNullable<NodeFilter["kinds"]>[number]>;
 
 export default function Page() {
 	const [filter, setFilter] = useState<NodeFilter>({

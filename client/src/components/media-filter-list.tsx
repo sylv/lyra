@@ -1,15 +1,21 @@
 import { Fragment, type FC } from "react";
-import type { NodeFilter } from "../@generated/enums";
 import { FilterButton, FilterSelect } from "./filter-button";
 import { CalendarClockIcon, CalendarPlusIcon, ListVideoIcon, SortAscIcon, StarIcon } from "lucide-react";
 
+type NodeOrderBy = "ADDED_AT" | "RELEASED_AT" | "ALPHABETICAL" | "RATING" | "SEASON_EPISODE";
+
+interface MediaFilterValue {
+	watched?: boolean | null;
+	orderBy?: NodeOrderBy | null;
+}
+
 interface MediaFilterListProps {
-	value: Partial<NodeFilter>;
-	onChange: (value: Partial<NodeFilter>) => void;
+	value: MediaFilterValue;
+	onChange: (value: Partial<MediaFilterValue>) => void;
 }
 
 export const MediaFilterList: FC<MediaFilterListProps> = ({ value, onChange }) => {
-	const produceChange = (partial: Partial<NodeFilter>) => {
+	const produceChange = (partial: Partial<MediaFilterValue>) => {
 		onChange({ ...value, ...partial });
 	};
 

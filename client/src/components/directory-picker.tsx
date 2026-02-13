@@ -1,4 +1,4 @@
-import { useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client/react";
 import { graphql } from "gql.tada";
 import { CornerUpLeft, Folder } from "lucide-react";
 import { useState, useEffect, type FC, useMemo } from "react";
