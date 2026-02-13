@@ -24,9 +24,9 @@ import { PlayerFrag } from "./player-wrapper";
 const NUMBER_REGEX = /^\d$/;
 
 const UpdateWatchState = graphql(`
-	mutation UpdateWatchState($mediaId: Int!, $progressPercentage: Float!) {
-		updateWatchState(mediaId: $mediaId, progressPercentage: $progressPercentage) {
-			progressPercentage
+	mutation UpdateWatchState($nodeId: String!, $progressPercent: Float!) {
+		updateWatchProgress(nodeId: $nodeId, progressPercent: $progressPercent) {
+			progressPercent
 			updatedAt
 		}
 	}
@@ -88,7 +88,7 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		videoRef.current.muted = isMuted;
 	}, [volume, isMuted]);
 
-	const [updateWatchState] = useMutation(UpdateWatchState);
+	const [updateWatchProgress] = useMutation(UpdateWatchState);
 
 	// watch state handling
 	useEffect(() => {
@@ -98,8 +98,8 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		const onVideoLoad = () => {
 			// load the watch state
 			// todo: prompt the user to see if they want to resume where they left off
-			if (currentMedia?.watchState) {
-				video.currentTime = currentMedia.watchState.progressPercentage * video.duration;
+			if (currentMedia?.watchProgress) {
+				video.currentTime = currentMedia.watchProgress.progressPercent * video.duration;
 			}
 		};
 
@@ -107,10 +107,10 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		const onTimeUpdate = () => {
 			if (Date.now() - lastUpdate < 10_000) return;
 			lastUpdate = Date.now();
-			updateWatchState({
+			updateWatchProgress({
 				variables: {
-					mediaId: currentMedia.id,
-					progressPercentage: video.currentTime / video.duration,
+					nodeId: currentMedia.id,
+					progressPercent: video.currentTime / video.duration,
 				},
 			}).catch((err) => {
 				console.error("failed to update watch state", err);

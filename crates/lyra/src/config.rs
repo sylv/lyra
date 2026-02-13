@@ -6,7 +6,6 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub transcode_cache_dir: Option<PathBuf>,
     pub image_dir: Option<PathBuf>,
-    pub tmdb_api_key: String,
     pub host: String,
     pub port: u16,
     pub clear_transcode_cache_on_start: bool,
@@ -45,7 +44,6 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         .set_default("data_dir", ".lyra")?
         .set_default("host", "127.0.0.1")?
         .set_default("port", "8000")?
-        .set_default("tmdb_api_key", "f81a38fe9eba82e5dc3695a7406068bd")?
         .set_default("clear_transcode_cache_on_start", false)?
         .set_default("library_scan_interval", 4 * 60 * 60)? // 4 hours
         .build()

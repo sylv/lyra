@@ -1,9 +1,9 @@
 use crate::{
     auth::RequestAuth,
     entities::{
-        library,
-        media::{self, MediaKind},
-        watch_state,
+        libraries, metadata, node_metadata,
+        nodes::{self, NodeKind},
+        watch_progress,
     },
 };
 use async_graphql::{
@@ -13,43 +13,41 @@ use async_graphql::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    prelude::Expr,
-    sea_query::{Alias, SelectStatement},
+    ColumnTrait, DatabaseConnection, EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait,
 };
 use tokio::task::spawn_blocking;
 
 #[derive(Debug, InputObject, serde::Deserialize)]
-pub struct MediaFilter {
-    pub parent_id: Option<i64>,
+pub struct NodeFilter {
+    pub parent_id: Option<String>,
     pub season_numbers: Option<Vec<i64>>,
-    pub kinds: Option<Vec<MediaKind>>,
+    pub kinds: Option<Vec<NodeKind>>,
     pub search: Option<String>,
-    pub order_by: Option<MediaOrderBy>,
-    pub order_direction: Option<MediaOrderDirection>,
+    pub order_by: Option<NodeOrderBy>,
+    pub order_direction: Option<NodeOrderDirection>,
     pub watched: Option<bool>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Enum, serde::Deserialize)]
 #[graphql(name = "OrderDirection")]
-pub enum MediaOrderDirection {
+pub enum NodeOrderDirection {
     Asc,
     Desc,
 }
 
-impl MediaOrderDirection {
-    pub fn to_sea_orm(&self) -> Order {
+impl NodeOrderDirection {
+    pub fn to_sea_orm(self) -> Order {
         match self {
-            MediaOrderDirection::Asc => Order::Asc,
-            MediaOrderDirection::Desc => Order::Desc,
+            NodeOrderDirection::Asc => Order::Asc,
+            NodeOrderDirection::Desc => Order::Desc,
         }
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Enum, serde::Deserialize)]
-#[graphql(name = "MediaOrderBy")]
-pub enum MediaOrderBy {
+#[graphql(name = "NodeOrderBy")]
+pub enum NodeOrderBy {
     AddedAt,
     ReleasedAt,
     Alphabetical,
@@ -57,13 +55,13 @@ pub enum MediaOrderBy {
     SeasonEpisode,
 }
 
-impl MediaOrderBy {
-    pub fn get_default_direction(&self) -> MediaOrderDirection {
+impl NodeOrderBy {
+    pub fn get_default_direction(self) -> NodeOrderDirection {
         match self {
-            MediaOrderBy::AddedAt | MediaOrderBy::ReleasedAt | MediaOrderBy::Rating => {
-                MediaOrderDirection::Desc
+            NodeOrderBy::AddedAt | NodeOrderBy::ReleasedAt | NodeOrderBy::Rating => {
+                NodeOrderDirection::Desc
             }
-            MediaOrderBy::Alphabetical | MediaOrderBy::SeasonEpisode => MediaOrderDirection::Asc,
+            NodeOrderBy::Alphabetical | NodeOrderBy::SeasonEpisode => NodeOrderDirection::Asc,
         }
     }
 }
@@ -72,14 +70,14 @@ pub struct Query;
 
 #[Object]
 impl Query {
-    async fn media_list(
+    async fn node_list(
         &self,
         ctx: &Context<'_>,
-        filter: MediaFilter,
+        filter: NodeFilter,
         after: Option<String>,
         first: Option<i32>,
     ) -> Result<
-        connection::Connection<u64, media::Model, EmptyFields, EmptyFields>,
+        connection::Connection<u64, nodes::Model, EmptyFields, EmptyFields>,
         async_graphql::Error,
     > {
         connection::query(
@@ -88,104 +86,100 @@ impl Query {
             first,
             None,
             |after, _before, first, _last| async move {
-                let mut qb = media::Entity::find();
+                let pool = ctx.data::<DatabaseConnection>()?;
+                let mut qb = nodes::Entity::find()
+                    .join(
+                        sea_orm::JoinType::LeftJoin,
+                        nodes::Relation::NodeMetadata.def(),
+                    )
+                    .join(
+                        sea_orm::JoinType::LeftJoin,
+                        node_metadata::Relation::Metadata.def(),
+                    )
+                    .filter(node_metadata::Column::IsPrimary.eq(true));
 
-                if let Some(parent_id) = filter.parent_id {
-                    qb = qb.filter(media::Column::ParentId.eq(parent_id));
+                if let Some(parent_id) = &filter.parent_id {
+                    let querying_episodes = filter
+                        .kinds
+                        .as_ref()
+                        .map(|kinds| kinds.contains(&NodeKind::Episode))
+                        .unwrap_or(false);
+
+                    if querying_episodes {
+                        qb = qb.filter(nodes::Column::RootId.eq(parent_id.clone()));
+                    } else {
+                        qb = qb.filter(nodes::Column::ParentId.eq(parent_id.clone()));
+                    }
                 } else {
-                    qb = qb.filter(media::Column::ParentId.is_null());
+                    qb = qb.filter(nodes::Column::ParentId.is_null());
                 }
 
-                if let Some(season_numbers) = filter.season_numbers {
-                    qb = qb.filter(media::Column::SeasonNumber.is_in(season_numbers));
+                if let Some(season_numbers) = &filter.season_numbers {
+                    qb = qb.filter(metadata::Column::SeasonNumber.is_in(season_numbers.clone()));
                 }
 
-                if let Some(kinds) = filter.kinds {
-                    qb = qb.filter(media::Column::Kind.is_in(kinds));
+                if let Some(kinds) = &filter.kinds {
+                    qb = qb.filter(nodes::Column::Kind.is_in(kinds.clone()));
+                }
+
+                if let Some(search) = &filter.search {
+                    qb = qb.filter(metadata::Column::Name.contains(search));
                 }
 
                 if let Some(watched) = filter.watched {
                     let auth = ctx.data::<RequestAuth>()?;
                     let user = auth.get_user_or_err()?;
-
-                    qb = qb
-                        .join(JoinType::Join, media::Relation::WatchState.def())
-                        .filter(watch_state::Column::UserId.eq(user.id.clone()));
+                    let watched_ids: Vec<String> = watch_progress::Entity::find()
+                        .filter(watch_progress::Column::UserId.eq(user.id.clone()))
+                        .filter(watch_progress::Column::NodeId.is_not_null())
+                        .select_only()
+                        .column(watch_progress::Column::NodeId)
+                        .into_tuple()
+                        .all(pool)
+                        .await?;
 
                     if watched {
-                        qb = qb.filter(watch_state::Column::MediaId.is_not_null());
-                    } else {
-                        qb = qb.filter(watch_state::Column::MediaId.is_null());
+                        if watched_ids.is_empty() {
+                            qb = qb.filter(nodes::Column::Id.eq("__never__"));
+                        } else {
+                            qb = qb.filter(nodes::Column::Id.is_in(watched_ids));
+                        }
+                    } else if !watched_ids.is_empty() {
+                        qb = qb.filter(nodes::Column::Id.is_not_in(watched_ids));
                     }
                 }
 
-                if let Some(search) = &filter.search {
-                    let sub_alias = Alias::new("search");
-
-                    // this queries the "media_fts5" table using bm25 across both fields
-                    // (N, N, N) is (id, title, description) weights respectively
-                    // "5" for title and "1" for description means 1 occurence in the title is worth the same as 5 in the description
-                    // the "0" for id ignores it in ranking
-                    let mut sub_stmt = SelectStatement::new();
-                    sub_stmt
-                        .column(Alias::new("id"))
-                        .expr_as(Expr::cust("bm25(media_fts5, 0, 5, 1)"), Alias::new("rank"))
-                        .from(Alias::new("media_fts5"))
-                        .and_where(Expr::cust_with_values("media_fts5 MATCH ?", [search]));
-
-                    // this grabs the inner QuerySelect from the qb and
-                    // adds the subquery to it. not sure if this is the best way to do this,
-                    // but it sure does work.
-                    let mut inner = sea_orm::QuerySelect::query(&mut qb);
-                    inner = inner.join_subquery(
-                        JoinType::InnerJoin,
-                        sub_stmt,
-                        sub_alias.clone(),
-                        Condition::all().add(
-                            Expr::col((media::Entity, media::Column::Id))
-                                .eq(Expr::col((sub_alias.clone(), Alias::new("id")))),
-                        ),
-                    );
-
-                    inner.order_by((sub_alias.clone(), Alias::new("rank")), Order::Asc);
-                }
-
-                let order_by = filter.order_by.unwrap_or(MediaOrderBy::Alphabetical);
+                let order_by = filter.order_by.unwrap_or(NodeOrderBy::Alphabetical);
                 let order_direction = filter
                     .order_direction
                     .unwrap_or_else(|| order_by.get_default_direction())
                     .to_sea_orm();
 
                 match order_by {
-                    MediaOrderBy::AddedAt => {
-                        qb = qb.order_by(media::Column::FirstLinkedAt, order_direction);
+                    NodeOrderBy::AddedAt => {
+                        qb = qb.order_by(nodes::Column::Id, order_direction);
                     }
-                    MediaOrderBy::ReleasedAt => {
-                        // todo: for shows, sort by latest episode release date?
-                        // or maybe that would make more sense as another order by?
-                        qb = qb.order_by(media::Column::ReleasedAt, order_direction);
+                    NodeOrderBy::ReleasedAt => {
+                        qb = qb.order_by(metadata::Column::ReleasedAt, order_direction);
                     }
-                    MediaOrderBy::Alphabetical => {
-                        qb = qb.order_by(media::Column::Name, order_direction);
+                    NodeOrderBy::Alphabetical => {
+                        qb = qb.order_by(metadata::Column::Name, order_direction);
                     }
-                    MediaOrderBy::Rating => {
-                        qb = qb.order_by(media::Column::Rating, order_direction);
+                    NodeOrderBy::Rating => {
+                        qb = qb.order_by(metadata::Column::ScoreNormalized, order_direction);
                     }
-                    MediaOrderBy::SeasonEpisode => {
+                    NodeOrderBy::SeasonEpisode => {
                         qb = qb
-                            .order_by(media::Column::SeasonNumber, order_direction.clone())
-                            .order_by(media::Column::EpisodeNumber, order_direction);
+                            .order_by(metadata::Column::SeasonNumber, order_direction.clone())
+                            .order_by(metadata::Column::EpisodeNumber, order_direction);
                     }
-                };
-
-                let pool = ctx.data::<DatabaseConnection>()?;
+                }
 
                 let count = qb.clone().count(pool).await?;
-
                 let limit: u64 = first.unwrap_or(25) as u64;
                 let offset: u64 = after.map(|a| a + 1).unwrap_or(0);
 
-                let media = qb
+                let nodes = qb
                     .limit(Some(limit))
                     .offset(Some(offset))
                     .all(pool)
@@ -196,12 +190,11 @@ impl Query {
                 let has_next_page = offset + limit < count;
 
                 let mut connection = connection::Connection::new(has_previous_page, has_next_page);
-
                 connection
                     .edges
-                    .extend(media.into_iter().enumerate().map(|(index, media)| {
+                    .extend(nodes.into_iter().enumerate().map(|(index, node)| {
                         let cursor = (offset + index as u64) as u64;
-                        connection::Edge::new(cursor, media)
+                        connection::Edge::new(cursor, node)
                     }));
 
                 Ok::<_, async_graphql::Error>(connection)
@@ -210,19 +203,19 @@ impl Query {
         .await
     }
 
-    async fn media(
+    async fn node(
         &self,
         ctx: &Context<'_>,
-        media_id: i64,
-    ) -> Result<media::Model, async_graphql::Error> {
+        node_id: String,
+    ) -> Result<nodes::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        let media = media::Entity::find_by_id(media_id)
+        let node = nodes::Entity::find_by_id(node_id)
             .one(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("Media not found".to_string()))?;
+            .ok_or_else(|| async_graphql::Error::new("Node not found".to_string()))?;
 
-        Ok(media)
+        Ok(node)
     }
 
     /// Used during library setup to pick the library path
@@ -243,7 +236,7 @@ impl Query {
                 .filter(|e| e.path().is_dir())
                 .filter_map(|e| {
                     let name = e.file_name().to_string_lossy().to_string();
-                    if name.starts_with(".") {
+                    if name.starts_with('.') {
                         return None;
                     }
 
@@ -265,9 +258,9 @@ impl Query {
     async fn libraries(
         &self,
         ctx: &Context<'_>,
-    ) -> Result<Vec<library::Model>, async_graphql::Error> {
+    ) -> Result<Vec<libraries::Model>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        let libraries = library::Entity::find()
+        let libraries = libraries::Entity::find()
             .all(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;

@@ -4,7 +4,6 @@ import type { FC } from "react";
 import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
 import { Thumbnail } from "./thumbnail";
 import { Skeleton } from "./skeleton";
-import { TMDBRatingPill, TMDBRatingPillFrag } from "./tmdb-rating-pill";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -22,7 +21,7 @@ const formatRuntime = (minutes: number | null) => {
 
 export const EpisodeCardFrag = graphql(
 	`
-	fragment EpisodeCard on Media {
+	fragment EpisodeCard on Node {
 		id
 		name
 		description
@@ -31,10 +30,9 @@ export const EpisodeCardFrag = graphql(
 		episodeNumber
 		runtimeMinutes
 		...PlayWrapper
-		...TMDBRatingPill
 	}
 `,
-	[PlayWrapperFrag, TMDBRatingPillFrag],
+	[PlayWrapperFrag],
 );
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
@@ -64,9 +62,6 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 						)}
 					</div>
 					<p className="text-sm text-zinc-300 line-clamp-3">{episode.description || "No description available"}</p>
-				</div>
-				<div className="flex">
-					<TMDBRatingPill media={episode} mini />
 				</div>
 			</div>
 		</div>

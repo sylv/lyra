@@ -19,7 +19,7 @@ const client = new ApolloClient({
 		typePolicies: {
 			Query: {
 				fields: {
-					mediaList: relayStylePagination(["filter"]),
+					nodeList: relayStylePagination(["filter"]),
 				},
 			},
 		},

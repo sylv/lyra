@@ -1,7 +1,7 @@
 use crate::{
     AppState,
     entities::{
-        sessions,
+        user_sessions,
         users::{self, UserPerms},
     },
 };
@@ -102,7 +102,7 @@ where
             return Err(AuthError::Unauthenticated);
         };
 
-        let Some((session, Some(user))) = sessions::Entity::find_by_id(session_id)
+        let Some((session, Some(user))) = user_sessions::Entity::find_by_id(session_id)
             .find_also_related(users::Entity)
             .one(&state.pool)
             .await
@@ -115,7 +115,7 @@ where
             return Err(AuthError::SessionExpired);
         }
 
-        let permissions = UserPerms::from_bits_truncate(user.permissions);
+        let permissions = UserPerms::from_bits_truncate(user.permissions as u32);
         Ok(RequestAuth {
             user: Some(user),
             permissions,
@@ -249,8 +249,8 @@ pub async fn post_login(
         hex::encode(bytes)
     };
 
-    sessions::Entity::insert(sessions::ActiveModel {
-        id: Set(session_id.clone()),
+    user_sessions::Entity::insert(user_sessions::ActiveModel {
+        token: Set(session_id.clone()),
         user_id: Set(user.id.clone()),
         created_at: Set(Utc::now().timestamp()),
         expires_at: Set(Utc::now().timestamp() + session_expiry),

@@ -2,13 +2,16 @@ type File {
 	id: Int!
 	libraryId: Int!
 	relativePath: String!
-	pendingAutoMatch: Int!
+	sizeBytes: Int!
+	hash5MbSha256: String
+	durationS: Int!
+	height: Int
+	width: Int
 	editionName: String
-	resolution: Int
-	sizeBytes: Int
-	scannedAt: Int!
 	unavailableAt: Int
 	corruptedAt: Int
+	scannedAt: Int
+	discoveredAt: Int!
 }
 
 type Library {
@@ -18,13 +21,21 @@ type Library {
 	lastScannedAt: Int
 }
 
-type Media {
-	id: Int!
-	imdbId: String
-	tmdbId: Int
-	parentId: Int
-	kind: MediaKind!
+type Mutation {
+	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
+	updateWatchProgress(nodeId: String!, progressPercent: Float!, userId: String): WatchProgress!
+	createLibrary(name: String!, path: String!): Library!
+}
+
+type Node {
+	id: String!
+	rootId: String
+	parentId: String
+	libraryId: Int!
+	fileId: Int
+	relativePath: String!
 	name: String!
+	kind: NodeKind!
 	description: String
 	rating: Float
 	posterUrl: String
@@ -39,16 +50,15 @@ type Media {
 	updatedAt: Int
 	firstLinkedAt: Int
 	"""
-	Gets the default file connection for this media item, including child connections.
-	(this is what should be played if the user hits "play" on this media item)
+	Gets the default file connection for this node, including child connections.
 	"""
 	defaultConnection: File
 	seasons: [Int!]!
-	parent: Media
-	watchState: WatchState
+	parent: Node
+	watchProgress: WatchProgress
 }
 
-type MediaConnection {
+type NodeConnection {
 	"""
 	Information to aid in pagination.
 	"""
@@ -56,55 +66,50 @@ type MediaConnection {
 	"""
 	A list of edges.
 	"""
-	edges: [MediaEdge!]!
+	edges: [NodeEdge!]!
 	"""
 	A list of nodes.
 	"""
-	nodes: [Media!]!
+	nodes: [Node!]!
 }
 
 """
 An edge in a connection.
 """
-type MediaEdge {
+type NodeEdge {
 	"""
 	The item at the end of the edge
 	"""
-	node: Media!
+	node: Node!
 	"""
 	A cursor for use in pagination
 	"""
 	cursor: String!
 }
 
-input MediaFilter {
-	parentId: Int
+input NodeFilter {
+	parentId: String
 	seasonNumbers: [Int!]
-	kinds: [MediaKind!]
+	kinds: [NodeKind!]
 	search: String
-	orderBy: MediaOrderBy
+	orderBy: NodeOrderBy
 	orderDirection: OrderDirection
 	watched: Boolean
 }
 
-enum MediaKind {
+enum NodeKind {
 	MOVIE
-	SHOW
+	SERIES
+	SEASON
 	EPISODE
 }
 
-enum MediaOrderBy {
+enum NodeOrderBy {
 	ADDED_AT
 	RELEASED_AT
 	ALPHABETICAL
 	RATING
 	SEASON_EPISODE
-}
-
-type Mutation {
-	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
-	updateWatchState(mediaId: Int!, progressPercentage: Float!, userId: String): WatchState!
-	createLibrary(name: String!, path: String!): Library!
 }
 
 enum OrderDirection {
@@ -135,8 +140,8 @@ type PageInfo {
 }
 
 type Query {
-	mediaList(filter: MediaFilter!, after: String, first: Int): MediaConnection!
-	media(mediaId: Int!): Media!
+	nodeList(filter: NodeFilter!, after: String, first: Int): NodeConnection!
+	node(nodeId: String!): Node!
 	"""
 	Used during library setup to pick the library path
 	"""
@@ -148,17 +153,18 @@ type User {
 	id: String!
 	username: String!
 	permissions: Int!
-	defaultSubtitleiso639_1: String
-	defaultAudioiso639_1: String
+	defaultSubtitleIso6391: String
+	defaultAudioIso6391: String
 	subtitlesEnabled: Boolean!
 	createdAt: Int!
 }
 
-type WatchState {
+type WatchProgress {
 	id: Int!
 	userId: String!
-	mediaId: Int!
-	progressPercentage: Float!
+	fileId: Int
+	nodeId: String
+	progressPercent: Float!
 	createdAt: Int!
 	updatedAt: Int!
 }

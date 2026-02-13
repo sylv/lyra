@@ -1,7 +1,7 @@
 import { useQuery } from "@apollo/client";
 import { graphql } from "gql.tada";
 import { useState } from "react";
-import type { MediaFilter, MediaKind } from "../../@generated/enums.js";
+import type { NodeFilter, NodeKind } from "../../@generated/enums.js";
 import { FilterButton } from "../../components/filter-button.jsx";
 import { MediaFilterList } from "../../components/media-filter-list.jsx";
 import { MediaList, MediaListFrag } from "../../components/media-list.jsx";
@@ -9,8 +9,8 @@ import { setIsSearchOpen } from "../../components/search/search-modal.jsx";
 
 const Query = graphql(
 	`
-	query GetAllMedia($filter: MediaFilter!, $after: String) {
-		mediaList(filter: $filter, first: 45, after: $after) {
+	query GetAllMedia($filter: NodeFilter!, $after: String) {
+		nodeList(filter: $filter, first: 45, after: $after) {
 			edges {
 				node {
 					...MediaList
@@ -27,7 +27,7 @@ const Query = graphql(
 );
 
 export default function Page() {
-	const [filter, setFilter] = useState<MediaFilter>({
+	const [filter, setFilter] = useState<NodeFilter>({
 		parentId: null,
 		kinds: [],
 		orderBy: "ADDED_AT",
@@ -38,14 +38,14 @@ export default function Page() {
 		variables: {
 			filter: {
 				...filter,
-				kinds: useFilterTypes ? filter.kinds : ["MOVIE", "SHOW"],
+				kinds: useFilterTypes ? filter.kinds : ["MOVIE", "SERIES"],
 			},
 		},
 	});
 
-	const handleMediaKindToggle = (kind: MediaKind) => {
+	const handleMediaKindToggle = (kind: NodeKind) => {
 		if (!filter.kinds) {
-			setFilter({ ...filter, kinds: ["MOVIE", "SHOW"] });
+			setFilter({ ...filter, kinds: ["MOVIE", "SERIES"] });
 			return;
 		}
 
@@ -66,7 +66,7 @@ export default function Page() {
 					onFocus={() => setIsSearchOpen(true)}
 				/>
 				<div className="flex flex-wrap gap-2">
-					<FilterButton onClick={() => handleMediaKindToggle("SHOW")} active={filter.kinds?.includes("SHOW")}>
+					<FilterButton onClick={() => handleMediaKindToggle("SERIES")} active={filter.kinds?.includes("SERIES")}>
 						Series
 					</FilterButton>
 					<FilterButton onClick={() => handleMediaKindToggle("MOVIE")} active={filter.kinds?.includes("MOVIE")}>
@@ -77,13 +77,13 @@ export default function Page() {
 			</div>
 			<div className="m-4 flex flex-wrap gap-4">
 				<MediaList
-					media={data?.mediaList?.edges?.map((edge) => edge.node)}
+					media={data?.nodeList?.edges?.map((edge) => edge.node)}
 					loading={loading}
 					onLoadMore={() => {
-						if (!data?.mediaList?.pageInfo?.hasNextPage) return;
+						if (!data?.nodeList?.pageInfo?.hasNextPage) return;
 						fetchMore({
 							variables: {
-								after: data?.mediaList?.pageInfo?.endCursor,
+								after: data?.nodeList?.pageInfo?.endCursor,
 							},
 						});
 					}}

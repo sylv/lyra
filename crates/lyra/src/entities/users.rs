@@ -16,7 +16,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     #[graphql(skip)]
     pub invite_code: Option<String>,
-    pub permissions: u32,
+    pub permissions: i64,
     #[sea_orm(column_type = "Text", nullable)]
     pub default_subtitle_iso639_1: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -27,54 +27,43 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::library_user::Entity")]
-    LibraryUser,
-    #[sea_orm(has_many = "super::sessions::Entity")]
-    Sessions,
-    #[sea_orm(has_many = "super::watch_state::Entity")]
-    WatchState,
+    #[sea_orm(has_many = "super::library_users::Entity")]
+    LibraryUsers,
+    #[sea_orm(has_many = "super::user_sessions::Entity")]
+    UserSessions,
+    #[sea_orm(has_many = "super::watch_progress::Entity")]
+    WatchProgress,
 }
 
-impl Related<super::library_user::Entity> for Entity {
+impl Related<super::library_users::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::LibraryUser.def()
+        Relation::LibraryUsers.def()
     }
 }
 
-impl Related<super::sessions::Entity> for Entity {
+impl Related<super::user_sessions::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Sessions.def()
+        Relation::UserSessions.def()
     }
 }
 
-impl Related<super::watch_state::Entity> for Entity {
+impl Related<super::watch_progress::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::WatchState.def()
+        Relation::WatchProgress.def()
     }
 }
 
-impl Related<super::library::Entity> for Entity {
+impl Related<super::libraries::Entity> for Entity {
     fn to() -> RelationDef {
-        super::library_user::Relation::Library.def()
+        super::library_users::Relation::Libraries.def()
     }
+
     fn via() -> Option<RelationDef> {
-        Some(super::library_user::Relation::Users.def().rev())
+        Some(super::library_users::Relation::Users.def().rev())
     }
 }
 
 impl ActiveModelBehavior for ActiveModel {}
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelatedEntity)]
-pub enum RelatedEntity {
-    #[sea_orm(entity = "super::library_user::Entity")]
-    LibraryUser,
-    #[sea_orm(entity = "super::sessions::Entity")]
-    Sessions,
-    #[sea_orm(entity = "super::watch_state::Entity")]
-    WatchState,
-    #[sea_orm(entity = "super::library::Entity")]
-    Library,
-}
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

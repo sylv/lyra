@@ -1,3 +1,3 @@
-pub mod media;
 pub mod mutation;
+pub mod node;
 pub mod query;

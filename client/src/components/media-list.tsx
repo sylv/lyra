@@ -6,7 +6,7 @@ import { ViewLoader } from "./view-loader";
 
 export const MediaListFrag = graphql(
 	`
-    fragment MediaList on Media {
+    fragment MediaList on Node {
         id
         ...MediaPoster
     }

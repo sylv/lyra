@@ -14,14 +14,14 @@ interface PlayWrapperProps {
 
 export const PlayWrapperFrag = graphql(
 	`
-	fragment PlayWrapper on Media {
+	fragment PlayWrapper on Node {
 		...Player
 		...GetPathForMedia
 		defaultConnection {
 			id
 		}
-		watchState {
-			progressPercentage
+		watchProgress {
+			progressPercent
 		}
 	}
 `,
@@ -48,12 +48,12 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, media: mediaRaw })
 					<PlayIcon className="h-10 w-10 text-white" />
 				</button>
 			)}
-			{media.watchState && (
+			{media.watchProgress && (
 				<Fragment>
 					<div
 						className="z-10 absolute bottom-0 left-0 bg-white/80 h-1"
 						style={{
-							width: `${media.watchState.progressPercentage * 100}%`,
+							width: `${media.watchProgress.progressPercent * 100}%`,
 						}}
 					/>
 					<div className="z-10 absolute bottom-0 left-0 right-0 bg-white/20 h-1" />

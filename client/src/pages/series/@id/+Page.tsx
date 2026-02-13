@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Fragment } from "react/jsx-runtime";
 import { usePageContext } from "vike-react/usePageContext";
 import { navigate } from "vike/client/router";
-import type { MediaFilter } from "../../../@generated/enums";
+import type { NodeFilter } from "../../../@generated/enums";
 import { EpisodeCard, EpisodeCardFrag, EpisodeCardSkeleton } from "../../../components/episode-card";
 import { FilterButton, FilterButtonSkeleton } from "../../../components/filter-button";
 import { MediaFilterList } from "../../../components/media-filter-list";
@@ -13,8 +13,8 @@ import { ViewLoader } from "../../../components/view-loader";
 
 const Query = graphql(
 	`
-	query GetMediaById($mediaId: Int!) {
-		media(mediaId: $mediaId) {
+	query GetMediaById($nodeId: String!) {
+		node(nodeId: $nodeId) {
 			seasons
 			...MediaHeader
 		}
@@ -25,8 +25,8 @@ const Query = graphql(
 
 const EpisodesQuery = graphql(
 	`
-	query GetEpisodes($filter: MediaFilter!, $after: String) {
-		mediaList(filter: $filter, after: $after) {
+	query GetEpisodes($filter: NodeFilter!, $after: String) {
+		nodeList(filter: $filter, after: $after) {
 			edges {
 				node {
 					id
@@ -45,18 +45,18 @@ const EpisodesQuery = graphql(
 
 export default function Page() {
 	const pageContext = usePageContext();
-	const mediaId = +pageContext.routeParams.id;
+	const nodeId = pageContext.routeParams.id;
 	const { data, loading } = useQuery(Query, {
 		variables: {
-			mediaId: mediaId,
+			nodeId: nodeId,
 		},
 	});
 
-	const [filter, setFilter] = useState<MediaFilter>(() => {
-		const base: MediaFilter = {
+	const [filter, setFilter] = useState<NodeFilter>(() => {
+		const base: NodeFilter = {
 			orderBy: "SEASON_EPISODE",
 			kinds: ["EPISODE"],
-			parentId: mediaId,
+			parentId: nodeId,
 		};
 
 		if (pageContext.urlParsed.search.seasons) {
@@ -98,7 +98,7 @@ export default function Page() {
 	const onLoadMore = () => {
 		fetchMore({
 			variables: {
-				after: episodes?.mediaList?.pageInfo?.endCursor,
+				after: episodes?.nodeList?.pageInfo?.endCursor,
 			},
 		});
 	};
@@ -126,11 +126,11 @@ export default function Page() {
 	}
 
 	const isAllSeasons = filter.seasonNumbers === null;
-	const sortedSeasons = [...data.media.seasons].sort((a, b) => a - b);
+	const sortedSeasons = [...data.node.seasons].sort((a, b) => a - b);
 
 	return (
 		<Fragment>
-			<MediaHeader media={data.media} />
+			<MediaHeader media={data.node} />
 			<div className="container mx-auto">
 				<div className="flex gap-2 py-4 flex-wrap">
 					<FilterButton
@@ -169,12 +169,12 @@ export default function Page() {
 								<EpisodeCardSkeleton key={`episode-loading-${i}`} />
 							))}
 						</div>
-					) : episodes?.mediaList.edges[0] ? (
+					) : episodes?.nodeList.edges[0] ? (
 						<div className="space-y-2">
-							{episodes.mediaList.edges.map((episode) => (
+							{episodes.nodeList.edges.map((episode) => (
 								<EpisodeCard key={episode.node.id} episode={episode.node} />
 							))}
-							{episodes.mediaList.pageInfo.hasNextPage && <ViewLoader onLoadMore={onLoadMore} />}
+							{episodes.nodeList.pageInfo.hasNextPage && <ViewLoader onLoadMore={onLoadMore} />}
 						</div>
 					) : (
 						<div className="text-center py-12 text-zinc-400">

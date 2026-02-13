@@ -2,7 +2,7 @@ use crate::{
     AppState,
     auth::RequestAuth,
     config::get_config,
-    entities::{file, library},
+    entities::{files, libraries},
 };
 use axum::{
     Router,
@@ -39,14 +39,6 @@ pub fn get_hls_router() -> Router<AppState> {
         .route(
             "/stream/{file_id}/{stream_id}/{profile_id}/segment/{name}",
             get(get_segment),
-        )
-        .route(
-            "/stream/{file_id}/{stream_type}/{stream_idx}/{profile}/index.m3u8",
-            get(get_stream_playlist_legacy),
-        )
-        .route(
-            "/stream/{file_id}/{stream_type}/{stream_idx}/{profile}/{segment}",
-            get(get_segment_legacy),
         );
 
     #[cfg(debug_assertions)]
@@ -78,28 +70,7 @@ async fn get_stream_playlist(
     State(state): State<AppState>,
     Path((file_id, stream_id, profile_id)): Path<(i64, u32, String)>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    stream_playlist_response(&state, file_id, stream_id, profile_id).await
-}
-
-async fn get_stream_playlist_legacy(
-    _user: RequestAuth,
-    State(state): State<AppState>,
-    Path((file_id, _stream_type, stream_idx, profile)): Path<(i64, String, u32, String)>,
-) -> Result<Response, (StatusCode, &'static str)> {
-    let profile_id = map_legacy_profile(&profile)
-        .ok_or((StatusCode::NOT_FOUND, "profile not found"))?
-        .to_string();
-
-    stream_playlist_response(&state, file_id, stream_idx, profile_id).await
-}
-
-async fn stream_playlist_response(
-    state: &AppState,
-    file_id: i64,
-    stream_id: u32,
-    profile_id: String,
-) -> Result<Response, (StatusCode, &'static str)> {
-    let packager_state = get_or_build_packager_state(state, file_id).await?;
+    let packager_state = get_or_build_packager_state(&state, file_id).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
         .ok_or((StatusCode::NOT_FOUND, "stream profile not found"))?;
@@ -119,67 +90,21 @@ async fn get_segment(
     Path((file_id, stream_id, profile_id, name)): Path<(i64, u32, String, String)>,
     Query(query): Query<SegmentQuery>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    segment_response(
-        &state,
-        file_id,
-        stream_id,
-        profile_id,
-        name,
-        query.start_pts,
-    )
-    .await
-}
-
-async fn get_segment_legacy(
-    _user: RequestAuth,
-    State(state): State<AppState>,
-    Path((file_id, _stream_type, stream_idx, profile, segment)): Path<(
-        i64,
-        String,
-        u32,
-        String,
-        String,
-    )>,
-    Query(query): Query<SegmentQuery>,
-) -> Result<Response, (StatusCode, &'static str)> {
-    let profile_id = map_legacy_profile(&profile)
-        .ok_or((StatusCode::NOT_FOUND, "profile not found"))?
-        .to_string();
-
-    segment_response(
-        &state,
-        file_id,
-        stream_idx,
-        profile_id,
-        segment,
-        query.start_pts,
-    )
-    .await
-}
-
-async fn segment_response(
-    state: &AppState,
-    file_id: i64,
-    stream_id: u32,
-    profile_id: String,
-    segment_name: String,
-    requested_start_pts: Option<i64>,
-) -> Result<Response, (StatusCode, &'static str)> {
-    let packager_state = get_or_build_packager_state(state, file_id).await?;
+    let packager_state = get_or_build_packager_state(&state, file_id).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
         .ok_or((StatusCode::NOT_FOUND, "stream profile not found"))?
         .clone();
 
-    let segment_index = Session::parse_segment_name(&segment_name)
-        .ok_or((StatusCode::NOT_FOUND, "segment not found"))?;
+    let segment_index =
+        Session::parse_segment_name(&name).ok_or((StatusCode::NOT_FOUND, "segment not found"))?;
 
     if segment_index >= 0 {
         if !session.has_segment(segment_index) {
             return Err((StatusCode::NOT_FOUND, "segment not found"));
         }
         session
-            .ensure_segment(segment_index, requested_start_pts)
+            .ensure_segment(segment_index, query.start_pts)
             .await
             .map_err(|err| {
                 tracing::warn!(error = %err, "segment request failed");
@@ -199,7 +124,7 @@ async fn segment_response(
     }
 
     let path = session
-        .wait_for_segment_file(&segment_name, Duration::from_secs(10))
+        .wait_for_segment_file(&name, Duration::from_secs(10))
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "segment not found"))?;
 
@@ -256,8 +181,8 @@ async fn resolve_file_path(
     state: &AppState,
     file_id: i64,
 ) -> Result<PathBuf, (StatusCode, &'static str)> {
-    let (file, library) = file::Entity::find_by_id(file_id)
-        .find_also_related(library::Entity)
+    let (file, library) = files::Entity::find_by_id(file_id)
+        .find_also_related(libraries::Entity)
         .one(&state.pool)
         .await
         .map_err(|err| {
@@ -272,18 +197,6 @@ async fn resolve_file_path(
 
     let library = library.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "library not found"))?;
     Ok(PathBuf::from(library.path).join(&file.relative_path))
-}
-
-fn map_legacy_profile(profile: &str) -> Option<&'static str> {
-    match profile {
-        "copy" => Some("video_copy"),
-        "h264" => Some("video_h264"),
-        "aac" => Some("audio_aac"),
-        "video_copy" => Some("video_copy"),
-        "video_h264" => Some("video_h264"),
-        "audio_aac" => Some("audio_aac"),
-        _ => None,
-    }
 }
 
 fn rewrite_playlist_for_file(playlist: &str, file_id: i64) -> String {

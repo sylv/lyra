@@ -15,7 +15,7 @@ interface MediaPosterProps {
 
 export const MediaPosterFrag = graphql(
 	`
-	fragment MediaPoster on Media {
+	fragment MediaPoster on Node {
 		id
 		name
 		posterUrl

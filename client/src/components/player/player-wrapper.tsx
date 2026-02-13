@@ -5,7 +5,7 @@ import { Player } from "./player";
 import { playerState } from "./player-state";
 
 export const PlayerFrag = graphql(`
-	fragment Player on Media {
+	fragment Player on Node {
 		id
 		name
 		seasonNumber
@@ -16,8 +16,8 @@ export const PlayerFrag = graphql(`
 		defaultConnection {
 			id
 		}
-		watchState {
-			progressPercentage
+		watchProgress {
+			progressPercent
 			updatedAt
 		}
 	}

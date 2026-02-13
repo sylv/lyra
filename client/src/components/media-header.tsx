@@ -1,7 +1,6 @@
 import type { FC } from "react";
 import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
 import { Poster } from "./poster";
-import { TMDBRatingPill, TMDBRatingPillFrag } from "./tmdb-rating-pill";
 import { useDynamicBackground } from "../hooks/use-background";
 import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
@@ -14,7 +13,7 @@ interface MediaHeaderProps {
 
 export const MediaHeaderFrag = graphql(
 	`
-	fragment MediaHeader on Media {
+	fragment MediaHeader on Node {
 		id
 		name
 		posterUrl
@@ -24,10 +23,9 @@ export const MediaHeaderFrag = graphql(
 		runtimeMinutes
 		description
 		...PlayWrapper
-		...TMDBRatingPill
 	}
 `,
-	[PlayWrapperFrag, TMDBRatingPillFrag],
+	[PlayWrapperFrag],
 );
 
 export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
@@ -52,9 +50,6 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 						</h1>
 						{media.runtimeMinutes && <p className="text-sm text-zinc-400">{media.runtimeMinutes} minutes</p>}
 						<p className="text-sm text-zinc-400">{media.description || "No description for this"}</p>
-					</div>
-					<div className="flex gap-2">
-						<TMDBRatingPill media={media} />
 					</div>
 				</div>
 			</div>

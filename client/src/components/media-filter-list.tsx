@@ -1,15 +1,15 @@
 import { Fragment, type FC } from "react";
-import type { MediaFilter } from "../@generated/enums";
+import type { NodeFilter } from "../@generated/enums";
 import { FilterButton, FilterSelect } from "./filter-button";
 import { CalendarClockIcon, CalendarPlusIcon, ListVideoIcon, SortAscIcon, StarIcon } from "lucide-react";
 
 interface MediaFilterListProps {
-	value: Partial<MediaFilter>;
-	onChange: (value: Partial<MediaFilter>) => void;
+	value: Partial<NodeFilter>;
+	onChange: (value: Partial<NodeFilter>) => void;
 }
 
 export const MediaFilterList: FC<MediaFilterListProps> = ({ value, onChange }) => {
-	const produceChange = (partial: Partial<MediaFilter>) => {
+	const produceChange = (partial: Partial<NodeFilter>) => {
 		onChange({ ...value, ...partial });
 	};
 

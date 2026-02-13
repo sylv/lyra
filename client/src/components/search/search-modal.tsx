@@ -20,7 +20,7 @@ export const setIsSearchOpen = (isOpen: boolean) => {
 const Query = graphql(
 	`
     query SearchMedia($term: String!) {
-        mediaList(filter: { search: $term }, first: 50) {
+        nodeList(filter: { search: $term }, first: 50) {
             edges {
                 node {
                     id
@@ -61,8 +61,8 @@ export const SearchModal: FC = () => {
 	const groups = useMemo(() => {
 		if (!data) return [];
 
-		const groups = new Map<string, (typeof data.mediaList.edges)[number]["node"][]>();
-		for (const edge of data.mediaList.edges) {
+		const groups = new Map<string, (typeof data.nodeList.edges)[number]["node"][]>();
+		for (const edge of data.nodeList.edges) {
 			const group = groups.get(edge.node.kind);
 			if (group) {
 				group.push(edge.node);
@@ -113,7 +113,9 @@ export const SearchModal: FC = () => {
 				<div className="h-full p-6 space-y-4 w-full overflow-y-auto pb-24">
 					{groups.map((group) => (
 						<div key={group.kind}>
-							<h2 className="mb-1 text-xs font-semibold text-zinc-500">{group.kind}S</h2>
+							<h2 className="mb-1 text-xs font-semibold text-zinc-500">
+								{group.kind === "SERIES" ? "SERIES" : `${group.kind}S`}
+							</h2>
 							<div className="grid grid-cols-2 gap-3">
 								{group.nodes.map((node) => {
 									const subheader = node.parent ? node.parent.name : formatReleaseYear(node.releasedAt, node.endedAt);

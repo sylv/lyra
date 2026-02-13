@@ -1,7 +1,7 @@
 use crate::RequestAuth;
 use crate::auth::PermissionGuard;
 use crate::entities::users::UserPerms;
-use crate::entities::{library, users, watch_state};
+use crate::entities::{libraries, nodes, users, watch_progress};
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
@@ -37,7 +37,6 @@ impl Mutation {
         };
 
         if let Some(invite_code) = invite_code {
-            // this handles accepting an invite for an existing user.
             let blank_user = users::Entity::find()
                 .filter(users::Column::InviteCode.eq(invite_code))
                 .one(pool)
@@ -59,12 +58,9 @@ impl Mutation {
             let mut blank_user = blank_user.into_active_model();
             blank_user.password_hash = Set(Some(password_hash));
             blank_user.invite_code = Set(None);
-            let user = blank_user.insert(pool).await?;
+            let user = blank_user.update(pool).await?;
             Ok(user)
         } else {
-            // this handles creating a new user once a user already exists, aka inviting
-            // people. invites are just users with no password yet, which allows you to setup
-            // their account before they can sign in.
             let auth = ctx.data::<RequestAuth>()?;
             if !auth.has_permission(UserPerms::CREATE_USER) {
                 return Err(async_graphql::Error::new(
@@ -85,7 +81,7 @@ impl Mutation {
                 id: Set(id),
                 username: Set(username),
                 password_hash: Set(Some(password_hash)),
-                permissions: Set(permissions),
+                permissions: Set(permissions as i64),
                 ..Default::default()
             })
             .exec_with_returning(pool)
@@ -96,13 +92,13 @@ impl Mutation {
         }
     }
 
-    async fn update_watch_state(
+    async fn update_watch_progress(
         &self,
         ctx: &Context<'_>,
-        media_id: i64,
-        progress_percentage: f32,
+        node_id: String,
+        progress_percent: f32,
         user_id: Option<String>,
-    ) -> Result<watch_state::Model, async_graphql::Error> {
+    ) -> Result<watch_progress::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
 
@@ -122,26 +118,64 @@ impl Mutation {
             user.id.clone()
         };
 
-        let watch_state = watch_state::Entity::insert(watch_state::ActiveModel {
-            media_id: Set(media_id),
-            user_id: Set(user_id),
-            progress_percentage: Set(progress_percentage),
-            updated_at: Set(Utc::now().timestamp()),
-            ..Default::default()
-        })
-        .on_conflict(
-            OnConflict::columns([watch_state::Column::MediaId, watch_state::Column::UserId])
+        let node = nodes::Entity::find_by_id(node_id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("Node not found".to_string()))?;
+
+        let now = Utc::now().timestamp();
+
+        let progress = if let Some(file_id) = node.file_id {
+            watch_progress::Entity::insert(watch_progress::ActiveModel {
+                user_id: Set(user_id),
+                file_id: Set(Some(file_id)),
+                node_id: Set(Some(node.id)),
+                progress_percent: Set(progress_percent),
+                updated_at: Set(now),
+                ..Default::default()
+            })
+            .on_conflict(
+                OnConflict::columns([
+                    watch_progress::Column::UserId,
+                    watch_progress::Column::FileId,
+                ])
                 .update_columns([
-                    watch_state::Column::ProgressPercentage,
-                    watch_state::Column::UpdatedAt,
+                    watch_progress::Column::NodeId,
+                    watch_progress::Column::ProgressPercent,
+                    watch_progress::Column::UpdatedAt,
                 ])
                 .to_owned(),
-        )
-        .exec_with_returning(pool)
-        .await
-        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+            )
+            .exec_with_returning(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+        } else {
+            watch_progress::Entity::insert(watch_progress::ActiveModel {
+                user_id: Set(user_id),
+                file_id: Set(None),
+                node_id: Set(Some(node.id)),
+                progress_percent: Set(progress_percent),
+                updated_at: Set(now),
+                ..Default::default()
+            })
+            .on_conflict(
+                OnConflict::columns([
+                    watch_progress::Column::UserId,
+                    watch_progress::Column::NodeId,
+                ])
+                .update_columns([
+                    watch_progress::Column::ProgressPercent,
+                    watch_progress::Column::UpdatedAt,
+                ])
+                .to_owned(),
+            )
+            .exec_with_returning(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+        };
 
-        Ok(watch_state)
+        Ok(progress)
     }
 
     async fn create_library(
@@ -149,7 +183,7 @@ impl Mutation {
         ctx: &Context<'_>,
         name: String,
         path: String,
-    ) -> Result<library::Model, async_graphql::Error> {
+    ) -> Result<libraries::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
 
@@ -159,7 +193,7 @@ impl Mutation {
             ));
         }
 
-        let library = library::Entity::insert(library::ActiveModel {
+        let library = libraries::Entity::insert(libraries::ActiveModel {
             name: Set(name),
             path: Set(path),
             ..Default::default()

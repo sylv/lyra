@@ -2,7 +2,7 @@ use crate::{
     auth::RequestAuth,
     config::get_config,
     entities::{
-        library,
+        libraries,
         users::{self},
     },
     error::AppError,
@@ -31,6 +31,7 @@ use std::{
 use tokio::sync::Mutex;
 use tokio::{signal, task::JoinHandle};
 
+mod assets;
 mod auth;
 mod config;
 mod entities;
@@ -38,10 +39,7 @@ mod error;
 mod ffmpeg;
 mod graphql;
 mod hls;
-mod matcher;
-mod proxy;
 mod scanner;
-mod tmdb;
 
 type AppSchema =
     Schema<graphql::query::Query, graphql::mutation::Mutation, async_graphql::EmptySubscription>;
@@ -100,7 +98,7 @@ async fn get_init_state(
         }
     }
 
-    let library_count = library::Entity::find().count(&state.pool).await?;
+    let library_count = libraries::Entity::find().count(&state.pool).await?;
     if library_count == 0 {
         return Ok(Json(json!({
             "state": InitState::CreateFirstLibrary
@@ -153,13 +151,6 @@ async fn main() {
             .expect("scanner failed");
     });
 
-    let matcher_pool = pool.clone();
-    let matcher_handle = tokio::spawn(async move {
-        matcher::worker::start_matcher(matcher_pool)
-            .await
-            .expect("matcher failed");
-    });
-
     let schema: AppSchema = Schema::build(
         graphql::query::Query,
         graphql::mutation::Mutation,
@@ -192,7 +183,8 @@ async fn main() {
     #[allow(unused_mut)]
     let mut app = Router::new()
         .nest("/api/hls", hls::get_hls_router())
-        .nest("/api/image-proxy", proxy::get_proxy_router())
+        .nest("/api/assets", assets::get_assets_router())
+        .nest("/api/image-proxy", assets::get_proxy_router())
         .route("/api/graphql", get(get_graphql).post(post_graphql))
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))
@@ -227,14 +219,14 @@ async fn main() {
     tracing::info!("Press Ctrl+C to shutdown gracefully");
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(matcher_handle, scanner_handle))
+        .with_graceful_shutdown(shutdown_signal(scanner_handle))
         .await
         .unwrap();
 
     tracing::info!("Server shutdown complete");
 }
 
-async fn shutdown_signal(matcher_handle: JoinHandle<()>, scanner_handle: JoinHandle<()>) {
+async fn shutdown_signal(scanner_handle: JoinHandle<()>) {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -249,7 +241,6 @@ async fn shutdown_signal(matcher_handle: JoinHandle<()>, scanner_handle: JoinHan
     };
 
     tokio::select! {
-        _ = matcher_handle => {},
         _ = scanner_handle => {},
         _ = ctrl_c => {
             tracing::info!("Received Ctrl+C");

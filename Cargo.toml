@@ -1,4 +1,9 @@
 [workspace]
-members = ["crates/lyra", "crates/lyra-packager", "crates/lyra-ffprobe"]
+members = [
+    "crates/lyra",
+    "crates/lyra-packager",
+    "crates/lyra-ffprobe",
+    "crates/lyra-parser",
+]
 resolver = "3"
 default-members = ["crates/lyra"]
