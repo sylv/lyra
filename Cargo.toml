@@ -4,6 +4,7 @@ members = [
     "crates/lyra-packager",
     "crates/lyra-ffprobe",
     "crates/lyra-parser",
+    "crates/lyra-thumbnail",
     "crates/lyra-timeline-preview",
 ]
 resolver = "3"
