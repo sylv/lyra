@@ -1,0 +1,16 @@
+[package]
+name = "lyra-timeline-preview"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "lyra-timeline-preview-debug"
+path = "src/bin/lyra-timeline-preview-debug.rs"
+
+[dependencies]
+anyhow = "1.0"
+image = { version = "0.25", default-features = false, features = ["png"] }
+tempfile = "3.20"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.22"

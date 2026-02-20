@@ -31,3 +31,4 @@ segments/
 *.mkv
 *.mp4
 samples/
+.frame-cache

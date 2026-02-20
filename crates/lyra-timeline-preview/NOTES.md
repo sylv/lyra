@@ -1,0 +1,5 @@
+- AVIF has slightly better ratios (same size, it looks a little better) and might be viable in the future, but is not as widely supported and apparently has higher decode times hwich aren't great for this use case
+- Without edge gaps, compression is slightly better (a few percent) but bleedover between frames is rough
+- With edge gaps, using solid black vs copying the edge of each frame to fill in the gap makes no difference
+- By far the biggest factor is quality, the lower you can tolerate it the better. Then frame size and interval
+- 5s seems like a good sweetspot

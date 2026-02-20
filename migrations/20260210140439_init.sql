@@ -1,7 +1,7 @@
 -- assets represent things like episode thumbnails, posters, backgrounds, etc.
 CREATE TABLE assets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind INTEGER NOT NULL,
+    source INTEGER NOT NULL,
     provider TEXT NOT NULL,
     -- when remote and not downloaded yet
     source_url TEXT,
@@ -67,7 +67,6 @@ CREATE TABLE files (
     relative_path TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     hash_5mb_sha256 TEXT,
-    duration_s INTEGER NOT NULL DEFAULT 0,
     height INTEGER,
     width INTEGER,
     edition_name TEXT,
@@ -78,6 +77,47 @@ CREATE TABLE files (
 
     UNIQUE (library_id, relative_path),
     FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE file_assets (
+    file_id INTEGER NOT NULL,
+    asset_id INTEGER NOT NULL,
+    role INTEGER NOT NULL,
+    chapter_number INTEGER, -- for chapter thumbnails
+    position_ms INTEGER, -- for frames taken from videos
+    end_ms INTEGER, -- for sheets, where the sheet ends
+    sheet_frame_height INTEGER,
+    sheet_frame_width INTEGER,
+    sheet_gap_size INTEGER,
+    sheet_interval INTEGER,
+    
+    PRIMARY KEY (file_id, asset_id),
+) STRICT;
+
+CREATE TABLE file_keyframes (
+    file_id INTEGER PRIMARY KEY,
+    keyframe_list BLOB NOT NULL, -- zstd-encoded json list of keyframe positions.
+    generated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE file_probe (
+    file_id INTEGER PRIMARY KEY,
+    duration_s INTEGER,
+    height INTEGER,
+    width INTEGER,
+    fps REAL,
+    video_codec TEXT,
+    video_bitrate INTEGER,
+    audio_codec TEXT,
+    audio_bitrate INTEGER,
+    audio_channels INTEGER,
+    has_subtitles INTEGER NOT NULL,
+    streams BLOB, -- ZSTD-compressed JSON, an array with info on each stream in the file
+    generated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 ) STRICT;
 
 -- nodes are derived from file paths and parser output.
@@ -94,7 +134,7 @@ CREATE TABLE nodes (
     FOREIGN KEY (root_id) REFERENCES nodes(id) ON DELETE CASCADE,
     FOREIGN KEY (parent_id) REFERENCES nodes(id) ON DELETE CASCADE,
     FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
+    FOREIGN KEY (file_id) REFERENCES files(id),
     CHECK (
         (parent_id IS NULL AND root_id IS NULL AND kind IN (0, 1)) OR
         (parent_id IS NOT NULL AND root_id IS NOT NULL AND kind IN (2, 3))
@@ -149,10 +189,10 @@ CREATE TABLE metadata (
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
     FOREIGN KEY (root_id) REFERENCES metadata(id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_id) REFERENCES metadata(id) ON DELETE SET NULL,
-    FOREIGN KEY (poster_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
-    FOREIGN KEY (thumbnail_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
-    FOREIGN KEY (background_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    FOREIGN KEY (parent_id) REFERENCES metadata(id) ON DELETE CASCADE,
+    FOREIGN KEY (poster_asset_id) REFERENCES assets(id),
+    FOREIGN KEY (thumbnail_asset_id) REFERENCES assets(id),
+    FOREIGN KEY (background_asset_id) REFERENCES assets(id),
     CHECK (
         (parent_id IS NULL AND root_id IS NULL AND kind IN (0, 1)) OR
         (parent_id IS NOT NULL AND root_id IS NOT NULL AND kind IN (2, 3))
