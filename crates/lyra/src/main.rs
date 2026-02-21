@@ -40,6 +40,7 @@ mod ffmpeg;
 mod graphql;
 mod hls;
 mod scanner;
+mod tasks;
 
 type AppSchema =
     Schema<graphql::query::Query, graphql::mutation::Mutation, async_graphql::EmptySubscription>;

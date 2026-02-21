@@ -66,7 +66,6 @@ CREATE TABLE files (
     library_id INTEGER NOT NULL,
     relative_path TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
-    hash_5mb_sha256 TEXT,
     height INTEGER,
     width INTEGER,
     edition_name TEXT,
@@ -84,7 +83,7 @@ CREATE TABLE file_assets (
     asset_id INTEGER NOT NULL,
     role INTEGER NOT NULL,
     chapter_number INTEGER, -- for chapter thumbnails
-    position_ms INTEGER, -- for frames taken from videos
+    position_ms INTEGER, -- for frames taken from videos and sheets
     end_ms INTEGER, -- for sheets, where the sheet ends
     sheet_frame_height INTEGER,
     sheet_frame_width INTEGER,
@@ -92,6 +91,7 @@ CREATE TABLE file_assets (
     sheet_interval INTEGER,
     
     PRIMARY KEY (file_id, asset_id),
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE file_keyframes (
@@ -200,6 +200,32 @@ CREATE TABLE metadata (
 ) STRICT;
 
 CREATE UNIQUE INDEX metadata_unique_per_source ON metadata(source, source_key) WHERE source_key IS NOT NULL;
+
+CREATE TABLE tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- task_type + scope_kind + scope_id is the thing this task is meant to operate on, eg
+    -- an asset, a root node, a season node, metadata, a file, etc. 
+    -- think of the two as the "unique key" for each job.
+    task_type TEXT NOT NULL,
+    scope_kind INTEGER NOT NULL,
+    scope_id TEXT NOT NULL,
+    -- zstd-compressed JSON blob, this is the data given to the task when it runs.
+    input_args BLOB,
+    -- if either version field changes, the task is re-run.
+    -- version_number is a simple hard-coded value on each task type, when changed it forces all tasks of that type to re-run
+    -- (ie, a bug was fixed in the task logic that caused incorrect results, so we want to re-run to fix it)
+    -- version_hash is a optional hash of the relevant data that the task operates on, which when changed triggers a re-run
+    -- (ie, intro detection runs on season nodes, but wants to re-run if any episodes are added/removed from the season)
+    version_number INTEGER NOT NULL,
+    version_hash TEXT,
+    last_error_message TEXT,
+    last_run_at INTEGER,
+    execute_after INTEGER, -- if unset, never run this job. to run immediately, set to current time.
+    locked_at INTEGER, -- when the job begins to run, this is set to stop other workers from running the same job.
+    attempt_count INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+CREATE UNIQUE INDEX tasks_scope_unique ON tasks(task_type, scope_kind, scope_id);
 
 -- playback progress stores both node + concrete file when known
 CREATE TABLE watch_progress (

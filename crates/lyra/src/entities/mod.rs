@@ -5,6 +5,7 @@ pub mod library_users;
 pub mod metadata;
 pub mod node_metadata;
 pub mod nodes;
+pub mod tasks;
 pub mod user_sessions;
 pub mod users;
 pub mod watch_progress;

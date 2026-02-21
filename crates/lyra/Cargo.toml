@@ -58,7 +58,12 @@ lazy_static = "1.5.0"
 glob = "0.3.3"
 lyra-packager = { path = "../lyra-packager", default-features = false }
 lyra-parser = { path = "../lyra-parser" }
+lyra-ffprobe = { path = "../lyra-ffprobe" }
+lyra-thumbnail = { path = "../lyra-thumbnail" }
+lyra-timeline-preview = { path = "../lyra-timeline-preview" }
 async-recursion = "1.1.1"
+async-trait = "0.1.89"
+zstd = "0.13.3"
 
 [features]
 static = []
