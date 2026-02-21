@@ -25,12 +25,14 @@ const Query = graphql(
                 node {
                     id
                     kind
-                    description
-                    rating
-                    releasedAt
-                    endedAt
-					thumbnailUrl
-					posterUrl
+                    properties {
+						description
+						rating
+						releasedAt
+						endedAt
+						thumbnailUrl
+						posterUrl
+                    }
 					name
                     parent {
                         name
@@ -118,7 +120,9 @@ export const SearchModal: FC = () => {
 							</h2>
 							<div className="grid grid-cols-2 gap-3">
 								{group.nodes.map((node) => {
-									const subheader = node.parent ? node.parent.name : formatReleaseYear(node.releasedAt, node.endedAt);
+									const subheader = node.parent
+										? node.parent.name
+										: formatReleaseYear(node.properties.releasedAt, node.properties.endedAt);
 									const path = getPathForMedia(node);
 
 									return (
@@ -136,9 +140,9 @@ export const SearchModal: FC = () => {
 										>
 											<div className="flex items-center gap-5">
 												{node.kind === "EPISODE" ? (
-													<Thumbnail imageUrl={node.thumbnailUrl} alt={node.name} className="h-26 rounded-r-none" />
+													<Thumbnail imageUrl={node.properties.thumbnailUrl} alt={node.name} className="h-26 rounded-r-none" />
 												) : (
-													<Poster imageUrl={node.posterUrl} alt={node.name} className="h-26 rounded-r-none" />
+													<Poster imageUrl={node.properties.posterUrl} alt={node.name} className="h-26 rounded-r-none" />
 												)}
 												<div className="flex-1 min-w-0">
 													<h5 className="text-xs text-zinc-400">{subheader}</h5>

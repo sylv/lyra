@@ -1,6 +1,5 @@
 use crate::tasks::{
-    TaskManager, TaskRunner,
-    tasks::file_timeline_preview::FileTimelinePreviewTask,
+    TaskManager, TaskRunner, tasks::file_timeline_preview::FileTimelinePreviewTask,
 };
 use sea_orm::DatabaseConnection;
 

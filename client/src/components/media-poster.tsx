@@ -18,9 +18,11 @@ export const MediaPosterFrag = graphql(
 	fragment MediaPoster on Node {
 		id
 		name
-		posterUrl
 		kind
-		thumbnailUrl
+		properties {
+			posterUrl
+			thumbnailUrl
+		}
 		...GetPathForMedia
 		...PlayWrapper
 	}
@@ -36,9 +38,9 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 		<div className={cn("flex flex-col gap-2 overflow-hidden truncate", className)} style={style}>
 			<PlayWrapper media={media}>
 				{media.kind === "EPISODE" ? (
-					<Thumbnail imageUrl={media.thumbnailUrl} alt={media.name} className="w-full" />
+					<Thumbnail imageUrl={media.properties.thumbnailUrl} alt={media.name} className="w-full" />
 				) : (
-					<Poster imageUrl={media.posterUrl} alt={media.name} className="w-full" />
+					<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="w-full" />
 				)}
 			</PlayWrapper>
 			<a

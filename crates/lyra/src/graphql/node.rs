@@ -1,3 +1,4 @@
+use super::properties::NodeProperties;
 use crate::{
     RequestAuth,
     entities::{
@@ -16,82 +17,16 @@ use sea_orm::{
 
 #[ComplexObject]
 impl nodes::Model {
-    pub async fn description(&self, ctx: &Context<'_>) -> Result<Option<String>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.description))
-    }
+    pub async fn properties(&self, ctx: &Context<'_>) -> Result<NodeProperties, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let metadata = metadata::Entity::find()
+            .join(JoinType::InnerJoin, metadata::Relation::NodeMetadata.def())
+            .filter(node_metadata::Column::NodeId.eq(self.id.clone()))
+            .filter(node_metadata::Column::IsPrimary.eq(true))
+            .one(pool)
+            .await?;
 
-    pub async fn rating(&self, ctx: &Context<'_>) -> Result<Option<f64>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.score_normalized)
-            .map(|score| score as f64 / 10.0))
-    }
-
-    pub async fn poster_url(&self, ctx: &Context<'_>) -> Result<Option<String>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.poster_asset_id)
-            .map(|asset_id| format!("/api/assets/{asset_id}")))
-    }
-
-    pub async fn background_url(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<String>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.background_asset_id)
-            .map(|asset_id| format!("/api/assets/{asset_id}")))
-    }
-
-    pub async fn thumbnail_url(&self, ctx: &Context<'_>) -> Result<Option<String>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.thumbnail_asset_id)
-            .map(|asset_id| format!("/api/assets/{asset_id}")))
-    }
-
-    pub async fn season_number(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.season_number))
-    }
-
-    pub async fn episode_number(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.episode_number))
-    }
-
-    pub async fn runtime_minutes(&self) -> Option<i64> {
-        None
-    }
-
-    pub async fn released_at(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.released_at))
-    }
-
-    pub async fn ended_at(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .and_then(|metadata| metadata.ended_at))
-    }
-
-    pub async fn created_at(&self, ctx: &Context<'_>) -> Result<i64, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .map(|metadata| metadata.created_at)
-            .unwrap_or(0))
-    }
-
-    pub async fn updated_at(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
-        Ok(get_primary_metadata(self, ctx)
-            .await?
-            .map(|metadata| metadata.updated_at))
+        Ok(NodeProperties::from_metadata(metadata))
     }
 
     pub async fn first_linked_at(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
@@ -233,20 +168,4 @@ impl nodes::Model {
 
         Ok(progress)
     }
-}
-
-pub async fn get_primary_metadata(
-    node: &nodes::Model,
-    ctx: &Context<'_>,
-) -> Result<Option<metadata::Model>, sea_orm::DbErr> {
-    let pool = ctx.data_unchecked::<DatabaseConnection>();
-
-    let metadata = metadata::Entity::find()
-        .join(JoinType::InnerJoin, metadata::Relation::NodeMetadata.def())
-        .filter(node_metadata::Column::NodeId.eq(node.id.clone()))
-        .filter(node_metadata::Column::IsPrimary.eq(true))
-        .one(pool)
-        .await?;
-
-    Ok(metadata)
 }

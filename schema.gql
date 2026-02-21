@@ -34,18 +34,7 @@ type Node {
 	relativePath: String!
 	name: String!
 	kind: NodeKind!
-	description: String
-	rating: Float
-	posterUrl: String
-	backgroundUrl: String
-	thumbnailUrl: String
-	seasonNumber: Int
-	episodeNumber: Int
-	runtimeMinutes: Int
-	releasedAt: Int
-	endedAt: Int
-	createdAt: Int!
-	updatedAt: Int
+	properties: NodeProperties!
 	firstLinkedAt: Int
 	"""
 	Gets the default file connection for this node, including child connections.
@@ -108,6 +97,21 @@ enum NodeOrderBy {
 	ALPHABETICAL
 	RATING
 	SEASON_EPISODE
+}
+
+type NodeProperties {
+	description: String
+	rating: Float
+	posterUrl: String
+	backgroundUrl: String
+	thumbnailUrl: String
+	seasonNumber: Int
+	episodeNumber: Int
+	runtimeMinutes: Int
+	releasedAt: Int
+	endedAt: Int
+	createdAt: Int
+	updatedAt: Int
 }
 
 enum OrderDirection {

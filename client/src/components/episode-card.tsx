@@ -24,11 +24,13 @@ export const EpisodeCardFrag = graphql(
 	fragment EpisodeCard on Node {
 		id
 		name
-		description
-		thumbnailUrl
-		seasonNumber
-		episodeNumber
-		runtimeMinutes
+		properties {
+			description
+			thumbnailUrl
+			seasonNumber
+			episodeNumber
+			runtimeMinutes
+		}
 		...PlayWrapper
 	}
 `,
@@ -42,26 +44,28 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 		<div className="group flex gap-4 p-4 hover:bg-zinc-800/10 rounded-lg transition-colors border border-zinc-700/40">
 			<div className="relative flex-shrink-0 rounded-md overflow-hidden">
 				<PlayWrapper media={episode}>
-					<Thumbnail imageUrl={episode.thumbnailUrl} alt={episode.name} className="h-36 " />
+					<Thumbnail imageUrl={episode.properties.thumbnailUrl} alt={episode.name} className="h-36 " />
 				</PlayWrapper>
 			</div>
 			<div className="flex flex-col justify-between gap-2">
 				<div className="flex-1 min-w-0">
 					<h3 className="font-semibold text-white mb-1">
 						<span className="text-zinc-400 text-sm font-normal mr-2">
-							S{episode.seasonNumber}E{episode.episodeNumber}
+							S{episode.properties.seasonNumber}E{episode.properties.episodeNumber}
 						</span>
 						{episode.name}
 					</h3>
 					<div className="flex items-center gap-4 mb-2">
-						{episode.runtimeMinutes && (
+						{episode.properties.runtimeMinutes && (
 							<div className="flex items-center gap-1 text-sm text-zinc-400">
 								<Clock className="w-4 h-4" />
-								{formatRuntime(episode.runtimeMinutes)}
+								{formatRuntime(episode.properties.runtimeMinutes)}
 							</div>
 						)}
 					</div>
-					<p className="text-sm text-zinc-300 line-clamp-3">{episode.description || "No description available"}</p>
+					<p className="text-sm text-zinc-300 line-clamp-3">
+						{episode.properties.description || "No description available"}
+					</p>
 				</div>
 			</div>
 		</div>

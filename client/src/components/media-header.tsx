@@ -16,12 +16,14 @@ export const MediaHeaderFrag = graphql(
 	fragment MediaHeader on Node {
 		id
 		name
-		posterUrl
-		backgroundUrl
-		releasedAt
-		endedAt
-		runtimeMinutes
-		description
+		properties {
+			posterUrl
+			backgroundUrl
+			releasedAt
+			endedAt
+			runtimeMinutes
+			description
+		}
 		...PlayWrapper
 	}
 `,
@@ -30,7 +32,7 @@ export const MediaHeaderFrag = graphql(
 
 export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 	const media = readFragment(MediaHeaderFrag, mediaRaw);
-	const dynamicUrl = media.backgroundUrl && getImageProxyUrl(media.backgroundUrl, 200);
+	const dynamicUrl = media.properties.backgroundUrl && getImageProxyUrl(media.properties.backgroundUrl, 200);
 
 	useDynamicBackground(dynamicUrl);
 
@@ -38,18 +40,22 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 		<div className="bg-zinc-800/30 border-700/30 p-6 border-b">
 			<div className="flex gap-6 container mx-auto">
 				<PlayWrapper media={media}>
-					<Poster imageUrl={media.posterUrl} alt={media.name} className="h-72" />
+					<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="h-72" />
 				</PlayWrapper>
 				<div className="flex flex-col gap-2 justify-between">
 					<div className="flex flex-col gap-2">
 						<h1 className="text-2xl font-bold">
 							{media.name}
-							{media.releasedAt && (
-								<span className="text-zinc-400 ml-2 text-lg">{formatReleaseYear(media.releasedAt, media.endedAt)}</span>
+							{media.properties.releasedAt && (
+								<span className="text-zinc-400 ml-2 text-lg">
+									{formatReleaseYear(media.properties.releasedAt, media.properties.endedAt)}
+								</span>
 							)}
 						</h1>
-						{media.runtimeMinutes && <p className="text-sm text-zinc-400">{media.runtimeMinutes} minutes</p>}
-						<p className="text-sm text-zinc-400">{media.description || "No description for this"}</p>
+						{media.properties.runtimeMinutes && (
+							<p className="text-sm text-zinc-400">{media.properties.runtimeMinutes} minutes</p>
+						)}
+						<p className="text-sm text-zinc-400">{media.properties.description || "No description for this"}</p>
 					</div>
 				</div>
 			</div>

@@ -6,7 +6,9 @@ export const GetPathForMediaFrag = graphql(`
 		kind
 		rootId
 		parentId
-		seasonNumber
+		properties {
+			seasonNumber
+		}
 	}
 `);
 
@@ -18,9 +20,9 @@ export const getPathForMedia = (mediaRaw: FragmentOf<typeof GetPathForMediaFrag>
 		case "MOVIE":
 			return `/movie/${media.id}`;
 		case "SEASON":
-			return `/series/${media.rootId ?? media.id}?seasons=${media.seasonNumber ?? 1}`;
+			return `/series/${media.rootId ?? media.id}?seasons=${media.properties.seasonNumber ?? 1}`;
 		case "EPISODE":
 			// todo: include episode number and highlight it on the page
-			return `/series/${media.rootId ?? media.parentId}?seasons=${media.seasonNumber ?? 1}`;
+			return `/series/${media.rootId ?? media.parentId}?seasons=${media.properties.seasonNumber ?? 1}`;
 	}
 };

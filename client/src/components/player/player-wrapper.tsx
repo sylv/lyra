@@ -8,8 +8,10 @@ export const PlayerFrag = graphql(`
 	fragment Player on Node {
 		id
 		name
-		seasonNumber
-		episodeNumber
+		properties {
+			seasonNumber
+			episodeNumber
+		}
 		parent {
 			name
 		}

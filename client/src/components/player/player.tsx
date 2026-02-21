@@ -394,13 +394,15 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 								<ArrowLeft className="w-6 h-6" />
 							</PlayerButton>
 						)}
-						{currentMedia.parent && currentMedia.seasonNumber && currentMedia.episodeNumber ? (
+						{currentMedia.parent &&
+						currentMedia.properties.seasonNumber &&
+						currentMedia.properties.episodeNumber ? (
 							<div>
 								<h2 className="text-xl font-semibold">
-									{currentMedia.parent.name}: Season {currentMedia.seasonNumber}
+									{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
 								</h2>
 								<p className="text-sm text-gray-300">
-									Episode {currentMedia.episodeNumber}: {currentMedia.name}
+									Episode {currentMedia.properties.episodeNumber}: {currentMedia.name}
 								</p>
 							</div>
 						) : (
