@@ -1,13 +1,13 @@
+use async_graphql::Enum;
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "assets")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub kind: i64,
-    #[sea_orm(column_type = "Text")]
-    pub provider: String,
+    pub source: AssetSource,
     #[sea_orm(column_type = "Text", nullable)]
     pub source_url: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -27,3 +27,11 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(
+    Debug, Enum, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum,
+)]
+#[sea_orm(rs_type = "i64", db_type = "Integer")]
+pub enum AssetSource {
+    Local = 0,
+}

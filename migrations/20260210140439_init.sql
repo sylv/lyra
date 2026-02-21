@@ -2,7 +2,6 @@
 CREATE TABLE assets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source INTEGER NOT NULL,
-    provider TEXT NOT NULL,
     -- when remote and not downloaded yet
     source_url TEXT,
     -- when stored locally
@@ -15,8 +14,21 @@ CREATE TABLE assets (
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     deleted_at INTEGER,
 
-    CHECK ((hash_sha256 IS NOT NULL AND source_url IS NULL) OR (hash_sha256 IS NULL AND source_url IS NOT NULL))
+    -- if hash_sha256 or source == local, then size_bytes, mime_type, height and width must be set
+    CHECK (
+        (hash_sha256 IS NOT NULL AND source = 0 AND size_bytes IS NOT NULL AND mime_type IS NOT NULL AND height IS NOT NULL AND width IS NOT NULL) OR
+        (hash_sha256 IS NULL OR source != 0)
+    )
 ) STRICT;
+
+-- require deleted_at be set to delete an asset, so that assets cannot be deleted without properly removing on-disk files
+CREATE TRIGGER assets_prevent_delete_unless_marked
+BEFORE DELETE ON assets
+FOR EACH ROW
+WHEN OLD.deleted_at IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'assets must be soft deleted (set deleted_at)');
+END;
 
 CREATE TABLE users (
     id TEXT PRIMARY KEY,

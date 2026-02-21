@@ -1,4 +1,5 @@
 pub mod assets;
+pub mod file_assets;
 pub mod files;
 pub mod libraries;
 pub mod library_users;

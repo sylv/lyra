@@ -1,4 +1,4 @@
-use crate::entities::tasks;
+use crate::entities::tasks as tasks_entity;
 use anyhow::Context;
 use async_graphql::Enum;
 use chrono::Duration;
@@ -12,8 +12,13 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::time::Instant;
+use tokio::time::sleep;
+
+pub mod registry;
+pub mod tasks;
 
 const RECONCILE_INTERVAL: Duration = Duration::minutes(15);
+const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(
     Debug, Enum, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum,
@@ -25,10 +30,10 @@ pub enum TaskScopeKind {
 }
 
 pub struct TaskLike<T: Serialize> {
-    scope_kind: TaskScopeKind,
-    scope_id: String,
-    input_args: Option<T>,
-    version_hash: Option<String>,
+    pub scope_kind: TaskScopeKind,
+    pub scope_id: String,
+    pub input_args: Option<T>,
+    pub version_hash: Option<String>,
 }
 
 pub struct TaskExecutionPolicy {
@@ -67,19 +72,49 @@ pub trait TaskHandler: Send + Sync {
         TaskExecutionPolicy::default()
     }
 
-    async fn reconcile(&self, pool: &DatabaseConnection) -> Vec<TaskLike<Self::InputArgs>>;
+    async fn reconcile(
+        &self,
+        pool: &DatabaseConnection,
+    ) -> anyhow::Result<Vec<TaskLike<Self::InputArgs>>>;
+
+    /// when re-running tasks, this is called before the next execution to allow for cleanup of any previous side effects
+    async fn cleanup(
+        &self,
+        _pool: &DatabaseConnection,
+        _task: &tasks_entity::Model,
+        _args: &Self::InputArgs,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     async fn execute(
         &self,
         pool: &DatabaseConnection,
-        task: &tasks::Model,
-        args: Self::InputArgs,
+        task: &tasks_entity::Model,
+        args: &Self::InputArgs,
     ) -> anyhow::Result<()>;
 }
 
 pub struct TaskManager<T: TaskHandler> {
     handler: Box<dyn TaskHandler<InputArgs = T::InputArgs>>,
     database: DatabaseConnection,
+}
+
+#[async_trait::async_trait]
+pub trait TaskRunner: Send + Sync {
+    fn task_type(&self) -> &'static str;
+    async fn start_thread(&self) -> anyhow::Result<()>;
+}
+
+#[async_trait::async_trait]
+impl<T: TaskHandler + 'static> TaskRunner for TaskManager<T> {
+    fn task_type(&self) -> &'static str {
+        self.handler.task_type()
+    }
+
+    async fn start_thread(&self) -> anyhow::Result<()> {
+        TaskManager::start_thread(self).await
+    }
 }
 
 impl<T: TaskHandler> TaskManager<T> {
@@ -108,16 +143,16 @@ impl<T: TaskHandler> TaskManager<T> {
                 // todo: we should be able to do this without a transaction by using a nested select
                 // but sea_orm does not seem to like optional updates
                 let mut tx = self.database.begin().await?;
-                let to_run = tasks::Entity::find()
-                    .filter(tasks::Column::TaskType.eq(self.handler.task_type()))
-                    .filter(Expr::col(tasks::Column::LockedAt).is_null())
+                let to_run = tasks_entity::Entity::find()
+                    .filter(tasks_entity::Column::TaskType.eq(self.handler.task_type()))
+                    .filter(Expr::col(tasks_entity::Column::LockedAt).is_null())
                     .filter(
-                        Expr::col(tasks::Column::ExecuteAfter)
+                        Expr::col(tasks_entity::Column::ExecuteAfter)
                             .lte(now)
                             .is_not_null(),
                     )
                     .order_by_with_nulls(
-                        tasks::Column::ExecuteAfter,
+                        tasks_entity::Column::ExecuteAfter,
                         Order::Asc,
                         NullOrdering::Last,
                     )
@@ -125,7 +160,7 @@ impl<T: TaskHandler> TaskManager<T> {
                     .await?;
 
                 if let Some(task) = to_run {
-                    tasks::Entity::update(tasks::ActiveModel {
+                    tasks_entity::Entity::update(tasks_entity::ActiveModel {
                         id: Set(task.id),
                         locked_at: Set(Some(now)),
                         ..Default::default()
@@ -141,6 +176,7 @@ impl<T: TaskHandler> TaskManager<T> {
             };
 
             if let Some(to_run) = to_run {
+                let policy = self.handler.execution_policy();
                 let input_args: T::InputArgs =
                     Self::decode_input_args(to_run.input_args.as_deref()).with_context(|| {
                         format!(
@@ -149,14 +185,10 @@ impl<T: TaskHandler> TaskManager<T> {
                         )
                     })?;
 
-                match self
-                    .handler
-                    .execute(&self.database, &to_run, input_args)
-                    .await
-                {
+                match self.run_task(&self.database, &to_run, input_args).await {
                     Ok(_) => {
                         // mark task as completed by setting execute_after to null
-                        tasks::Entity::update(tasks::ActiveModel {
+                        tasks_entity::Entity::update(tasks_entity::ActiveModel {
                             id: Set(to_run.id),
                             execute_after: Set(None),
                             locked_at: Set(None),
@@ -165,9 +197,12 @@ impl<T: TaskHandler> TaskManager<T> {
                         })
                         .exec(&self.database)
                         .await?;
+
+                        if let Some(ratelimit) = policy.ratelimit_secs {
+                            sleep(ratelimit.to_std().unwrap()).await;
+                        }
                     }
                     Err(e) => {
-                        let policy = self.handler.execution_policy();
                         let attempt_count = to_run.attempt_count + 1;
                         let should_retry = attempt_count < policy.max_attempts() as i64;
                         let execute_after = if should_retry {
@@ -179,7 +214,7 @@ impl<T: TaskHandler> TaskManager<T> {
                             None
                         };
 
-                        tasks::Entity::update(tasks::ActiveModel {
+                        tasks_entity::Entity::update(tasks_entity::ActiveModel {
                             id: Set(to_run.id),
                             last_error_message: Set(Some(e.to_string())),
                             locked_at: Set(None),
@@ -192,12 +227,47 @@ impl<T: TaskHandler> TaskManager<T> {
                         .await?;
                     }
                 }
+            } else {
+                sleep(EMPTY_POLL_INTERVAL).await;
             }
         }
     }
 
+    async fn run_task(
+        &self,
+        pool: &DatabaseConnection,
+        task: &tasks_entity::Model,
+        args: T::InputArgs,
+    ) -> anyhow::Result<()> {
+        let start = Instant::now();
+        if task.last_run_at.is_some() || task.attempt_count > 0 {
+            tracing::debug!(
+                "running pre-execution cleanup for task id={} type={}",
+                task.id,
+                task.task_type
+            );
+            self.handler.cleanup(pool, task, &args).await?;
+        }
+
+        tracing::info!(
+            "executing task id={} type={} attempt={}",
+            task.id,
+            task.task_type,
+            task.attempt_count + 1
+        );
+        self.handler.execute(pool, task, &args).await?;
+        tracing::debug!(
+            "finished executing task id={} type={} attempt={} in {:?}",
+            task.id,
+            task.task_type,
+            task.attempt_count + 1,
+            start.elapsed()
+        );
+        Ok(())
+    }
+
     async fn reconcile(&self, now: i64) -> anyhow::Result<()> {
-        let target_tasks = self.handler.reconcile(&self.database).await;
+        let target_tasks = self.handler.reconcile(&self.database).await?;
         let mut tx = self.database.begin().await?;
         for task in target_tasks {
             let input_args = task
@@ -208,7 +278,7 @@ impl<T: TaskHandler> TaskManager<T> {
                 .context("failed to serialize task input_args")?;
 
             let task_type = self.handler.task_type();
-            let mut active = tasks::ActiveModel {
+            let mut active = tasks_entity::ActiveModel {
                 task_type: Set(task_type.to_string()),
                 scope_kind: Set(task.scope_kind),
                 scope_id: Set(task.scope_id.clone()),
@@ -218,10 +288,10 @@ impl<T: TaskHandler> TaskManager<T> {
                 ..Default::default()
             };
 
-            let existing = tasks::Entity::find()
-                .filter(tasks::Column::TaskType.eq(self.handler.task_type()))
-                .filter(tasks::Column::ScopeKind.eq(task.scope_kind as i64))
-                .filter(tasks::Column::ScopeId.eq(task.scope_id.clone()))
+            let existing = tasks_entity::Entity::find()
+                .filter(tasks_entity::Column::TaskType.eq(self.handler.task_type()))
+                .filter(tasks_entity::Column::ScopeKind.eq(task.scope_kind as i64))
+                .filter(tasks_entity::Column::ScopeId.eq(task.scope_id.clone()))
                 .one(&mut tx)
                 .await?;
 
@@ -239,6 +309,7 @@ impl<T: TaskHandler> TaskManager<T> {
 
                 active.update(&mut tx).await?;
             } else {
+                active.execute_after = Set(Some(now));
                 active.insert(&mut tx).await?;
             }
         }

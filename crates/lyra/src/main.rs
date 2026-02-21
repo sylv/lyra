@@ -7,6 +7,7 @@ use crate::{
     },
     error::AppError,
 };
+use anyhow::Context;
 use async_graphql::{Schema, http::GraphiQLSource};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
@@ -29,7 +30,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::Mutex;
-use tokio::{signal, task::JoinHandle};
+use tokio::{signal, task::JoinSet};
 
 mod assets;
 mod auth;
@@ -145,12 +146,20 @@ async fn main() {
         .expect("Failed to run migrations");
 
     let pool = DatabaseConnection::from(pool);
+    let mut background_workers: JoinSet<anyhow::Result<()>> = JoinSet::new();
+
     let scanner_pool = pool.clone();
-    let scanner_handle = tokio::spawn(async move {
-        scanner::start_scanner(scanner_pool)
-            .await
-            .expect("scanner failed");
-    });
+    background_workers.spawn(async move { scanner::start_scanner(scanner_pool).await });
+
+    for task in tasks::registry::get_registered_tasks(&pool) {
+        let task_type = task.task_type().to_string();
+        background_workers.spawn(async move {
+            tracing::info!(task_type = %task_type, "starting task worker");
+            task.start_thread()
+                .await
+                .with_context(|| format!("task worker '{task_type}' exited"))
+        });
+    }
 
     let schema: AppSchema = Schema::build(
         graphql::query::Query,
@@ -191,7 +200,7 @@ async fn main() {
         .route("/api/login", post(auth::post_login))
         .with_state(AppState {
             packager_states: Arc::new(Mutex::new(HashMap::new())),
-            pool: pool,
+            pool: pool.clone(),
             schema: Arc::new(schema),
             setup_code,
             last_setup_code_attempt: Arc::new(AtomicI64::new(0)),
@@ -220,14 +229,14 @@ async fn main() {
     tracing::info!("Press Ctrl+C to shutdown gracefully");
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(scanner_handle))
+        .with_graceful_shutdown(shutdown_signal(background_workers))
         .await
         .unwrap();
 
     tracing::info!("Server shutdown complete");
 }
 
-async fn shutdown_signal(scanner_handle: JoinHandle<()>) {
+async fn shutdown_signal(mut background_workers: JoinSet<anyhow::Result<()>>) {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -242,7 +251,22 @@ async fn shutdown_signal(scanner_handle: JoinHandle<()>) {
     };
 
     tokio::select! {
-        _ = scanner_handle => {},
+        worker = background_workers.join_next() => {
+            match worker {
+                Some(Ok(Ok(()))) => {
+                    tracing::error!("a background worker exited unexpectedly");
+                }
+                Some(Ok(Err(error))) => {
+                    tracing::error!(error = ?error, "a background worker failed");
+                }
+                Some(Err(error)) => {
+                    tracing::error!(error = ?error, "a background worker panicked");
+                }
+                None => {
+                    tracing::error!("all background workers exited");
+                }
+            }
+        },
         _ = ctrl_c => {
             tracing::info!("Received Ctrl+C");
         },
@@ -250,4 +274,6 @@ async fn shutdown_signal(scanner_handle: JoinHandle<()>) {
             tracing::info!("Received termination signal");
         },
     }
+
+    background_workers.abort_all();
 }

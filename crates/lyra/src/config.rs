@@ -6,6 +6,7 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub transcode_cache_dir: Option<PathBuf>,
     pub image_dir: Option<PathBuf>,
+    pub asset_store_dir: Option<PathBuf>,
     pub host: String,
     pub port: u16,
     pub clear_transcode_cache_on_start: bool,
@@ -27,6 +28,18 @@ impl Config {
         } else {
             self.data_dir.join("image_cache")
         }
+    }
+
+    pub fn get_asset_store_dir(&self) -> PathBuf {
+        if let Some(dir) = self.asset_store_dir.as_ref() {
+            dir.clone()
+        } else {
+            self.data_dir.join("assets")
+        }
+    }
+
+    pub fn get_tmp_dir(&self) -> PathBuf {
+        self.data_dir.join("tmp")
     }
 }
 
@@ -57,9 +70,17 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         std::fs::remove_dir_all(&config.get_transcode_cache_dir())?;
     }
 
+    let temp_dir = config.get_tmp_dir();
+    if temp_dir.exists() {
+        tracing::info!("clearing temp directory");
+        std::fs::remove_dir_all(&temp_dir)?;
+    }
+
     std::fs::create_dir_all(&config.data_dir)?;
     std::fs::create_dir_all(&config.get_transcode_cache_dir())?;
     std::fs::create_dir_all(&config.get_image_dir())?;
+    std::fs::create_dir_all(&config.get_asset_store_dir())?;
+    std::fs::create_dir_all(&config.get_tmp_dir())?;
 
     Ok(config)
 }

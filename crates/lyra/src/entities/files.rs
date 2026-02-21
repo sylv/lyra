@@ -11,9 +11,6 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub relative_path: String,
     pub size_bytes: i64,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub hash_5mb_sha256: Option<String>,
-    pub duration_s: i64,
     pub height: Option<i64>,
     pub width: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]

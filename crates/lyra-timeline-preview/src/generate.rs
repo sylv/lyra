@@ -1,9 +1,6 @@
 use std::{path::PathBuf, process::Stdio, time::Duration};
 
-use tokio::{
-    io::AsyncWriteExt,
-    process::Command,
-};
+use tokio::{io::AsyncWriteExt, process::Command};
 
 use crate::{
     GAP_PX, MAX_FRAMES_PER_SHEET, MAX_UNCOMPRESSED_SIZE_BYTES, PreviewOptions, TimelinePreview,
@@ -88,6 +85,7 @@ pub(crate) async fn generate_sheets(
         start_index = end_index;
     }
 
+    tokio::fs::remove_dir_all(&options.working_dir).await.ok();
     Ok(timeline_previews)
 }
 

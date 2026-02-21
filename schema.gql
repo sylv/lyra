@@ -3,8 +3,6 @@ type File {
 	libraryId: Int!
 	relativePath: String!
 	sizeBytes: Int!
-	hash5MbSha256: String
-	durationS: Int!
 	height: Int
 	width: Int
 	editionName: String

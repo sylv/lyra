@@ -143,7 +143,6 @@ async fn scan_file(
         library_id: Set(library.id),
         relative_path: Set(relative_path.clone()),
         size_bytes: Set(metadata.len() as i64),
-        duration_s: Set(0),
         scanned_at: Set(Some(scan_start_time)),
         unavailable_at: Set(None),
         ..Default::default()
@@ -152,7 +151,6 @@ async fn scan_file(
         OnConflict::columns([files::Column::LibraryId, files::Column::RelativePath])
             .update_columns([
                 files::Column::SizeBytes,
-                files::Column::DurationS,
                 files::Column::ScannedAt,
                 files::Column::UnavailableAt,
             ])
