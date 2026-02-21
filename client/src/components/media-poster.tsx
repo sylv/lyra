@@ -35,7 +35,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 	const path = getPathForMedia(media);
 
 	return (
-		<div className={cn("flex flex-col gap-2 overflow-hidden truncate", className)} style={style}>
+		<div className={cn("flex flex-col gap-2 overflow-hidden", className)} style={style}>
 			<PlayWrapper media={media}>
 				{media.kind === "EPISODE" ? (
 					<Thumbnail imageUrl={media.properties.thumbnailUrl} alt={media.name} className="w-full" />
@@ -45,7 +45,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 			</PlayWrapper>
 			<a
 				href={path}
-				className="text-sm font-semibold text-zinc-400 hover:underline hover:text-zinc-300 transition-colors"
+				className="block w-full truncate text-sm font-semibold text-zinc-400 transition-colors hover:text-zinc-300 hover:underline"
 			>
 				{media.name}
 			</a>

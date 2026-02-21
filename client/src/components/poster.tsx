@@ -22,7 +22,9 @@ export const Poster: FC<PosterProps> = ({ imageUrl, alt, className = "h-64" }) =
 				)}
 			>
 				<ImageIcon />
-				<span className="text-sm text-center font-semibold">{alt}</span>
+				<span className="max-w-[60%] text-sm text-center font-semibold whitespace-normal wrap-break-words wrap-anywhere">
+					{alt}
+				</span>
 			</div>
 		);
 	}
