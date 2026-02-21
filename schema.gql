@@ -1,3 +1,11 @@
+type ActiveTask {
+	taskType: String!
+	title: String!
+	current: Int!
+	total: Int!
+	progressPercent: Float!
+}
+
 type File {
 	id: Int!
 	libraryId: Int!
@@ -17,6 +25,7 @@ type Library {
 	name: String!
 	path: String!
 	lastScannedAt: Int
+	createdAt: Int!
 }
 
 type Mutation {
@@ -149,6 +158,7 @@ type Query {
 	"""
 	listFiles(path: String!): [String!]!
 	libraries: [Library!]!
+	activeTasks: [ActiveTask!]!
 }
 
 type User {

@@ -71,7 +71,7 @@ export const FilterSelect = <T extends string | number>({ options, value, onValu
 							className={cn(
 								"relative flex cursor-default select-none items-center rounded-md px-3 py-1 text-sm outline-none transition-colors",
 								"text-zinc-200 focus:bg-zinc-200/10",
-								"data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+								"data-disabled:pointer-events-none data-disabled:opacity-50",
 								option.value === value ? "bg-zinc-400/10" : "hover:bg-zinc-500/10",
 							)}
 							onSelect={() => {

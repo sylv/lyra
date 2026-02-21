@@ -61,7 +61,8 @@ CREATE TABLE libraries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     path TEXT NOT NULL UNIQUE,
-    last_scanned_at INTEGER
+    last_scanned_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 
 CREATE TABLE library_users (

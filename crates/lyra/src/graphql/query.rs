@@ -3,20 +3,23 @@ use crate::{
     entities::{
         libraries, metadata, node_metadata,
         nodes::{self, NodeKind},
-        watch_progress,
+        tasks as tasks_entity, watch_progress,
     },
 };
 use async_graphql::{
-    Context, Enum, InputObject, Object,
+    Context, Enum, InputObject, Object, SimpleObject,
     connection::{self, EmptyFields},
 };
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, Order, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait,
 };
+use std::collections::HashMap;
 use tokio::task::spawn_blocking;
+
+const ACTIVE_TASK_RECENT_WINDOW_SECS: i64 = 60 * 60 * 24;
 
 #[derive(Debug, InputObject, serde::Deserialize)]
 pub struct NodeFilter {
@@ -64,6 +67,16 @@ impl NodeOrderBy {
             NodeOrderBy::Alphabetical | NodeOrderBy::SeasonEpisode => NodeOrderDirection::Asc,
         }
     }
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+#[graphql(name = "ActiveTask")]
+pub struct ActiveTask {
+    pub task_type: String,
+    pub title: String,
+    pub current: i64,
+    pub total: i64,
+    pub progress_percent: f64,
 }
 
 pub struct Query;
@@ -267,4 +280,116 @@ impl Query {
 
         Ok(libraries)
     }
+
+    async fn active_tasks(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<ActiveTask>, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let now = chrono::Utc::now().timestamp();
+        let recent_cutoff = now - ACTIVE_TASK_RECENT_WINDOW_SECS;
+
+        let active_task_types: Vec<String> = tasks_entity::Entity::find()
+            .filter(
+                Condition::any()
+                    .add(tasks_entity::Column::LockedAt.is_not_null())
+                    .add(
+                        Condition::all()
+                            .add(tasks_entity::Column::ExecuteAfter.is_not_null())
+                            .add(tasks_entity::Column::ExecuteAfter.lte(now)),
+                    ),
+            )
+            .select_only()
+            .column(tasks_entity::Column::TaskType)
+            .distinct()
+            .into_tuple()
+            .all(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        if active_task_types.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let all_tasks = tasks_entity::Entity::find()
+            .filter(tasks_entity::Column::TaskType.is_in(active_task_types))
+            .filter(
+                Condition::any()
+                    .add(
+                        Condition::all()
+                            .add(tasks_entity::Column::ExecuteAfter.is_not_null())
+                            .add(tasks_entity::Column::ExecuteAfter.gte(recent_cutoff))
+                            .add(tasks_entity::Column::ExecuteAfter.lte(now)),
+                    )
+                    .add(tasks_entity::Column::LockedAt.gte(recent_cutoff))
+                    .add(tasks_entity::Column::LastRunAt.gte(recent_cutoff)),
+            )
+            .all(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        let mut grouped: HashMap<String, (i64, i64, i64)> = HashMap::new();
+        for task in all_tasks {
+            let entry = grouped.entry(task.task_type.clone()).or_insert((0, 0, 0));
+            entry.0 += 1;
+            if task
+                .execute_after
+                .is_some_and(|execute_after| execute_after <= now)
+            {
+                entry.1 += 1;
+            }
+            if task.locked_at.is_some() {
+                entry.2 += 1;
+            }
+        }
+
+        let mut active = grouped
+            .into_iter()
+            .filter_map(|(task_type, (total, pending, running))| {
+                if pending == 0 && running == 0 {
+                    return None;
+                }
+
+                let current = (total - pending + running).clamp(0, total);
+                let progress_percent = if total > 0 {
+                    current as f64 / total as f64
+                } else {
+                    0.0
+                };
+
+                Some(ActiveTask {
+                    task_type: task_type.clone(),
+                    title: get_task_title(&task_type),
+                    current,
+                    total,
+                    progress_percent,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        active.sort_by(|a, b| a.title.cmp(&b.title));
+        Ok(active)
+    }
+}
+
+fn get_task_title(task_type: &str) -> String {
+    match task_type {
+        "file.generate_timeline_preview" => "Generating Timeline Previews".to_string(),
+        _ => humanize_task_type(task_type),
+    }
+}
+
+fn humanize_task_type(task_type: &str) -> String {
+    task_type
+        .split(['.', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
