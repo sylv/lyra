@@ -42,6 +42,7 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 	const [showControls, setShowControls] = useState<boolean>(true);
 	const [duration, setDuration] = useState<number>(0);
 	const [currentTime, setCurrentTime] = useState<number>(0);
+	const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
 
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const hlsRef = useRef<Hls | null>(null);
@@ -81,6 +82,21 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 			setErrorMessage("Sorry, your browser does not support this video.");
 		}
 	}, [currentMedia]);
+
+	useEffect(() => {
+		if (!videoRef.current) return;
+		const video = videoRef.current;
+
+		const handleLoadedMetadata = () => {
+			if (video.videoWidth <= 0 || video.videoHeight <= 0) return;
+			setVideoAspectRatio(video.videoWidth / video.videoHeight);
+		};
+
+		video.addEventListener("loadedmetadata", handleLoadedMetadata);
+		return () => {
+			video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+		};
+	}, [currentMedia?.id]);
 
 	useEffect(() => {
 		if (!videoRef.current) return;
@@ -338,22 +354,32 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		return null;
 	}
 
+	const miniPlayerAspectRatio = Math.max(videoAspectRatio, 16 / 9);
+
 	const containerClasses = cn(
 		isFullscreen
 			? "z-50 fixed inset-0 bg-black"
-			: "z-50 fixed bottom-4 right-4 rounded-xl overflow-hidden shadow-2xl bg-black w-[32rem] max-w-[80dvw]",
+			: "z-50 fixed bottom-4 right-4 rounded-xl overflow-hidden shadow-2xl bg-black",
 	);
 
 	return (
 		<div
 			ref={containerRef}
 			className={containerClasses}
+			style={
+				isFullscreen
+					? undefined
+					: {
+							aspectRatio: miniPlayerAspectRatio,
+							width: `min(80dvw, max(32rem, calc(18rem * ${miniPlayerAspectRatio})))`,
+						}
+			}
 			onMouseMove={handleMouseMove}
 			onMouseLeave={() => setShowControls(false)}
 		>
 			<video
 				ref={videoRef}
-				className="w-full h-full object-cover aspect-[16/9]"
+				className="w-full h-full object-contain"
 				autoPlay
 				controls={false}
 				disablePictureInPicture
