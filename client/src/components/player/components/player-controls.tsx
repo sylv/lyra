@@ -1,12 +1,29 @@
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
-import { MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon } from "lucide-react";
+import { MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon, SettingsIcon } from "lucide-react";
 import { useMemo, type FC } from "react";
 import { cn } from "../../../lib/utils";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuSeparator,
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
+	DropdownMenuTrigger,
+} from "../../ui/dropdown-menu";
 import { formatPlayerTime } from "../utils";
-import { PaddedPlayerButton } from "./player-button";
+import { PaddedPlayerButton, PlayerButton } from "./player-button";
 import { PlayerProgressBar } from "./player-progress-bar";
 import { PlayerVolumeControl } from "./player-volume-control";
+
+interface PlayerAudioTrackOption {
+	id: number;
+	label: string;
+}
 
 interface PlayerControlsProps {
 	showControls: boolean;
@@ -22,6 +39,13 @@ interface PlayerControlsProps {
 	onToggleMute: () => void;
 	onVolumeChange: (volume: number) => void;
 	onToggleFullscreen: () => void;
+	audioTrackOptions: PlayerAudioTrackOption[];
+	selectedAudioTrackId: number | null;
+	onAudioTrackChange: (trackId: number) => void;
+	onOpenShortcuts: () => void;
+	isSettingsMenuOpen: boolean;
+	onSettingsMenuOpenChange: (open: boolean) => void;
+	dropdownPortalContainer: HTMLElement | null;
 }
 
 export const PlayerControls: FC<PlayerControlsProps> = ({
@@ -38,6 +62,13 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 	onToggleMute,
 	onVolumeChange,
 	onToggleFullscreen,
+	audioTrackOptions,
+	selectedAudioTrackId,
+	onAudioTrackChange,
+	onOpenShortcuts,
+	isSettingsMenuOpen,
+	onSettingsMenuOpenChange,
+	dropdownPortalContainer,
 }) => {
 	// eg, "6:33pm"
 	const finishTime = useMemo(() => {
@@ -90,6 +121,56 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 				{/* Right side */}
 				<div className="flex items-center gap-4">
 					{finishTime && <span className="text-sm">Finishes at {finishTime}</span>}
+					<DropdownMenu open={isSettingsMenuOpen} onOpenChange={onSettingsMenuOpenChange}>
+						<DropdownMenuTrigger asChild>
+							<PlayerButton
+								aria-label="Open player settings"
+								onClick={(event) => {
+									event.stopPropagation();
+								}}
+							>
+								<SettingsIcon className="w-5 h-5" />
+							</PlayerButton>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent
+							align="end"
+							portalContainer={dropdownPortalContainer}
+							onClick={(event) => event.stopPropagation()}
+							className="z-[70] w-56 border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40"
+						>
+							<DropdownMenuSub>
+								<DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
+									Audio
+								</DropdownMenuSubTrigger>
+								<DropdownMenuSubContent className="z-[70] border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
+									{audioTrackOptions.length === 0 ? (
+										<DropdownMenuItem className="py-2.5" disabled>
+											No audio tracks
+										</DropdownMenuItem>
+									) : (
+										<DropdownMenuRadioGroup
+											value={selectedAudioTrackId?.toString()}
+											onValueChange={(value) => onAudioTrackChange(Number.parseInt(value, 10))}
+										>
+											{audioTrackOptions.map((track) => (
+												<DropdownMenuRadioItem
+													className="py-2.5 focus:bg-zinc-800"
+													key={track.id}
+													value={track.id.toString()}
+												>
+													{track.label}
+												</DropdownMenuRadioItem>
+											))}
+										</DropdownMenuRadioGroup>
+									)}
+								</DropdownMenuSubContent>
+							</DropdownMenuSub>
+							<DropdownMenuSeparator className="bg-zinc-700/80" />
+							<DropdownMenuItem className="py-2.5 focus:bg-zinc-800" onSelect={onOpenShortcuts}>
+								Shortcuts
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
 					<PaddedPlayerButton
 						side="right"
 						aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}

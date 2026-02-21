@@ -9,6 +9,7 @@ import { ArrowLeft, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
 import { useStore } from "zustand/react";
 import { cn } from "../../lib/utils";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { PlayerButton } from "./components/player-button";
 import { PlayerControls } from "./components/player-controls";
 import {
@@ -22,6 +23,70 @@ import {
 import { PlayerFrag } from "./player-wrapper";
 
 const NUMBER_REGEX = /^\d$/;
+const LANGUAGE_DISPLAY_NAMES =
+	typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+		? new Intl.DisplayNames(["en"], { type: "language" })
+		: null;
+
+const toLanguageName = (value?: string) => {
+	if (!value || LANGUAGE_DISPLAY_NAMES == null) {
+		return null;
+	}
+
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	const variants = [
+		trimmed.replaceAll("_", "-"),
+		trimmed.toLowerCase().replaceAll("_", "-"),
+		trimmed.toLowerCase().split("-")[0],
+	];
+	for (const variant of variants) {
+		if (!variant) {
+			continue;
+		}
+		try {
+			const label = LANGUAGE_DISPLAY_NAMES.of(variant);
+			if (label) {
+				return label;
+			}
+		} catch {
+			// ignore invalid language tags
+		}
+	}
+
+	return null;
+};
+
+const getAudioTrackLabel = (
+	track: {
+		name?: string;
+		lang?: string;
+		language?: string;
+	},
+	id: number,
+) => {
+	const name = track.name?.trim();
+	const trackLanguage = toLanguageName(track.lang) || toLanguageName(track.language);
+	if (name) {
+		const parsedName = toLanguageName(name);
+		if (parsedName) {
+			return parsedName;
+		}
+		if (trackLanguage) {
+			return `${name} (${trackLanguage})`;
+		}
+		return name;
+	}
+
+	if (trackLanguage) {
+		return trackLanguage;
+	}
+
+	return `Track ${id + 1}`;
+};
 
 const UpdateWatchState = graphql(`
 	mutation UpdateWatchState($nodeId: String!, $progressPercent: Float!) {
@@ -43,12 +108,24 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 	const [duration, setDuration] = useState<number>(0);
 	const [currentTime, setCurrentTime] = useState<number>(0);
 	const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
+	const [audioTrackOptions, setAudioTrackOptions] = useState<Array<{ id: number; label: string }>>([]);
+	const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<number | null>(null);
+	const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(false);
+	const [isShortcutsDialogOpen, setIsShortcutsDialogOpen] = useState<boolean>(false);
 
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const hlsRef = useRef<Hls | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const doubleClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	const isControlsPinned = isSettingsMenuOpen || isShortcutsDialogOpen;
+
+	useEffect(() => {
+		setAudioTrackOptions([]);
+		setSelectedAudioTrackId(null);
+		setIsSettingsMenuOpen(false);
+		setIsShortcutsDialogOpen(false);
+	}, [currentMedia?.id]);
 
 	useEffect(() => {
 		if (!videoRef.current || !currentMedia) return;
@@ -59,15 +136,27 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		}
 
 		if (Hls.isSupported()) {
-			if (hlsRef.current) {
+			if (hlsRef.current != null) {
 				hlsRef.current.destroy();
+				hlsRef.current = null;
 			}
 
 			setErrorMessage(null);
 			setPlayerLoading(true);
 			const hlsUrl = `/api/hls/stream/${currentMedia.defaultConnection.id}/index.m3u8`;
-			hlsRef.current = new Hls();
-			hlsRef.current.on(Hls.Events.ERROR, (event, data) => {
+			const hls = new Hls();
+			hlsRef.current = hls;
+
+			const syncAudioTracks = () => {
+				const tracks = hls.audioTracks.map((track, id) => ({
+					id,
+					label: getAudioTrackLabel(track, id),
+				}));
+				setAudioTrackOptions(tracks);
+				setSelectedAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : null);
+			};
+
+			hls.on(Hls.Events.ERROR, (event, data) => {
 				console.error("HLS error:", event, data);
 				if (data.fatal) {
 					// setErrorMessage("Failed to load video stream");
@@ -75,9 +164,27 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 					setPlayerLoading(false);
 				}
 			});
+			hls.on(Hls.Events.MANIFEST_PARSED, () => {
+				syncAudioTracks();
+			});
+			hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+				syncAudioTracks();
+			});
+			hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+				if (typeof data.id === "number") {
+					setSelectedAudioTrackId(data.id);
+				}
+			});
 
-			hlsRef.current.loadSource(hlsUrl);
-			hlsRef.current.attachMedia(videoRef.current);
+			hls.loadSource(hlsUrl);
+			hls.attachMedia(videoRef.current);
+
+			return () => {
+				hls.destroy();
+				if (hlsRef.current === hls) {
+					hlsRef.current = null;
+				}
+			};
 		} else {
 			setErrorMessage("Sorry, your browser does not support this video.");
 		}
@@ -263,11 +370,39 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 		setShowControls(true);
 		if (controlsTimeoutRef.current) {
 			clearTimeout(controlsTimeoutRef.current);
+			controlsTimeoutRef.current = null;
+		}
+		if (isControlsPinned) {
+			return;
 		}
 		controlsTimeoutRef.current = setTimeout(() => {
 			setShowControls(false);
 		}, 3000);
 	};
+
+	useEffect(() => {
+		if (!isControlsPinned) {
+			return;
+		}
+		setShowControls(true);
+		if (controlsTimeoutRef.current) {
+			clearTimeout(controlsTimeoutRef.current);
+			controlsTimeoutRef.current = null;
+		}
+	}, [isControlsPinned]);
+
+	useEffect(() => {
+		return () => {
+			if (controlsTimeoutRef.current) {
+				clearTimeout(controlsTimeoutRef.current);
+				controlsTimeoutRef.current = null;
+			}
+			if (doubleClickTimeoutRef.current) {
+				clearTimeout(doubleClickTimeoutRef.current);
+				doubleClickTimeoutRef.current = null;
+			}
+		};
+	}, []);
 
 	const handleMouseMove = () => {
 		showControlsTemporarily();
@@ -293,6 +428,15 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
+			if (isShortcutsDialogOpen || isSettingsMenuOpen) {
+				return;
+			}
+
+			const target = event.target as HTMLElement | null;
+			if (target?.closest("[data-slot='dialog-content']") || target?.closest("[data-slot='dropdown-menu-content']")) {
+				return;
+			}
+
 			const video = videoRef.current;
 			if (!video) return;
 
@@ -315,7 +459,7 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 			} else if (event.key === "Escape") {
 				togglePlayerFullscreen(false);
 			} else if (isNumber) {
-				const seekTo = (parseInt(event.key) / 10) * duration;
+				const seekTo = (parseInt(event.key, 10) / 10) * duration;
 				if (seekTo) {
 					video.currentTime = seekTo;
 				}
@@ -342,7 +486,17 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 			document.removeEventListener("keydown", handleKeyDown);
 			document.removeEventListener("fullscreenchange", handleFullscreenChange);
 		};
-	}, [duration, onTogglePlaying]);
+	}, [duration, onToggleMute, onTogglePlaying, isShortcutsDialogOpen, isSettingsMenuOpen]);
+
+	const onAudioTrackChange = (trackId: number) => {
+		const hls = hlsRef.current;
+		if (!hls || Number.isNaN(trackId)) {
+			return;
+		}
+
+		hls.audioTrack = trackId;
+		setSelectedAudioTrackId(trackId);
+	};
 
 	const onSeek = (time: number) => {
 		if (videoRef.current) {
@@ -375,7 +529,11 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 						}
 			}
 			onMouseMove={handleMouseMove}
-			onMouseLeave={() => setShowControls(false)}
+			onMouseLeave={() => {
+				if (!isControlsPinned) {
+					setShowControls(false);
+				}
+			}}
 		>
 			<video
 				ref={videoRef}
@@ -420,9 +578,7 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 								<ArrowLeft className="w-6 h-6" />
 							</PlayerButton>
 						)}
-						{currentMedia.parent &&
-						currentMedia.properties.seasonNumber &&
-						currentMedia.properties.episodeNumber ? (
+						{currentMedia.parent && currentMedia.properties.seasonNumber && currentMedia.properties.episodeNumber ? (
 							<div>
 								<h2 className="text-xl font-semibold">
 									{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
@@ -464,8 +620,60 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 					onToggleMute={onToggleMute}
 					onVolumeChange={onVolumeChange}
 					onToggleFullscreen={() => togglePlayerFullscreen()}
+					audioTrackOptions={audioTrackOptions}
+					selectedAudioTrackId={selectedAudioTrackId}
+					onAudioTrackChange={onAudioTrackChange}
+					onOpenShortcuts={() => setIsShortcutsDialogOpen(true)}
+					isSettingsMenuOpen={isSettingsMenuOpen}
+					onSettingsMenuOpenChange={setIsSettingsMenuOpen}
+					dropdownPortalContainer={containerRef.current}
 				/>
 			</div>
+
+			<Dialog open={isShortcutsDialogOpen} onOpenChange={setIsShortcutsDialogOpen}>
+				<DialogContent
+					portalContainer={containerRef.current}
+					className="max-w-md"
+					onClick={(event) => {
+						event.stopPropagation();
+					}}
+				>
+					<DialogHeader>
+						<DialogTitle>Player shortcuts</DialogTitle>
+						<DialogDescription>Keyboard controls available in the player.</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-3 text-sm">
+						<div className="flex items-center justify-between gap-3">
+							<span>Play / pause</span>
+							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Space</kbd>
+						</div>
+						<div className="flex items-center justify-between gap-3">
+							<span>Skip back</span>
+							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Left Arrow (-10s)</kbd>
+						</div>
+						<div className="flex items-center justify-between gap-3">
+							<span>Skip forward</span>
+							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Right Arrow (+30s)</kbd>
+						</div>
+						<div className="flex items-center justify-between gap-3">
+							<span>Toggle mute</span>
+							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">M</kbd>
+						</div>
+						<div className="flex items-center justify-between gap-3">
+							<span>Toggle fullscreen</span>
+							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">F</kbd>
+						</div>
+						<div className="flex items-center justify-between gap-3">
+							<span>Exit fullscreen</span>
+							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Esc</kbd>
+						</div>
+						<div className="flex items-center justify-between gap-3">
+							<span>Seek to timeline position</span>
+							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">0-9</kbd>
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
 
 			{/* Loading indicator */}
 			{isLoading && (
