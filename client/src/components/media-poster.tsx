@@ -3,8 +3,8 @@ import type React from "react";
 import type { FC } from "react";
 import { getPathForRoot, GetPathForRootFrag } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
+import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
-import { Poster } from "./poster";
 
 interface MediaPosterProps {
 	media: FragmentOf<typeof MediaPosterFrag>;
@@ -41,7 +41,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 	return (
 		<div className={cn("flex flex-col gap-2 overflow-hidden", className)} style={style}>
 			<PlayWrapper itemId={media.playableItem?.id} path={path} watchProgress={media.watchProgress}>
-				<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="w-full" />
+				<Image type={ImageType.Poster} imageUrl={media.properties.posterUrl} alt={media.name} className="w-full" />
 			</PlayWrapper>
 			<a
 				href={path}

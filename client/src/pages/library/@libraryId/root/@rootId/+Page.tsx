@@ -1,9 +1,12 @@
 import { useSuspenseQuery } from "@apollo/client/react";
 import { graphql, readFragment } from "gql.tada";
-import { Fragment } from "react/jsx-runtime";
 import { usePageContext } from "vike-react/usePageContext";
-import { MediaHeader, MediaHeaderFrag } from "../../../../../components/media-header";
+import { Image, ImageType } from "../../../../../components/image";
+import { PlayWrapper } from "../../../../../components/play-wrapper";
 import { SeasonCard, SeasonCardFrag } from "../../../../../components/season-card";
+import { useDynamicBackground } from "../../../../../hooks/use-background";
+import { formatReleaseYear } from "../../../../../lib/format-release-year";
+import { getImageProxyUrl } from "../../../../../lib/getImageProxyUrl";
 
 const Query = graphql(
 	`
@@ -11,16 +14,31 @@ const Query = graphql(
 		root(rootId: $rootId) {
 			id
 			kind
+			name
 			libraryId
 			seasons {
 				id
 				...SeasonCard
 			}
-			...MediaHeader
+			properties {
+				posterUrl
+				backgroundUrl
+				releasedAt
+				endedAt
+				runtimeMinutes
+				description
+			}
+			playableItem {
+				id
+			}
+			watchProgress {
+				progressPercent
+				updatedAt
+			}
 		}
 	}
 `,
-	[MediaHeaderFrag, SeasonCardFrag],
+	[SeasonCardFrag],
 );
 
 export default function Page() {
@@ -33,8 +51,42 @@ export default function Page() {
 	});
 
 	const root = data.root;
+	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
+	const dynamicUrl = root.properties.backgroundUrl ? getImageProxyUrl(root.properties.backgroundUrl, 200) : null;
+
+	useDynamicBackground(dynamicUrl);
+
+	const header = (
+		<div className="flex gap-6 container mx-auto">
+			<PlayWrapper itemId={root.playableItem?.id} path={rootPath} watchProgress={root.watchProgress}>
+				<Image
+					type={ImageType.Poster}
+					imageUrl={root.properties.posterUrl}
+					alt={root.name}
+					className="h-96"
+				/>
+			</PlayWrapper>
+			<div className="flex flex-col gap-2 justify-between">
+				<div className="flex flex-col gap-2 mt-3">
+					<h1 className="text-2xl font-bold">
+						{root.name}
+						{root.properties.releasedAt && (
+							<span className="text-zinc-400 ml-2 text-lg">
+								{formatReleaseYear(root.properties.releasedAt, root.properties.endedAt ?? null)}
+							</span>
+						)}
+					</h1>
+					{root.properties.runtimeMinutes && (
+						<p className="text-sm text-zinc-400">{root.properties.runtimeMinutes} minutes</p>
+					)}
+					<p className="text-sm text-zinc-400">{root.properties.description || "No description for this"}</p>
+				</div>
+			</div>
+		</div>
+	);
+
 	if (root.kind !== "SERIES") {
-		return <MediaHeader media={root} />;
+		return header;
 	}
 
 	const sortedSeasons = [...root.seasons].sort((a, b) => {
@@ -45,7 +97,7 @@ export default function Page() {
 
 	return (
 		<div className="pt-6">
-			<MediaHeader media={root} />
+			{header}
 			<div className="container mx-auto py-6">
 				<h2 className="font-semibold text-zinc-200 mb-2">Seasons</h2>
 				{sortedSeasons.length > 0 ? (

@@ -3,9 +3,13 @@ import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
 import { usePageContext } from "vike-react/usePageContext";
 import { EpisodeCard, EpisodeCardFrag } from "../../../../../../../components/episode-card";
+import { Image, ImageType } from "../../../../../../../components/image";
 import { MediaFilterList } from "../../../../../../../components/media-filter-list";
-import { MediaHeader, MediaHeaderFrag } from "../../../../../../../components/media-header";
+import { PlayWrapper } from "../../../../../../../components/play-wrapper";
 import { ViewLoader } from "../../../../../../../components/view-loader";
+import { useDynamicBackground } from "../../../../../../../hooks/use-background";
+import { formatReleaseYear } from "../../../../../../../lib/format-release-year";
+import { getImageProxyUrl } from "../../../../../../../lib/getImageProxyUrl";
 
 const RootAndSeasonQuery = graphql(
 	`
@@ -13,16 +17,34 @@ const RootAndSeasonQuery = graphql(
 		root(rootId: $rootId) {
 			id
 			libraryId
-			...MediaHeader
+			name
+			properties {
+				backgroundUrl
+			}
 		}
 		season(seasonId: $seasonId) {
 			id
 			name
 			seasonNumber
+			properties {
+				posterUrl
+				thumbnailUrl
+				backgroundUrl
+				releasedAt
+				endedAt
+				runtimeMinutes
+				description
+			}
+			playableItem {
+				id
+			}
+			watchProgress {
+				progressPercent
+				updatedAt
+			}
 		}
 	}
 `,
-	[MediaHeaderFrag],
 );
 
 const EpisodesQuery = graphql(
@@ -88,31 +110,55 @@ export default function Page() {
 	const { root, season } = data;
 	const seasonTitle = season.name || `Season ${season.seasonNumber}`;
 	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
+	const seasonPath = `${rootPath}/season/${season.id}`;
+	const seasonImageUrl = season.properties.posterUrl ?? season.properties.thumbnailUrl;
+	const dynamicUrl = season.properties.backgroundUrl ?? root.properties.backgroundUrl;
+
+	useDynamicBackground(dynamicUrl ? getImageProxyUrl(dynamicUrl, 200) : null);
 
 	return (
 		<div className="pt-6">
-			<MediaHeader media={root} />
-			<div className="container mx-auto py-6">
-				<div className="mb-4 flex flex-col gap-2">
-					<a href={rootPath} className="text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
-						All seasons
-					</a>
-					<h2 className="text-xl font-semibold text-zinc-200">{seasonTitle}</h2>
-					<div className="flex gap-2 flex-wrap">
-						<MediaFilterList value={filter} onChange={(nextFilter) => setFilter({ ...filter, ...nextFilter })} />
-					</div>
+			<div className="flex gap-6 container mx-auto">
+				<div>
+					<PlayWrapper itemId={season.playableItem?.id} path={seasonPath} watchProgress={season.watchProgress}>
+						<Image type={ImageType.Poster} imageUrl={seasonImageUrl} alt={seasonTitle} className="h-96" />
+					</PlayWrapper>
 				</div>
-				<div className="pb-8">
-					{episodes?.itemList.edges[0] ? (
-						<div className="space-y-2">
-							{episodes.itemList.edges.map((episode) => (
-								<EpisodeCard key={episode.node.id} episode={episode.node} />
-							))}
-							{episodes.itemList.pageInfo.hasNextPage && <ViewLoader onLoadMore={onLoadMore} />}
+				<div className="flex flex-col gap-2 justify-between w-full">
+					<div className="flex flex-col gap-2 mt-3">
+						<a href={rootPath} className="text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
+							{root.name}
+						</a>
+						<h1 className="text-2xl font-bold">
+							{seasonTitle}
+							{season.properties.releasedAt && (
+								<span className="text-zinc-400 ml-2 text-lg">
+									{formatReleaseYear(season.properties.releasedAt, season.properties.endedAt ?? null)}
+								</span>
+							)}
+						</h1>
+						{season.properties.runtimeMinutes && (
+							<p className="text-sm text-zinc-400">{season.properties.runtimeMinutes} minutes</p>
+						)}
+						<p className="text-sm text-zinc-400">{season.properties.description || "No description for this"}</p>
+					</div>
+					<div className="py-6">
+						<div className="mb-4 flex gap-2 flex-wrap">
+							<MediaFilterList value={filter} onChange={(nextFilter) => setFilter({ ...filter, ...nextFilter })} />
 						</div>
-					) : (
-						<div className="text-center py-12 text-zinc-400">No episodes found for this season.</div>
-					)}
+						<div className="pb-16">
+							{episodes?.itemList.edges[0] ? (
+								<div className="space-y-4">
+									{episodes.itemList.edges.map((episode) => (
+										<EpisodeCard key={episode.node.id} episode={episode.node} />
+									))}
+									{episodes.itemList.pageInfo.hasNextPage && <ViewLoader onLoadMore={onLoadMore} />}
+								</div>
+							) : (
+								<div className="text-center py-12 text-zinc-400">No episodes found for this season.</div>
+							)}
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>

@@ -1,7 +1,7 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type { FC } from "react";
+import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
-import { Poster } from "./poster";
 
 interface SeasonCardProps {
 	season: FragmentOf<typeof SeasonCardFrag>;
@@ -35,7 +35,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => 
 	return (
 		<div className="flex flex-col gap-2 overflow-hidden w-38">
 			<PlayWrapper itemId={season.playableItem?.id} path={path} watchProgress={season.watchProgress}>
-				<Poster imageUrl={imageUrl} alt={season.name} className="w-full" />
+				<Image type={ImageType.Poster} imageUrl={imageUrl} alt={season.name} className="w-full" />
 			</PlayWrapper>
 			<a
 				href={path}
