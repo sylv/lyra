@@ -6,6 +6,25 @@ type ActiveTask {
 	progressPercent: Float!
 }
 
+type Asset {
+	id: Int!
+	source: AssetSource!
+	sourceUrl: String
+	hashSha256: String
+	sizeBytes: Int
+	mimeType: String
+	height: Int
+	width: Int
+	thumbhash: String
+	createdAt: Int!
+	deletedAt: Int
+}
+
+enum AssetSource {
+	LOCAL
+	REMOTE
+}
+
 type File {
 	id: Int!
 	libraryId: Int!
@@ -91,7 +110,6 @@ enum ItemNodeOrderBy {
 type ItemNodeProperties {
 	description: String
 	rating: Float
-	backgroundUrl: String
 	seasonNumber: Int
 	episodeNumber: Int
 	runtimeMinutes: Int
@@ -99,8 +117,9 @@ type ItemNodeProperties {
 	endedAt: Int
 	createdAt: Int
 	updatedAt: Int
-	posterUrl: String
-	thumbnailUrl: String
+	backgroundImage: Asset
+	posterImage: Asset
+	thumbnailImage: Asset
 }
 
 type Library {
@@ -229,14 +248,14 @@ enum RootNodeOrderBy {
 type RootNodeProperties {
 	description: String
 	rating: Float
-	backgroundUrl: String
 	runtimeMinutes: Int
 	releasedAt: Int
 	endedAt: Int
 	createdAt: Int
 	updatedAt: Int
-	posterUrl: String
-	thumbnailUrl: String
+	backgroundImage: Asset
+	posterImage: Asset
+	thumbnailImage: Asset
 }
 
 type SeasonNode {
@@ -257,15 +276,15 @@ type SeasonNode {
 type SeasonNodeProperties {
 	description: String
 	rating: Float
-	backgroundUrl: String
 	seasonNumber: Int
 	runtimeMinutes: Int
 	releasedAt: Int
 	endedAt: Int
 	createdAt: Int
 	updatedAt: Int
-	posterUrl: String
-	thumbnailUrl: String
+	backgroundImage: Asset
+	posterImage: Asset
+	thumbnailImage: Asset
 }
 
 type User {

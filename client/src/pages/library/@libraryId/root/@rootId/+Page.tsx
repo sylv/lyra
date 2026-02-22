@@ -1,12 +1,11 @@
 import { useSuspenseQuery } from "@apollo/client/react";
 import { graphql, readFragment } from "gql.tada";
 import { usePageContext } from "vike-react/usePageContext";
-import { Image, ImageType } from "../../../../../components/image";
+import { Image, ImageAssetFrag, ImageType } from "../../../../../components/image";
 import { PlayWrapper } from "../../../../../components/play-wrapper";
 import { SeasonCard, SeasonCardFrag } from "../../../../../components/season-card";
 import { useDynamicBackground } from "../../../../../hooks/use-background";
 import { formatReleaseYear } from "../../../../../lib/format-release-year";
-import { getImageProxyUrl } from "../../../../../lib/getImageProxyUrl";
 
 const Query = graphql(
 	`
@@ -21,8 +20,12 @@ const Query = graphql(
 				...SeasonCard
 			}
 			properties {
-				posterUrl
-				backgroundUrl
+				posterImage {
+					...ImageAsset
+				}
+				backgroundImage {
+					...ImageAsset
+				}
 				releasedAt
 				endedAt
 				runtimeMinutes
@@ -38,7 +41,7 @@ const Query = graphql(
 		}
 	}
 `,
-	[SeasonCardFrag],
+	[SeasonCardFrag, ImageAssetFrag],
 );
 
 export default function Page() {
@@ -52,16 +55,14 @@ export default function Page() {
 
 	const root = data.root;
 	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
-	const dynamicUrl = root.properties.backgroundUrl ? getImageProxyUrl(root.properties.backgroundUrl, 200) : null;
-
-	useDynamicBackground(dynamicUrl);
+	useDynamicBackground(root.properties.backgroundImage);
 
 	const header = (
 		<div className="flex gap-6 container mx-auto">
 			<PlayWrapper itemId={root.playableItem?.id} path={rootPath} watchProgress={root.watchProgress}>
 				<Image
 					type={ImageType.Poster}
-					imageUrl={root.properties.posterUrl}
+					asset={root.properties.posterImage}
 					alt={root.name}
 					className="h-96"
 				/>

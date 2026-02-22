@@ -1,12 +1,30 @@
 import clsx from "clsx";
+import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
-import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 
 export enum ImageType {
 	Poster = "poster",
 	Thumbnail = "thumbnail",
 }
+
+export const ImageAssetFrag = graphql(`
+	fragment ImageAsset on Asset {
+		id
+		source
+		sourceUrl
+		hashSha256
+		sizeBytes
+		mimeType
+		height
+		width
+		thumbhash
+		createdAt
+		deletedAt
+	}
+`);
+
+export type ImageAsset = FragmentOf<typeof ImageAssetFrag>;
 
 interface ImageTypeConfig {
 	baseClasses: string;
@@ -19,7 +37,8 @@ const IMAGE_TYPE_CONFIG: Record<ImageType, ImageTypeConfig> = {
 	[ImageType.Poster]: {
 		baseClasses: "aspect-[2/3] bg-zinc-700/30 shrink-0 select-none",
 		defaultClassName: "h-64",
-		fallbackTextClasses: "max-w-[60%] text-sm text-center font-semibold whitespace-normal wrap-break-words wrap-anywhere",
+		fallbackTextClasses:
+			"max-w-[60%] text-sm text-center font-semibold whitespace-normal wrap-break-words wrap-anywhere",
 		proxyWidth: 400,
 	},
 	[ImageType.Thumbnail]: {
@@ -32,16 +51,25 @@ const IMAGE_TYPE_CONFIG: Record<ImageType, ImageTypeConfig> = {
 
 interface ImageProps {
 	type: ImageType;
-	imageUrl: string | null | undefined;
+	asset: ImageAsset | null | undefined;
 	alt: string;
 	className?: string;
 }
 
-export const Image: FC<ImageProps> = ({ type, imageUrl, alt, className }) => {
+export const getAssetImageUrl = (asset: ImageAsset | { id: number }, height: number): string => {
+	const assetId = "id" in asset ? asset.id : readFragment(ImageAssetFrag, asset).id;
+	const params = new URLSearchParams({
+		height: String(height),
+	});
+	return `/api/assets/${assetId}?${params.toString()}`;
+};
+
+export const Image: FC<ImageProps> = ({ type, asset, alt, className }) => {
 	const config = IMAGE_TYPE_CONFIG[type];
 	const resolvedClassName = className ?? config.defaultClassName;
+	const resolvedAsset = asset ? readFragment(ImageAssetFrag, asset) : null;
 
-	if (!imageUrl) {
+	if (!resolvedAsset) {
 		return (
 			<div
 				className={clsx(
@@ -58,7 +86,7 @@ export const Image: FC<ImageProps> = ({ type, imageUrl, alt, className }) => {
 
 	return (
 		<img
-			src={getImageProxyUrl(imageUrl, config.proxyWidth)}
+			src={getAssetImageUrl(resolvedAsset, config.proxyWidth)}
 			alt={alt}
 			className={clsx(config.baseClasses, resolvedClassName)}
 			loading="lazy"

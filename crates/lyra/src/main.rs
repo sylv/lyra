@@ -172,7 +172,7 @@ async fn main() {
         graphql::mutation::Mutation,
         async_graphql::EmptySubscription,
     )
-    .limit_depth(5)
+    .limit_depth(8)
     .limit_complexity(100)
     .limit_directives(5)
     .data(pool.clone())

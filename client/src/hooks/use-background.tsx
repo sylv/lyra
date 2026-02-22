@@ -1,17 +1,19 @@
 import { useEffect } from "react";
 import { create } from "zustand";
+import type { ImageAsset } from "../components/image";
 
-export const backgroundStore = create<string | null>(() => null);
+export const backgroundStore = create<ImageAsset | null>(() => null);
 
-export const useDynamicBackground = (url: string | null) => {
+export const useDynamicBackground = (asset: ImageAsset | null, use?: boolean) => {
 	useEffect(() => {
-		backgroundStore.setState(url);
+		if (!use) return;
+		backgroundStore.setState(asset);
 		return () => {
-			if (!url) return;
+			if (!asset) return;
 			backgroundStore.setState((prev) => {
-				if (prev === url) return null;
+				if (prev === asset) return null;
 				return prev;
 			});
 		};
-	}, [url]);
+	}, [asset, use]);
 };

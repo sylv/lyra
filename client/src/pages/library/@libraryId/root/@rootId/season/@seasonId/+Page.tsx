@@ -3,13 +3,12 @@ import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
 import { usePageContext } from "vike-react/usePageContext";
 import { EpisodeCard, EpisodeCardFrag } from "../../../../../../../components/episode-card";
-import { Image, ImageType } from "../../../../../../../components/image";
+import { Image, ImageAssetFrag, ImageType } from "../../../../../../../components/image";
 import { MediaFilterList } from "../../../../../../../components/media-filter-list";
 import { PlayWrapper } from "../../../../../../../components/play-wrapper";
 import { ViewLoader } from "../../../../../../../components/view-loader";
 import { useDynamicBackground } from "../../../../../../../hooks/use-background";
 import { formatReleaseYear } from "../../../../../../../lib/format-release-year";
-import { getImageProxyUrl } from "../../../../../../../lib/getImageProxyUrl";
 
 const RootAndSeasonQuery = graphql(
 	`
@@ -19,7 +18,9 @@ const RootAndSeasonQuery = graphql(
 			libraryId
 			name
 			properties {
-				backgroundUrl
+				backgroundImage {
+					...ImageAsset
+				}
 			}
 		}
 		season(seasonId: $seasonId) {
@@ -27,9 +28,15 @@ const RootAndSeasonQuery = graphql(
 			name
 			seasonNumber
 			properties {
-				posterUrl
-				thumbnailUrl
-				backgroundUrl
+				posterImage {
+					...ImageAsset
+				}
+				thumbnailImage {
+					...ImageAsset
+				}
+				backgroundImage {
+					...ImageAsset
+				}
 				releasedAt
 				endedAt
 				runtimeMinutes
@@ -45,6 +52,7 @@ const RootAndSeasonQuery = graphql(
 		}
 	}
 `,
+	[ImageAssetFrag],
 );
 
 const EpisodesQuery = graphql(
@@ -111,17 +119,17 @@ export default function Page() {
 	const seasonTitle = season.name || `Season ${season.seasonNumber}`;
 	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
 	const seasonPath = `${rootPath}/season/${season.id}`;
-	const seasonImageUrl = season.properties.posterUrl ?? season.properties.thumbnailUrl;
-	const dynamicUrl = season.properties.backgroundUrl ?? root.properties.backgroundUrl;
+	const seasonImage = season.properties.posterImage ?? season.properties.thumbnailImage;
+	const dynamicAsset = season.properties.backgroundImage ?? root.properties.backgroundImage;
 
-	useDynamicBackground(dynamicUrl ? getImageProxyUrl(dynamicUrl, 200) : null);
+	useDynamicBackground(dynamicAsset);
 
 	return (
 		<div className="pt-6">
 			<div className="flex gap-6 container mx-auto">
 				<div>
 					<PlayWrapper itemId={season.playableItem?.id} path={seasonPath} watchProgress={season.watchProgress}>
-						<Image type={ImageType.Poster} imageUrl={seasonImageUrl} alt={seasonTitle} className="h-96" />
+						<Image type={ImageType.Poster} asset={seasonImage} alt={seasonTitle} className="h-96" />
 					</PlayWrapper>
 				</div>
 				<div className="flex flex-col gap-2 justify-between w-full">

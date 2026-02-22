@@ -2,13 +2,15 @@ import { useEffect, useRef, useState, type FC } from "react";
 import { useStore } from "zustand/react";
 import defaultDynamicBackground from "../../assets/default-dynamic-background.svg";
 import { backgroundStore } from "../hooks/use-background";
+import { getAssetImageUrl } from "./image";
 
 const DURATION = 2000;
 
 // todo: once images are stored in the db, we should extract primary colours and use those instead.
 // loading full images for this is kinda crazy.
 export const DynamicBackground: FC = () => {
-	const backgroundUrl = useStore(backgroundStore);
+	const backgroundAsset = useStore(backgroundStore);
+	const backgroundUrl = backgroundAsset ? getAssetImageUrl(backgroundAsset, 200) : null;
 	const [current, setCurrent] = useState<string | null>(null);
 	const [showCurrent, setShowCurrent] = useState(false);
 	const isInitial = useRef(true);

@@ -1,11 +1,12 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { Clock } from "lucide-react";
-import type { FC } from "react";
+import { useState, type FC } from "react";
 import { getPathForItem, GetPathForItemFrag } from "../lib/getPathForMedia";
-import { Image, ImageType } from "./image";
+import { Image, ImageAssetFrag, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { setPlayerMedia } from "./player/player-state";
 import { navigate } from "vike/client/router";
+import { useDynamicBackground } from "../hooks/use-background";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -28,7 +29,9 @@ export const EpisodeCardFrag = graphql(
 		name
 		properties {
 			description
-			thumbnailUrl
+			thumbnailImage {
+				...ImageAsset
+			}
 			seasonNumber
 			episodeNumber
 			runtimeMinutes
@@ -40,12 +43,15 @@ export const EpisodeCardFrag = graphql(
 		...GetPathForItem
 	}
 `,
-	[GetPathForItemFrag],
+	[GetPathForItemFrag, ImageAssetFrag],
 );
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = readFragment(EpisodeCardFrag, episodeRef);
 	const path = getPathForItem(episode);
+	const [hovered, setHovered] = useState(false);
+
+	useDynamicBackground(episode.properties.thumbnailImage, hovered);
 
 	return (
 		<button
@@ -56,12 +62,15 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 				setPlayerMedia(episode.id, true);
 				navigate(path);
 			}}
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
+			aria-label={`Play ${episode.name}`}
 		>
 			<div className="relative overflow-hidden h-min rounded-sm">
 				<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>
 					<Image
 						type={ImageType.Thumbnail}
-						imageUrl={episode.properties.thumbnailUrl}
+						asset={episode.properties.thumbnailImage}
 						alt={episode.name}
 						className="h-30"
 					/>
