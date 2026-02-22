@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import vike from "vike/plugin";
 import path from "node:path";
+import webfontDownload from 'vite-plugin-webfont-dl';
 
 export default defineConfig({
 	plugins: [
@@ -12,6 +13,7 @@ export default defineConfig({
 				plugins: [["babel-plugin-react-compiler", { target: "19" }]],
 			},
 		}),
+		webfontDownload([]),
 		tailwindcss(),
 	],
 	resolve: {

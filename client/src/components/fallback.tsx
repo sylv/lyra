@@ -1,6 +1,8 @@
-import { type FC, useMemo } from "react";
+import { type FC, type ReactNode, Suspense, useMemo } from "react";
 import { Loader } from "lucide-react";
 import { IconText } from "./icon-text";
+import { cn } from "../lib/utils";
+import { Spinner } from "./ui/spinner";
 
 const LOADING_PHRASES = [
 	"Science compels us to explode the sun",
@@ -70,15 +72,19 @@ const LOADING_PHRASES = [
 	"Welcome to club, pal.",
 ];
 
-export const Fallback: FC = () => {
+export const Fallback: FC<{ className?: string }> = ({ className }) => {
 	const phrase = useMemo(() => {
 		const index = Math.floor(Math.random() * LOADING_PHRASES.length);
 		return LOADING_PHRASES[index];
 	}, []);
 
 	return (
-		<div className="fixed inset-0 flex items-center justify-center">
-			<IconText icon={<Loader className="animate-spin" />} text={phrase} />
+		<div className={cn("h-full w-full flex items-center justify-center", className)}>
+			<IconText icon={<Spinner className="size-4" />} text={phrase} />
 		</div>
 	);
 };
+
+export const SuspenseBoundary: FC<{ children: ReactNode; className?: string }> = ({ children, className }) => (
+	<Suspense fallback={<Fallback className={className} />}>{children}</Suspense>
+);

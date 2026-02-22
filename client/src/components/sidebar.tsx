@@ -1,4 +1,4 @@
-import { useQuery } from "@apollo/client/react";
+import { useSuspenseQuery } from "@apollo/client/react";
 import { graphql } from "gql.tada";
 import { Activity, AudioLines, HomeIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
@@ -6,7 +6,7 @@ import { usePageContext } from "vike-react/usePageContext";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
 import { cn } from "../lib/utils";
 import { ActivityPanel } from "./activity-panel";
-import { SuspenseBoundary } from "./suspense-fallback";
+import { SuspenseBoundary } from "./fallback";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
 const SidebarLink: FC<{
@@ -55,7 +55,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 	const pathname = pageContext.urlParsed.pathname;
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
-	const { data } = useQuery(LibrariesQuery);
+	const { data } = useSuspenseQuery(LibrariesQuery);
 
 	return (
 		<div className="flex w-dvw h-dvh overflow-hidden">

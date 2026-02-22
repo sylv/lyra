@@ -4,9 +4,8 @@ import { ApolloProvider } from "@apollo/client/react";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import type { FC, ReactNode } from "react";
-import { Suspense } from "react";
 import { DynamicBackground } from "../components/dynamic-background";
-import { Fallback } from "../components/fallback";
+import { SuspenseBoundary } from "../components/fallback";
 import { PlayerWrapper } from "../components/player/player-wrapper";
 import { SetupWrapper } from "../components/setup/setup-wrapper";
 import { Sidebar } from "../components/sidebar";
@@ -35,12 +34,12 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 		<ThemeProvider>
 			<TooltipProvider>
 				<ApolloProvider client={client}>
-					<Suspense fallback={<Fallback />}>
+					<SuspenseBoundary className="fixed inset-0">
 						<SetupWrapper>
 							<Sidebar>{children}</Sidebar>
 							<PlayerWrapper />
 						</SetupWrapper>
-					</Suspense>
+					</SuspenseBoundary>
 					<Toaster />
 					<div className="fixed inset-0 h-dvw w-dvw">
 						<DynamicBackground />
