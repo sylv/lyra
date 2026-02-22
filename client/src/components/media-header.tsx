@@ -50,7 +50,7 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 				<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="h-96" />
 			</PlayWrapper>
 			<div className="flex flex-col gap-2 justify-between">
-				<div className="flex flex-col gap-2">
+				<div className="flex flex-col gap-2 mt-3">
 					<h1 className="text-2xl font-bold">
 						{media.name}
 						{media.properties.releasedAt && (

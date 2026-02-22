@@ -109,7 +109,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 				{/* Left side */}
 				<div className="flex items-center gap-2">
 					<PaddedPlayerButton onClick={onTogglePlaying} side="left">
-						{playing ? <PauseIcon className="w-6 h-6 text-white" /> : <PlayIcon className="w-6 h-6 text-white" />}
+						{playing ? <PauseIcon className="size-6 text-white" /> : <PlayIcon className="size-6 text-white" />}
 					</PaddedPlayerButton>
 					<PlayerVolumeControl
 						volume={volume}
@@ -129,7 +129,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 									event.stopPropagation();
 								}}
 							>
-								<SettingsIcon className="w-5 h-5" />
+								<SettingsIcon className="size-5" />
 							</PlayerButton>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent
@@ -179,7 +179,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 							onToggleFullscreen();
 						}}
 					>
-						{isFullscreen ? <MinimizeIcon className="w-5 h-5" /> : <MaximizeIcon className="w-5 h-5" />}
+						{isFullscreen ? <MinimizeIcon className="size-5" /> : <MaximizeIcon className="size-5" />}
 					</PaddedPlayerButton>
 				</div>
 			</div>

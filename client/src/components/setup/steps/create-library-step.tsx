@@ -44,7 +44,7 @@ export const CreateLibraryStep: FC<CreateLibraryStepProps> = ({ refetch }) => {
 							key={library.id}
 							className="aspect-square bg-zinc-800 rounded-lg border border-zinc-700 p-4 flex flex-col items-center justify-center text-center"
 						>
-							<Folder className="w-8 h-8 text-indigo-500 mb-2" />
+							<Folder className="size-8 text-indigo-500 mb-2" />
 							<h3 className="font-medium text-sm mb-1 truncate w-full">{library.name}</h3>
 							<p className="text-xs text-zinc-400 truncate w-full" title={library.path}>
 								{library.path}
@@ -57,7 +57,7 @@ export const CreateLibraryStep: FC<CreateLibraryStepProps> = ({ refetch }) => {
 						onClick={() => setShowAddForm(true)}
 						className="aspect-square bg-zinc-800 rounded-lg border border-zinc-700 border-dashed hover:border-zinc-600 hover:bg-zinc-700 transition-colors flex flex-col items-center justify-center text-zinc-400 hover:text-zinc-300"
 					>
-						<Plus className="w-8 h-8 mb-2" />
+						<Plus className="size-8 mb-2" />
 						<span className="text-sm">Add Library</span>
 					</button>
 				</div>

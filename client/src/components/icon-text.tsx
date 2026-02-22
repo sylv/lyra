@@ -1,15 +1,19 @@
 import type { FC, ReactNode } from "react";
+import { cn } from "../lib/utils";
 
 type IconTextProps = {
 	icon: ReactNode;
 	text: string;
+	className?: string;
 };
 
-export const IconText: FC<IconTextProps> = ({ icon, text }) => {
+export const IconText: FC<IconTextProps> = ({ icon, text, className }) => {
 	return (
-		<div className="flex flex-col items-center justify-center h-full min-h-full select-none">
+		<div
+			className={cn("flex flex-col items-center justify-center h-full min-h-full select-none text-zinc-300", className)}
+		>
 			{icon}
-			<div className="m-2 text-zinc-300 lowercase text-xs font-semibold max-w-[240px] text-center">{text}</div>
+			<div className="m-2 text-xs font-semibold max-w-80 text-center">{text}</div>
 		</div>
 	);
 };

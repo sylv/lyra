@@ -155,13 +155,16 @@ impl Mutation {
                 ..Default::default()
             })
             .on_conflict(
-                OnConflict::columns([watch_progress::Column::UserId, watch_progress::Column::ItemId])
-                    .update_columns([
-                        watch_progress::Column::FileId,
-                        watch_progress::Column::ProgressPercent,
-                        watch_progress::Column::UpdatedAt,
-                    ])
-                    .to_owned(),
+                OnConflict::columns([
+                    watch_progress::Column::UserId,
+                    watch_progress::Column::ItemId,
+                ])
+                .update_columns([
+                    watch_progress::Column::FileId,
+                    watch_progress::Column::ProgressPercent,
+                    watch_progress::Column::UpdatedAt,
+                ])
+                .to_owned(),
             )
             .exec_with_returning(pool)
             .await

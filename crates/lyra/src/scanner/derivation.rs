@@ -1,8 +1,4 @@
-use crate::entities::{
-    files,
-    items::ItemKind,
-    roots::RootKind,
-};
+use crate::entities::{files, items::ItemKind, roots::RootKind};
 use lyra_parser::ParsedFile;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
@@ -104,7 +100,8 @@ pub fn derive_library_media(
     let mut items: HashMap<String, ItemAcc> = HashMap::new();
 
     for (file, parsed) in input {
-        let Some(rec) = derive_file_recommendation(library_root, &file.relative_path, parsed) else {
+        let Some(rec) = derive_file_recommendation(library_root, &file.relative_path, parsed)
+        else {
             continue;
         };
 
@@ -117,13 +114,15 @@ pub fn derive_library_media(
         root_entry.last_added_at = root_entry.last_added_at.max(file.discovered_at);
 
         if let Some((season_id, season_number, season_name)) = &rec.season {
-            let season_entry = seasons.entry(season_id.clone()).or_insert_with(|| SeasonAcc {
-                id: season_id.clone(),
-                root_id: rec.root_id.clone(),
-                season_number: *season_number,
-                name: season_name.clone(),
-                last_added_at: file.discovered_at,
-            });
+            let season_entry = seasons
+                .entry(season_id.clone())
+                .or_insert_with(|| SeasonAcc {
+                    id: season_id.clone(),
+                    root_id: rec.root_id.clone(),
+                    season_number: *season_number,
+                    name: season_name.clone(),
+                    last_added_at: file.discovered_at,
+                });
             season_entry.last_added_at = season_entry.last_added_at.max(file.discovered_at);
         }
 
@@ -141,7 +140,10 @@ pub fn derive_library_media(
             });
 
             item_entry.last_added_at = item_entry.last_added_at.max(file.discovered_at);
-            if let Some(existing_link) = item_entry.links.iter_mut().find(|link| link.file_id == file.id)
+            if let Some(existing_link) = item_entry
+                .links
+                .iter_mut()
+                .find(|link| link.file_id == file.id)
             {
                 existing_link.size_bytes = file.size_bytes;
                 existing_link.discovered_at = file.discovered_at;
@@ -287,7 +289,11 @@ pub fn derive_library_media(
     derived_roots.sort_by(|a, b| a.id.cmp(&b.id));
     derived_seasons.sort_by(|a, b| a.id.cmp(&b.id));
     derived_items.sort_by(|a, b| a.id.cmp(&b.id));
-    derived_item_files.sort_by(|a, b| a.item_id.cmp(&b.item_id).then_with(|| a.file_id.cmp(&b.file_id)));
+    derived_item_files.sort_by(|a, b| {
+        a.item_id
+            .cmp(&b.item_id)
+            .then_with(|| a.file_id.cmp(&b.file_id))
+    });
 
     DerivedLibraryMedia {
         roots: derived_roots,
@@ -393,7 +399,10 @@ fn derive_file_recommendation(
     })
 }
 
-fn item_sort_key(item: &ItemAcc, season_order_lookup: &HashMap<String, i64>) -> (i64, i64, i64, String) {
+fn item_sort_key(
+    item: &ItemAcc,
+    season_order_lookup: &HashMap<String, i64>,
+) -> (i64, i64, i64, String) {
     match item.kind {
         ItemKind::Movie => (0, -1, -1, item.id.clone()),
         ItemKind::Episode => {

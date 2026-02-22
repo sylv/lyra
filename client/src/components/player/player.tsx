@@ -695,7 +695,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 									togglePlayerFullscreen(false);
 								}}
 							>
-								<ArrowLeft className="w-6 h-6" />
+								<ArrowLeft className="size-6" />
 							</PlayerButton>
 						)}
 						{currentMedia.parent?.name &&
@@ -710,6 +710,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 								onClick={(event) => {
 									event.stopPropagation();
 									if (detailsPath) {
+										togglePlayerFullscreen(false);
 										navigate(detailsPath);
 									}
 								}}
@@ -731,6 +732,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 								onClick={(event) => {
 									event.stopPropagation();
 									if (detailsPath) {
+										togglePlayerFullscreen(false);
 										navigate(detailsPath);
 									}
 								}}
@@ -747,7 +749,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 								clearPlayerMedia();
 							}}
 						>
-							<XIcon className="w-6 h-6" />
+							<XIcon className="size-6" />
 						</PlayerButton>
 					</div>
 				</div>
@@ -825,7 +827,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 			{/* Loading indicator */}
 			{isLoading && (
 				<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-					<Loader2 className="w-12 h-12 text-white animate-spin" />
+					<Loader2 className="size-12 text-white animate-spin" />
 				</div>
 			)}
 

@@ -1,7 +1,9 @@
 import { useQuery } from "@apollo/client/react";
 import { graphql } from "gql.tada";
 import { CornerUpLeft, Folder } from "lucide-react";
-import { useState, useEffect, type FC, useMemo } from "react";
+import { useEffect, useState, type FC } from "react";
+import { IconText } from "./icon-text";
+import { Spinner } from "./ui/spinner";
 
 export interface DirectoryPickerProps {
 	onPathChange: (path: string | null) => void;
@@ -16,6 +18,7 @@ const GET_FILES = graphql(`
 
 export const DirectoryPicker: FC<DirectoryPickerProps> = ({ onPathChange, initialPath = "/" }) => {
 	const [currentPath, setCurrentPath] = useState<string>(initialPath);
+	const [pathInput, setPathInput] = useState<string>(initialPath);
 
 	const { data, loading, error } = useQuery(GET_FILES, {
 		variables: {
@@ -31,85 +34,97 @@ export const DirectoryPicker: FC<DirectoryPickerProps> = ({ onPathChange, initia
 		}
 	}, [currentPath, loading, error, data, onPathChange]);
 
+	const normalizePath = (rawPath: string) => {
+		const trimmed = rawPath.trim();
+		if (!trimmed) return "/";
+
+		const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+		const normalized = withLeadingSlash.replace(/\/+/g, "/").replace(/\/$/, "");
+
+		return normalized || "/";
+	};
+
+	const navigateToPath = (nextPath: string) => {
+		const normalizedPath = normalizePath(nextPath);
+		setCurrentPath(normalizedPath);
+		setPathInput(normalizedPath);
+	};
+
 	const navigateToDirectory = (dirName: string) => {
 		const newPath = currentPath === "/" ? `/${dirName}` : `${currentPath}/${dirName}`;
-		setCurrentPath(newPath);
+		navigateToPath(newPath);
 	};
 
 	const navigateUp = () => {
 		if (currentPath !== "/") {
 			const parentPath = currentPath.substring(0, currentPath.lastIndexOf("/")) || "/";
-			setCurrentPath(parentPath);
+			navigateToPath(parentPath);
 		}
 	};
 
-	const breadcrumbs = useMemo(() => {
-		if (currentPath === "/") return [{ name: "Root", path: "/" }];
+	useEffect(() => {
+		const timeoutId = window.setTimeout(() => {
+			const normalizedPath = normalizePath(pathInput);
+			if (normalizedPath !== currentPath) {
+				setCurrentPath(normalizedPath);
+			}
+		}, 300);
 
-		const parts = currentPath.split("/").filter(Boolean);
-		const breadcrumbs = [{ name: "Root", path: "/" }];
+		return () => {
+			window.clearTimeout(timeoutId);
+		};
+	}, [pathInput, currentPath]);
 
-		let buildPath = "";
-		for (const part of parts) {
-			buildPath += `/${part}`;
-			breadcrumbs.push({ name: part, path: buildPath });
-		}
-
-		return breadcrumbs;
-	}, [currentPath]);
+	const directories = data?.listFiles ?? [];
 
 	return (
-		<div className="border border-zinc-700 rounded-lg bg-zinc-950">
-			<div className="flex items-center space-x-1 text-sm bg-zinc-900 border-b border-zinc-700 px-4 py-2 rounded-t-lg">
-				{breadcrumbs.map((crumb, index) => (
-					<div key={crumb.path} className="flex items-center">
-						{index > 0 && <span className="mx-2 text-gray-400">/</span>}
-						<button
-							type="button"
-							onClick={() => {
-								setCurrentPath(crumb.path);
-							}}
-							className="text-white lowercase hover:underline"
-						>
-							{crumb.name}
-						</button>
-					</div>
-				))}
+		<div className="rounded bg-black">
+			<div className="bg-zinc-900 px-3 py-2 rounded-t-lg">
+				<input
+					type="text"
+					value={pathInput}
+					onChange={(event) => setPathInput(event.target.value)}
+					placeholder="/path/to/library"
+					className="w-full px-3 py-1.5 text-sm rounded-md outline-none"
+				/>
 			</div>
 
-			{!loading && !error && data?.listFiles && (
-				<div className="space-y-2 overflow-y-auto p-2 max-h-56">
-					{currentPath !== "/" && (
-						<button
-							type="button"
-							onClick={navigateUp}
-							className="flex items-center w-full px-3 py-2 hover:bg-zinc-900 rounded-md text-sm"
-						>
-							<CornerUpLeft className="w-3.5 h-3.5 mr-2" />
-							..
-						</button>
-					)}
-
-					{data.listFiles.length === 0 ? (
-						<div className="text-gray-500 text-sm italic p-2">No subdirectories found</div>
-					) : (
-						<ul className="space-y-1">
-							{data.listFiles.map((dirName) => (
-								<li key={dirName}>
-									<button
-										type="button"
-										onClick={() => navigateToDirectory(dirName)}
-										className="flex items-center w-full px-3 py-2 hover:bg-zinc-900 rounded-md text-sm"
-									>
-										<Folder className="w-4 h-4 mr-2 text-indigo-500" />
-										{dirName}
-									</button>
-								</li>
-							))}
-						</ul>
-					)}
-				</div>
-			)}
+			<div className="h-56 space-y-2 overflow-y-auto">
+				{loading ? (
+					<div className="h-full w-full flex items-center justify-center p-3">
+						<Spinner />
+					</div>
+				) : error || directories.length === 0 ? (
+					<div className="h-full w-full flex items-center justify-center p-3">
+						<IconText className="text-zinc-500" icon={<Folder className="size-4" />} text="I got nothin'" />
+					</div>
+				) : (
+					<ul className="space-y-1">
+						{currentPath !== "/" && (
+							<button
+								type="button"
+								onClick={navigateUp}
+								className="flex items-center w-full px-4 py-3 hover:bg-zinc-950 text-sm"
+							>
+								<CornerUpLeft className="size-3.5 mr-3" />
+								..
+							</button>
+						)}
+						{directories.map((dirName) => (
+							<li key={dirName}>
+								<button
+									type="button"
+									onClick={() => navigateToDirectory(dirName)}
+									className="flex items-center w-full px-4 py-3 hover:bg-zinc-950 text-sm"
+								>
+									<Folder className="size-4 mr-3 text-indigo-500" />
+									{dirName}
+								</button>
+							</li>
+						))}
+					</ul>
+				)}
+			</div>
 		</div>
 	);
 };

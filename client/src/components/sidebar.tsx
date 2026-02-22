@@ -26,11 +26,17 @@ const SidebarLink: FC<{
 			<div
 				className={cn(
 					"bg-zinc-600/50 size-9 rounded-md border border-transparent relative overflow-hidden flex items-center justify-center",
-					active && "border-white/60",
+					!active && "opacity-80",
 				)}
 			>
 				{Icon && <Icon className="size-4 text-zinc-400" />}
-				{image && <img src={image} className="h-full w-full" alt="" />}
+				{image && (
+					<img
+						src={image}
+						className={cn("h-full w-full transition-all duration-500", active && "rotate-90 scale-175")}
+						alt=""
+					/>
+				)}
 			</div>
 			<div>
 				<div className="text-sm group-hover:underline">{children}</div>
@@ -64,7 +70,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 					<div className="flex items-center gap-3">
 						<AudioLines />
 						<div className="flex flex-col">
-							<div className="text-zinc-300 font-semibold text-lg -mt-2">Lyra</div>
+							<div className="text-zinc-100 font-semibold text-lg -mt-2">Lyra</div>
 							<div className="text-zinc-400 font-semibold text-xs leading-1">preview</div>
 						</div>
 					</div>
@@ -79,7 +85,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 										isActivityOpen && "bg-zinc-200/10",
 									)}
 								>
-									<Activity className="w-4 h-4" />
+									<Activity className="size-4" />
 								</button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent
@@ -98,7 +104,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 								isSettingsPage && "bg-zinc-200/10",
 							)}
 						>
-							<SettingsIcon className="w-4 h-4" />
+							<SettingsIcon className="size-4" />
 						</a>
 					</div>
 				</div>

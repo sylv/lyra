@@ -3,9 +3,7 @@ use crate::entities::{
     item_files, item_metadata, root_metadata, season_metadata,
 };
 use async_graphql::{ComplexObject, Context, SimpleObject};
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
 #[derive(Clone, Debug, SimpleObject)]
 #[graphql(complex)]

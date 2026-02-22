@@ -21,10 +21,10 @@ export const PlayerVolumeControl: FC<PlayerVolumeControlProps> = ({
 	const [showSlider, setShowSlider] = useState(false);
 
 	const getVolumeIcon = () => {
-		if (isMuted || volume === 0) return <VolumeXIcon className="w-5 h-5" />;
-		if (volume < 0.33) return <VolumeIcon className="w-5 h-5" />;
-		if (volume < 0.66) return <Volume1Icon className="w-5 h-5" />;
-		return <Volume2Icon className="w-5 h-5" />;
+		if (isMuted || volume === 0) return <VolumeXIcon className="size-5" />;
+		if (volume < 0.33) return <VolumeIcon className="size-5" />;
+		if (volume < 0.66) return <Volume1Icon className="size-5" />;
+		return <Volume2Icon className="size-5" />;
 	};
 
 	const handleSliderChange = (value: number[]) => {
@@ -64,7 +64,7 @@ export const PlayerVolumeControl: FC<PlayerVolumeControlProps> = ({
 						<Slider.Track className="bg-white/20 relative grow rounded-full h-1">
 							<Slider.Range className="absolute bg-white rounded-full h-full" />
 						</Slider.Track>
-						<Slider.Thumb className="block w-3 h-3 bg-white rounded-full hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/50" />
+						<Slider.Thumb className="block size-3 bg-white rounded-full hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/50" />
 					</Slider.Root>
 				</div>
 			</div>

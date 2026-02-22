@@ -63,7 +63,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					<div className="flex items-center gap-4 mb-2">
 						{episode.properties.runtimeMinutes && (
 							<div className="flex items-center gap-1 text-sm text-zinc-400">
-								<Clock className="w-4 h-4" />
+								<Clock className="size-4" />
 								{formatRuntime(episode.properties.runtimeMinutes)}
 							</div>
 						)}

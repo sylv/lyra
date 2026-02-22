@@ -13,8 +13,8 @@ use crate::scanner::local::{
 use lyra_parser::{ParsedFile, parse_files};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter,
-    QueryOrder, TransactionTrait,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,
+    TransactionTrait,
 };
 use std::path::Path as StdPath;
 use std::path::PathBuf;

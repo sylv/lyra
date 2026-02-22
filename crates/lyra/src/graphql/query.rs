@@ -21,6 +21,48 @@ use tokio::task::spawn_blocking;
 
 const ACTIVE_TASK_RECENT_WINDOW_SECS: i64 = 60 * 60 * 24;
 
+const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
+    "mnt",
+    "media",
+    "series",
+    "tv",
+    "movies",
+    "movie",
+    "shows",
+    "show",
+    "pool",
+    "array",
+    "plex",
+    "video",
+    "videos",
+    "library",
+    "libraries",
+];
+
+fn directory_sort_key(name: &str) -> (u8, usize, String) {
+    let lower = name.to_ascii_lowercase();
+
+    for (index, hint) in DIRECTORY_PRIORITY_HINTS.iter().enumerate() {
+        if lower == *hint {
+            return (0, index, lower);
+        }
+    }
+
+    for (index, hint) in DIRECTORY_PRIORITY_HINTS.iter().enumerate() {
+        if lower.starts_with(hint) {
+            return (1, index, lower);
+        }
+    }
+
+    for (index, hint) in DIRECTORY_PRIORITY_HINTS.iter().enumerate() {
+        if lower.contains(hint) {
+            return (2, index, lower);
+        }
+    }
+
+    (3, usize::MAX, lower)
+}
+
 #[derive(Debug, InputObject, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RootNodeFilter {
@@ -401,7 +443,7 @@ impl Query {
                 })
                 .collect::<Vec<_>>();
 
-            dirs.sort();
+            dirs.sort_by_cached_key(|name| directory_sort_key(name));
             Ok(dirs)
         })
         .await?
