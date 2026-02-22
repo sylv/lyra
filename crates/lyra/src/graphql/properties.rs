@@ -1,10 +1,11 @@
 use crate::entities::{
     assets,
     file_assets::{self, FileAssetRole},
-    item_files, item_metadata, root_metadata, season_metadata,
+    files, item_files, item_metadata, root_metadata, season_metadata,
 };
 use async_graphql::{ComplexObject, Context, SimpleObject};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, SimpleObject)]
 pub struct Asset {
@@ -19,6 +20,15 @@ pub struct Asset {
     pub thumbhash: Option<String>,
     pub created_at: i64,
     pub deleted_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct TimelinePreviewSheet {
+    pub position_ms: i64,
+    pub end_ms: i64,
+    pub sheet_interval_ms: i64,
+    pub sheet_gap_size: i64,
+    pub asset: Asset,
 }
 
 #[derive(Clone, Debug, SimpleObject)]
@@ -162,6 +172,71 @@ impl ItemNodeProperties {
     }
 }
 
+#[ComplexObject]
+impl files::Model {
+    pub async fn timeline_preview(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<TimelinePreviewSheet>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+
+        let rows = file_assets::Entity::find()
+            .filter(file_assets::Column::FileId.eq(self.id))
+            .filter(file_assets::Column::Role.eq(FileAssetRole::TimelinePreviewSheet))
+            .order_by_asc(file_assets::Column::PositionMs)
+            .order_by_asc(file_assets::Column::AssetId)
+            .all(pool)
+            .await?;
+
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let asset_ids = rows.iter().map(|row| row.asset_id).collect::<Vec<_>>();
+        let asset_models = assets::Entity::find()
+            .filter(assets::Column::Id.is_in(asset_ids))
+            .all(pool)
+            .await?;
+        let assets_by_id = asset_models
+            .into_iter()
+            .map(|asset| (asset.id, asset))
+            .collect::<HashMap<_, _>>();
+
+        let mut sheets = Vec::new();
+        for row in rows {
+            let Some(position_ms) = row.position_ms else {
+                continue;
+            };
+            let Some(end_ms) = row.end_ms else {
+                continue;
+            };
+            let Some(sheet_interval_ms) = row.sheet_interval else {
+                continue;
+            };
+            let Some(sheet_gap_size) = row.sheet_gap_size else {
+                continue;
+            };
+            if end_ms <= position_ms || sheet_interval_ms <= 0 || sheet_gap_size < 0 {
+                continue;
+            }
+
+            let Some(asset) = assets_by_id.get(&row.asset_id) else {
+                continue;
+            };
+
+            sheets.push(TimelinePreviewSheet {
+                position_ms,
+                end_ms,
+                sheet_interval_ms,
+                sheet_gap_size,
+                asset: Asset::from_model(asset.clone()),
+            });
+        }
+
+        Ok(sheets)
+    }
+}
+
 impl RootNodeProperties {
     pub(crate) fn from_metadata(metadata: Option<root_metadata::Model>) -> Self {
         let Some(metadata) = metadata else {
@@ -302,7 +377,7 @@ impl ItemNodeProperties {
 }
 
 impl Asset {
-    fn from_model(model: assets::Model) -> Self {
+    pub(crate) fn from_model(model: assets::Model) -> Self {
         Self {
             id: model.id,
             source: model.source,

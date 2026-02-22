@@ -3,7 +3,7 @@ use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "files")]
-#[graphql(name = "File")]
+#[graphql(name = "File", complex)]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,

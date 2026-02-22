@@ -1,25 +1,178 @@
 /** biome-ignore-all lint/a11y/useMediaCaption: hls will add captions when available */
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: keyboard users would use arrow keys and 0-9 to seek */
-import { useState, type FC } from "react";
+import { useMemo, useState, type FC } from "react";
 import { formatPlayerTime } from "../utils";
 import { cn } from "../../../lib/utils";
+
+const TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX = 380;
+const TIMELINE_TIME_TOOLTIP_WIDTH_PX = 56;
+
+interface PlayerTimelinePreviewSheet {
+	positionMs: number;
+	endMs: number;
+	sheetIntervalMs: number;
+	sheetGapSize: number;
+	asset: {
+		id: number;
+		width?: number | null;
+		height?: number | null;
+	};
+}
 
 interface PlayerProcessBarProps {
 	duration: number;
 	currentTime: number;
 	bufferedRanges: { start: number; end: number }[];
+	timelinePreviewSheets: PlayerTimelinePreviewSheet[];
 	onChange: (time: number) => void;
 }
 
-export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({ duration, currentTime, bufferedRanges, onChange }) => {
-	const [hoverTime, setHoverTime] = useState<number | null>(null);
+interface HoverPreviewFrame {
+	assetId: number;
+	sheetWidthPx: number;
+	sheetHeightPx: number;
+	frameWidthPx: number;
+	frameHeightPx: number;
+	offsetXPx: number;
+	offsetYPx: number;
+}
+
+const getHoverPreviewFrame = (
+	hoverTimeSeconds: number,
+	sheets: PlayerTimelinePreviewSheet[],
+): HoverPreviewFrame | null => {
+	if (!Number.isFinite(hoverTimeSeconds) || hoverTimeSeconds < 0) {
+		return null;
+	}
+
+	const hoverMs = hoverTimeSeconds * 1000;
+
+	for (const sheet of sheets) {
+		const sheetWidthPx = sheet.asset.width ?? 0;
+		const sheetHeightPx = sheet.asset.height ?? 0;
+		if (sheetWidthPx <= 0 || sheetHeightPx <= 0 || sheet.sheetGapSize < 0 || sheet.sheetIntervalMs <= 0) {
+			continue;
+		}
+
+		const frameCount = Math.floor((sheet.endMs - sheet.positionMs) / sheet.sheetIntervalMs);
+		if (frameCount <= 0) {
+			continue;
+		}
+
+		// Timeline preview frames are offset by one interval (first frame is at +interval, not 0s).
+		// Use nearest-frame selection to avoid previews feeling delayed.
+		const previewTimestampMs = Math.max(
+			sheet.sheetIntervalMs,
+			Math.round(hoverMs / sheet.sheetIntervalMs) * sheet.sheetIntervalMs,
+		);
+		if (previewTimestampMs <= sheet.positionMs || previewTimestampMs > sheet.endMs) {
+			continue;
+		}
+
+		const columns = Math.max(1, Math.ceil(Math.sqrt(frameCount)));
+		const rows = Math.max(1, Math.ceil(frameCount / columns));
+		const frameWidthPx = Math.floor((sheetWidthPx - (columns + 1) * sheet.sheetGapSize) / columns);
+		const frameHeightPx = Math.floor((sheetHeightPx - (rows + 1) * sheet.sheetGapSize) / rows);
+		if (frameWidthPx <= 0 || frameHeightPx <= 0) {
+			continue;
+		}
+
+		const rawIndex = Math.floor((previewTimestampMs - sheet.positionMs) / sheet.sheetIntervalMs) - 1;
+		const frameIndex = Math.max(0, Math.min(frameCount - 1, rawIndex));
+		const columnIndex = frameIndex % columns;
+		const rowIndex = Math.floor(frameIndex / columns);
+		const offsetXPx = sheet.sheetGapSize + columnIndex * (frameWidthPx + sheet.sheetGapSize);
+		const offsetYPx = sheet.sheetGapSize + rowIndex * (frameHeightPx + sheet.sheetGapSize);
+
+		return {
+			assetId: sheet.asset.id,
+			sheetWidthPx,
+			sheetHeightPx,
+			frameWidthPx,
+			frameHeightPx,
+			offsetXPx,
+			offsetYPx,
+		};
+	}
+
+	return null;
+};
+
+export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
+	duration,
+	currentTime,
+	bufferedRanges,
+	timelinePreviewSheets,
+	onChange,
+}) => {
+	const [hoverState, setHoverState] = useState<{
+		time: number;
+		xPx: number;
+		barWidthPx: number;
+	} | null>(null);
+	const sortedTimelinePreviewSheets = useMemo(() => {
+		return [...timelinePreviewSheets].sort((a, b) => {
+			if (a.positionMs !== b.positionMs) {
+				return a.positionMs - b.positionMs;
+			}
+			return a.asset.id - b.asset.id;
+		});
+	}, [timelinePreviewSheets]);
+	const hoverPreviewFrame = useMemo(() => {
+		if (hoverState == null) {
+			return null;
+		}
+		return getHoverPreviewFrame(hoverState.time, sortedTimelinePreviewSheets);
+	}, [hoverState, sortedTimelinePreviewSheets]);
+	const renderedHoverPreviewFrame = useMemo(() => {
+		if (hoverPreviewFrame == null) {
+			return null;
+		}
+
+		const scale = TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX / hoverPreviewFrame.frameWidthPx;
+		return {
+			assetId: hoverPreviewFrame.assetId,
+			frameWidthPx: Math.max(1, TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX),
+			frameHeightPx: Math.max(1, hoverPreviewFrame.frameHeightPx * scale),
+			scale,
+			offsetXPx: hoverPreviewFrame.offsetXPx,
+			offsetYPx: hoverPreviewFrame.offsetYPx,
+			sheetWidthPx: hoverPreviewFrame.sheetWidthPx,
+			sheetHeightPx: hoverPreviewFrame.sheetHeightPx,
+			sourceFrameWidthPx: hoverPreviewFrame.frameWidthPx,
+			sourceFrameHeightPx: hoverPreviewFrame.frameHeightPx,
+		};
+	}, [hoverPreviewFrame]);
+	const hoverMarkerPercent = useMemo(() => {
+		if (hoverState == null || hoverState.barWidthPx <= 0) {
+			return 0;
+		}
+
+		return (hoverState.xPx / hoverState.barWidthPx) * 100;
+	}, [hoverState]);
+	const clampedHoverOverlayPercent = useMemo(() => {
+		if (hoverState == null || hoverState.barWidthPx <= 0) {
+			return 0;
+		}
+
+		const overlayWidthPx = renderedHoverPreviewFrame?.frameWidthPx ?? TIMELINE_TIME_TOOLTIP_WIDTH_PX;
+		const minCenterPx = overlayWidthPx / 2;
+		const maxCenterPx = hoverState.barWidthPx - overlayWidthPx / 2;
+		const clampedCenterPx =
+			minCenterPx <= maxCenterPx
+				? Math.min(Math.max(hoverState.xPx, minCenterPx), maxCenterPx)
+				: hoverState.barWidthPx / 2;
+
+		return (clampedCenterPx / hoverState.barWidthPx) * 100;
+	}, [hoverState, renderedHoverPreviewFrame]);
 
 	const handleProgressClick = (event: React.MouseEvent<HTMLDivElement>) => {
 		event.stopPropagation();
 
 		const rect = event.currentTarget.getBoundingClientRect();
 		const clickX = event.clientX - rect.left;
-		const newTime = (clickX / rect.width) * duration;
+		const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+		const newTime = ratio * duration;
 		onChange(newTime);
 	};
 
@@ -28,12 +181,17 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({ duration, current
 
 		const rect = event.currentTarget.getBoundingClientRect();
 		const hoverX = event.clientX - rect.left;
-		const hoverTimeValue = (hoverX / rect.width) * duration;
-		setHoverTime(Math.max(0, Math.min(duration, hoverTimeValue)));
+		const ratio = Math.max(0, Math.min(1, hoverX / rect.width));
+		const hoverTimeValue = ratio * duration;
+		setHoverState({
+			time: Math.max(0, Math.min(duration, hoverTimeValue)),
+			xPx: Math.max(0, Math.min(rect.width, hoverX)),
+			barWidthPx: rect.width,
+		});
 	};
 
 	const onMouseLeave = () => {
-		setHoverTime(null);
+		setHoverState(null);
 	};
 
 	const progressPercent = duration ? (currentTime / duration) * 100 : 0;
@@ -70,18 +228,54 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({ duration, current
 					);
 				})}
 				{/* Hover time tooltip */}
-				{hoverTime && (
-					<div
-						className="absolute top-0 bottom-0"
-						style={{
-							left: `${(hoverTime / (duration || 1)) * 100}%`,
-						}}
-					>
-						<div className={cn("absolute -top-1 bottom-0 w-0.5 shadow-lg z-20 bg-white/40")} />
-						<div className={cn("absolute -top-8 bg-black/60 px-2 py-0.5 rounded-lg text-sm -translate-x-1/2")}>
-							{formatPlayerTime(hoverTime)}
+				{hoverState != null && (
+					<>
+						<div
+							className="absolute top-0 bottom-0 pointer-events-none"
+							style={{
+								left: `${hoverMarkerPercent}%`,
+							}}
+						>
+							<div className={cn("absolute -top-1 bottom-0 w-0.5 shadow-lg z-20 bg-white/40 -translate-x-1/2")} />
 						</div>
-					</div>
+						<div
+							className="absolute top-0 bottom-0 pointer-events-none"
+							style={{
+								left: `${clampedHoverOverlayPercent}%`,
+							}}
+						>
+							{renderedHoverPreviewFrame && (
+								<div
+									className="absolute left-1/2 -translate-x-1/2 bottom-4 rounded-md bg-black shadow-lg overflow-hidden"
+									style={{
+										width: `${renderedHoverPreviewFrame.frameWidthPx}px`,
+										height: `${renderedHoverPreviewFrame.frameHeightPx}px`,
+									}}
+								>
+									<div
+										style={{
+											width: `${renderedHoverPreviewFrame.sourceFrameWidthPx}px`,
+											height: `${renderedHoverPreviewFrame.sourceFrameHeightPx}px`,
+											transform: `scale(${renderedHoverPreviewFrame.scale})`,
+											transformOrigin: "top left",
+											backgroundImage: `url(/api/assets/${renderedHoverPreviewFrame.assetId})`,
+											backgroundPosition: `-${renderedHoverPreviewFrame.offsetXPx}px -${renderedHoverPreviewFrame.offsetYPx}px`,
+											backgroundSize: `${renderedHoverPreviewFrame.sheetWidthPx}px ${renderedHoverPreviewFrame.sheetHeightPx}px`,
+											backgroundRepeat: "no-repeat",
+										}}
+									/>
+								</div>
+							)}
+							<div
+								className={cn(
+									"absolute bg-black/60 px-2 py-0.5 rounded-lg text-sm left-1/2 -translate-x-1/2",
+									renderedHoverPreviewFrame ? "-top-10" : "-top-8",
+								)}
+							>
+								{formatPlayerTime(hoverState.time)}
+							</div>
+						</div>
+					</>
 				)}
 			</div>
 		</div>

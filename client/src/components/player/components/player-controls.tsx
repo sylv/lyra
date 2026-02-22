@@ -25,12 +25,25 @@ interface PlayerAudioTrackOption {
 	label: string;
 }
 
+interface PlayerTimelinePreviewSheet {
+	positionMs: number;
+	endMs: number;
+	sheetIntervalMs: number;
+	sheetGapSize: number;
+	asset: {
+		id: number;
+		width?: number | null;
+		height?: number | null;
+	};
+}
+
 interface PlayerControlsProps {
 	showControls: boolean;
 	isFullscreen: boolean;
 	currentTime: number;
 	duration: number;
 	bufferedRanges: { start: number; end: number }[];
+	timelinePreviewSheets: PlayerTimelinePreviewSheet[];
 	playing: boolean;
 	volume: number;
 	isMuted: boolean;
@@ -54,6 +67,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 	currentTime,
 	duration,
 	bufferedRanges,
+	timelinePreviewSheets,
 	playing,
 	volume,
 	isMuted,
@@ -101,6 +115,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 				duration={duration}
 				currentTime={currentTime}
 				bufferedRanges={bufferedRanges}
+				timelinePreviewSheets={timelinePreviewSheets}
 				onChange={onSeek}
 			/>
 

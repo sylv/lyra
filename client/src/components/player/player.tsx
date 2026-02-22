@@ -121,6 +121,17 @@ const ItemPlaybackQuery = graphql(`
 			}
 			file {
 				id
+				timelinePreview {
+					positionMs
+					endMs
+					sheetIntervalMs
+					sheetGapSize
+					asset {
+						id
+						width
+						height
+					}
+				}
 			}
 		}
 	}
@@ -629,11 +640,12 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 
 	const miniPlayerAspectRatio = Math.max(videoAspectRatio, 16 / 9);
 	const detailsPath = currentMedia.parent?.libraryId ? getPathForItemData(currentMedia) : null;
+	const timelinePreviewSheets = Array.isArray(currentMedia.file?.timelinePreview)
+		? currentMedia.file.timelinePreview
+		: [];
 
 	const containerClasses = cn(
-		isFullscreen
-			? "z-50 fixed inset-0 bg-black"
-			: "z-50 fixed bottom-4 right-4 rounded-xl overflow-hidden shadow-2xl bg-black",
+		isFullscreen ? "z-50 fixed inset-0 bg-black" : "z-50 fixed bottom-4 right-4 rounded-xl shadow-2xl bg-black",
 	);
 
 	return (
@@ -657,7 +669,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		>
 			<video
 				ref={videoRef}
-				className="w-full h-full object-contain"
+				className={cn("w-full h-full object-contain outline-none", !isFullscreen && "rounded-xl")}
 				autoPlay={autoplay}
 				controls={false}
 				disablePictureInPicture
@@ -665,7 +677,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 
 			{/* Overlay controls */}
 			<div
-				className="absolute inset-0 cursor-pointer select-none"
+				className={cn("absolute inset-0 cursor-pointer select-none", !isFullscreen && "rounded-xl")}
 				role="button"
 				tabIndex={0}
 				onClick={handleContainerClick}
@@ -676,6 +688,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 					className={cn(
 						"absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 transition-opacity duration-300 pointer-events-none",
 						showControls ? "opacity-100" : "opacity-0",
+						!isFullscreen && "rounded-xl",
 					)}
 				/>
 				{/* Top section */}
@@ -761,6 +774,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 					currentTime={currentTime}
 					duration={duration}
 					bufferedRanges={bufferedRanges}
+					timelinePreviewSheets={timelinePreviewSheets}
 					playing={playing}
 					volume={volume}
 					isMuted={isMuted}

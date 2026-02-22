@@ -1,12 +1,10 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
-import { Clock } from "lucide-react";
-import { useState, type FC } from "react";
+import { type FC } from "react";
+import { navigate } from "vike/client/router";
 import { getPathForItem, GetPathForItemFrag } from "../lib/getPathForMedia";
 import { Image, ImageAssetFrag, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { setPlayerMedia } from "./player/player-state";
-import { navigate } from "vike/client/router";
-import { useDynamicBackground } from "../hooks/use-background";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -49,22 +47,17 @@ export const EpisodeCardFrag = graphql(
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = readFragment(EpisodeCardFrag, episodeRef);
 	const path = getPathForItem(episode);
-	const [hovered, setHovered] = useState(false);
-
-	useDynamicBackground(episode.properties.thumbnailImage, hovered);
 
 	return (
 		<button
 			type="button"
 			className="group flex gap-4 group/play w-full text-left"
+			aria-label={`Play ${episode.name}`}
 			onClick={() => {
 				if (!episode.id) return;
 				setPlayerMedia(episode.id, true);
 				navigate(path);
 			}}
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => setHovered(false)}
-			aria-label={`Play ${episode.name}`}
 		>
 			<div className="relative overflow-hidden h-min rounded-sm">
 				<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>

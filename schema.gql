@@ -37,6 +37,7 @@ type File {
 	corruptedAt: Int
 	scannedAt: Int
 	discoveredAt: Int!
+	timelinePreview: [TimelinePreviewSheet!]!
 }
 
 enum ItemKind {
@@ -285,6 +286,14 @@ type SeasonNodeProperties {
 	backgroundImage: Asset
 	posterImage: Asset
 	thumbnailImage: Asset
+}
+
+type TimelinePreviewSheet {
+	positionMs: Int!
+	endMs: Int!
+	sheetIntervalMs: Int!
+	sheetGapSize: Int!
+	asset: Asset!
 }
 
 type User {
