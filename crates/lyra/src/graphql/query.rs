@@ -23,6 +23,7 @@ use tokio::task::spawn_blocking;
 const ACTIVE_TASK_RECENT_WINDOW_SECS: i64 = 60 * 60 * 24;
 
 #[derive(Debug, InputObject, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RootNodeFilter {
     pub library_id: Option<i64>,
     pub kinds: Option<Vec<RootKind>>,
@@ -32,6 +33,7 @@ pub struct RootNodeFilter {
 }
 
 #[derive(Debug, InputObject, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ItemNodeFilter {
     pub root_id: String,
     pub season_numbers: Option<Vec<i64>>,
