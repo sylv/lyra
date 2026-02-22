@@ -47,7 +47,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoad
 		return () => window.removeEventListener("resize", calculateLayout);
 	}, [calculateLayout]);
 
-	if (!media) {
+	if (!media || (media.length === 0 && loading)) {
 		return (
 			<div ref={containerRef} className="mr-6 w-full h-dvh flex items-center justify-center">
 				<Spinner className="size-6" />

@@ -3,7 +3,7 @@ import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
 import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 
-const BASE_CLASSES = "rounded-lg aspect-[2/3] bg-zinc-700/30 shrink-0 select-none";
+const BASE_CLASSES = "aspect-[2/3] bg-zinc-700/30 shrink-0 select-none";
 
 interface PosterProps {
 	imageUrl: string | null | undefined;

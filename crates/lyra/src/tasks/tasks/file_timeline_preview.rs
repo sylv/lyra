@@ -1,7 +1,8 @@
 use crate::{
+    assets as assets_api,
     config::get_config,
     entities::{
-        assets::{self, AssetSource},
+        assets as assets_entity,
         file_assets::{self, FileAssetRole},
         files, libraries, tasks as tasks_entity,
     },
@@ -9,12 +10,11 @@ use crate::{
     tasks::{TaskHandler, TaskLike, TaskScopeKind},
 };
 use anyhow::Context;
-use lyra_timeline_preview::{PreviewOptions, TimelinePreview, generate_previews};
+use lyra_timeline_preview::{PreviewOptions, generate_previews};
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{path::PathBuf, time::Duration};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -22,16 +22,6 @@ pub struct FileTimelinePreviewTaskArgs;
 
 #[derive(Debug, Default)]
 pub struct FileTimelinePreviewTask;
-
-#[derive(Debug)]
-struct PreparedPreviewSheet {
-    hash_sha256: String,
-    size_bytes: i64,
-    start_ms: i64,
-    end_ms: i64,
-    frame_interval_ms: i64,
-    sheet_width_px: i64,
-}
 
 #[async_trait::async_trait]
 impl TaskHandler for FileTimelinePreviewTask {
@@ -112,40 +102,29 @@ impl TaskHandler for FileTimelinePreviewTask {
         };
 
         let timeline_previews = generate_previews(&file_path, &preview_options).await?;
-        let mut prepared_sheets = Vec::with_capacity(timeline_previews.len());
-        for preview in timeline_previews {
-            prepared_sheets.push(write_preview_sheet_to_disk(preview).await?);
-        }
 
         let mut tx = pool.begin().await?;
-        for sheet in prepared_sheets {
-            // todo: get width/height
-            let asset = assets::Entity::insert(assets::ActiveModel {
-                source: Set(AssetSource::Local),
-                source_url: Set(None),
-                hash_sha256: Set(Some(sheet.hash_sha256)),
-                size_bytes: Set(Some(sheet.size_bytes)),
-                mime_type: Set(Some("image/webp".to_string())),
-                height: Set(None),
-                width: Set(Some(sheet.sheet_width_px)),
-                thumbhash: Set(None),
-                deleted_at: Set(None),
-                ..Default::default()
-            })
-            .exec_with_returning(&mut tx)
-            .await?;
+        for preview in timeline_previews {
+            let asset =
+                assets_api::create_local_asset_from_bytes(&tx, &preview.preview_bytes).await?;
+            let sheet_width_px = asset
+                .width
+                .context("timeline preview asset missing width")?;
+            let sheet_height_px = asset
+                .height
+                .context("timeline preview asset missing height")?;
 
             file_assets::Entity::insert(file_assets::ActiveModel {
                 file_id: Set(file.id),
                 asset_id: Set(asset.id),
                 role: Set(FileAssetRole::TimelinePreviewSheet),
                 chapter_number: Set(None),
-                position_ms: Set(Some(sheet.start_ms)),
-                end_ms: Set(Some(sheet.end_ms)),
-                sheet_frame_height: Set(None),
-                sheet_frame_width: Set(Some(sheet.sheet_width_px)),
+                position_ms: Set(Some(duration_to_millis(preview.start_time)?)),
+                end_ms: Set(Some(duration_to_millis(preview.end_time)?)),
+                sheet_frame_height: Set(Some(sheet_height_px)),
+                sheet_frame_width: Set(Some(sheet_width_px)),
                 sheet_gap_size: Set(Some(lyra_timeline_preview::GAP_PX as i64)),
-                sheet_interval: Set(Some(sheet.frame_interval_ms)),
+                sheet_interval: Set(Some(duration_to_millis(preview.frame_interval)?)),
             })
             .exec(&mut tx)
             .await?;
@@ -183,9 +162,9 @@ impl TaskHandler for FileTimelinePreviewTask {
             .await?;
 
         let now = chrono::Utc::now().timestamp();
-        assets::Entity::update_many()
-            .filter(assets::Column::Id.is_in(stale_asset_ids))
-            .set(assets::ActiveModel {
+        assets_entity::Entity::update_many()
+            .filter(assets_entity::Column::Id.is_in(stale_asset_ids))
+            .set(assets_entity::ActiveModel {
                 deleted_at: Set(Some(now)),
                 ..Default::default()
             })
@@ -195,46 +174,6 @@ impl TaskHandler for FileTimelinePreviewTask {
         tx.commit().await?;
         Ok(())
     }
-}
-
-async fn write_preview_sheet_to_disk(
-    preview: TimelinePreview,
-) -> anyhow::Result<PreparedPreviewSheet> {
-    let hash_sha256 = hash_bytes_hex(&preview.preview_bytes);
-    let output_path = get_asset_output_path(&hash_sha256);
-
-    if let Some(parent) = output_path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    tokio::fs::write(&output_path, &preview.preview_bytes).await?;
-
-    Ok(PreparedPreviewSheet {
-        hash_sha256,
-        size_bytes: i64::try_from(preview.preview_bytes.len())
-            .context("preview byte length exceeds i64")?,
-        start_ms: duration_to_millis(preview.start_time)?,
-        end_ms: duration_to_millis(preview.end_time)?,
-        frame_interval_ms: duration_to_millis(preview.frame_interval)?,
-        sheet_width_px: i64::from(preview.width_px),
-    })
-}
-
-fn get_asset_output_path(hash_sha256: &str) -> PathBuf {
-    let mut chars = hash_sha256.chars();
-    let first = chars.next().unwrap().to_string();
-    let second = chars.next().unwrap().to_string();
-
-    get_config()
-        .get_asset_store_dir()
-        .join(first)
-        .join(second)
-        .join(format!("{hash_sha256}.webp"))
-}
-
-fn hash_bytes_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
 }
 
 fn duration_to_millis(duration: Duration) -> anyhow::Result<i64> {

@@ -151,6 +151,12 @@ async fn main() {
     let scanner_pool = pool.clone();
     background_workers.spawn(async move { scanner::start_scanner(scanner_pool).await });
 
+    let assets_pool = pool.clone();
+    background_workers.spawn(async move {
+        tracing::info!("starting asset background worker");
+        assets::start_asset_background_worker(assets_pool).await
+    });
+
     for task in tasks::registry::get_registered_tasks(&pool) {
         let task_type = task.task_type().to_string();
         background_workers.spawn(async move {
@@ -194,7 +200,6 @@ async fn main() {
     let mut app = Router::new()
         .nest("/api/hls", hls::get_hls_router())
         .nest("/api/assets", assets::get_assets_router())
-        .nest("/api/image-proxy", assets::get_proxy_router())
         .route("/api/graphql", get(get_graphql).post(post_graphql))
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))

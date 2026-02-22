@@ -34,4 +34,5 @@ impl ActiveModelBehavior for ActiveModel {}
 #[sea_orm(rs_type = "i64", db_type = "Integer")]
 pub enum AssetSource {
     Local = 0,
+    Remote = 1,
 }
