@@ -30,4 +30,5 @@ impl ActiveModelBehavior for ActiveModel {}
 #[sea_orm(rs_type = "i64", db_type = "Integer")]
 pub enum FileAssetRole {
     TimelinePreviewSheet = 0,
+    Thumbnail = 1,
 }

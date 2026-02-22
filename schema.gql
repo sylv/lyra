@@ -111,9 +111,7 @@ enum NodeOrderBy {
 type NodeProperties {
 	description: String
 	rating: Float
-	posterUrl: String
 	backgroundUrl: String
-	thumbnailUrl: String
 	seasonNumber: Int
 	episodeNumber: Int
 	runtimeMinutes: Int
@@ -121,6 +119,8 @@ type NodeProperties {
 	endedAt: Int
 	createdAt: Int
 	updatedAt: Int
+	posterUrl: String
+	thumbnailUrl: String
 }
 
 enum OrderDirection {

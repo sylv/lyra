@@ -26,7 +26,7 @@ impl nodes::Model {
             .one(pool)
             .await?;
 
-        Ok(NodeProperties::from_metadata(metadata))
+        Ok(NodeProperties::from_metadata(metadata, self.file_id))
     }
 
     pub async fn first_linked_at(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
