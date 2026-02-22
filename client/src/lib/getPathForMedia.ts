@@ -3,38 +3,41 @@ import { graphql, readFragment, type FragmentOf } from "gql.tada";
 export const GetPathForRootFrag = graphql(`
 	fragment GetPathForRoot on RootNode {
 		id
-		kind
+		libraryId
 	}
 `);
 
 export const GetPathForItemFrag = graphql(`
 	fragment GetPathForItem on ItemNode {
-		id
 		kind
 		rootId
 		seasonId
-		properties {
-			seasonNumber
+		parent {
+			libraryId
 		}
 	}
 `);
 
 export const getPathForRoot = (mediaRaw: FragmentOf<typeof GetPathForRootFrag>) => {
 	const media = readFragment(GetPathForRootFrag, mediaRaw);
-	switch (media.kind) {
-		case "SERIES":
-			return `/series/${media.id}`;
-		case "MOVIE":
-			return `/movie/${media.id}`;
-	}
+	return `/library/${media.libraryId}/root/${media.id}`;
 };
 
 export const getPathForItem = (mediaRaw: FragmentOf<typeof GetPathForItemFrag>) => {
 	const media = readFragment(GetPathForItemFrag, mediaRaw);
+	const libraryId = media.parent?.libraryId;
+
+	if (!libraryId) {
+		return "/";
+	}
+
 	switch (media.kind) {
 		case "MOVIE":
-			return `/movie/${media.rootId}`;
+			return `/library/${libraryId}/root/${media.rootId}`;
 		case "EPISODE":
-			return `/series/${media.rootId}?seasons=${media.properties.seasonNumber ?? 1}`;
+			if (!media.seasonId) {
+				return `/library/${libraryId}/root/${media.rootId}`;
+			}
+			return `/library/${libraryId}/root/${media.rootId}/season/${media.seasonId}`;
 	}
 };

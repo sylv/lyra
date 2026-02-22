@@ -211,6 +211,7 @@ type RootNodeEdge {
 }
 
 input RootNodeFilter {
+	libraryId: Int
 	kinds: [RootKind!]
 	orderBy: RootNodeOrderBy
 	orderDirection: OrderDirection

@@ -24,6 +24,7 @@ const ACTIVE_TASK_RECENT_WINDOW_SECS: i64 = 60 * 60 * 24;
 
 #[derive(Debug, InputObject, serde::Deserialize)]
 pub struct RootNodeFilter {
+    pub library_id: Option<i64>,
     pub kinds: Option<Vec<RootKind>>,
     pub order_by: Option<RootNodeOrderBy>,
     pub order_direction: Option<OrderDirection>,
@@ -135,6 +136,10 @@ impl Query {
 
                 if let Some(kinds) = &filter.kinds {
                     qb = qb.filter(roots::Column::Kind.is_in(kinds.clone()));
+                }
+
+                if let Some(library_id) = filter.library_id {
+                    qb = qb.filter(roots::Column::LibraryId.eq(library_id));
                 }
 
                 if let Some(watched) = filter.watched {
