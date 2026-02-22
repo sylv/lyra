@@ -102,7 +102,7 @@ CREATE TABLE file_assets (
     sheet_frame_width INTEGER,
     sheet_gap_size INTEGER,
     sheet_interval INTEGER,
-    
+
     PRIMARY KEY (file_id, asset_id),
     FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
 ) STRICT;
@@ -133,66 +133,87 @@ CREATE TABLE file_probe (
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 ) STRICT;
 
--- nodes are derived from file paths and parser output.
-CREATE TABLE nodes (
+CREATE TABLE roots (
     id TEXT PRIMARY KEY,
-    root_id TEXT,
-    parent_id TEXT,
     library_id INTEGER NOT NULL,
-    file_id INTEGER,
-    relative_path TEXT NOT NULL,
+    kind INTEGER NOT NULL, -- 0 movie, 1 series
     name TEXT NOT NULL,
-    kind INTEGER NOT NULL, -- 0 movie, 1 series, 2 season, 3 episode
+    last_added_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
-    FOREIGN KEY (root_id) REFERENCES nodes(id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_id) REFERENCES nodes(id) ON DELETE CASCADE,
     FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-    FOREIGN KEY (file_id) REFERENCES files(id),
+    CHECK (kind IN (0, 1))
+) STRICT;
+
+CREATE TABLE seasons (
+    id TEXT PRIMARY KEY,
+    root_id TEXT NOT NULL,
+    season_number INTEGER NOT NULL,
+    "order" INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    last_added_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
+    UNIQUE (root_id, season_number),
+    UNIQUE (root_id, "order")
+) STRICT;
+
+CREATE TABLE items (
+    id TEXT PRIMARY KEY,
+    root_id TEXT NOT NULL,
+    season_id TEXT,
+    kind INTEGER NOT NULL, -- 0 movie, 1 episode
+    episode_number INTEGER,
+    "order" INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    primary_file_id INTEGER,
+    last_added_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
+    FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE SET NULL,
+    FOREIGN KEY (primary_file_id) REFERENCES files(id) ON DELETE SET NULL,
+    CHECK (kind IN (0, 1)),
     CHECK (
-        (parent_id IS NULL AND root_id IS NULL AND kind IN (0, 1)) OR
-        (parent_id IS NOT NULL AND root_id IS NOT NULL AND kind IN (2, 3))
-    )
+        (kind = 0 AND season_id IS NULL AND episode_number IS NULL) OR
+        (kind = 1)
+    ),
+    UNIQUE (root_id, "order")
 ) STRICT;
 
-CREATE TABLE node_metadata (
-    node_id TEXT NOT NULL,
-    metadata_id INTEGER NOT NULL,
+CREATE TABLE item_files (
+    item_id TEXT NOT NULL,
+    file_id INTEGER NOT NULL,
+    "order" INTEGER NOT NULL,
     is_primary INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
-    PRIMARY KEY (node_id, metadata_id),
-    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE,
-    FOREIGN KEY (metadata_id) REFERENCES metadata(id) ON DELETE CASCADE
+    PRIMARY KEY (item_id, file_id),
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 ) STRICT;
 
-CREATE UNIQUE INDEX node_metadata_primary_unique ON node_metadata(node_id) WHERE is_primary = 1;
+CREATE UNIQUE INDEX item_files_primary_unique ON item_files(item_id) WHERE is_primary = 1;
+CREATE INDEX item_files_file_id_idx ON item_files(file_id);
+CREATE INDEX item_files_item_order_idx ON item_files(item_id, "order", file_id);
+CREATE INDEX items_root_order_idx ON items(root_id, "order");
+CREATE INDEX items_season_order_idx ON items(season_id, "order");
 
--- this stores information about providers attempting to match a node 
-CREATE TABLE node_matches (
+CREATE TABLE root_metadata (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    node_id TEXT NOT NULL,
-    source TEXT NOT NULL,
-    metadata_id INTEGER,
-    error_reason TEXT,
-    attempted_at INTEGER NOT NULL DEFAULT (unixepoch()),
-
-    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE,
-    FOREIGN KEY (metadata_id) REFERENCES metadata(id) ON DELETE SET NULL
-) STRICT;
-
--- metadata layers from providers (local, tmdb, ...)
-CREATE TABLE metadata (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    root_id INTEGER,
-    parent_id INTEGER,
+    root_id TEXT NOT NULL,
     source TEXT NOT NULL,
     source_key TEXT,
-    kind INTEGER NOT NULL, -- 0 movie, 1 series, 2 season, 3 episode
+    is_primary INTEGER NOT NULL DEFAULT 0,
     name TEXT NOT NULL,
     description TEXT,
     score_display TEXT,
     score_normalized INTEGER,
-    season_number INTEGER,
-    episode_number INTEGER,
     released_at INTEGER,
     ended_at INTEGER,
     poster_asset_id INTEGER,
@@ -201,23 +222,85 @@ CREATE TABLE metadata (
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
-    FOREIGN KEY (root_id) REFERENCES metadata(id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_id) REFERENCES metadata(id) ON DELETE CASCADE,
-    FOREIGN KEY (poster_asset_id) REFERENCES assets(id),
-    FOREIGN KEY (thumbnail_asset_id) REFERENCES assets(id),
-    FOREIGN KEY (background_asset_id) REFERENCES assets(id),
-    CHECK (
-        (parent_id IS NULL AND root_id IS NULL AND kind IN (0, 1)) OR
-        (parent_id IS NOT NULL AND root_id IS NOT NULL AND kind IN (2, 3))
-    )
+    FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
+    FOREIGN KEY (poster_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    FOREIGN KEY (thumbnail_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    FOREIGN KEY (background_asset_id) REFERENCES assets(id) ON DELETE SET NULL
 ) STRICT;
 
-CREATE UNIQUE INDEX metadata_unique_per_source ON metadata(source, source_key) WHERE source_key IS NOT NULL;
+CREATE UNIQUE INDEX root_metadata_unique_per_source
+    ON root_metadata(source, source_key)
+    WHERE source_key IS NOT NULL;
+CREATE UNIQUE INDEX root_metadata_primary_unique
+    ON root_metadata(root_id)
+    WHERE is_primary = 1;
+
+CREATE TABLE season_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_key TEXT,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    name TEXT NOT NULL,
+    description TEXT,
+    score_display TEXT,
+    score_normalized INTEGER,
+    released_at INTEGER,
+    ended_at INTEGER,
+    poster_asset_id INTEGER,
+    thumbnail_asset_id INTEGER,
+    background_asset_id INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE CASCADE,
+    FOREIGN KEY (poster_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    FOREIGN KEY (thumbnail_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    FOREIGN KEY (background_asset_id) REFERENCES assets(id) ON DELETE SET NULL
+) STRICT;
+
+CREATE UNIQUE INDEX season_metadata_unique_per_source
+    ON season_metadata(source, source_key)
+    WHERE source_key IS NOT NULL;
+CREATE UNIQUE INDEX season_metadata_primary_unique
+    ON season_metadata(season_id)
+    WHERE is_primary = 1;
+
+CREATE TABLE item_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_key TEXT,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    name TEXT NOT NULL,
+    description TEXT,
+    score_display TEXT,
+    score_normalized INTEGER,
+    released_at INTEGER,
+    ended_at INTEGER,
+    poster_asset_id INTEGER,
+    thumbnail_asset_id INTEGER,
+    background_asset_id INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+    FOREIGN KEY (poster_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    FOREIGN KEY (thumbnail_asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    FOREIGN KEY (background_asset_id) REFERENCES assets(id) ON DELETE SET NULL
+) STRICT;
+
+CREATE UNIQUE INDEX item_metadata_unique_per_source
+    ON item_metadata(source, source_key)
+    WHERE source_key IS NOT NULL;
+CREATE UNIQUE INDEX item_metadata_primary_unique
+    ON item_metadata(item_id)
+    WHERE is_primary = 1;
 
 CREATE TABLE tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     -- task_type + scope_kind + scope_id is the thing this task is meant to operate on, eg
-    -- an asset, a root node, a season node, metadata, a file, etc. 
+    -- an asset, metadata, a file, etc.
     -- think of the two as the "unique key" for each job.
     task_type TEXT NOT NULL,
     scope_kind INTEGER NOT NULL,
@@ -228,7 +311,7 @@ CREATE TABLE tasks (
     -- version_number is a simple hard-coded value on each task type, when changed it forces all tasks of that type to re-run
     -- (ie, a bug was fixed in the task logic that caused incorrect results, so we want to re-run to fix it)
     -- version_hash is a optional hash of the relevant data that the task operates on, which when changed triggers a re-run
-    -- (ie, intro detection runs on season nodes, but wants to re-run if any episodes are added/removed from the season)
+    -- (ie, intro detection runs on season-level data, but wants to re-run if episodes are added/removed)
     version_number INTEGER NOT NULL,
     version_hash TEXT,
     last_error_message TEXT,
@@ -240,50 +323,20 @@ CREATE TABLE tasks (
 
 CREATE UNIQUE INDEX tasks_scope_unique ON tasks(task_type, scope_kind, scope_id);
 
--- playback progress stores both node + concrete file when known
 CREATE TABLE watch_progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
-    file_id INTEGER,
-    node_id TEXT,
+    item_id TEXT NOT NULL,
+    file_id INTEGER NOT NULL,
     progress_percent REAL NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
-    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL,
-    CHECK (progress_percent >= 0 AND progress_percent <= 1)
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+    CHECK (progress_percent >= 0 AND progress_percent <= 1),
+    UNIQUE (user_id, item_id)
 ) STRICT;
 
-CREATE UNIQUE INDEX watch_progress_user_file_unique
-    ON watch_progress(user_id, file_id)
-    WHERE file_id IS NOT NULL;
-
-CREATE UNIQUE INDEX watch_progress_user_node_unique
-    ON watch_progress(user_id, node_id)
-    WHERE node_id IS NOT NULL;
-
-CREATE VIRTUAL TABLE metadata_fts5 USING fts5(
-    metadata_id UNINDEXED,
-    name,
-    tokenize = 'trigram'
-);
-
-INSERT INTO metadata_fts5 (metadata_id, name)
-SELECT id, name FROM metadata;
-
-CREATE TRIGGER metadata_insert_fts5 AFTER INSERT ON metadata BEGIN
-    INSERT INTO metadata_fts5 (metadata_id, name)
-    VALUES (NEW.id, NEW.name);
-END;
-
-CREATE TRIGGER metadata_update_fts5 AFTER UPDATE ON metadata BEGIN
-    UPDATE metadata_fts5
-    SET name = NEW.name
-    WHERE metadata_id = NEW.id;
-END;
-
-CREATE TRIGGER metadata_delete_fts5 AFTER DELETE ON metadata BEGIN
-    DELETE FROM metadata_fts5 WHERE metadata_id = OLD.id;
-END;
+CREATE INDEX watch_progress_user_file_idx ON watch_progress(user_id, file_id);

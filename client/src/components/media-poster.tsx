@@ -1,11 +1,10 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type React from "react";
 import type { FC } from "react";
-import { getPathForMedia, GetPathForMediaFrag } from "../lib/getPathForMedia";
+import { getPathForRoot, GetPathForRootFrag } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
-import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
+import { PlayWrapper } from "./play-wrapper";
 import { Poster } from "./poster";
-import { Thumbnail } from "./thumbnail";
 
 interface MediaPosterProps {
 	media: FragmentOf<typeof MediaPosterFrag>;
@@ -15,33 +14,34 @@ interface MediaPosterProps {
 
 export const MediaPosterFrag = graphql(
 	`
-	fragment MediaPoster on Node {
+	fragment MediaPoster on RootNode {
 		id
 		name
 		kind
 		properties {
 			posterUrl
-			thumbnailUrl
 		}
-		...GetPathForMedia
-		...PlayWrapper
+		playable_item {
+			id
+		}
+		watchProgress {
+			progressPercent
+			updatedAt
+		}
+		...GetPathForRoot
 	}
 `,
-	[GetPathForMediaFrag, PlayWrapperFrag],
+	[GetPathForRootFrag],
 );
 
 export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, style }) => {
 	const media = readFragment(MediaPosterFrag, mediaRaw);
-	const path = getPathForMedia(media);
+	const path = getPathForRoot(media);
 
 	return (
 		<div className={cn("flex flex-col gap-2 overflow-hidden", className)} style={style}>
-			<PlayWrapper media={media}>
-				{media.kind === "EPISODE" ? (
-					<Thumbnail imageUrl={media.properties.thumbnailUrl} alt={media.name} className="w-full" />
-				) : (
-					<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="w-full" />
-				)}
+			<PlayWrapper itemId={media.playable_item?.id} path={path} watchProgress={media.watchProgress}>
+				<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="w-full" />
 			</PlayWrapper>
 			<a
 				href={path}

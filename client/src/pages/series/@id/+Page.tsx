@@ -2,8 +2,8 @@ import { useQuery } from "@apollo/client/react";
 import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
 import { Fragment } from "react/jsx-runtime";
-import { usePageContext } from "vike-react/usePageContext";
 import { navigate } from "vike/client/router";
+import { usePageContext } from "vike-react/usePageContext";
 import { EpisodeCard, EpisodeCardFrag, EpisodeCardSkeleton } from "../../../components/episode-card";
 import { FilterButton, FilterButtonSkeleton } from "../../../components/filter-button";
 import { MediaFilterList } from "../../../components/media-filter-list";
@@ -12,9 +12,12 @@ import { ViewLoader } from "../../../components/view-loader";
 
 const Query = graphql(
 	`
-	query GetMediaById($nodeId: String!) {
-		node(nodeId: $nodeId) {
-			seasons
+	query GetMediaById($rootId: String!) {
+		root(rootId: $rootId) {
+			seasons {
+				id
+				seasonNumber
+			}
 			...MediaHeader
 		}
 	}
@@ -24,8 +27,8 @@ const Query = graphql(
 
 const EpisodesQuery = graphql(
 	`
-	query GetEpisodes($filter: NodeFilter!, $after: String) {
-		nodeList(filter: $filter, after: $after) {
+	query GetEpisodes($filter: ItemNodeFilter!, $after: String) {
+		itemList(filter: $filter, after: $after) {
 			edges {
 				node {
 					id
@@ -42,22 +45,21 @@ const EpisodesQuery = graphql(
 	[EpisodeCardFrag],
 );
 
-type NodeFilter = VariablesOf<typeof EpisodesQuery>["filter"];
+type ItemNodeFilter = VariablesOf<typeof EpisodesQuery>["filter"];
 
 export default function Page() {
 	const pageContext = usePageContext();
-	const nodeId = pageContext.routeParams.id;
+	const rootId = pageContext.routeParams.id;
 	const { data, loading } = useQuery(Query, {
 		variables: {
-			nodeId: nodeId,
+			rootId,
 		},
 	});
 
-	const [filter, setFilter] = useState<NodeFilter>(() => {
-		const base: NodeFilter = {
+	const [filter, setFilter] = useState<ItemNodeFilter>(() => {
+		const base: ItemNodeFilter = {
 			orderBy: "SEASON_EPISODE",
-			kinds: ["EPISODE"],
-			parentId: nodeId,
+			rootId,
 		};
 
 		if (pageContext.urlParsed.search.seasons) {
@@ -92,14 +94,14 @@ export default function Page() {
 		fetchMore,
 	} = useQuery(EpisodesQuery, {
 		variables: {
-			filter: filter,
+			filter,
 		},
 	});
 
 	const onLoadMore = () => {
 		fetchMore({
 			variables: {
-				after: episodes?.nodeList?.pageInfo?.endCursor,
+				after: episodes?.itemList?.pageInfo?.endCursor,
 			},
 		});
 	};
@@ -127,11 +129,11 @@ export default function Page() {
 	}
 
 	const isAllSeasons = filter.seasonNumbers === null;
-	const sortedSeasons = [...data.node.seasons].sort((a, b) => a - b);
+	const sortedSeasons = [...data.root.seasons.map((season) => season.seasonNumber)].sort((a, b) => a - b);
 
 	return (
 		<Fragment>
-			<MediaHeader media={data.node} />
+			<MediaHeader media={data.root} />
 			<div className="container mx-auto">
 				<div className="flex gap-2 py-4 flex-wrap">
 					<FilterButton
@@ -170,12 +172,12 @@ export default function Page() {
 								<EpisodeCardSkeleton key={`episode-loading-${i}`} />
 							))}
 						</div>
-					) : episodes?.nodeList.edges[0] ? (
+					) : episodes?.itemList.edges[0] ? (
 						<div className="space-y-2">
-							{episodes.nodeList.edges.map((episode) => (
+							{episodes.itemList.edges.map((episode) => (
 								<EpisodeCard key={episode.node.id} episode={episode.node} />
 							))}
-							{episodes.nodeList.pageInfo.hasNextPage && <ViewLoader onLoadMore={onLoadMore} />}
+							{episodes.itemList.pageInfo.hasNextPage && <ViewLoader onLoadMore={onLoadMore} />}
 						</div>
 					) : (
 						<div className="text-center py-12 text-zinc-400">

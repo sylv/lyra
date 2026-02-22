@@ -1,28 +1,40 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 
-export const GetPathForMediaFrag = graphql(`
-	fragment GetPathForMedia on Node {
+export const GetPathForRootFrag = graphql(`
+	fragment GetPathForRoot on RootNode {
+		id
+		kind
+	}
+`);
+
+export const GetPathForItemFrag = graphql(`
+	fragment GetPathForItem on ItemNode {
 		id
 		kind
 		rootId
-		parentId
+		seasonId
 		properties {
 			seasonNumber
 		}
 	}
 `);
 
-export const getPathForMedia = (mediaRaw: FragmentOf<typeof GetPathForMediaFrag>) => {
-	const media = readFragment(GetPathForMediaFrag, mediaRaw);
+export const getPathForRoot = (mediaRaw: FragmentOf<typeof GetPathForRootFrag>) => {
+	const media = readFragment(GetPathForRootFrag, mediaRaw);
 	switch (media.kind) {
 		case "SERIES":
 			return `/series/${media.id}`;
 		case "MOVIE":
 			return `/movie/${media.id}`;
-		case "SEASON":
-			return `/series/${media.rootId ?? media.id}?seasons=${media.properties.seasonNumber ?? 1}`;
+	}
+};
+
+export const getPathForItem = (mediaRaw: FragmentOf<typeof GetPathForItemFrag>) => {
+	const media = readFragment(GetPathForItemFrag, mediaRaw);
+	switch (media.kind) {
+		case "MOVIE":
+			return `/movie/${media.rootId}`;
 		case "EPISODE":
-			// todo: include episode number and highlight it on the page
-			return `/series/${media.rootId ?? media.parentId}?seasons=${media.properties.seasonNumber ?? 1}`;
+			return `/series/${media.rootId}?seasons=${media.properties.seasonNumber ?? 1}`;
 	}
 };

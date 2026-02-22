@@ -21,8 +21,8 @@ pub enum Relation {
     Files,
     #[sea_orm(has_many = "super::library_users::Entity")]
     LibraryUsers,
-    #[sea_orm(has_many = "super::nodes::Entity")]
-    Nodes,
+    #[sea_orm(has_many = "super::roots::Entity")]
+    Roots,
 }
 
 impl Related<super::files::Entity> for Entity {
@@ -37,9 +37,9 @@ impl Related<super::library_users::Entity> for Entity {
     }
 }
 
-impl Related<super::nodes::Entity> for Entity {
+impl Related<super::roots::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Nodes.def()
+        Relation::Roots.def()
     }
 }
 

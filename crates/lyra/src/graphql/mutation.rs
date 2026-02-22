@@ -1,7 +1,7 @@
 use crate::RequestAuth;
 use crate::auth::PermissionGuard;
 use crate::entities::users::UserPerms;
-use crate::entities::{libraries, nodes, users, watch_progress};
+use crate::entities::{files, item_files, libraries, users, watch_progress};
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
@@ -12,6 +12,7 @@ use sea_orm::Set;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+    QuerySelect,
 };
 
 pub struct Mutation;
@@ -95,10 +96,10 @@ impl Mutation {
     async fn update_watch_progress(
         &self,
         ctx: &Context<'_>,
-        node_id: String,
+        file_id: i64,
         progress_percent: f32,
         user_id: Option<String>,
-    ) -> Result<watch_progress::Model, async_graphql::Error> {
+    ) -> Result<Vec<watch_progress::Model>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
 
@@ -118,64 +119,58 @@ impl Mutation {
             user.id.clone()
         };
 
-        let node = nodes::Entity::find_by_id(node_id.clone())
+        let file = files::Entity::find_by_id(file_id)
+            .filter(files::Column::UnavailableAt.is_null())
             .one(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("Node not found".to_string()))?;
+            .ok_or_else(|| async_graphql::Error::new("File not found".to_string()))?;
+
+        let linked_item_ids: Vec<String> = item_files::Entity::find()
+            .filter(item_files::Column::FileId.eq(file.id))
+            .select_only()
+            .column(item_files::Column::ItemId)
+            .distinct()
+            .into_tuple()
+            .all(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        if linked_item_ids.is_empty() {
+            return Err(async_graphql::Error::new(
+                "No linked items found for file".to_string(),
+            ));
+        }
 
         let now = Utc::now().timestamp();
+        let mut updated_rows = Vec::with_capacity(linked_item_ids.len());
 
-        let progress = if let Some(file_id) = node.file_id {
-            watch_progress::Entity::insert(watch_progress::ActiveModel {
-                user_id: Set(user_id),
-                file_id: Set(Some(file_id)),
-                node_id: Set(Some(node.id)),
+        for item_id in linked_item_ids {
+            let row = watch_progress::Entity::insert(watch_progress::ActiveModel {
+                user_id: Set(user_id.clone()),
+                item_id: Set(item_id),
+                file_id: Set(file.id),
                 progress_percent: Set(progress_percent),
                 updated_at: Set(now),
                 ..Default::default()
             })
             .on_conflict(
-                OnConflict::columns([
-                    watch_progress::Column::UserId,
-                    watch_progress::Column::FileId,
-                ])
-                .update_columns([
-                    watch_progress::Column::NodeId,
-                    watch_progress::Column::ProgressPercent,
-                    watch_progress::Column::UpdatedAt,
-                ])
-                .to_owned(),
+                OnConflict::columns([watch_progress::Column::UserId, watch_progress::Column::ItemId])
+                    .update_columns([
+                        watch_progress::Column::FileId,
+                        watch_progress::Column::ProgressPercent,
+                        watch_progress::Column::UpdatedAt,
+                    ])
+                    .to_owned(),
             )
             .exec_with_returning(pool)
             .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-        } else {
-            watch_progress::Entity::insert(watch_progress::ActiveModel {
-                user_id: Set(user_id),
-                file_id: Set(None),
-                node_id: Set(Some(node.id)),
-                progress_percent: Set(progress_percent),
-                updated_at: Set(now),
-                ..Default::default()
-            })
-            .on_conflict(
-                OnConflict::columns([
-                    watch_progress::Column::UserId,
-                    watch_progress::Column::NodeId,
-                ])
-                .update_columns([
-                    watch_progress::Column::ProgressPercent,
-                    watch_progress::Column::UpdatedAt,
-                ])
-                .to_owned(),
-            )
-            .exec_with_returning(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-        };
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        Ok(progress)
+            updated_rows.push(row);
+        }
+
+        Ok(updated_rows)
     }
 
     async fn create_library(

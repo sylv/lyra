@@ -5,8 +5,8 @@ import { MediaHeader, MediaHeaderFrag, MediaHeaderSkeleton } from "../../../comp
 
 const Query = graphql(
 	`
-	query GetMediaById($nodeId: String!) {
-		node(nodeId: $nodeId) {
+	query GetMediaById($rootId: String!) {
+		root(rootId: $rootId) {
 			...MediaHeader
 		}
 	}
@@ -16,10 +16,10 @@ const Query = graphql(
 
 export default function Page() {
 	const pageContext = usePageContext();
-	const nodeId = pageContext.routeParams.id;
+	const rootId = pageContext.routeParams.id;
 	const { loading, data } = useQuery(Query, {
 		variables: {
-			nodeId: nodeId,
+			rootId,
 		},
 	});
 
@@ -27,5 +27,5 @@ export default function Page() {
 		return <MediaHeaderSkeleton />;
 	}
 
-	return <MediaHeader media={data.node} />;
+	return <MediaHeader media={data.root} />;
 }

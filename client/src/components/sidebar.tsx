@@ -6,7 +6,6 @@ import { usePageContext } from "vike-react/usePageContext";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
 import { cn } from "../lib/utils";
 import { ActivityPanel } from "./activity-panel";
-import { setIsSearchOpen } from "./search/search-modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
 const SidebarLink: FC<{
@@ -109,7 +108,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 					<button
 						type="button"
 						className="w-full border border-zinc-700/50 text-zinc-400 rounded-full px-4 py-2 flex items-center justify-between text-xs hover:bg-zinc-400/10 transition-colors"
-						onClick={() => setIsSearchOpen(true)}
+						onClick={() => {}}
 					>
 						<span>Search</span>
 						<SearchIcon className="size-3" />

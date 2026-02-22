@@ -13,7 +13,6 @@ import { Sidebar } from "../components/sidebar";
 import { ThemeProvider } from "../components/theme-provider";
 import { Toaster } from "../components/ui/sonner";
 import "./globals.css";
-import { SearchModal } from "../components/search/search-modal";
 
 const client = new ApolloClient({
 	link: new HttpLink({
@@ -23,7 +22,8 @@ const client = new ApolloClient({
 		typePolicies: {
 			Query: {
 				fields: {
-					nodeList: relayStylePagination(["filter"]),
+					rootList: relayStylePagination(["filter"]),
+					itemList: relayStylePagination(["filter"]),
 				},
 			},
 		},
@@ -39,7 +39,6 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 						<SetupWrapper>
 							<Sidebar>{children}</Sidebar>
 							<PlayerWrapper />
-							<SearchModal />
 						</SetupWrapper>
 					</Suspense>
 					<Toaster />

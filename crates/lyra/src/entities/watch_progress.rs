@@ -9,9 +9,9 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_type = "Text")]
     pub user_id: String,
-    pub file_id: Option<i64>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub node_id: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    pub item_id: String,
+    pub file_id: i64,
     pub progress_percent: f32,
     pub created_at: i64,
     pub updated_at: i64,
@@ -24,17 +24,17 @@ pub enum Relation {
         from = "Column::FileId",
         to = "super::files::Column::Id",
         on_update = "NoAction",
-        on_delete = "SetNull"
+        on_delete = "Cascade"
     )]
     Files,
     #[sea_orm(
-        belongs_to = "super::nodes::Entity",
-        from = "Column::NodeId",
-        to = "super::nodes::Column::Id",
+        belongs_to = "super::items::Entity",
+        from = "Column::ItemId",
+        to = "super::items::Column::Id",
         on_update = "NoAction",
-        on_delete = "SetNull"
+        on_delete = "Cascade"
     )]
-    Nodes,
+    Items,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::UserId",
@@ -51,9 +51,9 @@ impl Related<super::files::Entity> for Entity {
     }
 }
 
-impl Related<super::nodes::Entity> for Entity {
+impl Related<super::items::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Nodes.def()
+        Relation::Items.def()
     }
 }
 

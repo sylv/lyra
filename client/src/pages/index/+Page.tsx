@@ -7,8 +7,8 @@ import { MediaList, MediaListFrag } from "../../components/media-list.jsx";
 
 const Query = graphql(
 	`
-	query GetAllMedia($filter: NodeFilter!, $after: String) {
-		nodeList(filter: $filter, first: 45, after: $after) {
+	query GetAllMedia($filter: RootNodeFilter!, $after: String) {
+		rootList(filter: $filter, first: 45, after: $after) {
 			edges {
 				node {
 					...MediaList
@@ -24,12 +24,11 @@ const Query = graphql(
 	[MediaListFrag],
 );
 
-type NodeFilter = VariablesOf<typeof Query>["filter"];
-type NodeKind = NonNullable<NonNullable<NodeFilter["kinds"]>[number]>;
+type RootNodeFilter = VariablesOf<typeof Query>["filter"];
+type RootKind = NonNullable<NonNullable<RootNodeFilter["kinds"]>[number]>;
 
 export default function Page() {
-	const [filter, setFilter] = useState<NodeFilter>({
-		parentId: null,
+	const [filter, setFilter] = useState<RootNodeFilter>({
 		kinds: [],
 		orderBy: "ADDED_AT",
 	});
@@ -44,7 +43,7 @@ export default function Page() {
 		},
 	});
 
-	const handleMediaKindToggle = (kind: NodeKind) => {
+	const handleMediaKindToggle = (kind: RootKind) => {
 		if (!filter.kinds) {
 			setFilter({ ...filter, kinds: ["MOVIE", "SERIES"] });
 			return;
@@ -72,13 +71,13 @@ export default function Page() {
 			</div>
 			<div className="flex flex-wrap gap-4">
 				<MediaList
-					media={data?.nodeList?.edges?.map((edge) => edge.node)}
+					media={data?.rootList?.edges?.map((edge) => edge.node)}
 					loading={loading}
 					onLoadMore={() => {
-						if (!data?.nodeList?.pageInfo?.hasNextPage) return;
+						if (!data?.rootList?.pageInfo?.hasNextPage) return;
 						fetchMore({
 							variables: {
-								after: data?.nodeList?.pageInfo?.endCursor,
+								after: data?.rootList?.pageInfo?.endCursor,
 							},
 						});
 					}}

@@ -2,8 +2,8 @@
 /** biome-ignore-all lint/a11y/useSemanticElements: <explanation> */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
-import { useMutation } from "@apollo/client/react";
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
+import { useMutation, useQuery } from "@apollo/client/react";
+import { graphql } from "gql.tada";
 import Hls from "hls.js";
 import { ArrowLeft, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
@@ -20,7 +20,6 @@ import {
 	setPlayerVolume,
 	togglePlayerFullscreen,
 } from "./player-state";
-import { PlayerFrag } from "./player-wrapper";
 
 const NUMBER_REGEX = /^\d$/;
 const LANGUAGE_DISPLAY_NAMES =
@@ -89,16 +88,38 @@ const getAudioTrackLabel = (
 };
 
 const UpdateWatchState = graphql(`
-	mutation UpdateWatchState($nodeId: String!, $progressPercent: Float!) {
-		updateWatchProgress(nodeId: $nodeId, progressPercent: $progressPercent) {
+	mutation UpdateWatchState($fileId: Int!, $progressPercent: Float!) {
+		updateWatchProgress(fileId: $fileId, progressPercent: $progressPercent) {
 			progressPercent
 			updatedAt
 		}
 	}
 `);
 
-export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: mediaRef }) => {
-	const currentMedia = readFragment(PlayerFrag, mediaRef);
+const ItemPlaybackQuery = graphql(`
+	query ItemPlayback($itemId: String!) {
+		item(itemId: $itemId) {
+			id
+			name
+			properties {
+				seasonNumber
+				episodeNumber
+			}
+			parent {
+				name
+			}
+			watchProgress {
+				progressPercent
+				updatedAt
+			}
+			defaultConnection {
+				id
+			}
+		}
+	}
+`);
+
+export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 	const { isFullscreen, volume, isMuted, isLoading } = useStore(playerState);
 
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -119,6 +140,30 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const doubleClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const isControlsPinned = isSettingsMenuOpen || isShortcutsDialogOpen;
+	const { data, loading: isItemLoading, error: itemLoadError } = useQuery(ItemPlaybackQuery, {
+		variables: {
+			itemId,
+		},
+	});
+	const currentMedia = data?.item ?? null;
+
+	useEffect(() => {
+		if (!isItemLoading) {
+			return;
+		}
+
+		setErrorMessage(null);
+		setPlayerLoading(true);
+	}, [isItemLoading]);
+
+	useEffect(() => {
+		if (!itemLoadError) {
+			return;
+		}
+
+		setErrorMessage("Sorry, this item is unavailable");
+		setPlayerLoading(false);
+	}, [itemLoadError]);
 
 	useEffect(() => {
 		setAudioTrackOptions([]);
@@ -130,17 +175,19 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 	useEffect(() => {
 		if (!videoRef.current || !currentMedia) return;
 
+		if (hlsRef.current != null) {
+			hlsRef.current.destroy();
+			hlsRef.current = null;
+		}
+
 		if (!currentMedia.defaultConnection) {
-			setErrorMessage("This file isn't available right now");
+			videoRef.current.pause();
+			setErrorMessage("Sorry, this item is unavailable");
+			setPlayerLoading(false);
 			return;
 		}
 
 		if (Hls.isSupported()) {
-			if (hlsRef.current != null) {
-				hlsRef.current.destroy();
-				hlsRef.current = null;
-			}
-
 			setErrorMessage(null);
 			setPlayerLoading(true);
 			const hlsUrl = `/api/hls/stream/${currentMedia.defaultConnection.id}/index.m3u8`;
@@ -215,24 +262,26 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 
 	// watch state handling
 	useEffect(() => {
-		if (!videoRef.current) return;
+		if (!videoRef.current || !currentMedia) return;
+		const media = currentMedia;
 		const video = videoRef.current;
 
 		const onVideoLoad = () => {
 			// load the watch state
 			// todo: prompt the user to see if they want to resume where they left off
-			if (currentMedia?.watchProgress) {
-				video.currentTime = currentMedia.watchProgress.progressPercent * video.duration;
+			if (media.watchProgress) {
+				video.currentTime = media.watchProgress.progressPercent * video.duration;
 			}
 		};
 
 		let lastUpdate = Date.now();
 		const onTimeUpdate = () => {
 			if (Date.now() - lastUpdate < 10_000) return;
+			if (!media.defaultConnection || video.duration <= 0) return;
 			lastUpdate = Date.now();
 			updateWatchProgress({
 				variables: {
-					nodeId: currentMedia.id,
+					fileId: media.defaultConnection.id,
 					progressPercent: video.currentTime / video.duration,
 				},
 			}).catch((err: unknown) => {
@@ -255,7 +304,7 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 			video.removeEventListener("loadedmetadata", onVideoLoad);
 			video.removeEventListener("seeked", onSeek);
 		};
-	}, [currentMedia?.id, videoRef]);
+	}, [currentMedia?.id, currentMedia?.defaultConnection?.id, videoRef]);
 
 	useEffect(() => {
 		if (!videoRef.current) return;
@@ -578,16 +627,18 @@ export const Player: FC<{ media: FragmentOf<typeof PlayerFrag> }> = ({ media: me
 								<ArrowLeft className="w-6 h-6" />
 							</PlayerButton>
 						)}
-						{currentMedia.parent && currentMedia.properties.seasonNumber && currentMedia.properties.episodeNumber ? (
-							<div>
-								<h2 className="text-xl font-semibold">
-									{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
-								</h2>
-								<p className="text-sm text-gray-300">
-									Episode {currentMedia.properties.episodeNumber}: {currentMedia.name}
-								</p>
-							</div>
-						) : (
+							{currentMedia.parent?.name &&
+							currentMedia.properties.seasonNumber &&
+							currentMedia.properties.episodeNumber ? (
+								<div>
+									<h2 className="text-xl font-semibold">
+										{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
+									</h2>
+									<p className="text-sm text-gray-300">
+										Episode {currentMedia.properties.episodeNumber}: {currentMedia.name}
+									</p>
+								</div>
+							) : (
 							<div>
 								<h2 className="text-xl font-semibold">{currentMedia.name}</h2>
 							</div>

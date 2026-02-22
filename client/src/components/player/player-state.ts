@@ -1,9 +1,12 @@
-import type { FragmentOf } from "gql.tada";
 import { create } from "zustand/react";
-import type { PlayerFrag } from "./player-wrapper";
+
+export interface PlayerMedia {
+	itemId: string;
+	path: string;
+}
 
 interface PlayerState {
-	currentMedia: FragmentOf<typeof PlayerFrag> | null;
+	currentMedia: PlayerMedia | null;
 	isFullscreen: boolean | null;
 	volume: number;
 	isMuted: boolean;
@@ -18,7 +21,7 @@ export const playerState = create<PlayerState>(() => ({
 	isLoading: false,
 }));
 
-export const setPlayerMedia = (media: FragmentOf<typeof PlayerFrag> | null) => {
+export const setPlayerMedia = (media: PlayerMedia | null) => {
 	playerState.setState((prev) => ({
 		currentMedia: media,
 		isFullscreen: prev.currentMedia ? prev.isFullscreen : true,

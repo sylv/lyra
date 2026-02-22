@@ -1,17 +1,21 @@
+pub mod derivation;
 pub mod local;
-pub mod node_generation;
 
 use crate::config::get_config;
-use crate::entities::{files, libraries, node_metadata, nodes};
-use crate::scanner::local::upsert_local_metadata_for_node;
-use crate::scanner::node_generation::get_recommended_nodes_for_file;
+use crate::entities::{
+    files, item_files, item_metadata, items, libraries, root_metadata, roots, season_metadata,
+    seasons,
+};
+use crate::scanner::derivation::derive_library_media;
+use crate::scanner::local::{
+    insert_local_item_metadata, insert_local_root_metadata, insert_local_season_metadata,
+};
 use lyra_parser::{ParsedFile, parse_files};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, JoinType, QueryFilter, QuerySelect,
-    RelationTrait, Set, TransactionTrait,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter,
+    QueryOrder, TransactionTrait,
 };
-use std::collections::HashMap;
 use std::path::Path as StdPath;
 use std::path::PathBuf;
 use tokio::time::{Duration, sleep};
@@ -67,7 +71,7 @@ async fn scan_library(pool: &DatabaseConnection, library: &libraries::Model) -> 
         .exec(pool)
         .await?;
 
-    attach_nodes_for_pending_files(pool, library, &library_path, scan_start_time).await?;
+    rebuild_library_media(pool, library, &library_path).await?;
 
     libraries::Entity::update(libraries::ActiveModel {
         id: Set(library.id),
@@ -78,7 +82,6 @@ async fn scan_library(pool: &DatabaseConnection, library: &libraries::Model) -> 
     .await?;
 
     tracing::info!("Scan completed for library '{}'", library.name);
-
     Ok(())
 }
 
@@ -162,203 +165,252 @@ async fn scan_file(
     Ok(())
 }
 
-struct PendingFile {
-    file: files::Model,
-    file_path: PathBuf,
-}
-
-async fn attach_nodes_for_pending_files(
+async fn rebuild_library_media(
     pool: &DatabaseConnection,
     library: &libraries::Model,
     library_root: &StdPath,
-    scan_start_time: i64,
 ) -> anyhow::Result<()> {
-    let mut pending_by_id: HashMap<i64, PendingFile> = HashMap::new();
-
-    let updated_files = files::Entity::find()
-        .filter(files::Column::LibraryId.eq(library.id))
-        .filter(files::Column::ScannedAt.eq(scan_start_time))
-        .filter(files::Column::UnavailableAt.is_null())
-        .all(pool)
-        .await?;
-    for file in updated_files {
-        pending_by_id.insert(
-            file.id,
-            PendingFile {
-                file_path: library_root.join(&file.relative_path),
-                file,
-            },
-        );
-    }
-
-    let unattached_files = files::Entity::find()
-        .join(JoinType::LeftJoin, files::Relation::Nodes.def())
+    let available_files = files::Entity::find()
         .filter(files::Column::LibraryId.eq(library.id))
         .filter(files::Column::UnavailableAt.is_null())
-        .filter(nodes::Column::Id.is_null())
+        .order_by(files::Column::Id, Order::Asc)
         .all(pool)
         .await?;
-    for file in unattached_files {
-        pending_by_id.entry(file.id).or_insert_with(|| PendingFile {
-            file_path: library_root.join(&file.relative_path),
-            file,
-        });
-    }
 
-    let mut pending_files = pending_by_id.into_values().collect::<Vec<_>>();
-    pending_files.sort_by_key(|pending| pending.file.id);
-
-    for batch in pending_files.chunks(PARSE_BATCH_SIZE) {
+    let mut parsed_files = Vec::with_capacity(available_files.len());
+    for batch in available_files.chunks(PARSE_BATCH_SIZE) {
         let relative_paths = batch
             .iter()
-            .map(|pending| pending.file.relative_path.clone())
+            .map(|file| file.relative_path.clone())
             .collect::<Vec<_>>();
         let parsed_batch = parse_files(relative_paths).await;
 
-        for (pending, parsed) in batch.iter().zip(parsed_batch.into_iter()) {
-            let relative_path = &pending.file.relative_path;
-
-            upsert_nodes_for_file(
-                pool,
-                library,
-                library_root,
-                &pending.file_path,
-                relative_path,
-                &pending.file,
-                &parsed,
-            )
-            .await?;
-        }
+        parsed_files.extend(
+            batch
+                .iter()
+                .cloned()
+                .zip(parsed_batch.into_iter())
+                .collect::<Vec<(files::Model, ParsedFile)>>(),
+        );
     }
 
+    let derived = derive_library_media(library_root, &parsed_files);
+    upsert_derived_media(pool, library.id, derived).await?;
     Ok(())
 }
 
-async fn upsert_nodes_for_file(
+async fn upsert_derived_media(
     pool: &DatabaseConnection,
-    library: &libraries::Model,
-    library_root: &StdPath,
-    file_path: &StdPath,
-    relative_path: &str,
-    file: &files::Model,
-    parsed: &ParsedFile,
+    library_id: i64,
+    derived: derivation::DerivedLibraryMedia,
 ) -> anyhow::Result<()> {
-    let Some(recommended_nodes) = get_recommended_nodes_for_file(library_root, file_path, parsed)
-    else {
-        return Ok(());
-    };
-
+    let now = chrono::Utc::now().timestamp();
     let txn = pool.begin().await?;
 
-    nodes::Entity::update_many()
-        .set(nodes::ActiveModel {
-            file_id: Set(None),
-            ..Default::default()
-        })
-        .filter(nodes::Column::FileId.eq(file.id))
-        .exec(&txn)
-        .await?;
+    if derived.roots.is_empty() {
+        roots::Entity::delete_many()
+            .filter(roots::Column::LibraryId.eq(library_id))
+            .exec(&txn)
+            .await?;
+        txn.commit().await?;
+        return Ok(());
+    }
 
-    let mut upserted_nodes = Vec::with_capacity(recommended_nodes.len());
-    for node in recommended_nodes {
-        let attached_file_id = if node.attach_file {
-            Some(file.id)
-        } else {
-            None
-        };
-
-        nodes::Entity::insert(nodes::ActiveModel {
-            id: Set(node.id.clone()),
-            root_id: Set(node.root_id.clone()),
-            parent_id: Set(node.parent_id.clone()),
-            library_id: Set(library.id),
-            file_id: Set(attached_file_id),
-            relative_path: Set(relative_path.to_string()),
-            name: Set(node.name.clone()),
-            kind: Set(node.kind),
+    for root in &derived.roots {
+        roots::Entity::insert(roots::ActiveModel {
+            id: Set(root.id.clone()),
+            library_id: Set(library_id),
+            kind: Set(root.kind),
+            name: Set(root.name.clone()),
+            last_added_at: Set(root.last_added_at),
+            created_at: Set(now),
+            updated_at: Set(now),
         })
         .on_conflict(
-            OnConflict::column(nodes::Column::Id)
+            OnConflict::column(roots::Column::Id)
                 .update_columns([
-                    nodes::Column::RootId,
-                    nodes::Column::ParentId,
-                    nodes::Column::LibraryId,
-                    nodes::Column::FileId,
-                    nodes::Column::RelativePath,
-                    nodes::Column::Name,
-                    nodes::Column::Kind,
+                    roots::Column::LibraryId,
+                    roots::Column::Kind,
+                    roots::Column::Name,
+                    roots::Column::LastAddedAt,
+                    roots::Column::UpdatedAt,
                 ])
                 .to_owned(),
         )
         .exec(&txn)
         .await?;
-
-        upserted_nodes.push((
-            nodes::Model {
-                id: node.id,
-                root_id: node.root_id,
-                parent_id: node.parent_id,
-                library_id: library.id,
-                file_id: attached_file_id,
-                relative_path: relative_path.to_string(),
-                name: node.name,
-                kind: node.kind,
-            },
-            node.episode_number,
-        ));
     }
 
-    txn.commit().await?;
+    let root_ids = derived
+        .roots
+        .iter()
+        .map(|root| root.id.clone())
+        .collect::<Vec<_>>();
 
-    for (node, episode_number_hint) in &upserted_nodes {
-        if let Err(error) =
-            upsert_local_metadata_for_node(pool, node, parsed, *episode_number_hint).await
-        {
-            tracing::warn!(
-                node_id = %node.id,
-                relative_path = %relative_path,
-                error = %error,
-                "failed to upsert local metadata"
-            );
-        }
+    roots::Entity::delete_many()
+        .filter(roots::Column::LibraryId.eq(library_id))
+        .filter(roots::Column::Id.is_not_in(root_ids.clone()))
+        .exec(&txn)
+        .await?;
+
+    for season in &derived.seasons {
+        seasons::Entity::insert(seasons::ActiveModel {
+            id: Set(season.id.clone()),
+            root_id: Set(season.root_id.clone()),
+            season_number: Set(season.season_number),
+            order: Set(season.order),
+            name: Set(season.name.clone()),
+            last_added_at: Set(season.last_added_at),
+            created_at: Set(now),
+            updated_at: Set(now),
+        })
+        .on_conflict(
+            OnConflict::column(seasons::Column::Id)
+                .update_columns([
+                    seasons::Column::RootId,
+                    seasons::Column::SeasonNumber,
+                    seasons::Column::Order,
+                    seasons::Column::Name,
+                    seasons::Column::LastAddedAt,
+                    seasons::Column::UpdatedAt,
+                ])
+                .to_owned(),
+        )
+        .exec(&txn)
+        .await?;
     }
 
-    Ok(())
-}
-pub async fn ensure_node_metadata_link(
-    pool: &DatabaseConnection,
-    node_id: &str,
-    metadata_id: i64,
-    is_primary: bool,
-) -> anyhow::Result<()> {
-    let txn = pool.begin().await?;
+    let season_ids = derived
+        .seasons
+        .iter()
+        .map(|season| season.id.clone())
+        .collect::<Vec<_>>();
 
-    if is_primary {
-        node_metadata::Entity::update_many()
-            .set(node_metadata::ActiveModel {
-                is_primary: Set(false),
-                ..Default::default()
-            })
-            .filter(node_metadata::Column::NodeId.eq(node_id.to_string()))
+    if season_ids.is_empty() {
+        seasons::Entity::delete_many()
+            .filter(seasons::Column::RootId.is_in(root_ids.clone()))
+            .exec(&txn)
+            .await?;
+    } else {
+        seasons::Entity::delete_many()
+            .filter(seasons::Column::RootId.is_in(root_ids.clone()))
+            .filter(seasons::Column::Id.is_not_in(season_ids.clone()))
             .exec(&txn)
             .await?;
     }
 
-    node_metadata::Entity::insert(node_metadata::ActiveModel {
-        node_id: Set(node_id.to_string()),
-        metadata_id: Set(metadata_id),
-        is_primary: Set(is_primary),
-    })
-    .on_conflict(
-        OnConflict::columns([
-            node_metadata::Column::NodeId,
-            node_metadata::Column::MetadataId,
-        ])
-        .update_columns([node_metadata::Column::IsPrimary])
-        .to_owned(),
-    )
-    .exec(&txn)
-    .await?;
+    for item in &derived.items {
+        items::Entity::insert(items::ActiveModel {
+            id: Set(item.id.clone()),
+            root_id: Set(item.root_id.clone()),
+            season_id: Set(item.season_id.clone()),
+            kind: Set(item.kind),
+            episode_number: Set(item.episode_number),
+            order: Set(item.order),
+            name: Set(item.name.clone()),
+            primary_file_id: Set(item.primary_file_id),
+            last_added_at: Set(item.last_added_at),
+            created_at: Set(now),
+            updated_at: Set(now),
+        })
+        .on_conflict(
+            OnConflict::column(items::Column::Id)
+                .update_columns([
+                    items::Column::RootId,
+                    items::Column::SeasonId,
+                    items::Column::Kind,
+                    items::Column::EpisodeNumber,
+                    items::Column::Order,
+                    items::Column::Name,
+                    items::Column::PrimaryFileId,
+                    items::Column::LastAddedAt,
+                    items::Column::UpdatedAt,
+                ])
+                .to_owned(),
+        )
+        .exec(&txn)
+        .await?;
+    }
+
+    let item_ids = derived
+        .items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+
+    if item_ids.is_empty() {
+        items::Entity::delete_many()
+            .filter(items::Column::RootId.is_in(root_ids.clone()))
+            .exec(&txn)
+            .await?;
+    } else {
+        items::Entity::delete_many()
+            .filter(items::Column::RootId.is_in(root_ids.clone()))
+            .filter(items::Column::Id.is_not_in(item_ids.clone()))
+            .exec(&txn)
+            .await?;
+
+        item_files::Entity::delete_many()
+            .filter(item_files::Column::ItemId.is_in(item_ids.clone()))
+            .exec(&txn)
+            .await?;
+
+        for item_file in &derived.item_files {
+            item_files::Entity::insert(item_files::ActiveModel {
+                item_id: Set(item_file.item_id.clone()),
+                file_id: Set(item_file.file_id),
+                order: Set(item_file.order),
+                is_primary: Set(item_file.is_primary),
+                created_at: Set(now),
+                updated_at: Set(now),
+            })
+            .on_conflict(
+                OnConflict::columns([item_files::Column::ItemId, item_files::Column::FileId])
+                    .update_columns([
+                        item_files::Column::Order,
+                        item_files::Column::IsPrimary,
+                        item_files::Column::UpdatedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&txn)
+            .await?;
+        }
+    }
+
+    root_metadata::Entity::delete_many()
+        .filter(root_metadata::Column::RootId.is_in(root_ids.clone()))
+        .filter(root_metadata::Column::Source.eq("local"))
+        .exec(&txn)
+        .await?;
+
+    for root in &derived.roots {
+        insert_local_root_metadata(&txn, &root.id, &root.name, now).await?;
+    }
+
+    if !season_ids.is_empty() {
+        season_metadata::Entity::delete_many()
+            .filter(season_metadata::Column::SeasonId.is_in(season_ids.clone()))
+            .filter(season_metadata::Column::Source.eq("local"))
+            .exec(&txn)
+            .await?;
+
+        for season in &derived.seasons {
+            insert_local_season_metadata(&txn, &season.id, &season.name, now).await?;
+        }
+    }
+
+    if !item_ids.is_empty() {
+        item_metadata::Entity::delete_many()
+            .filter(item_metadata::Column::ItemId.is_in(item_ids.clone()))
+            .filter(item_metadata::Column::Source.eq("local"))
+            .exec(&txn)
+            .await?;
+
+        for item in &derived.items {
+            insert_local_item_metadata(&txn, &item.id, &item.name, now).await?;
+        }
+    }
 
     txn.commit().await?;
     Ok(())

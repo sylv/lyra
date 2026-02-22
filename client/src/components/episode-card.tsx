@@ -1,9 +1,10 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { Clock } from "lucide-react";
 import type { FC } from "react";
-import { PlayWrapper, PlayWrapperFrag } from "./play-wrapper";
-import { Thumbnail } from "./thumbnail";
+import { getPathForItem, GetPathForItemFrag } from "../lib/getPathForMedia";
+import { PlayWrapper } from "./play-wrapper";
 import { Skeleton } from "./skeleton";
+import { Thumbnail } from "./thumbnail";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -21,7 +22,7 @@ const formatRuntime = (minutes: number | null) => {
 
 export const EpisodeCardFrag = graphql(
 	`
-	fragment EpisodeCard on Node {
+	fragment EpisodeCard on ItemNode {
 		id
 		name
 		properties {
@@ -31,19 +32,24 @@ export const EpisodeCardFrag = graphql(
 			episodeNumber
 			runtimeMinutes
 		}
-		...PlayWrapper
+		watchProgress {
+			progressPercent
+			updatedAt
+		}
+		...GetPathForItem
 	}
 `,
-	[PlayWrapperFrag],
+	[GetPathForItemFrag],
 );
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = readFragment(EpisodeCardFrag, episodeRef);
+	const path = getPathForItem(episode);
 
 	return (
 		<div className="group flex gap-4 p-4 hover:bg-zinc-800/10 rounded-lg transition-colors border border-zinc-700/40">
 			<div className="relative flex-shrink-0 rounded-md overflow-hidden">
-				<PlayWrapper media={episode}>
+				<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>
 					<Thumbnail imageUrl={episode.properties.thumbnailUrl} alt={episode.name} className="h-36 " />
 				</PlayWrapper>
 			</div>
