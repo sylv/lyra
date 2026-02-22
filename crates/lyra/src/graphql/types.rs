@@ -5,9 +5,7 @@ use crate::entities::{
     watch_progress,
 };
 use async_graphql::{ComplexObject, Context, Union};
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use std::collections::HashMap;
 
 const PLAYABLE_PROGRESS_THRESHOLD: f32 = 0.8;
@@ -20,7 +18,10 @@ pub enum RootChild {
 
 #[ComplexObject]
 impl roots::Model {
-    pub async fn properties(&self, ctx: &Context<'_>) -> Result<RootNodeProperties, sea_orm::DbErr> {
+    pub async fn properties(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<RootNodeProperties, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let metadata = root_metadata::Entity::find()
             .filter(root_metadata::Column::RootId.eq(self.id.clone()))
@@ -59,11 +60,16 @@ impl roots::Model {
         }
 
         let items = self.files(ctx).await?;
-        Ok(items.into_iter().map(RootChild::ItemNode).collect::<Vec<_>>())
+        Ok(items
+            .into_iter()
+            .map(RootChild::ItemNode)
+            .collect::<Vec<_>>())
     }
 
-    #[graphql(name = "playable_item")]
-    pub async fn playable_item(&self, ctx: &Context<'_>) -> Result<Option<items::Model>, sea_orm::DbErr> {
+    pub async fn playable_item(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<items::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let user_id = current_user_id(ctx);
         let root_items = find_ordered_items_for_root(pool, &self.id).await?;
@@ -142,8 +148,10 @@ impl seasons::Model {
             .await
     }
 
-    #[graphql(name = "playable_item")]
-    pub async fn playable_item(&self, ctx: &Context<'_>) -> Result<Option<items::Model>, sea_orm::DbErr> {
+    pub async fn playable_item(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<items::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let user_id = current_user_id(ctx);
         let season_items = find_ordered_items_for_season(pool, &self.id).await?;
@@ -191,7 +199,10 @@ impl seasons::Model {
 
 #[ComplexObject]
 impl items::Model {
-    pub async fn properties(&self, ctx: &Context<'_>) -> Result<ItemNodeProperties, sea_orm::DbErr> {
+    pub async fn properties(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<ItemNodeProperties, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
 
         let metadata = item_metadata::Entity::find()
@@ -241,7 +252,9 @@ impl items::Model {
 
     pub async fn parent(&self, ctx: &Context<'_>) -> Result<Option<roots::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        roots::Entity::find_by_id(self.root_id.clone()).one(pool).await
+        roots::Entity::find_by_id(self.root_id.clone())
+            .one(pool)
+            .await
     }
 }
 

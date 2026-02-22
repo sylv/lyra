@@ -25,7 +25,7 @@ export const MediaHeaderFrag = graphql(
 			runtimeMinutes
 			description
 		}
-		playable_item {
+		playableItem {
 			id
 		}
 		watchProgress {
@@ -40,9 +40,7 @@ export const MediaHeaderFrag = graphql(
 
 export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 	const media = readFragment(MediaHeaderFrag, mediaRaw);
-	const dynamicUrl = media.properties.backgroundUrl
-		? getImageProxyUrl(media.properties.backgroundUrl, 200)
-		: null;
+	const dynamicUrl = media.properties.backgroundUrl ? getImageProxyUrl(media.properties.backgroundUrl, 200) : null;
 	const path = getPathForRoot(media);
 
 	useDynamicBackground(dynamicUrl);
@@ -50,7 +48,7 @@ export const MediaHeader: FC<MediaHeaderProps> = ({ media: mediaRaw }) => {
 	return (
 		<div className="bg-zinc-800/30 border-700/30 p-6 border-b">
 			<div className="flex gap-6 container mx-auto">
-				<PlayWrapper itemId={media.playable_item?.id} path={path} watchProgress={media.watchProgress}>
+				<PlayWrapper itemId={media.playableItem?.id} path={path} watchProgress={media.watchProgress}>
 					<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="h-72" />
 				</PlayWrapper>
 				<div className="flex flex-col gap-2 justify-between">

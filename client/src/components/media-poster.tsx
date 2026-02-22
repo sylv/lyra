@@ -21,7 +21,7 @@ export const MediaPosterFrag = graphql(
 		properties {
 			posterUrl
 		}
-		playable_item {
+		playableItem {
 			id
 		}
 		watchProgress {
@@ -40,7 +40,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 
 	return (
 		<div className={cn("flex flex-col gap-2 overflow-hidden", className)} style={style}>
-			<PlayWrapper itemId={media.playable_item?.id} path={path} watchProgress={media.watchProgress}>
+			<PlayWrapper itemId={media.playableItem?.id} path={path} watchProgress={media.watchProgress}>
 				<Poster imageUrl={media.properties.posterUrl} alt={media.name} className="w-full" />
 			</PlayWrapper>
 			<a

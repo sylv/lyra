@@ -177,7 +177,7 @@ type RootNode {
 	seasons: [SeasonNode!]!
 	files: [ItemNode!]!
 	children: [RootChild!]!
-	playable_item: ItemNode
+	playableItem: ItemNode
 	watchProgress: WatchProgress
 }
 
@@ -249,7 +249,7 @@ type SeasonNode {
 	updatedAt: Int!
 	properties: SeasonNodeProperties!
 	files: [ItemNode!]!
-	playable_item: ItemNode
+	playableItem: ItemNode
 	watchProgress: WatchProgress
 }
 
