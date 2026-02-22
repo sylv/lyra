@@ -7,15 +7,17 @@ import { graphql } from "gql.tada";
 import Hls from "hls.js";
 import { ArrowLeft, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
+import { navigate } from "vike/client/router";
 import { useStore } from "zustand/react";
+import { getPathForItemData } from "../../lib/getPathForMedia";
 import { cn } from "../../lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { PlayerButton } from "./components/player-button";
 import { PlayerControls } from "./components/player-controls";
 import {
+	clearPlayerMedia,
 	playerState,
 	setPlayerLoading,
-	setPlayerMedia,
 	setPlayerMuted,
 	setPlayerVolume,
 	togglePlayerFullscreen,
@@ -100,7 +102,10 @@ const ItemPlaybackQuery = graphql(`
 	query ItemPlayback($itemId: String!) {
 		item(itemId: $itemId) {
 			id
+			kind
 			name
+			rootId
+			seasonId
 			properties {
 				seasonNumber
 				episodeNumber
@@ -108,6 +113,7 @@ const ItemPlaybackQuery = graphql(`
 			}
 			parent {
 				name
+				libraryId
 			}
 			watchProgress {
 				progressPercent
@@ -120,7 +126,7 @@ const ItemPlaybackQuery = graphql(`
 	}
 `);
 
-export const Player: FC<{ itemId: string }> = ({ itemId }) => {
+export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, autoplay = false }) => {
 	const { isFullscreen, volume, isMuted, isLoading } = useStore(playerState);
 
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -141,7 +147,11 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const doubleClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const isControlsPinned = isSettingsMenuOpen || isShortcutsDialogOpen;
-	const { data, loading: isItemLoading, error: itemLoadError } = useQuery(ItemPlaybackQuery, {
+	const {
+		data,
+		loading: isItemLoading,
+		error: itemLoadError,
+	} = useQuery(ItemPlaybackQuery, {
 		variables: {
 			itemId,
 		},
@@ -287,6 +297,15 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 			setErrorMessage("Sorry, your browser does not support this video.");
 		}
 	}, [currentMedia]);
+
+	useEffect(() => {
+		if (autoplay) {
+			return;
+		}
+
+		videoRef.current?.pause();
+		setPlaying(false);
+	}, [autoplay, currentMedia?.id]);
 
 	useEffect(() => {
 		if (!videoRef.current) return;
@@ -609,6 +628,7 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 	}
 
 	const miniPlayerAspectRatio = Math.max(videoAspectRatio, 16 / 9);
+	const detailsPath = currentMedia.parent?.libraryId ? getPathForItemData(currentMedia) : null;
 
 	const containerClasses = cn(
 		isFullscreen
@@ -638,7 +658,7 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 			<video
 				ref={videoRef}
 				className="w-full h-full object-contain"
-				autoPlay
+				autoPlay={autoplay}
 				controls={false}
 				disablePictureInPicture
 			/>
@@ -678,28 +698,53 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 								<ArrowLeft className="w-6 h-6" />
 							</PlayerButton>
 						)}
-							{currentMedia.parent?.name &&
-							currentMedia.properties.seasonNumber &&
-							currentMedia.properties.episodeNumber ? (
-								<div>
-									<h2 className="text-xl font-semibold">
-										{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
-									</h2>
-									<p className="text-sm text-gray-300">
-										Episode {currentMedia.properties.episodeNumber}: {currentMedia.name}
-									</p>
-								</div>
-							) : (
-							<div>
+						{currentMedia.parent?.name &&
+						currentMedia.properties.seasonNumber &&
+						currentMedia.properties.episodeNumber ? (
+							<button
+								type="button"
+								className={cn(
+									"text-left rounded-sm transition-colors",
+									detailsPath ? "cursor-pointer hover:text-gray-200" : "cursor-default",
+								)}
+								onClick={(event) => {
+									event.stopPropagation();
+									if (detailsPath) {
+										navigate(detailsPath);
+									}
+								}}
+							>
+								<h2 className="text-xl font-semibold">
+									{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
+								</h2>
+								<p className="text-sm text-gray-300">
+									Episode {currentMedia.properties.episodeNumber}: {currentMedia.name}
+								</p>
+							</button>
+						) : (
+							<button
+								type="button"
+								className={cn(
+									"text-left rounded-sm transition-colors",
+									detailsPath ? "cursor-pointer hover:text-gray-200" : "cursor-default",
+								)}
+								onClick={(event) => {
+									event.stopPropagation();
+									if (detailsPath) {
+										navigate(detailsPath);
+									}
+								}}
+							>
 								<h2 className="text-xl font-semibold">{currentMedia.name}</h2>
-							</div>
+							</button>
 						)}
 					</div>
 					<div className="flex items-center gap-3 text-white">
 						<PlayerButton
-							aria-label="Go back"
-							onClick={() => {
-								setPlayerMedia(null);
+							aria-label="Close player"
+							onClick={(event) => {
+								event.stopPropagation();
+								clearPlayerMedia();
 							}}
 						>
 							<XIcon className="w-6 h-6" />

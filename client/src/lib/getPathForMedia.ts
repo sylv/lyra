@@ -18,13 +18,21 @@ export const GetPathForItemFrag = graphql(`
 	}
 `);
 
+interface ItemPathData {
+	kind: "MOVIE" | "EPISODE";
+	rootId: string;
+	seasonId: string | null;
+	parent: {
+		libraryId: number;
+	} | null;
+}
+
 export const getPathForRoot = (mediaRaw: FragmentOf<typeof GetPathForRootFrag>) => {
 	const media = readFragment(GetPathForRootFrag, mediaRaw);
 	return `/library/${media.libraryId}/root/${media.id}`;
 };
 
-export const getPathForItem = (mediaRaw: FragmentOf<typeof GetPathForItemFrag>) => {
-	const media = readFragment(GetPathForItemFrag, mediaRaw);
+export const getPathForItemData = (media: ItemPathData) => {
 	const libraryId = media.parent?.libraryId;
 
 	if (!libraryId) {
@@ -40,4 +48,9 @@ export const getPathForItem = (mediaRaw: FragmentOf<typeof GetPathForItemFrag>) 
 			}
 			return `/library/${libraryId}/root/${media.rootId}/season/${media.seasonId}`;
 	}
+};
+
+export const getPathForItem = (mediaRaw: FragmentOf<typeof GetPathForItemFrag>) => {
+	const media = readFragment(GetPathForItemFrag, mediaRaw);
+	return getPathForItemData(media);
 };

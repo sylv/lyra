@@ -26,10 +26,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					)}
 					onClick={() => {
 						if (!itemId) return;
-						setPlayerMedia({
-							itemId,
-							path: path,
-						});
+						setPlayerMedia(itemId, true);
 						navigate(path);
 					}}
 				>

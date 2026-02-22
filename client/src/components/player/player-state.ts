@@ -1,31 +1,59 @@
-import { create } from "zustand/react";
-
-export interface PlayerMedia {
-	itemId: string;
-	path: string;
-}
+import { create } from "zustand";
+import { createJSONStorage, persist, type PersistOptions, type StateStorage } from "zustand/middleware";
 
 interface PlayerState {
-	currentMedia: PlayerMedia | null;
+	currentItemId: string | null;
+	autoplay: boolean;
 	isFullscreen: boolean | null;
 	volume: number;
 	isMuted: boolean;
 	isLoading: boolean;
 }
 
-export const playerState = create<PlayerState>(() => ({
-	currentMedia: null,
-	isFullscreen: false,
-	volume: 1,
-	isMuted: false,
-	isLoading: false,
-}));
+type PersistedPlayerState = Pick<PlayerState, "currentItemId" | "volume" | "isMuted">;
 
-export const setPlayerMedia = (media: PlayerMedia | null) => {
+const NOOP_STORAGE: StateStorage = {
+	getItem: () => null,
+	setItem: () => {},
+	removeItem: () => {},
+};
+
+const playerPersistOptions: PersistOptions<PlayerState, PersistedPlayerState> = {
+	name: "lyra.player",
+	storage: createJSONStorage(() => (typeof window === "undefined" ? NOOP_STORAGE : window.localStorage)),
+	partialize: (state) => ({
+		currentItemId: state.currentItemId,
+		volume: state.volume,
+		isMuted: state.isMuted,
+	}),
+};
+
+export const playerState = create<PlayerState>()(
+	persist(
+		() => ({
+			currentItemId: null,
+			autoplay: false,
+			isFullscreen: false,
+			volume: 1,
+			isMuted: false,
+			isLoading: false,
+		}),
+		playerPersistOptions,
+	),
+);
+
+export const setPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 	playerState.setState((prev) => ({
-		currentMedia: media,
-		isFullscreen: prev.currentMedia ? prev.isFullscreen : true,
+		currentItemId: itemId,
+		autoplay: autoplay ?? prev.autoplay,
+		isFullscreen: prev.currentItemId ? prev.isFullscreen : true,
 	}));
+};
+
+export const clearPlayerMedia = () => {
+	playerState.setState({
+		currentItemId: null,
+	});
 };
 
 export const togglePlayerFullscreen = (isFullscreen?: boolean) => {

@@ -1,13 +1,14 @@
-import type { FC } from "react";
+import { type FC } from "react";
 import { useStore } from "zustand";
 import { Player } from "./player";
 import { playerState } from "./player-state";
 
 export const PlayerWrapper: FC = () => {
-	const { currentMedia } = useStore(playerState);
-	if (!currentMedia) {
+	const { currentItemId, autoplay } = useStore(playerState);
+
+	if (!currentItemId) {
 		return null;
 	}
 
-	return <Player itemId={currentMedia.itemId} />;
+	return <Player itemId={currentItemId} autoplay={autoplay} />;
 };
