@@ -2,7 +2,6 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ChevronDown, type LucideIcon } from "lucide-react";
 import React, { useState, type FC, type ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { Skeleton } from "./skeleton";
 
 interface FilterButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 	children: ReactNode;
@@ -23,10 +22,6 @@ export const FilterButton: FC<FilterButtonProps> = ({ children, active = false, 
 			{children}
 		</button>
 	);
-};
-
-export const FilterButtonSkeleton: FC = () => {
-	return <Skeleton className="h-6 w-16 rounded-lg" />;
 };
 
 interface FilterSelectOption<T> {
@@ -59,7 +54,7 @@ export const FilterSelect = <T extends string | number>({ options, value, onValu
 				<DropdownMenu.Content
 					sideOffset={5}
 					className={cn(
-						"z-50 min-w-[8rem] overflow-hidden rounded-lg border border-zinc-700/50 backdrop-blur-2xl bg-black/50 glass p-1 shadow-lg space-y-1",
+						"z-50 min-w-32 overflow-hidden rounded-lg border border-zinc-700/50 backdrop-blur-2xl bg-black/50 glass p-1 shadow-lg space-y-1",
 						"data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
 						"data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
 						"data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
@@ -87,8 +82,4 @@ export const FilterSelect = <T extends string | number>({ options, value, onValu
 			</DropdownMenu.Portal>
 		</DropdownMenu.Root>
 	);
-};
-
-export const FilterSelectSkeleton: FC = () => {
-	return <Skeleton className="h-6 w-24 rounded-lg" />;
 };

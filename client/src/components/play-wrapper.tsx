@@ -16,13 +16,13 @@ interface PlayWrapperProps {
 
 export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watchProgress }) => {
 	return (
-		<div className="relative shrink-0 rounded-lg overflow-hidden group/play">
+		<div className="relative shrink-0 overflow-hidden group/play rounded-sm">
 			{itemId && (
 				<button
 					type="button"
 					className={cn(
-						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 opacity-0 cursor-pointer rounded-lg",
-						"group-hover/play:opacity-100 group-hover/play:border border-white/50 transition-all duration-100",
+						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/20 opacity-0 cursor-pointer",
+						"group-hover/play:opacity-100 group-hover/play:border border-white/50",
 					)}
 					onClick={() => {
 						if (!itemId) return;

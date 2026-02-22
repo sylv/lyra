@@ -3,7 +3,7 @@ import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
 import { getImageProxyUrl } from "../lib/getImageProxyUrl";
 
-const BASE_CLASSES = "rounded-lg bg-zinc-700/30 shrink-0 aspect-[16/9] object-cover select-none";
+const BASE_CLASSES = "bg-zinc-700/30 shrink-0 aspect-[16/9] object-cover select-none";
 
 interface ThumbnailProps {
 	imageUrl: string | null | undefined;

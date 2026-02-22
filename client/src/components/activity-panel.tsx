@@ -47,7 +47,7 @@ export const ActivityPanel: FC<{ open: boolean }> = ({ open }) => {
 	});
 
 	return (
-		<div className="w-[380px] max-h-[70vh] overflow-y-auto bg-black p-3 shadow-lg shadow-black/30">
+		<div className="w-95 max-h-[70vh] overflow-y-auto bg-black p-3 shadow-lg shadow-black/30">
 			<h2 className="px-1 pt-1 text-xs font-semibold">Activity</h2>
 			{!data && <p className="text-sm text-zinc-400">Loading activity...</p>}
 			{data?.activeTasks?.length === 0 && <p className="text-sm text-zinc-400">No tasks are actively running.</p>}

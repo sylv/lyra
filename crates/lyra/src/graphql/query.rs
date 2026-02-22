@@ -3,8 +3,7 @@ use crate::{
     entities::{
         item_metadata, items, libraries, root_metadata,
         roots::{self, RootKind},
-        seasons,
-        tasks as tasks_entity, watch_progress,
+        seasons, tasks as tasks_entity, watch_progress,
     },
 };
 use async_graphql::{
@@ -90,9 +89,9 @@ pub enum ItemNodeOrderBy {
 impl ItemNodeOrderBy {
     pub fn default_direction(self) -> OrderDirection {
         match self {
-            ItemNodeOrderBy::AddedAt
-            | ItemNodeOrderBy::ReleasedAt
-            | ItemNodeOrderBy::Rating => OrderDirection::Desc,
+            ItemNodeOrderBy::AddedAt | ItemNodeOrderBy::ReleasedAt | ItemNodeOrderBy::Rating => {
+                OrderDirection::Desc
+            }
             ItemNodeOrderBy::SeasonEpisode => OrderDirection::Asc,
             ItemNodeOrderBy::Alphabetical => OrderDirection::Asc,
         }
@@ -119,8 +118,10 @@ impl Query {
         filter: RootNodeFilter,
         after: Option<String>,
         first: Option<i32>,
-    ) -> Result<connection::Connection<u64, roots::Model, EmptyFields, EmptyFields>, async_graphql::Error>
-    {
+    ) -> Result<
+        connection::Connection<u64, roots::Model, EmptyFields, EmptyFields>,
+        async_graphql::Error,
+    > {
         connection::query(
             after,
             None,
@@ -229,8 +230,10 @@ impl Query {
         filter: ItemNodeFilter,
         after: Option<String>,
         first: Option<i32>,
-    ) -> Result<connection::Connection<u64, items::Model, EmptyFields, EmptyFields>, async_graphql::Error>
-    {
+    ) -> Result<
+        connection::Connection<u64, items::Model, EmptyFields, EmptyFields>,
+        async_graphql::Error,
+    > {
         connection::query(
             after,
             None,
@@ -495,7 +498,7 @@ impl Query {
 
                 Some(ActiveTask {
                     task_type: task_type.clone(),
-                    title: get_task_title(&task_type),
+                    title: humanize_task_type(&task_type),
                     current,
                     total,
                     progress_percent,
@@ -505,13 +508,6 @@ impl Query {
 
         active.sort_by(|a, b| a.title.cmp(&b.title));
         Ok(active)
-    }
-}
-
-fn get_task_title(task_type: &str) -> String {
-    match task_type {
-        "file.generate_timeline_preview" => "Generating Timeline Previews".to_string(),
-        _ => humanize_task_type(task_type),
     }
 }
 

@@ -2,7 +2,6 @@ import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type { FC } from "react";
 import { PlayWrapper } from "./play-wrapper";
 import { Poster } from "./poster";
-import { Skeleton } from "./skeleton";
 
 interface SeasonCardProps {
 	season: FragmentOf<typeof SeasonCardFrag>;
@@ -34,7 +33,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => 
 	const imageUrl = season.properties.posterUrl ?? season.properties.thumbnailUrl;
 
 	return (
-		<div className="flex flex-col gap-2 overflow-hidden">
+		<div className="flex flex-col gap-2 overflow-hidden w-38">
 			<PlayWrapper itemId={season.playableItem?.id} path={path} watchProgress={season.watchProgress}>
 				<Poster imageUrl={imageUrl} alt={season.name} className="w-full" />
 			</PlayWrapper>
@@ -44,15 +43,6 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => 
 			>
 				{season.name || `Season ${season.seasonNumber}`}
 			</a>
-		</div>
-	);
-};
-
-export const SeasonCardSkeleton: FC = () => {
-	return (
-		<div className="flex flex-col gap-2 overflow-hidden">
-			<Skeleton className="aspect-[2/3] w-full rounded-md" />
-			<Skeleton className="h-4 w-3/4" />
 		</div>
 	);
 };

@@ -1,11 +1,10 @@
-import { useQuery } from "@apollo/client/react";
+import { useSuspenseQuery } from "@apollo/client/react";
 import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
-import { Fragment } from "react/jsx-runtime";
 import { usePageContext } from "vike-react/usePageContext";
-import { EpisodeCard, EpisodeCardFrag, EpisodeCardSkeleton } from "../../../../../../../components/episode-card";
+import { EpisodeCard, EpisodeCardFrag } from "../../../../../../../components/episode-card";
 import { MediaFilterList } from "../../../../../../../components/media-filter-list";
-import { MediaHeader, MediaHeaderFrag, MediaHeaderSkeleton } from "../../../../../../../components/media-header";
+import { MediaHeader, MediaHeaderFrag } from "../../../../../../../components/media-header";
 import { ViewLoader } from "../../../../../../../components/view-loader";
 
 const RootAndSeasonQuery = graphql(
@@ -56,7 +55,7 @@ export default function Page() {
 	const [filter, setFilter] = useState<EpisodeListFilter>({
 		orderBy: "SEASON_EPISODE",
 	});
-	const { data, loading } = useQuery(RootAndSeasonQuery, {
+	const { data } = useSuspenseQuery(RootAndSeasonQuery, {
 		variables: {
 			rootId,
 			seasonId,
@@ -69,11 +68,9 @@ export default function Page() {
 		...filter,
 	};
 
-	const {
-		data: episodes,
-		loading: episodesLoading,
-		fetchMore,
-	} = useQuery(EpisodesQuery, {
+	// todo: this should maybe not use suspense? not sure if while loading more episodes
+	// it will suspend. if it does we should handle that
+	const { data: episodes, fetchMore } = useSuspenseQuery(EpisodesQuery, {
 		variables: {
 			filter: episodeFilter,
 		},
@@ -88,27 +85,12 @@ export default function Page() {
 		});
 	};
 
-	if (loading || !data) {
-		return (
-			<Fragment>
-				<MediaHeaderSkeleton />
-				<div className="container mx-auto py-6">
-					<div className="space-y-2">
-						{Array.from({ length: 6 }).map((_, index) => (
-							<EpisodeCardSkeleton key={`episode-skeleton-${index}`} />
-						))}
-					</div>
-				</div>
-			</Fragment>
-		);
-	}
-
 	const { root, season } = data;
 	const seasonTitle = season.name || `Season ${season.seasonNumber}`;
 	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
 
 	return (
-		<Fragment>
+		<div className="pt-6">
 			<MediaHeader media={root} />
 			<div className="container mx-auto py-6">
 				<div className="mb-4 flex flex-col gap-2">
@@ -121,13 +103,7 @@ export default function Page() {
 					</div>
 				</div>
 				<div className="pb-8">
-					{episodesLoading ? (
-						<div className="space-y-2">
-							{Array.from({ length: 6 }).map((_, index) => (
-								<EpisodeCardSkeleton key={`episode-loading-${index}`} />
-							))}
-						</div>
-					) : episodes?.itemList.edges[0] ? (
+					{episodes?.itemList.edges[0] ? (
 						<div className="space-y-2">
 							{episodes.itemList.edges.map((episode) => (
 								<EpisodeCard key={episode.node.id} episode={episode.node} />
@@ -139,6 +115,6 @@ export default function Page() {
 					)}
 				</div>
 			</div>
-		</Fragment>
+		</div>
 	);
 }

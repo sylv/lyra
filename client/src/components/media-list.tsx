@@ -50,7 +50,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoad
 	}
 
 	return (
-		<div ref={containerRef} className="w-full relative mr-6 mb-24">
+		<div ref={containerRef} className="w-full relative mb-24">
 			<div
 				className="grid"
 				style={{ gridTemplateColumns: `repeat(${columns}, 1fr)`, columnGap: GAP_SIZE, rowGap: GAP_SIZE }}

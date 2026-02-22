@@ -6,6 +6,7 @@ import { usePageContext } from "vike-react/usePageContext";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
 import { cn } from "../lib/utils";
 import { ActivityPanel } from "./activity-panel";
+import { SuspenseBoundary } from "./suspense-fallback";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
 const SidebarLink: FC<{
@@ -25,14 +26,11 @@ const SidebarLink: FC<{
 			<div
 				className={cn(
 					"bg-zinc-600/50 size-9 rounded-md border border-transparent relative overflow-hidden flex items-center justify-center",
-					active && "border-purple-500",
+					active && "border-white/60",
 				)}
 			>
 				{Icon && <Icon className="size-4 text-zinc-400" />}
 				{image && <img src={image} className="h-full w-full" alt="" />}
-				{active && (
-					<div className="absolute right-0 top-0 size-5 translate-x-[50%] -translate-y-[50%] rotate-45 bg-purple-500 z-10" />
-				)}
 			</div>
 			<div>
 				<div className="text-sm group-hover:underline">{children}</div>
@@ -131,7 +129,9 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 					})}
 				</div>
 			</div>
-			<main className="overflow-auto w-full z-10">{children}</main>
+			<main className="overflow-auto w-full z-10 pr-6">
+				<SuspenseBoundary>{children}</SuspenseBoundary>
+			</main>
 		</div>
 	);
 };
