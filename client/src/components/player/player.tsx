@@ -104,6 +104,7 @@ const ItemPlaybackQuery = graphql(`
 			properties {
 				seasonNumber
 				episodeNumber
+				runtimeMinutes
 			}
 			parent {
 				name
@@ -112,7 +113,7 @@ const ItemPlaybackQuery = graphql(`
 				progressPercent
 				updatedAt
 			}
-			defaultConnection {
+			file {
 				id
 			}
 		}
@@ -180,7 +181,7 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 			hlsRef.current = null;
 		}
 
-		if (!currentMedia.defaultConnection) {
+		if (!currentMedia.file) {
 			videoRef.current.pause();
 			setErrorMessage("Sorry, this item is unavailable");
 			setPlayerLoading(false);
@@ -190,8 +191,37 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 		if (Hls.isSupported()) {
 			setErrorMessage(null);
 			setPlayerLoading(true);
-			const hlsUrl = `/api/hls/stream/${currentMedia.defaultConnection.id}/index.m3u8`;
-			const hls = new Hls();
+			const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/index.m3u8`;
+			const watchProgressPercent = currentMedia.watchProgress?.progressPercent;
+			const hasWatchProgress =
+				typeof watchProgressPercent === "number" &&
+				Number.isFinite(watchProgressPercent) &&
+				watchProgressPercent > 0 &&
+				watchProgressPercent < 1;
+			const runtimeMinutes = currentMedia.properties.runtimeMinutes;
+			const runtimeDurationSeconds =
+				typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
+					? runtimeMinutes * 60
+					: null;
+			const clampResumePosition = (durationSeconds: number) => {
+				if (!hasWatchProgress) {
+					return null;
+				}
+				const progress = Math.max(0, Math.min(0.999, watchProgressPercent));
+				const maxStart = Math.max(0, durationSeconds - 0.5);
+				return Math.max(0, Math.min(progress * durationSeconds, maxStart));
+			};
+			let hasStartedLoading = false;
+			const startLoadAt = (startPosition: number) => {
+				if (hasStartedLoading) {
+					return;
+				}
+				hasStartedLoading = true;
+				hls.startLoad(Number.isFinite(startPosition) ? startPosition : -1);
+			};
+			const hls = new Hls({
+				autoStartLoad: false,
+			});
 			hlsRef.current = hls;
 
 			const syncAudioTracks = () => {
@@ -213,6 +243,27 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 			});
 			hls.on(Hls.Events.MANIFEST_PARSED, () => {
 				syncAudioTracks();
+				if (!hasWatchProgress) {
+					startLoadAt(-1);
+					return;
+				}
+
+				const levels = hls.levels;
+				const levelDurations = levels
+					.map((level) => level.details?.totalduration)
+					.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+				const durationSeconds = levelDurations[0] ?? runtimeDurationSeconds;
+				const resumePosition = durationSeconds == null ? null : clampResumePosition(durationSeconds);
+
+				if (resumePosition != null) {
+					if (videoRef.current) {
+						videoRef.current.currentTime = resumePosition;
+					}
+					startLoadAt(resumePosition);
+					return;
+				}
+
+				startLoadAt(-1);
 			});
 			hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
 				syncAudioTracks();
@@ -277,11 +328,11 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 		let lastUpdate = Date.now();
 		const onTimeUpdate = () => {
 			if (Date.now() - lastUpdate < 10_000) return;
-			if (!media.defaultConnection || video.duration <= 0) return;
+			if (!media.file || video.duration <= 0) return;
 			lastUpdate = Date.now();
 			updateWatchProgress({
 				variables: {
-					fileId: media.defaultConnection.id,
+					fileId: media.file.id,
 					progressPercent: video.currentTime / video.duration,
 				},
 			}).catch((err: unknown) => {
@@ -304,7 +355,7 @@ export const Player: FC<{ itemId: string }> = ({ itemId }) => {
 			video.removeEventListener("loadedmetadata", onVideoLoad);
 			video.removeEventListener("seeked", onSeek);
 		};
-	}, [currentMedia?.id, currentMedia?.defaultConnection?.id, videoRef]);
+	}, [currentMedia?.id, currentMedia?.file?.id, videoRef]);
 
 	useEffect(() => {
 		if (!videoRef.current) return;

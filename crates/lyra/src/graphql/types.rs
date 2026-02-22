@@ -62,14 +62,6 @@ impl roots::Model {
         Ok(items.into_iter().map(RootChild::ItemNode).collect::<Vec<_>>())
     }
 
-    pub async fn default_connection(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<files::Model>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_first_available_file_for_root(pool, &self.id).await
-    }
-
     #[graphql(name = "playable_item")]
     pub async fn playable_item(&self, ctx: &Context<'_>) -> Result<Option<items::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
@@ -148,22 +140,6 @@ impl seasons::Model {
             .order_by_asc(items::Column::Order)
             .all(pool)
             .await
-    }
-
-    pub async fn default_connection(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<files::Model>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let season_items = self.files(ctx).await?;
-
-        for item in season_items {
-            if let Some(file) = find_default_file_for_item(pool, &item).await? {
-                return Ok(Some(file));
-            }
-        }
-
-        Ok(None)
     }
 
     #[graphql(name = "playable_item")]
@@ -258,10 +234,7 @@ impl items::Model {
         Ok(progress)
     }
 
-    pub async fn default_connection(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<files::Model>, sea_orm::DbErr> {
+    pub async fn file(&self, ctx: &Context<'_>) -> Result<Option<files::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         find_default_file_for_item(pool, self).await
     }
@@ -270,21 +243,6 @@ impl items::Model {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         roots::Entity::find_by_id(self.root_id.clone()).one(pool).await
     }
-}
-
-async fn find_first_available_file_for_root(
-    pool: &DatabaseConnection,
-    root_id: &str,
-) -> Result<Option<files::Model>, sea_orm::DbErr> {
-    let root_items = find_ordered_items_for_root(pool, root_id).await?;
-
-    for item in root_items {
-        if let Some(file) = find_default_file_for_item(pool, &item).await? {
-            return Ok(Some(file));
-        }
-    }
-
-    Ok(None)
 }
 
 fn current_user_id(ctx: &Context<'_>) -> Option<String> {
