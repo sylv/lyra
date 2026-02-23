@@ -42,6 +42,10 @@ pub enum Relation {
     Items,
     #[sea_orm(has_many = "super::root_metadata::Entity")]
     RootMetadata,
+    #[sea_orm(has_many = "super::root_node_matches::Entity")]
+    RootNodeMatches,
+    #[sea_orm(has_many = "super::item_node_matches::Entity")]
+    ItemNodeMatches,
 }
 
 impl Related<super::libraries::Entity> for Entity {
@@ -65,6 +69,18 @@ impl Related<super::items::Entity> for Entity {
 impl Related<super::root_metadata::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::RootMetadata.def()
+    }
+}
+
+impl Related<super::root_node_matches::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::RootNodeMatches.def()
+    }
+}
+
+impl Related<super::item_node_matches::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ItemNodeMatches.def()
     }
 }
 

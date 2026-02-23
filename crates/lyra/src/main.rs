@@ -40,6 +40,7 @@ mod error;
 mod ffmpeg;
 mod graphql;
 mod hls;
+mod metadata;
 mod scanner;
 mod tasks;
 
@@ -155,6 +156,13 @@ async fn main() {
     background_workers.spawn(async move {
         tracing::info!("starting asset background worker");
         assets::start_asset_background_worker(assets_pool).await
+    });
+
+    let metadata_pool = pool.clone();
+    let metadata_providers = metadata::build_metadata_providers();
+    background_workers.spawn(async move {
+        tracing::info!("starting metadata background worker");
+        metadata::worker::start_metadata_worker(metadata_pool, metadata_providers).await
     });
 
     for task in tasks::registry::get_registered_tasks(&pool) {

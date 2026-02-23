@@ -59,7 +59,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 				navigate(path);
 			}}
 		>
-			<div className="relative overflow-hidden h-min rounded-sm">
+			<div className="relative overflow-hidden h-min rounded-sm shrink-0">
 				<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>
 					<Image
 						type={ImageType.Thumbnail}

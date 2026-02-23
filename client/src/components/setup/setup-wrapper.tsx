@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
-import { ErrorBoundary } from "react-error-boundary";
 import { navigate } from "vike/client/router";
 import { SetupModal, type InitState } from "./setup-modal";
 import { useApolloClient } from "@apollo/client/react";
@@ -45,18 +44,10 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 		await fetchData();
 	};
 
-	// todo: this error boundary should probably be elsewhere or be generic and inserted
-	// in a couple places (eg, here, the parent component, the player maybe)
 	return (
-		<ErrorBoundary
-			FallbackComponent={({ error }) => (
-				<div className="h-full w-full flex items-center justify-center">
-					Error: {error instanceof Error ? error.message : String(error)}
-				</div>
-			)}
-		>
+		<>
 			{children}
 			{showModal && data && <SetupModal state={data} mutate={mutate} />}
-		</ErrorBoundary>
+		</>
 	);
 };

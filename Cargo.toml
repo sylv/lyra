@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "crates/lyra",
+    "crates/lyra-metadata",
+    "crates/lyra-metadata-tmdb",
     "crates/lyra-packager",
     "crates/lyra-ffprobe",
     "crates/lyra-parser",

@@ -25,7 +25,8 @@ impl roots::Model {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let metadata = root_metadata::Entity::find()
             .filter(root_metadata::Column::RootId.eq(self.id.clone()))
-            .filter(root_metadata::Column::IsPrimary.eq(true))
+            .order_by_desc(root_metadata::Column::Source)
+            .order_by_desc(root_metadata::Column::UpdatedAt)
             .one(pool)
             .await?;
 
@@ -110,13 +111,10 @@ impl roots::Model {
             .map(|progress| (progress.item_id.clone(), progress))
             .collect::<HashMap<_, _>>();
 
-        for item in root_items {
-            if let Some(progress) = progress_by_item.get(&item.id) {
-                return Ok(Some(progress.clone()));
-            }
-        }
-
-        Ok(None)
+        Ok(select_watch_progress_for_ordered_items(
+            &root_items,
+            &progress_by_item,
+        ))
     }
 }
 
@@ -129,7 +127,8 @@ impl seasons::Model {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let metadata = season_metadata::Entity::find()
             .filter(season_metadata::Column::SeasonId.eq(self.id.clone()))
-            .filter(season_metadata::Column::IsPrimary.eq(true))
+            .order_by_desc(season_metadata::Column::Source)
+            .order_by_desc(season_metadata::Column::UpdatedAt)
             .one(pool)
             .await?;
 
@@ -187,13 +186,10 @@ impl seasons::Model {
             .map(|progress| (progress.item_id.clone(), progress))
             .collect::<HashMap<_, _>>();
 
-        for item in season_items {
-            if let Some(progress) = progress_by_item.get(&item.id) {
-                return Ok(Some(progress.clone()));
-            }
-        }
-
-        Ok(None)
+        Ok(select_watch_progress_for_ordered_items(
+            &season_items,
+            &progress_by_item,
+        ))
     }
 }
 
@@ -207,7 +203,8 @@ impl items::Model {
 
         let metadata = item_metadata::Entity::find()
             .filter(item_metadata::Column::ItemId.eq(self.id.clone()))
-            .filter(item_metadata::Column::IsPrimary.eq(true))
+            .order_by_desc(item_metadata::Column::Source)
+            .order_by_desc(item_metadata::Column::UpdatedAt)
             .one(pool)
             .await?;
 
@@ -314,19 +311,82 @@ async fn find_playable_item_for_ordered_items(
             .map(|progress| (progress.item_id.clone(), progress))
             .collect::<HashMap<_, _>>();
 
-        for item in &ordered_items {
-            let should_pick = match progress_by_item.get(&item.id) {
-                Some(row) => row.progress_percent < PLAYABLE_PROGRESS_THRESHOLD,
-                None => true,
+        // Prefer resuming an actively in-progress item before falling back to
+        // deterministic next-up selection.
+        let mut resume_candidate: Option<(i64, usize, items::Model)> = None;
+        for (index, item) in ordered_items.iter().enumerate() {
+            let Some(row) = progress_by_item.get(&item.id) else {
+                continue;
             };
 
-            if should_pick {
+            let is_in_progress =
+                row.progress_percent > 0.0 && row.progress_percent < PLAYABLE_PROGRESS_THRESHOLD;
+            if !is_in_progress {
+                continue;
+            }
+
+            match &resume_candidate {
+                Some((best_updated_at, best_index, _))
+                    if row.updated_at < *best_updated_at
+                        || (row.updated_at == *best_updated_at && index >= *best_index) => {}
+                _ => {
+                    resume_candidate = Some((row.updated_at, index, item.clone()));
+                }
+            }
+        }
+
+        if let Some((_, _, item)) = resume_candidate {
+            return Ok(Some(item));
+        }
+
+        for item in &ordered_items {
+            let row = progress_by_item.get(&item.id);
+            if row.is_none() || row.is_some_and(|entry| entry.progress_percent <= 0.0) {
                 return Ok(Some(item.clone()));
             }
         }
     }
 
     Ok(ordered_items.into_iter().next())
+}
+
+fn select_watch_progress_for_ordered_items(
+    ordered_items: &[items::Model],
+    progress_by_item: &HashMap<String, watch_progress::Model>,
+) -> Option<watch_progress::Model> {
+    let mut resume_candidate: Option<(i64, usize, watch_progress::Model)> = None;
+    for (index, item) in ordered_items.iter().enumerate() {
+        let Some(progress) = progress_by_item.get(&item.id) else {
+            continue;
+        };
+
+        let is_in_progress = progress.progress_percent > 0.0
+            && progress.progress_percent < PLAYABLE_PROGRESS_THRESHOLD;
+        if !is_in_progress {
+            continue;
+        }
+
+        match &resume_candidate {
+            Some((best_updated_at, best_index, _))
+                if progress.updated_at < *best_updated_at
+                    || (progress.updated_at == *best_updated_at && index >= *best_index) => {}
+            _ => {
+                resume_candidate = Some((progress.updated_at, index, progress.clone()));
+            }
+        }
+    }
+
+    if let Some((_, _, progress)) = resume_candidate {
+        return Some(progress);
+    }
+
+    for item in ordered_items {
+        if let Some(progress) = progress_by_item.get(&item.id) {
+            return Some(progress.clone());
+        }
+    }
+
+    None
 }
 
 async fn find_default_file_for_item(

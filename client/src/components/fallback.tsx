@@ -1,7 +1,6 @@
 import { type FC, type ReactNode, Suspense, useMemo } from "react";
-import { Loader } from "lucide-react";
-import { IconText } from "./icon-text";
 import { cn } from "../lib/utils";
+import { IconText } from "./icon-text";
 import { Spinner } from "./ui/spinner";
 
 const LOADING_PHRASES = [

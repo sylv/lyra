@@ -6,7 +6,7 @@ export const backgroundStore = create<ImageAsset | null>(() => null);
 
 export const useDynamicBackground = (asset: ImageAsset | null, use?: boolean) => {
 	useEffect(() => {
-		if (!use) return;
+		if (use === false) return;
 		backgroundStore.setState(asset);
 		return () => {
 			if (!asset) return;

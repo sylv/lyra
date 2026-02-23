@@ -55,17 +55,14 @@ export default function Page() {
 
 	const root = data.root;
 	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
-	useDynamicBackground(root.properties.backgroundImage);
+
+	const dynamicAsset = root.properties.backgroundImage || root.properties.posterImage;
+	useDynamicBackground(dynamicAsset);
 
 	const header = (
 		<div className="flex gap-6 container mx-auto">
 			<PlayWrapper itemId={root.playableItem?.id} path={rootPath} watchProgress={root.watchProgress}>
-				<Image
-					type={ImageType.Poster}
-					asset={root.properties.posterImage}
-					alt={root.name}
-					className="h-96"
-				/>
+				<Image type={ImageType.Poster} asset={root.properties.posterImage} alt={root.name} className="h-96" />
 			</PlayWrapper>
 			<div className="flex flex-col gap-2 justify-between">
 				<div className="flex flex-col gap-2 mt-3">

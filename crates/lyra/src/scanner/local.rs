@@ -1,4 +1,6 @@
-use crate::entities::{item_metadata, root_metadata, season_metadata};
+use crate::entities::{
+    item_metadata, metadata_source::MetadataSource, root_metadata, season_metadata,
+};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait};
 
 pub async fn insert_local_root_metadata<C: ConnectionTrait>(
@@ -9,9 +11,8 @@ pub async fn insert_local_root_metadata<C: ConnectionTrait>(
 ) -> Result<(), sea_orm::DbErr> {
     root_metadata::ActiveModel {
         root_id: Set(root_id.to_string()),
-        source: Set("local".to_string()),
-        source_key: Set(None),
-        is_primary: Set(true),
+        source: Set(MetadataSource::Local),
+        provider_id: Set("local".to_string()),
         name: Set(name.to_string()),
         description: Set(None),
         score_display: Set(None),
@@ -33,15 +34,16 @@ pub async fn insert_local_root_metadata<C: ConnectionTrait>(
 
 pub async fn insert_local_season_metadata<C: ConnectionTrait>(
     pool: &C,
+    root_id: &str,
     season_id: &str,
     name: &str,
     now: i64,
 ) -> Result<(), sea_orm::DbErr> {
     season_metadata::ActiveModel {
+        root_id: Set(root_id.to_string()),
         season_id: Set(season_id.to_string()),
-        source: Set("local".to_string()),
-        source_key: Set(None),
-        is_primary: Set(true),
+        source: Set(MetadataSource::Local),
+        provider_id: Set("local".to_string()),
         name: Set(name.to_string()),
         description: Set(None),
         score_display: Set(None),
@@ -63,15 +65,16 @@ pub async fn insert_local_season_metadata<C: ConnectionTrait>(
 
 pub async fn insert_local_item_metadata<C: ConnectionTrait>(
     pool: &C,
+    root_id: &str,
     item_id: &str,
     name: &str,
     now: i64,
 ) -> Result<(), sea_orm::DbErr> {
     item_metadata::ActiveModel {
+        root_id: Set(root_id.to_string()),
         item_id: Set(item_id.to_string()),
-        source: Set("local".to_string()),
-        source_key: Set(None),
-        is_primary: Set(true),
+        source: Set(MetadataSource::Local),
+        provider_id: Set("local".to_string()),
         name: Set(name.to_string()),
         description: Set(None),
         score_display: Set(None),

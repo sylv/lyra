@@ -19,7 +19,7 @@ use cookie::{Cookie, SameSite};
 use rand::RngCore;
 use reqwest::{StatusCode, header::SET_COOKIE};
 use sea_orm::Set;
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::atomic::Ordering;
@@ -218,6 +218,40 @@ pub struct LoginInput {
     password: String,
 }
 
+pub async fn create_session_for_user(
+    pool: &DatabaseConnection,
+    user_id: &str,
+) -> Result<String, AuthError> {
+    let session_expiry = 2 * 7 * 24 * 60 * 60; // 2 weeks
+    let session_id = {
+        let mut bytes = [0u8; 16];
+        rand::rng().fill_bytes(&mut bytes);
+        hex::encode(bytes)
+    };
+
+    user_sessions::Entity::insert(user_sessions::ActiveModel {
+        token: Set(session_id.clone()),
+        user_id: Set(user_id.to_string()),
+        created_at: Set(Utc::now().timestamp()),
+        expires_at: Set(Utc::now().timestamp() + session_expiry),
+        last_seen_at: Set(Utc::now().timestamp()),
+    })
+    .exec(pool)
+    .await
+    .map_err(|_| AuthError::InternalError)?;
+
+    // the session expiry is extended when its used, so we want the cookie
+    // to last longer than the session expiry.
+    let cookie = Cookie::build(("session", session_id))
+        .path("/api")
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .max_age(cookie::time::Duration::days(365))
+        .build();
+
+    Ok(cookie.to_string())
+}
+
 #[debug_handler]
 pub async fn post_login(
     State(state): State<AppState>,
@@ -242,35 +276,13 @@ pub async fn post_login(
         return Err(AuthError::UnknownUserOrWrongCredentials);
     }
 
-    let session_expiry = 2 * 7 * 24 * 60 * 60; // 2 weeks
-    let session_id = {
-        let mut bytes = [0u8; 16];
-        rand::rng().fill_bytes(&mut bytes);
-        hex::encode(bytes)
-    };
-
-    user_sessions::Entity::insert(user_sessions::ActiveModel {
-        token: Set(session_id.clone()),
-        user_id: Set(user.id.clone()),
-        created_at: Set(Utc::now().timestamp()),
-        expires_at: Set(Utc::now().timestamp() + session_expiry),
-        last_seen_at: Set(Utc::now().timestamp()),
-    })
-    .exec(&state.pool)
-    .await
-    .map_err(|_| AuthError::InternalError)?;
-
-    // the session expiry is extended when its used, so we want the cookie
-    // to last longer than the session expiry.
-    let cookie = Cookie::build(("session", session_id))
-        .path("/api")
-        .http_only(true)
-        .same_site(SameSite::Strict)
-        .max_age(cookie::time::Duration::days(365))
-        .build();
+    let cookie = create_session_for_user(&state.pool, &user.id).await?;
 
     let mut headers = HeaderMap::new();
-    headers.insert(SET_COOKIE, cookie.to_string().parse().unwrap());
+    headers.insert(
+        SET_COOKIE,
+        cookie.parse().map_err(|_| AuthError::InternalError)?,
+    );
 
     Ok((headers, user.id.to_string()).into_response())
 }

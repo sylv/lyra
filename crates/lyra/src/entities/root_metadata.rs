@@ -1,3 +1,4 @@
+use super::metadata_source::MetadataSource;
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
@@ -7,11 +8,9 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_type = "Text")]
     pub root_id: String,
+    pub source: MetadataSource,
     #[sea_orm(column_type = "Text")]
-    pub source: String,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub source_key: Option<String>,
-    pub is_primary: bool,
+    pub provider_id: String,
     #[sea_orm(column_type = "Text")]
     pub name: String,
     #[sea_orm(column_type = "Text", nullable)]

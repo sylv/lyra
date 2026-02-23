@@ -41,7 +41,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 	const path = getPathForRoot(media);
 
 	return (
-		<div className={cn("flex flex-col gap-2 overflow-hidden", className)} style={style}>
+		<div className={cn("flex flex-col gap-2 overflow-hidden select-none", className)} style={style}>
 			<PlayWrapper itemId={media.playableItem?.id} path={path} watchProgress={media.watchProgress}>
 				<Image type={ImageType.Poster} asset={media.properties.posterImage} alt={media.name} className="w-full" />
 			</PlayWrapper>

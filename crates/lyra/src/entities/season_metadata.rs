@@ -1,3 +1,4 @@
+use super::metadata_source::MetadataSource;
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
@@ -6,12 +7,12 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     #[sea_orm(column_type = "Text")]
-    pub season_id: String,
+    pub root_id: String,
     #[sea_orm(column_type = "Text")]
-    pub source: String,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub source_key: Option<String>,
-    pub is_primary: bool,
+    pub season_id: String,
+    pub source: MetadataSource,
+    #[sea_orm(column_type = "Text")]
+    pub provider_id: String,
     #[sea_orm(column_type = "Text")]
     pub name: String,
     #[sea_orm(column_type = "Text", nullable)]
@@ -30,6 +31,14 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::roots::Entity",
+        from = "Column::RootId",
+        to = "super::roots::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Roots,
     #[sea_orm(
         belongs_to = "super::seasons::Entity",
         from = "Column::SeasonId",
@@ -67,6 +76,12 @@ pub enum Relation {
 impl Related<super::seasons::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Seasons.def()
+    }
+}
+
+impl Related<super::roots::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Roots.def()
     }
 }
 

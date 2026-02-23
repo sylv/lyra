@@ -21,6 +21,9 @@ const RootAndSeasonQuery = graphql(
 				backgroundImage {
 					...ImageAsset
 				}
+				posterImage {
+					...ImageAsset
+				}
 			}
 		}
 		season(seasonId: $seasonId) {
@@ -120,14 +123,14 @@ export default function Page() {
 	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
 	const seasonPath = `${rootPath}/season/${season.id}`;
 	const seasonImage = season.properties.posterImage ?? season.properties.thumbnailImage;
-	const dynamicAsset = season.properties.backgroundImage ?? root.properties.backgroundImage;
 
+	const dynamicAsset = season.properties.posterImage ?? root.properties.backgroundImage ?? root.properties.posterImage;
 	useDynamicBackground(dynamicAsset);
 
 	return (
 		<div className="pt-6">
 			<div className="flex gap-6 container mx-auto">
-				<div>
+				<div className="shrink-0">
 					<PlayWrapper itemId={season.playableItem?.id} path={seasonPath} watchProgress={season.watchProgress}>
 						<Image type={ImageType.Poster} asset={seasonImage} alt={seasonTitle} className="h-96" />
 					</PlayWrapper>

@@ -3,8 +3,8 @@ pub mod local;
 
 use crate::config::get_config;
 use crate::entities::{
-    files, item_files, item_metadata, items, libraries, root_metadata, roots, season_metadata,
-    seasons,
+    files, item_files, item_metadata, items, libraries, metadata_source::MetadataSource,
+    root_metadata, roots, season_metadata, seasons,
 };
 use crate::scanner::derivation::derive_library_media;
 use crate::scanner::local::{
@@ -380,7 +380,7 @@ async fn upsert_derived_media(
 
     root_metadata::Entity::delete_many()
         .filter(root_metadata::Column::RootId.is_in(root_ids.clone()))
-        .filter(root_metadata::Column::Source.eq("local"))
+        .filter(root_metadata::Column::Source.eq(MetadataSource::Local))
         .exec(&txn)
         .await?;
 
@@ -391,24 +391,25 @@ async fn upsert_derived_media(
     if !season_ids.is_empty() {
         season_metadata::Entity::delete_many()
             .filter(season_metadata::Column::SeasonId.is_in(season_ids.clone()))
-            .filter(season_metadata::Column::Source.eq("local"))
+            .filter(season_metadata::Column::Source.eq(MetadataSource::Local))
             .exec(&txn)
             .await?;
 
         for season in &derived.seasons {
-            insert_local_season_metadata(&txn, &season.id, &season.name, now).await?;
+            insert_local_season_metadata(&txn, &season.root_id, &season.id, &season.name, now)
+                .await?;
         }
     }
 
     if !item_ids.is_empty() {
         item_metadata::Entity::delete_many()
             .filter(item_metadata::Column::ItemId.is_in(item_ids.clone()))
-            .filter(item_metadata::Column::Source.eq("local"))
+            .filter(item_metadata::Column::Source.eq(MetadataSource::Local))
             .exec(&txn)
             .await?;
 
         for item in &derived.items {
-            insert_local_item_metadata(&txn, &item.id, &item.name, now).await?;
+            insert_local_item_metadata(&txn, &item.root_id, &item.id, &item.name, now).await?;
         }
     }
 

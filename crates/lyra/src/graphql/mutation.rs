@@ -1,5 +1,5 @@
 use crate::RequestAuth;
-use crate::auth::PermissionGuard;
+use crate::auth::{PermissionGuard, create_session_for_user};
 use crate::entities::users::UserPerms;
 use crate::entities::{files, item_files, libraries, users, watch_progress};
 use argon2::{
@@ -88,6 +88,13 @@ impl Mutation {
             .exec_with_returning(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+            if auth.is_setup() {
+                let cookie = create_session_for_user(pool, &user.id)
+                    .await
+                    .map_err(|e| -> async_graphql::Error { e.into() })?;
+                ctx.insert_http_header("Set-Cookie", cookie);
+            }
 
             Ok(user)
         }

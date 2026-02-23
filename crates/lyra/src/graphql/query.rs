@@ -1,7 +1,9 @@
 use crate::{
     auth::RequestAuth,
     entities::{
-        item_metadata, items, libraries, root_metadata,
+        item_metadata, items, libraries,
+        metadata_source::MetadataSource,
+        root_metadata,
         roots::{self, RootKind},
         seasons, tasks as tasks_entity, watch_progress,
     },
@@ -14,7 +16,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, prelude::Expr,
 };
 use std::collections::HashMap;
 use tokio::task::spawn_blocking;
@@ -175,8 +177,20 @@ impl Query {
                     .join(JoinType::LeftJoin, roots::Relation::RootMetadata.def())
                     .filter(
                         Condition::any()
-                            .add(root_metadata::Column::IsPrimary.eq(true))
-                            .add(root_metadata::Column::Id.is_null()),
+                            .add(root_metadata::Column::Id.is_null())
+                            .add(root_metadata::Column::Source.eq(MetadataSource::Remote))
+                            .add(
+                                Condition::all()
+                                    .add(root_metadata::Column::Source.eq(MetadataSource::Local))
+                                    .add(Expr::cust(
+                                        "NOT EXISTS (
+                                            SELECT 1
+                                            FROM root_metadata rm2
+                                            WHERE rm2.root_id = root_metadata.root_id
+                                              AND rm2.source = 1
+                                        )",
+                                    )),
+                            ),
                     );
 
                 if let Some(kinds) = &filter.kinds {
@@ -289,8 +303,20 @@ impl Query {
                     .join(JoinType::LeftJoin, items::Relation::Seasons.def())
                     .filter(
                         Condition::any()
-                            .add(item_metadata::Column::IsPrimary.eq(true))
-                            .add(item_metadata::Column::Id.is_null()),
+                            .add(item_metadata::Column::Id.is_null())
+                            .add(item_metadata::Column::Source.eq(MetadataSource::Remote))
+                            .add(
+                                Condition::all()
+                                    .add(item_metadata::Column::Source.eq(MetadataSource::Local))
+                                    .add(Expr::cust(
+                                        "NOT EXISTS (
+                                            SELECT 1
+                                            FROM item_metadata im2
+                                            WHERE im2.item_id = item_metadata.item_id
+                                              AND im2.source = 1
+                                        )",
+                                    )),
+                            ),
                     );
 
                 if let Some(season_numbers) = &filter.season_numbers {

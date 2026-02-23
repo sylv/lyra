@@ -5,6 +5,7 @@ import { relayStylePagination } from "@apollo/client/utilities";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import type { FC, ReactNode } from "react";
 import { DynamicBackground } from "../components/dynamic-background";
+import { AppErrorBoundary } from "../components/error-boundary";
 import { SuspenseBoundary } from "../components/fallback";
 import { PlayerWrapper } from "../components/player/player-wrapper";
 import { SetupWrapper } from "../components/setup/setup-wrapper";
@@ -34,12 +35,16 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 		<ThemeProvider>
 			<TooltipProvider>
 				<ApolloProvider client={client}>
-					<SuspenseBoundary className="fixed inset-0">
+					<AppErrorBoundary className="fixed inset-0">
 						<SetupWrapper>
-							<Sidebar>{children}</Sidebar>
-							<PlayerWrapper />
+							<AppErrorBoundary className="fixed inset-0">
+								<SuspenseBoundary className="fixed inset-0">
+									<Sidebar>{children}</Sidebar>
+									<PlayerWrapper />
+								</SuspenseBoundary>
+							</AppErrorBoundary>
 						</SetupWrapper>
-					</SuspenseBoundary>
+					</AppErrorBoundary>
 					<Toaster />
 					<div className="fixed inset-0 h-dvw w-dvw">
 						<DynamicBackground />
