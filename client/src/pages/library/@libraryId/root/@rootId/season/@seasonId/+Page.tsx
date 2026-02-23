@@ -124,7 +124,10 @@ export default function Page() {
 	const seasonPath = `${rootPath}/season/${season.id}`;
 	const seasonImage = season.properties.posterImage ?? season.properties.thumbnailImage;
 
-	const dynamicAsset = season.properties.posterImage ?? root.properties.backgroundImage ?? root.properties.posterImage;
+	// to transition between images the dynamic background has to unload the existing image and load the next
+	// that causes a jarring transition if we use the season poster, so for now we just stick with the root stuff
+	const dynamicAsset = root.properties.backgroundImage || root.properties.posterImage;
+	// const dynamicAsset = season.properties.posterImage ?? root.properties.backgroundImage ?? root.properties.posterImage;
 	useDynamicBackground(dynamicAsset);
 
 	return (
