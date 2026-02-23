@@ -4,6 +4,7 @@ import { usePageContext } from "vike-react/usePageContext";
 import { Image, ImageAssetFrag, ImageType } from "../../../../../components/image";
 import { PlayWrapper } from "../../../../../components/play-wrapper";
 import { SeasonCard, SeasonCardFrag } from "../../../../../components/season-card";
+import { UnplayedItemsTab } from "../../../../../components/unplayed-items-tab";
 import { useDynamicBackground } from "../../../../../hooks/use-background";
 import { formatReleaseYear } from "../../../../../lib/format-release-year";
 
@@ -38,6 +39,7 @@ const Query = graphql(
 				progressPercent
 				updatedAt
 			}
+			unplayedItems
 		}
 	}
 `,
@@ -63,6 +65,7 @@ export default function Page() {
 		<div className="flex gap-6 container mx-auto">
 			<PlayWrapper itemId={root.playableItem?.id} path={rootPath} watchProgress={root.watchProgress}>
 				<Image type={ImageType.Poster} asset={root.properties.posterImage} alt={root.name} className="h-96" />
+				<UnplayedItemsTab count={root.unplayedItems} />
 			</PlayWrapper>
 			<div className="flex flex-col gap-2 justify-between">
 				<div className="flex flex-col gap-2 mt-3">

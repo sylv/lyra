@@ -116,6 +116,18 @@ impl roots::Model {
             &progress_by_item,
         ))
     }
+
+    pub async fn unplayed_items(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<i32, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+
+        let root_items = find_ordered_items_for_root(pool, &self.id).await?;
+        count_unplayed_items_for_ordered_items(pool, root_items, &user.id).await
+    }
 }
 
 #[ComplexObject]
@@ -190,6 +202,18 @@ impl seasons::Model {
             &season_items,
             &progress_by_item,
         ))
+    }
+
+    pub async fn unplayed_items(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<i32, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+
+        let season_items = find_ordered_items_for_season(pool, &self.id).await?;
+        count_unplayed_items_for_ordered_items(pool, season_items, &user.id).await
     }
 }
 
@@ -387,6 +411,33 @@ fn select_watch_progress_for_ordered_items(
     }
 
     None
+}
+
+async fn count_unplayed_items_for_ordered_items(
+    pool: &DatabaseConnection,
+    ordered_items: Vec<items::Model>,
+    user_id: &str,
+) -> Result<i32, async_graphql::Error> {
+    if ordered_items.is_empty() {
+        return Ok(0);
+    }
+
+    let item_ids = ordered_items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+
+    let watched_count = watch_progress::Entity::find()
+        .filter(watch_progress::Column::UserId.eq(user_id))
+        .filter(watch_progress::Column::ItemId.is_in(item_ids))
+        .all(pool)
+        .await?
+        .into_iter()
+        .filter(|progress| progress.progress_percent >= PLAYABLE_PROGRESS_THRESHOLD)
+        .count();
+
+    let unplayed_count = ordered_items.len().saturating_sub(watched_count);
+    Ok(i32::try_from(unplayed_count).unwrap_or(i32::MAX))
 }
 
 async fn find_default_file_for_item(

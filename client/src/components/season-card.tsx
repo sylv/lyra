@@ -2,13 +2,15 @@ import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type { FC } from "react";
 import { Image, ImageAssetFrag, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
+import { UnplayedItemsTab } from "./unplayed-items-tab";
 
 interface SeasonCardProps {
 	season: FragmentOf<typeof SeasonCardFrag>;
 	path: string;
 }
 
-export const SeasonCardFrag = graphql(`
+export const SeasonCardFrag = graphql(
+	`
 	fragment SeasonCard on SeasonNode {
 		id
 		name
@@ -29,8 +31,11 @@ export const SeasonCardFrag = graphql(`
 			progressPercent
 			updatedAt
 		}
+		unplayedItems
 	}
-`, [ImageAssetFrag]);
+`,
+	[ImageAssetFrag],
+);
 
 export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => {
 	const season = readFragment(SeasonCardFrag, seasonRaw);
@@ -40,6 +45,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => 
 		<div className="flex flex-col gap-2 overflow-hidden w-38">
 			<PlayWrapper itemId={season.playableItem?.id} path={path} watchProgress={season.watchProgress}>
 				<Image type={ImageType.Poster} asset={imageAsset} alt={season.name} className="w-full" />
+				<UnplayedItemsTab count={season.unplayedItems} />
 			</PlayWrapper>
 			<a
 				href={path}

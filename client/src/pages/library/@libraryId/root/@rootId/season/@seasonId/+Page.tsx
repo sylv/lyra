@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from "@apollo/client/react";
 import { graphql, type VariablesOf } from "gql.tada";
+import { CheckIcon } from "lucide-react";
 import { useState } from "react";
 import { usePageContext } from "vike-react/usePageContext";
 import { EpisodeCard, EpisodeCardFrag } from "../../../../../../../components/episode-card";
@@ -9,6 +10,7 @@ import { PlayWrapper } from "../../../../../../../components/play-wrapper";
 import { ViewLoader } from "../../../../../../../components/view-loader";
 import { useDynamicBackground } from "../../../../../../../hooks/use-background";
 import { formatReleaseYear } from "../../../../../../../lib/format-release-year";
+import { UnplayedItemsTab } from "../../../../../../../components/unplayed-items-tab";
 
 const RootAndSeasonQuery = graphql(
 	`
@@ -52,6 +54,7 @@ const RootAndSeasonQuery = graphql(
 				progressPercent
 				updatedAt
 			}
+			unplayedItems
 		}
 	}
 `,
@@ -136,6 +139,7 @@ export default function Page() {
 				<div className="shrink-0">
 					<PlayWrapper itemId={season.playableItem?.id} path={seasonPath} watchProgress={season.watchProgress}>
 						<Image type={ImageType.Poster} asset={seasonImage} alt={seasonTitle} className="h-96" />
+						<UnplayedItemsTab count={season.unplayedItems} />
 					</PlayWrapper>
 				</div>
 				<div className="flex flex-col gap-2 justify-between w-full">

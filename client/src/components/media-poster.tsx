@@ -5,6 +5,7 @@ import { getPathForRoot, GetPathForRootFrag } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
 import { Image, ImageAssetFrag, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
+import { UnplayedItemsTab } from "./unplayed-items-tab";
 
 interface MediaPosterProps {
 	media: FragmentOf<typeof MediaPosterFrag>;
@@ -30,6 +31,7 @@ export const MediaPosterFrag = graphql(
 			progressPercent
 			updatedAt
 		}
+		unplayedItems
 		...GetPathForRoot
 	}
 `,
@@ -44,6 +46,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 		<div className={cn("flex flex-col gap-2 overflow-hidden select-none", className)} style={style}>
 			<PlayWrapper itemId={media.playableItem?.id} path={path} watchProgress={media.watchProgress}>
 				<Image type={ImageType.Poster} asset={media.properties.posterImage} alt={media.name} className="w-full" />
+				<UnplayedItemsTab count={media.unplayedItems} />
 			</PlayWrapper>
 			<a
 				href={path}

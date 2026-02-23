@@ -199,6 +199,7 @@ type RootNode {
 	children: [RootChild!]!
 	playableItem: ItemNode
 	watchProgress: WatchProgress
+	unplayedItems: Int!
 }
 
 type RootNodeConnection {
@@ -272,6 +273,7 @@ type SeasonNode {
 	files: [ItemNode!]!
 	playableItem: ItemNode
 	watchProgress: WatchProgress
+	unplayedItems: Int!
 }
 
 type SeasonNodeProperties {
