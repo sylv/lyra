@@ -4,7 +4,7 @@ export const PlayerButton: FC<HTMLAttributes<HTMLButtonElement>> = ({ children, 
 	return (
 		<button
 			type="button"
-			className="p-3 hover:bg-zinc-600/30 hover:backdrop-blur-md rounded-lg transition-colors text-white"
+			className="p-3 hover:bg-zinc-600/30 hover:backdrop-blur-md rounded transition-colors text-white"
 			{...props}
 		>
 			{children}
@@ -24,7 +24,7 @@ export const PaddedPlayerButton: FC<HTMLAttributes<HTMLButtonElement> & { side: 
 
 	return (
 		<button type="button" className={classes} {...props}>
-			<div className="p-3 group-hover/button:bg-zinc-600/30 group-hover/button:backdrop-blur-md rounded-lg transition-colors text-white">
+			<div className="p-3 group-hover/button:bg-zinc-600/30 group-hover/button:backdrop-blur-md rounded transition-colors text-white">
 				{children}
 			</div>
 		</button>

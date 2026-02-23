@@ -134,7 +134,7 @@ export default function Page() {
 				</div>
 				<div className="flex flex-col gap-2 justify-between w-full">
 					<div className="flex flex-col gap-2 mt-3">
-						<a href={rootPath} className="text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
+						<a href={rootPath} className="text-sm text-zinc-400 hover:text-zinc-200 hover:underline -mb-2">
 							{root.name}
 						</a>
 						<h1 className="text-2xl font-bold">

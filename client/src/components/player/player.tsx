@@ -645,7 +645,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		: [];
 
 	const containerClasses = cn(
-		isFullscreen ? "z-50 fixed inset-0 bg-black" : "z-50 fixed bottom-4 right-4 rounded-xl shadow-2xl bg-black",
+		isFullscreen ? "z-50 fixed inset-0 bg-black" : "z-50 fixed bottom-4 right-4 rounded shadow-2xl bg-black",
 	);
 
 	return (
@@ -669,7 +669,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		>
 			<video
 				ref={videoRef}
-				className={cn("w-full h-full object-contain outline-none", !isFullscreen && "rounded-xl")}
+				className={cn("w-full h-full object-contain outline-none", !isFullscreen && "rounded")}
 				autoPlay={autoplay}
 				controls={false}
 				disablePictureInPicture
@@ -677,7 +677,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 
 			{/* Overlay controls */}
 			<div
-				className={cn("absolute inset-0 cursor-pointer select-none", !isFullscreen && "rounded-xl")}
+				className={cn("absolute inset-0 cursor-pointer select-none", !isFullscreen && "rounded")}
 				role="button"
 				tabIndex={0}
 				onClick={handleContainerClick}
@@ -688,7 +688,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 					className={cn(
 						"absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 transition-opacity duration-300 pointer-events-none",
 						showControls ? "opacity-100" : "opacity-0",
-						!isFullscreen && "rounded-xl",
+						!isFullscreen && "rounded",
 					)}
 				/>
 				{/* Top section */}

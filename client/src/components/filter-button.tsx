@@ -13,7 +13,7 @@ export const FilterButton: FC<FilterButtonProps> = ({ children, active = false, 
 		<button
 			type="button"
 			className={cn(
-				`flex rounded-lg px-4 py-0.5 text-sm gap-3 items-center transition-colors border border-zinc-700/50 text-zinc-200 outline-none select-none`,
+				`flex rounded px-4 py-0.5 text-sm gap-3 items-center transition-colors border border-zinc-700/50 text-zinc-200 outline-none select-none`,
 				active ? "bg-zinc-200/10" : "hover:bg-zinc-200/10",
 				className,
 			)}
@@ -54,7 +54,7 @@ export const FilterSelect = <T extends string | number>({ options, value, onValu
 				<DropdownMenu.Content
 					sideOffset={5}
 					className={cn(
-						"z-50 min-w-32 overflow-hidden rounded-lg border border-zinc-700/50 backdrop-blur-2xl bg-black/50 glass p-1 shadow-lg space-y-1",
+						"z-50 min-w-32 overflow-hidden rounded border border-zinc-700/50 backdrop-blur-2xl bg-black/50 glass p-1 shadow-lg space-y-1",
 						"data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
 						"data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
 						"data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",

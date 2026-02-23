@@ -268,7 +268,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 							)}
 							<div
 								className={cn(
-									"absolute bg-black/60 px-2 py-0.5 rounded-lg text-sm left-1/2 -translate-x-1/2",
+									"absolute bg-black/60 px-2 py-0.5 rounded text-sm left-1/2 -translate-x-1/2",
 									renderedHoverPreviewFrame ? "-top-10" : "-top-8",
 								)}
 							>

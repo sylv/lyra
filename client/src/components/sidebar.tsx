@@ -81,7 +81,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 								<button
 									type="button"
 									className={cn(
-										"flex items-center p-2 rounded-lg transition hover:bg-zinc-200/10",
+										"flex items-center p-2 rounded transition hover:bg-zinc-200/10",
 										isActivityOpen && "bg-zinc-200/10",
 									)}
 								>
@@ -100,7 +100,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 						<a
 							href="/settings"
 							className={cn(
-								"flex items-center p-2 rounded-lg transition hover:bg-zinc-200/10",
+								"flex items-center p-2 rounded transition hover:bg-zinc-200/10",
 								isSettingsPage && "bg-zinc-200/10",
 							)}
 						>

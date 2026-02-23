@@ -22,6 +22,8 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					type="button"
 					className={cn(
 						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/20 opacity-0 cursor-pointer",
+						// important or else the border gets cut off by the overflow-hidden of the parent
+						"rounded-sm",
 						"group-hover/play:opacity-100 group-hover/play:border border-white/50",
 					)}
 					onClick={() => {
