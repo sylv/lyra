@@ -12,7 +12,7 @@ use tokio::time::sleep;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
-pub async fn start_asset_background_worker(pool: DatabaseConnection) -> anyhow::Result<()> {
+pub async fn start_asset_worker(pool: DatabaseConnection) -> anyhow::Result<()> {
     loop {
         let to_process = assets::Entity::find()
             .filter(

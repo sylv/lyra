@@ -155,7 +155,7 @@ async fn main() {
     let assets_pool = pool.clone();
     background_workers.spawn(async move {
         tracing::info!("starting asset background worker");
-        assets::start_asset_background_worker(assets_pool).await
+        assets::start_asset_worker(assets_pool).await
     });
 
     let metadata_pool = pool.clone();
