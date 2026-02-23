@@ -69,14 +69,10 @@ export default function Page() {
 			</PlayWrapper>
 			<div className="flex flex-col gap-2 justify-between">
 				<div className="flex flex-col gap-2 mt-3">
-					<h1 className="text-2xl font-bold">
-						{root.name}
-						{root.properties.releasedAt && (
-							<span className="text-zinc-400 ml-2 text-lg">
-								{formatReleaseYear(root.properties.releasedAt, root.properties.endedAt ?? null)}
-							</span>
-						)}
-					</h1>
+					<span className="text-sm text-zinc-400 -mb-2">
+						{formatReleaseYear(root.properties.releasedAt, root.properties.endedAt ?? null)}
+					</span>
+					<h1 className="text-2xl font-bold">{root.name}</h1>
 					{root.properties.runtimeMinutes && (
 						<p className="text-sm text-zinc-400">{root.properties.runtimeMinutes} minutes</p>
 					)}

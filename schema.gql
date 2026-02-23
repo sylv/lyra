@@ -200,6 +200,8 @@ type RootNode {
 	playableItem: ItemNode
 	watchProgress: WatchProgress
 	unplayedItems: Int!
+	seasonCount: Int!
+	episodeCount: Int!
 }
 
 type RootNodeConnection {
@@ -274,6 +276,7 @@ type SeasonNode {
 	playableItem: ItemNode
 	watchProgress: WatchProgress
 	unplayedItems: Int!
+	episodeCount: Int!
 }
 
 type SeasonNodeProperties {

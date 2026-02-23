@@ -5,7 +5,9 @@ use crate::entities::{
     watch_progress,
 };
 use async_graphql::{ComplexObject, Context, Union};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+};
 use std::collections::HashMap;
 
 const PLAYABLE_PROGRESS_THRESHOLD: f32 = 0.8;
@@ -128,6 +130,31 @@ impl roots::Model {
         let root_items = find_ordered_items_for_root(pool, &self.id).await?;
         count_unplayed_items_for_ordered_items(pool, root_items, &user.id).await
     }
+
+    pub async fn season_count(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<i32, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let count = seasons::Entity::find()
+            .filter(seasons::Column::RootId.eq(self.id.clone()))
+            .count(pool)
+            .await?;
+        Ok(saturating_i32_from_u64(count))
+    }
+
+    pub async fn episode_count(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<i32, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let count = items::Entity::find()
+            .filter(items::Column::RootId.eq(self.id.clone()))
+            .filter(items::Column::SeasonId.is_null())
+            .count(pool)
+            .await?;
+        Ok(saturating_i32_from_u64(count))
+    }
 }
 
 #[ComplexObject]
@@ -214,6 +241,18 @@ impl seasons::Model {
 
         let season_items = find_ordered_items_for_season(pool, &self.id).await?;
         count_unplayed_items_for_ordered_items(pool, season_items, &user.id).await
+    }
+
+    pub async fn episode_count(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<i32, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let count = items::Entity::find()
+            .filter(items::Column::SeasonId.eq(self.id.clone()))
+            .count(pool)
+            .await?;
+        Ok(saturating_i32_from_u64(count))
     }
 }
 
@@ -438,6 +477,10 @@ async fn count_unplayed_items_for_ordered_items(
 
     let unplayed_count = ordered_items.len().saturating_sub(watched_count);
     Ok(i32::try_from(unplayed_count).unwrap_or(i32::MAX))
+}
+
+fn saturating_i32_from_u64(value: u64) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
 }
 
 async fn find_default_file_for_item(

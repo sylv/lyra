@@ -1,10 +1,11 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
-import { type FC } from "react";
+import { useMemo, type FC } from "react";
 import { navigate } from "vike/client/router";
 import { getPathForItem, GetPathForItemFrag } from "../lib/getPathForMedia";
 import { Image, ImageAssetFrag, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { setPlayerMedia } from "./player/player-state";
+import { formatReleaseYear } from "../lib/format-release-year";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -32,6 +33,7 @@ export const EpisodeCardFrag = graphql(
 			}
 			seasonNumber
 			episodeNumber
+			releasedAt
 			runtimeMinutes
 		}
 		watchProgress {
@@ -47,6 +49,14 @@ export const EpisodeCardFrag = graphql(
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = readFragment(EpisodeCardFrag, episodeRef);
 	const path = getPathForItem(episode);
+	const releaseDate = useMemo(() => {
+		if (!episode.properties.releasedAt) return null;
+		return new Date(episode.properties.releasedAt * 1000).toLocaleDateString(undefined, {
+			year: "numeric",
+			month: "short",
+			day: "numeric",
+		});
+	}, [episode.properties.releasedAt]);
 
 	return (
 		<button
@@ -65,16 +75,19 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 						type={ImageType.Thumbnail}
 						asset={episode.properties.thumbnailImage}
 						alt={episode.name}
-						className="h-30"
+						className="h-36"
 					/>
 				</PlayWrapper>
 			</div>
 			<div>
-				<h3 className="font-semibold text-white">{episode.name}</h3>
-				<div className="flex items-center gap-4 text-zinc-400 mb-2 text-sm">
-					<div>
+				<h3 className="font-semibold text-white flex gap-3">
+					<div className="text-zinc-300">
 						S{episode.properties.seasonNumber}E{episode.properties.episodeNumber}
 					</div>
+					{episode.name}
+				</h3>
+				<div className="flex items-center gap-1 text-zinc-400 mb-2 text-sm">
+					{releaseDate && <div>{releaseDate}</div>}
 					{episode.properties.runtimeMinutes && <div>{formatRuntime(episode.properties.runtimeMinutes)}</div>}
 				</div>
 				<p className="text-xs text-zinc-300 line-clamp-3">

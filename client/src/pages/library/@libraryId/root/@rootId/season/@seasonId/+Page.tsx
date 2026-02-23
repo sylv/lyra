@@ -147,20 +147,12 @@ export default function Page() {
 						<a href={rootPath} className="text-sm text-zinc-400 hover:text-zinc-200 hover:underline -mb-2">
 							{root.name}
 						</a>
-						<h1 className="text-2xl font-bold">
-							{seasonTitle}
-							{season.properties.releasedAt && (
-								<span className="text-zinc-400 ml-2 text-lg">
-									{formatReleaseYear(season.properties.releasedAt, season.properties.endedAt ?? null)}
-								</span>
-							)}
-						</h1>
+						<h1 className="text-2xl font-bold">{seasonTitle}</h1>
 						{season.properties.runtimeMinutes && (
 							<p className="text-sm text-zinc-400">{season.properties.runtimeMinutes} minutes</p>
 						)}
-						<p className="text-sm text-zinc-400">{season.properties.description || "No description for this"}</p>
 					</div>
-					<div className="py-6">
+					<div className="pb-6">
 						<div className="mb-4 flex gap-2 flex-wrap">
 							<MediaFilterList value={filter} onChange={(nextFilter) => setFilter({ ...filter, ...nextFilter })} />
 						</div>

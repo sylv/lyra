@@ -5,7 +5,7 @@
 import { useMutation, useQuery } from "@apollo/client/react";
 import { graphql } from "gql.tada";
 import Hls from "hls.js";
-import { ArrowLeft, Loader2, XIcon } from "lucide-react";
+import { ArrowLeft, ChevronDown, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
 import { navigate } from "vike/client/router";
 import { useStore } from "zustand/react";
@@ -708,7 +708,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 									togglePlayerFullscreen(false);
 								}}
 							>
-								<ArrowLeft className="size-6" />
+								<ChevronDown className="size-6" />
 							</PlayerButton>
 						)}
 						{currentMedia.parent?.name &&

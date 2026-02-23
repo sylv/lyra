@@ -1,6 +1,7 @@
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type React from "react";
 import type { FC } from "react";
+import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForRoot, GetPathForRootFrag } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
 import { Image, ImageAssetFrag, ImageType } from "./image";
@@ -23,6 +24,8 @@ export const MediaPosterFrag = graphql(
 			posterImage {
 				...ImageAsset
 			}
+			releasedAt
+			endedAt
 		}
 		playableItem {
 			id
@@ -32,6 +35,8 @@ export const MediaPosterFrag = graphql(
 			updatedAt
 		}
 		unplayedItems
+		seasonCount
+		episodeCount
 		...GetPathForRoot
 	}
 `,
@@ -41,6 +46,7 @@ export const MediaPosterFrag = graphql(
 export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, style }) => {
 	const media = readFragment(MediaPosterFrag, mediaRaw);
 	const path = getPathForRoot(media);
+	const detail = getRootPosterDetail(media);
 
 	return (
 		<div className={cn("flex flex-col gap-2 overflow-hidden select-none", className)} style={style}>
@@ -48,12 +54,32 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 				<Image type={ImageType.Poster} asset={media.properties.posterImage} alt={media.name} className="w-full" />
 				<UnplayedItemsTab count={media.unplayedItems} />
 			</PlayWrapper>
-			<a
-				href={path}
-				className="block w-full truncate text-sm font-semibold text-zinc-400 transition-colors hover:text-zinc-300 hover:underline"
-			>
-				{media.name}
+			<a href={path} className="block w-full truncate text-sm group">
+				<span className="group-hover:underline">{media.name}</span>
+				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
 			</a>
 		</div>
 	);
+};
+
+const getRootPosterDetail = (media: FragmentOf<typeof MediaPosterFrag>): string | number | null => {
+	if (media.kind === "SERIES") {
+		if (media.seasonCount > 0) {
+			return formatCountLabel(media.seasonCount, "season", "seasons");
+		}
+
+		if (media.episodeCount > 0) {
+			return formatCountLabel(media.episodeCount, "episode", "episodes");
+		}
+	}
+
+	if (!media.properties.releasedAt) {
+		return null;
+	}
+
+	return formatReleaseYear(media.properties.releasedAt, media.properties.endedAt ?? null) ?? null;
+};
+
+const formatCountLabel = (count: number, singular: string, plural: string): string => {
+	return `${count} ${count === 1 ? singular : plural}`;
 };
