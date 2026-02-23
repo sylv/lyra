@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
+import { getThumbhashDataUrl } from "../lib/thumbhash";
 
 export enum ImageType {
 	Poster = "poster",
@@ -68,6 +69,7 @@ export const Image: FC<ImageProps> = ({ type, asset, alt, className }) => {
 	const config = IMAGE_TYPE_CONFIG[type];
 	const resolvedClassName = className ?? config.defaultClassName;
 	const resolvedAsset = asset ? readFragment(ImageAssetFrag, asset) : null;
+	const thumbhashPreview = getThumbhashDataUrl(resolvedAsset?.thumbhash);
 
 	if (!resolvedAsset) {
 		return (
@@ -89,8 +91,16 @@ export const Image: FC<ImageProps> = ({ type, asset, alt, className }) => {
 			src={getAssetImageUrl(resolvedAsset, config.proxyWidth)}
 			alt={alt}
 			className={clsx(config.baseClasses, resolvedClassName)}
-			loading="lazy"
-			decoding="async"
+			style={
+				thumbhashPreview
+					? {
+							backgroundImage: `url(${thumbhashPreview})`,
+							backgroundSize: "cover",
+							backgroundPosition: "center",
+							backgroundRepeat: "no-repeat",
+						}
+					: undefined
+			}
 		/>
 	);
 };

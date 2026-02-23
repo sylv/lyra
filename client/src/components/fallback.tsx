@@ -69,6 +69,9 @@ const LOADING_PHRASES = [
 	"Just a couple of dimmies",
 	"In and out, 20 minutes adventure",
 	"Welcome to club, pal.",
+	"A true knight always finishes a story",
+	"How do they get the bees to swarm like that?",
+	"I need good men, Ser Duncan.",
 ];
 
 export const Fallback: FC<{ className?: string }> = ({ className }) => {
