@@ -349,7 +349,7 @@ CREATE INDEX item_node_matches_lookup_idx
 
 CREATE TABLE jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_type TEXT NOT NULL,
+    job_type INTEGER NOT NULL, -- 0 file.generate_timeline_preview, 1 file.generate_thumbnail
     file_id INTEGER NOT NULL,
     status INTEGER NOT NULL, -- 0 success, 1 error
     attempt_count INTEGER NOT NULL DEFAULT 0,

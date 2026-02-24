@@ -16,9 +16,8 @@ use async_graphql::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
-    JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    Statement, prelude::Expr,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, prelude::Expr,
 };
 use std::collections::HashMap;
 use tokio::task::spawn_blocking;
@@ -491,33 +490,28 @@ impl Query {
         let pool = ctx.data::<DatabaseConnection>()?;
         let now = chrono::Utc::now().timestamp();
 
-        let completed_rows = pool
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "SELECT job_type, COUNT(1) AS completed_count FROM jobs WHERE status = ? GROUP BY job_type",
-                vec![(jobs_entity::JobStatus::Success as i64).into()],
-            ))
+        let completed_rows: Vec<(jobs_entity::JobType, i64)> = jobs_entity::Entity::find()
+            .select_only()
+            .column(jobs_entity::Column::JobType)
+            .column_as(jobs_entity::Column::Id.count(), "completed_count")
+            .filter(jobs_entity::Column::Status.eq(jobs_entity::JobStatus::Success))
+            .group_by(jobs_entity::Column::JobType)
+            .into_tuple()
+            .all(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        let mut completed_by_type: HashMap<String, i64> = HashMap::new();
-        for row in completed_rows {
-            let job_type = row
-                .try_get::<String>("", "job_type")
-                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-            let completed = row
-                .try_get::<i64>("", "completed_count")
-                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-            completed_by_type.insert(job_type, completed);
-        }
+        let completed_by_type: HashMap<jobs_entity::JobType, i64> =
+            completed_rows.into_iter().collect();
 
         let handlers = jobs::registry::get_registered_job_handlers();
         let mut activities = Vec::new();
         for handler in handlers {
+            let job_type = handler.job_type();
             let pending = jobs::count_pending_files(pool, handler.final_condition(now))
                 .await
                 .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-            let completed = *completed_by_type.get(handler.job_type()).unwrap_or(&0);
+            let completed = *completed_by_type.get(&job_type).unwrap_or(&0);
             let total = completed + pending;
 
             if pending == 0 || total == 0 {
@@ -525,8 +519,8 @@ impl Query {
             }
 
             activities.push(Activity {
-                task_type: handler.job_type().to_string(),
-                title: humanize_activity_type(handler.job_type()),
+                task_type: job_type.code().to_string(),
+                title: job_type.title().to_string(),
                 current: completed,
                 total,
                 progress_percent: completed as f64 / total as f64,
@@ -536,19 +530,4 @@ impl Query {
         activities.sort_by(|a, b| a.title.cmp(&b.title));
         Ok(activities)
     }
-}
-
-fn humanize_activity_type(activity_type: &str) -> String {
-    activity_type
-        .split(['.', '_'])
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }

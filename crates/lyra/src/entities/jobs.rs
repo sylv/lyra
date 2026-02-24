@@ -2,6 +2,31 @@
 
 use sea_orm::entity::prelude::*;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum, Hash)]
+#[sea_orm(rs_type = "i64", db_type = "Integer")]
+pub enum JobType {
+    #[sea_orm(num_value = 0)]
+    FileGenerateTimelinePreview,
+    #[sea_orm(num_value = 1)]
+    FileGenerateThumbnail,
+}
+
+impl JobType {
+    pub const fn code(self) -> i64 {
+        match self {
+            JobType::FileGenerateTimelinePreview => 0,
+            JobType::FileGenerateThumbnail => 1,
+        }
+    }
+
+    pub const fn title(self) -> &'static str {
+        match self {
+            JobType::FileGenerateTimelinePreview => "Timeline Preview",
+            JobType::FileGenerateThumbnail => "Thumbnail",
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "i64", db_type = "Integer")]
 pub enum JobStatus {
@@ -16,8 +41,7 @@ pub enum JobStatus {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "Text")]
-    pub job_type: String,
+    pub job_type: JobType,
     pub file_id: i64,
     pub status: JobStatus,
     pub attempt_count: i64,

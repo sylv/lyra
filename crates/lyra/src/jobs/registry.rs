@@ -1,5 +1,5 @@
 use crate::jobs::{
-    JobHandler, JobManager, JobRunner,
+    JobHandler, JobManager,
     handlers::{file_thumbnail::FileThumbnailJob, file_timeline_preview::FileTimelinePreviewJob},
 };
 use sea_orm::DatabaseConnection;
@@ -10,15 +10,9 @@ pub fn get_registered_job_handlers() -> Vec<Arc<dyn JobHandler>> {
     vec![Arc::new(FileTimelinePreviewJob), Arc::new(FileThumbnailJob)]
 }
 
-pub fn get_registered_jobs(
-    pool: &DatabaseConnection,
-    wake_signal: Arc<Notify>,
-) -> Vec<Box<dyn JobRunner>> {
+pub fn get_registered_jobs(pool: &DatabaseConnection, wake_signal: Arc<Notify>) -> Vec<JobManager> {
     get_registered_job_handlers()
         .into_iter()
-        .map(|handler| {
-            Box::new(JobManager::new(handler, pool.clone(), wake_signal.clone()))
-                as Box<dyn JobRunner>
-        })
+        .map(|handler| JobManager::new(handler, pool.clone(), wake_signal.clone()))
         .collect()
 }

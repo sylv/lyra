@@ -169,12 +169,12 @@ async fn main() {
     });
 
     for job in jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone()) {
-        let job_type = job.job_type().to_string();
+        let job_type = job.job_type();
         background_workers.spawn(async move {
-            tracing::info!(job_type = %job_type, "starting job worker");
+            tracing::info!(job_type = ?job_type, "starting job worker");
             job.start_thread()
                 .await
-                .with_context(|| format!("job worker '{job_type}' exited"))
+                .with_context(|| format!("job worker '{job_type:?}' exited"))
         });
     }
 
