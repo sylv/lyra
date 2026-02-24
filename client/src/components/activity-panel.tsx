@@ -3,8 +3,8 @@ import { graphql } from "gql.tada";
 import type { FC } from "react";
 
 const Query = graphql(`
-	query GetActiveTasks {
-		activeTasks {
+	query GetActivities {
+		activities {
 			taskType
 			title
 			current
@@ -50,9 +50,9 @@ export const ActivityPanel: FC<{ open: boolean }> = ({ open }) => {
 		<div className="w-95 max-h-[70vh] overflow-y-auto bg-black p-3 shadow-lg shadow-black/30">
 			<h2 className="px-1 pt-1 text-xs font-semibold">Activity</h2>
 			{!data && <p className="text-sm text-zinc-400">Loading activity...</p>}
-			{data?.activeTasks?.length === 0 && <p className="text-sm text-zinc-400">No tasks are actively running.</p>}
+			{data?.activities?.length === 0 && <p className="text-sm text-zinc-400">No activity is currently running.</p>}
 			<div className="mt-1 space-y-2">
-				{data?.activeTasks?.map((task) => {
+				{data?.activities?.map((task) => {
 					return (
 						<div key={task.taskType} className="flex items-center gap-3 py-2">
 							<CircularProgress progress={task.progressPercent} />

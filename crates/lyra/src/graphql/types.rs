@@ -119,10 +119,7 @@ impl roots::Model {
         ))
     }
 
-    pub async fn unplayed_items(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<i32, async_graphql::Error> {
+    pub async fn unplayed_items(&self, ctx: &Context<'_>) -> Result<i32, async_graphql::Error> {
         let auth = ctx.data::<RequestAuth>()?;
         let user = auth.get_user_or_err()?;
         let pool = ctx.data_unchecked::<DatabaseConnection>();
@@ -131,10 +128,7 @@ impl roots::Model {
         count_unplayed_items_for_ordered_items(pool, root_items, &user.id).await
     }
 
-    pub async fn season_count(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<i32, sea_orm::DbErr> {
+    pub async fn season_count(&self, ctx: &Context<'_>) -> Result<i32, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let count = seasons::Entity::find()
             .filter(seasons::Column::RootId.eq(self.id.clone()))
@@ -143,10 +137,7 @@ impl roots::Model {
         Ok(saturating_i32_from_u64(count))
     }
 
-    pub async fn episode_count(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<i32, sea_orm::DbErr> {
+    pub async fn episode_count(&self, ctx: &Context<'_>) -> Result<i32, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let count = items::Entity::find()
             .filter(items::Column::RootId.eq(self.id.clone()))
@@ -231,10 +222,7 @@ impl seasons::Model {
         ))
     }
 
-    pub async fn unplayed_items(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<i32, async_graphql::Error> {
+    pub async fn unplayed_items(&self, ctx: &Context<'_>) -> Result<i32, async_graphql::Error> {
         let auth = ctx.data::<RequestAuth>()?;
         let user = auth.get_user_or_err()?;
         let pool = ctx.data_unchecked::<DatabaseConnection>();
@@ -243,10 +231,7 @@ impl seasons::Model {
         count_unplayed_items_for_ordered_items(pool, season_items, &user.id).await
     }
 
-    pub async fn episode_count(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<i32, sea_orm::DbErr> {
+    pub async fn episode_count(&self, ctx: &Context<'_>) -> Result<i32, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let count = items::Entity::find()
             .filter(items::Column::SeasonId.eq(self.id.clone()))

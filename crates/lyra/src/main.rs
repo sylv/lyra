@@ -29,7 +29,7 @@ use std::{
     sync::{Arc, atomic::AtomicI64},
     time::Duration,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio::{signal, task::JoinSet};
 
 mod assets;
@@ -40,9 +40,9 @@ mod error;
 mod ffmpeg;
 mod graphql;
 mod hls;
+mod jobs;
 mod metadata;
 mod scanner;
-mod tasks;
 
 type AppSchema =
     Schema<graphql::query::Query, graphql::mutation::Mutation, async_graphql::EmptySubscription>;
@@ -148,9 +148,12 @@ async fn main() {
 
     let pool = DatabaseConnection::from(pool);
     let mut background_workers: JoinSet<anyhow::Result<()>> = JoinSet::new();
+    let job_wake_signal = Arc::new(Notify::new());
 
     let scanner_pool = pool.clone();
-    background_workers.spawn(async move { scanner::start_scanner(scanner_pool).await });
+    let scanner_wake_signal = job_wake_signal.clone();
+    background_workers
+        .spawn(async move { scanner::start_scanner(scanner_pool, scanner_wake_signal).await });
 
     let assets_pool = pool.clone();
     background_workers.spawn(async move {
@@ -165,13 +168,13 @@ async fn main() {
         metadata::worker::start_metadata_worker(metadata_pool, metadata_providers).await
     });
 
-    for task in tasks::registry::get_registered_tasks(&pool) {
-        let task_type = task.task_type().to_string();
+    for job in jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone()) {
+        let job_type = job.job_type().to_string();
         background_workers.spawn(async move {
-            tracing::info!(task_type = %task_type, "starting task worker");
-            task.start_thread()
+            tracing::info!(job_type = %job_type, "starting job worker");
+            job.start_thread()
                 .await
-                .with_context(|| format!("task worker '{task_type}' exited"))
+                .with_context(|| format!("job worker '{job_type}' exited"))
         });
     }
 

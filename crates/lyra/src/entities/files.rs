@@ -33,6 +33,8 @@ pub enum Relation {
     Libraries,
     #[sea_orm(has_many = "super::item_files::Entity")]
     ItemFiles,
+    #[sea_orm(has_many = "super::jobs::Entity")]
+    Jobs,
     #[sea_orm(has_many = "super::items::Entity")]
     PrimaryItems,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
@@ -48,6 +50,12 @@ impl Related<super::libraries::Entity> for Entity {
 impl Related<super::item_files::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ItemFiles.def()
+    }
+}
+
+impl Related<super::jobs::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Jobs.def()
     }
 }
 

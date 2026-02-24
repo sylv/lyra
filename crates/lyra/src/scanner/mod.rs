@@ -18,6 +18,8 @@ use sea_orm::{
 };
 use std::path::Path as StdPath;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Notify;
 use tokio::time::{Duration, sleep};
 use tracing::info;
 
@@ -27,7 +29,10 @@ const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp", "ts", "m2ts",
 ];
 
-pub async fn start_scanner(pool: DatabaseConnection) -> anyhow::Result<()> {
+pub async fn start_scanner(
+    pool: DatabaseConnection,
+    wake_signal: Arc<Notify>,
+) -> anyhow::Result<()> {
     loop {
         let config = get_config();
         let scan_ago_filter = chrono::Utc::now().timestamp() - config.library_scan_interval;
@@ -41,14 +46,18 @@ pub async fn start_scanner(pool: DatabaseConnection) -> anyhow::Result<()> {
             .await?;
 
         if let Some(library) = to_scan {
-            scan_library(&pool, &library).await?;
+            scan_library(&pool, &library, &wake_signal).await?;
         } else {
             sleep(Duration::from_secs(5)).await;
         }
     }
 }
 
-async fn scan_library(pool: &DatabaseConnection, library: &libraries::Model) -> anyhow::Result<()> {
+async fn scan_library(
+    pool: &DatabaseConnection,
+    library: &libraries::Model,
+    wake_signal: &Arc<Notify>,
+) -> anyhow::Result<()> {
     let scan_start_time = chrono::Utc::now().timestamp();
     let library_path = PathBuf::from(&library.path);
 
@@ -81,6 +90,7 @@ async fn scan_library(pool: &DatabaseConnection, library: &libraries::Model) -> 
     .exec(pool)
     .await?;
 
+    wake_signal.notify_waiters();
     tracing::info!("Scan completed for library '{}'", library.name);
     Ok(())
 }

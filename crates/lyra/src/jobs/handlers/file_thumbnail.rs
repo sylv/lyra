@@ -3,64 +3,32 @@ use crate::{
     entities::{
         assets as assets_entity,
         file_assets::{self, FileAssetRole},
-        files, libraries, tasks as tasks_entity,
+        files, libraries,
     },
     ffmpeg,
-    tasks::{TaskHandler, TaskLike, TaskScopeKind},
+    jobs::{JobExecutionPolicy, JobHandler},
 };
 use anyhow::Context;
 use lyra_thumbnail::{ThumbnailOptions, generate_thumbnail};
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
 };
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct FileThumbnailTaskArgs;
-
 #[derive(Debug, Default)]
-pub struct FileThumbnailTask;
+pub struct FileThumbnailJob;
 
 #[async_trait::async_trait]
-impl TaskHandler for FileThumbnailTask {
-    type InputArgs = FileThumbnailTaskArgs;
-
-    fn task_type(&self) -> &'static str {
+impl JobHandler for FileThumbnailJob {
+    fn job_type(&self) -> &'static str {
         "file.generate_thumbnail"
     }
 
-    fn version_number(&self) -> i64 {
-        1
+    fn execution_policy(&self) -> JobExecutionPolicy {
+        JobExecutionPolicy::default()
     }
 
-    async fn reconcile(
-        &self,
-        pool: &DatabaseConnection,
-    ) -> anyhow::Result<Vec<TaskLike<Self::InputArgs>>> {
-        let all_files = files::Entity::find().all(pool).await?;
-        Ok(all_files
-            .into_iter()
-            .map(|file| TaskLike {
-                scope_kind: TaskScopeKind::File,
-                scope_id: file.id.to_string(),
-                input_args: None,
-                version_hash: None,
-            })
-            .collect())
-    }
-
-    async fn execute(
-        &self,
-        pool: &DatabaseConnection,
-        task: &tasks_entity::Model,
-        _args: &Self::InputArgs,
-    ) -> anyhow::Result<()> {
-        let file_id = task
-            .scope_id
-            .parse::<i64>()
-            .with_context(|| format!("invalid file id in scope_id '{}'", task.scope_id))?;
-
+    async fn execute(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
         let maybe_file = files::Entity::find_by_id(file_id)
             .find_also_related(libraries::Entity)
             .one(pool)
@@ -87,7 +55,15 @@ impl TaskHandler for FileThumbnailTask {
                 "file path missing while generating thumbnail"
             );
 
-            return Ok(());
+            files::Entity::update(files::ActiveModel {
+                id: Set(file.id),
+                unavailable_at: Set(Some(chrono::Utc::now().timestamp())),
+                ..Default::default()
+            })
+            .exec(pool)
+            .await?;
+
+            anyhow::bail!("file path missing while generating thumbnail");
         }
 
         let thumbnail_options = ThumbnailOptions {
@@ -118,17 +94,7 @@ impl TaskHandler for FileThumbnailTask {
         Ok(())
     }
 
-    async fn cleanup(
-        &self,
-        pool: &DatabaseConnection,
-        task: &tasks_entity::Model,
-        _args: &Self::InputArgs,
-    ) -> anyhow::Result<()> {
-        let file_id = task
-            .scope_id
-            .parse::<i64>()
-            .with_context(|| format!("invalid file id in scope_id '{}'", task.scope_id))?;
-
+    async fn cleanup(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
         let tx = pool.begin().await?;
         let stale_asset_ids: Vec<i64> = file_assets::Entity::find()
             .filter(file_assets::Column::FileId.eq(file_id))

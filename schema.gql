@@ -1,4 +1,4 @@
-type ActiveTask {
+type Activity {
 	taskType: String!
 	title: String!
 	current: Int!
@@ -175,7 +175,7 @@ type Query {
 	"""
 	listFiles(path: String!): [String!]!
 	libraries: [Library!]!
-	activeTasks: [ActiveTask!]!
+	activities: [Activity!]!
 }
 
 union RootChild = SeasonNode | ItemNode

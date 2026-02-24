@@ -347,31 +347,25 @@ CREATE INDEX item_node_matches_retry_idx
 CREATE INDEX item_node_matches_lookup_idx
     ON item_node_matches(root_id, item_id, provider_id);
 
-CREATE TABLE tasks (
+CREATE TABLE jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    -- task_type + scope_kind + scope_id is the thing this task is meant to operate on, eg
-    -- an asset, metadata, a file, etc.
-    -- think of the two as the "unique key" for each job.
-    task_type TEXT NOT NULL,
-    scope_kind INTEGER NOT NULL,
-    scope_id TEXT NOT NULL,
-    -- zstd-compressed JSON blob, this is the data given to the task when it runs.
-    input_args BLOB,
-    -- if either version field changes, the task is re-run.
-    -- version_number is a simple hard-coded value on each task type, when changed it forces all tasks of that type to re-run
-    -- (ie, a bug was fixed in the task logic that caused incorrect results, so we want to re-run to fix it)
-    -- version_hash is a optional hash of the relevant data that the task operates on, which when changed triggers a re-run
-    -- (ie, intro detection runs on season-level data, but wants to re-run if episodes are added/removed)
-    version_number INTEGER NOT NULL,
-    version_hash TEXT,
+    job_type TEXT NOT NULL,
+    file_id INTEGER NOT NULL,
+    status INTEGER NOT NULL, -- 0 success, 1 error
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at INTEGER,
     last_error_message TEXT,
-    last_run_at INTEGER,
-    execute_after INTEGER, -- if unset, never run this job. to run immediately, set to current time.
-    locked_at INTEGER, -- when the job begins to run, this is set to stop other workers from running the same job.
-    attempt_count INTEGER NOT NULL DEFAULT 0
+    last_run_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+    CHECK (status IN (0, 1))
 ) STRICT;
 
-CREATE UNIQUE INDEX tasks_scope_unique ON tasks(task_type, scope_kind, scope_id);
+CREATE UNIQUE INDEX jobs_type_file_unique ON jobs(job_type, file_id);
+CREATE INDEX jobs_type_status_retry_idx ON jobs(job_type, status, next_retry_at);
+CREATE INDEX jobs_file_id_idx ON jobs(file_id);
 
 CREATE TABLE watch_progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,12 +1,13 @@
 use crate::{
     auth::RequestAuth,
     entities::{
-        item_metadata, items, libraries,
+        item_metadata, items, jobs as jobs_entity, libraries,
         metadata_source::MetadataSource,
         root_metadata,
         roots::{self, RootKind},
-        seasons, tasks as tasks_entity, watch_progress,
+        seasons, watch_progress,
     },
+    jobs,
 };
 use async_graphql::{
     Context, Enum, InputObject, Object, SimpleObject,
@@ -15,13 +16,12 @@ use async_graphql::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait, prelude::Expr,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
+    JoinType, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    Statement, prelude::Expr,
 };
 use std::collections::HashMap;
 use tokio::task::spawn_blocking;
-
-const ACTIVE_TASK_RECENT_WINDOW_SECS: i64 = 60 * 60 * 24;
 
 const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
     "mnt",
@@ -143,8 +143,7 @@ impl ItemNodeOrderBy {
 }
 
 #[derive(Debug, Clone, SimpleObject)]
-#[graphql(name = "ActiveTask")]
-pub struct ActiveTask {
+pub struct Activity {
     pub task_type: String,
     pub title: String,
     pub current: i64,
@@ -488,99 +487,59 @@ impl Query {
         Ok(libraries)
     }
 
-    async fn active_tasks(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Vec<ActiveTask>, async_graphql::Error> {
+    async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let now = chrono::Utc::now().timestamp();
-        let recent_cutoff = now - ACTIVE_TASK_RECENT_WINDOW_SECS;
 
-        let active_task_types: Vec<String> = tasks_entity::Entity::find()
-            .filter(
-                Condition::any()
-                    .add(tasks_entity::Column::LockedAt.is_not_null())
-                    .add(
-                        Condition::all()
-                            .add(tasks_entity::Column::ExecuteAfter.is_not_null())
-                            .add(tasks_entity::Column::ExecuteAfter.lte(now)),
-                    ),
-            )
-            .select_only()
-            .column(tasks_entity::Column::TaskType)
-            .distinct()
-            .into_tuple()
-            .all(pool)
+        let completed_rows = pool
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "SELECT job_type, COUNT(1) AS completed_count FROM jobs WHERE status = ? GROUP BY job_type",
+                vec![(jobs_entity::JobStatus::Success as i64).into()],
+            ))
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        if active_task_types.is_empty() {
-            return Ok(Vec::new());
+        let mut completed_by_type: HashMap<String, i64> = HashMap::new();
+        for row in completed_rows {
+            let job_type = row
+                .try_get::<String>("", "job_type")
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+            let completed = row
+                .try_get::<i64>("", "completed_count")
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+            completed_by_type.insert(job_type, completed);
         }
 
-        let all_tasks = tasks_entity::Entity::find()
-            .filter(tasks_entity::Column::TaskType.is_in(active_task_types))
-            .filter(
-                Condition::any()
-                    .add(
-                        Condition::all()
-                            .add(tasks_entity::Column::ExecuteAfter.is_not_null())
-                            .add(tasks_entity::Column::ExecuteAfter.gte(recent_cutoff))
-                            .add(tasks_entity::Column::ExecuteAfter.lte(now)),
-                    )
-                    .add(tasks_entity::Column::LockedAt.gte(recent_cutoff))
-                    .add(tasks_entity::Column::LastRunAt.gte(recent_cutoff)),
-            )
-            .all(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        let handlers = jobs::registry::get_registered_job_handlers();
+        let mut activities = Vec::new();
+        for handler in handlers {
+            let pending = jobs::count_pending_files(pool, handler.final_condition(now))
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+            let completed = *completed_by_type.get(handler.job_type()).unwrap_or(&0);
+            let total = completed + pending;
 
-        let mut grouped: HashMap<String, (i64, i64, i64)> = HashMap::new();
-        for task in all_tasks {
-            let entry = grouped.entry(task.task_type.clone()).or_insert((0, 0, 0));
-            entry.0 += 1;
-            if task
-                .execute_after
-                .is_some_and(|execute_after| execute_after <= now)
-            {
-                entry.1 += 1;
+            if pending == 0 || total == 0 {
+                continue;
             }
-            if task.locked_at.is_some() {
-                entry.2 += 1;
-            }
+
+            activities.push(Activity {
+                task_type: handler.job_type().to_string(),
+                title: humanize_activity_type(handler.job_type()),
+                current: completed,
+                total,
+                progress_percent: completed as f64 / total as f64,
+            });
         }
 
-        let mut active = grouped
-            .into_iter()
-            .filter_map(|(task_type, (total, pending, running))| {
-                if pending == 0 && running == 0 {
-                    return None;
-                }
-
-                let current = (total - pending + running).clamp(0, total);
-                let progress_percent = if total > 0 {
-                    current as f64 / total as f64
-                } else {
-                    0.0
-                };
-
-                Some(ActiveTask {
-                    task_type: task_type.clone(),
-                    title: humanize_task_type(&task_type),
-                    current,
-                    total,
-                    progress_percent,
-                })
-            })
-            .collect::<Vec<_>>();
-
-        active.sort_by(|a, b| a.title.cmp(&b.title));
-        Ok(active)
+        activities.sort_by(|a, b| a.title.cmp(&b.title));
+        Ok(activities)
     }
 }
 
-fn humanize_task_type(task_type: &str) -> String {
-    task_type
+fn humanize_activity_type(activity_type: &str) -> String {
+    activity_type
         .split(['.', '_'])
         .filter(|part| !part.is_empty())
         .map(|part| {
