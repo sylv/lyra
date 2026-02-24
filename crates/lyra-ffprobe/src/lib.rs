@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path, process::Command};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,24 +31,46 @@ pub struct ProbeResult {
     pub duration_seconds: Option<f64>,
 }
 
-#[derive(Deserialize)]
-struct FfprobeOutput {
-    streams: Vec<FfprobeStream>,
-    format: Option<FfprobeFormat>,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FfprobeOutput {
+    #[serde(default)]
+    pub streams: Vec<FfprobeStream>,
+    #[serde(default)]
+    pub format: Option<FfprobeFormat>,
 }
 
-#[derive(Deserialize)]
-struct FfprobeStream {
-    index: Option<u32>,
-    codec_type: Option<String>,
-    codec_name: Option<String>,
-    time_base: Option<String>,
-    tags: Option<HashMap<String, String>>,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FfprobeStream {
+    #[serde(default)]
+    pub index: Option<u32>,
+    #[serde(default)]
+    pub codec_type: Option<String>,
+    #[serde(default)]
+    pub codec_name: Option<String>,
+    #[serde(default)]
+    pub time_base: Option<String>,
+    #[serde(default)]
+    pub bit_rate: Option<String>,
+    #[serde(default)]
+    pub width: Option<i64>,
+    #[serde(default)]
+    pub height: Option<i64>,
+    #[serde(default)]
+    pub channels: Option<i64>,
+    #[serde(default)]
+    pub avg_frame_rate: Option<String>,
+    #[serde(default)]
+    pub r_frame_rate: Option<String>,
+    #[serde(default)]
+    pub tags: Option<HashMap<String, String>>,
 }
 
-#[derive(Deserialize)]
-struct FfprobeFormat {
-    duration: Option<String>,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FfprobeFormat {
+    #[serde(default)]
+    pub duration: Option<String>,
+    #[serde(default)]
+    pub bit_rate: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -63,6 +85,11 @@ struct ProbeFrame {
 }
 
 pub fn probe_streams(ffprobe_bin: &Path, input: &Path) -> Result<ProbeResult> {
+    let parsed = probe_output(ffprobe_bin, input)?;
+    probe_streams_from_output(&parsed)
+}
+
+pub fn probe_output(ffprobe_bin: &Path, input: &Path) -> Result<FfprobeOutput> {
     let output = Command::new(ffprobe_bin)
         .args([
             "-v",
@@ -81,9 +108,10 @@ pub fn probe_streams(ffprobe_bin: &Path, input: &Path) -> Result<ProbeResult> {
         bail!("ffprobe failed: {stderr}");
     }
 
-    let parsed: FfprobeOutput =
-        serde_json::from_slice(&output.stdout).context("failed to parse ffprobe JSON")?;
+    serde_json::from_slice(&output.stdout).context("failed to parse ffprobe JSON")
+}
 
+pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> {
     let duration_seconds = parsed
         .format
         .as_ref()
@@ -97,15 +125,15 @@ pub fn probe_streams(ffprobe_bin: &Path, input: &Path) -> Result<ProbeResult> {
 
     let streams = parsed
         .streams
-        .into_iter()
+        .iter()
         .filter_map(|stream| {
             let index = stream.index?;
-            let codec_type = stream.codec_type?;
+            let codec_type = stream.codec_type.as_ref()?;
             let stream_type = match codec_type.as_str() {
                 "video" => StreamType::Video,
                 "audio" => StreamType::Audio,
                 "subtitle" => StreamType::Subtitle,
-                _ => StreamType::Other(codec_type),
+                _ => StreamType::Other(codec_type.to_string()),
             };
 
             let time_base = stream
@@ -121,7 +149,7 @@ pub fn probe_streams(ffprobe_bin: &Path, input: &Path) -> Result<ProbeResult> {
             Some(Stream {
                 index,
                 stream_type,
-                codec_name: stream.codec_name,
+                codec_name: stream.codec_name.clone(),
                 time_base,
                 language,
             })

@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
-use lyra_ffprobe::{StreamType as ProbeStreamType, probe_streams as run_probe_streams};
+use lyra_ffprobe::{
+    FfprobeOutput, StreamType as ProbeStreamType, probe_streams_from_output as parse_probe_streams,
+};
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
@@ -11,9 +13,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    binaries::configured_ffprobe_bin,
     config::TARGET_SEGMENT_SECONDS,
-    keyframes,
     model::{StreamDescriptor, StreamInfo, StreamType},
     playlist,
     profiles::{Profile, ProfileContext, ProfileType, SegmentLayout},
@@ -100,13 +100,6 @@ struct SegmentTimeline {
     hls_cuts: Arc<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub enum KeyframePolicy {
-    #[default]
-    ProbeIfMissing,
-    CacheOnly,
-}
-
 pub fn prepare_segments_root() -> Result<PathBuf> {
     let root = std::env::current_dir()?.join(".segments");
     prepare_segments_root_at(&root)
@@ -136,9 +129,10 @@ pub fn create_process_segment_dir(root: &Path) -> Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn probe_streams(input: &Path) -> Result<(Vec<StreamDescriptor>, Option<StreamInfo>, f64)> {
-    let ffprobe_bin = resolve_ffprobe_bin();
-    let parsed = run_probe_streams(&ffprobe_bin, input)?;
+pub fn streams_from_probe_output(
+    ffprobe_output: &FfprobeOutput,
+) -> Result<(Vec<StreamDescriptor>, Option<StreamInfo>, f64)> {
+    let parsed = parse_probe_streams(ffprobe_output)?;
 
     let duration_seconds = parsed
         .duration_seconds
@@ -487,57 +481,4 @@ fn build_hls_cuts_arg(start_pts: &[i64], time_base_num: i64, time_base_den: i64)
         cuts.push_str(&pts_to_av_time(start, time_base_num, time_base_den).to_string());
     }
     cuts
-}
-
-pub fn load_keyframes_if_needed_with_policy(
-    input: &Path,
-    has_primary_video: bool,
-    policy: KeyframePolicy,
-) -> Result<Option<Arc<Vec<i64>>>> {
-    if !has_primary_video {
-        return Ok(None);
-    }
-
-    let keyframes = match policy {
-        KeyframePolicy::ProbeIfMissing => keyframes::load_or_probe_keyframes(input)?,
-        KeyframePolicy::CacheOnly => {
-            let Some(cached) = keyframes::load_cached_keyframes(input)? else {
-                return Ok(None);
-            };
-            cached
-        }
-    };
-
-    if keyframes.is_empty() {
-        warn!(
-            input = %input.display(),
-            "keyframe data is empty; keyframe-dependent profiles will be disabled"
-        );
-        return Ok(None);
-    }
-
-    Ok(Some(Arc::new(keyframes)))
-}
-
-fn resolve_ffprobe_bin() -> PathBuf {
-    if let Some(path) = configured_ffprobe_bin() {
-        return path;
-    }
-
-    if let Ok(path) = std::env::var("LYRA_FFPROBE_BIN") {
-        return PathBuf::from(path);
-    }
-
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let local_candidate = manifest_dir.join("bin/ffprobe");
-    if local_candidate.exists() {
-        return local_candidate;
-    }
-
-    let workspace_candidate = manifest_dir.join("../../bin/ffprobe");
-    if workspace_candidate.exists() {
-        return workspace_candidate;
-    }
-
-    PathBuf::from("ffprobe")
 }

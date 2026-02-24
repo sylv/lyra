@@ -1,20 +1,22 @@
 use anyhow::{Context, Result, bail};
+use lyra_ffprobe::{FfprobeOutput, probe_keyframes_pts, probe_output};
 use std::{
     collections::HashMap,
-    path::{Path as FsPath, PathBuf},
+    path::{Path as FsPath, Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
+use tracing::warn;
 
 use crate::{
+    binaries::configured_ffprobe_bin,
     ffmpeg::{
         ensure_ffmpeg_for_init, ensure_ffmpeg_for_segment, parse_segment_index, wait_for_file,
     },
     profiles::{AudioAacProfile, Profile, VideoCopyProfile, VideoH264Profile},
     state::{
-        KeyframePolicy, build_master_playlist, build_stream_profiles, create_process_segment_dir,
-        load_keyframes_if_needed_with_policy, prepare_segments_root, prepare_segments_root_at,
-        probe_streams,
+        build_master_playlist, build_stream_profiles, create_process_segment_dir,
+        prepare_segments_root, prepare_segments_root_at, streams_from_probe_output,
     },
 };
 
@@ -77,20 +79,8 @@ pub fn build_package(
     input: &FsPath,
     profiles: &[Arc<dyn Profile>],
     segments_root: Option<&FsPath>,
-) -> Result<Package> {
-    build_package_with_keyframe_policy(
-        input,
-        profiles,
-        segments_root,
-        KeyframePolicy::ProbeIfMissing,
-    )
-}
-
-pub fn build_package_with_keyframe_policy(
-    input: &FsPath,
-    profiles: &[Arc<dyn Profile>],
-    segments_root: Option<&FsPath>,
-    keyframe_policy: KeyframePolicy,
+    ffprobe_output: &FfprobeOutput,
+    keyframes_pts: &[i64],
 ) -> Result<Package> {
     let input = canonicalize_input_path(input)?;
 
@@ -100,12 +90,19 @@ pub fn build_package_with_keyframe_policy(
     };
     let process_dir = create_process_segment_dir(&segments_root)?;
 
-    let (streams, primary_video_info, duration_seconds) = probe_streams(&input)?;
-    let keyframes = load_keyframes_if_needed_with_policy(
-        &input,
-        primary_video_info.is_some(),
-        keyframe_policy,
-    )?;
+    let (streams, primary_video_info, duration_seconds) =
+        streams_from_probe_output(ffprobe_output)?;
+    let keyframes = if primary_video_info.is_some() && !keyframes_pts.is_empty() {
+        Some(Arc::new(keyframes_pts.to_vec()))
+    } else {
+        if primary_video_info.is_some() {
+            warn!(
+                input = %input.display(),
+                "keyframe data is empty; keyframe-dependent profiles will be disabled"
+            );
+        }
+        None
+    };
 
     let stream_profiles = build_stream_profiles(
         &input,
@@ -136,8 +133,12 @@ pub fn build_package_with_keyframe_policy(
 }
 
 pub fn build_package_with_defaults(input: &FsPath) -> Result<Package> {
+    let input = canonicalize_input_path(input)?;
     let profiles = get_profiles();
-    build_package(input, &profiles, None)
+    let ffprobe_bin = resolve_ffprobe_bin();
+    let ffprobe_output = probe_output(&ffprobe_bin, &input)?;
+    let keyframes = probe_keyframes_pts(&ffprobe_bin, &input)?;
+    build_package(&input, &profiles, None, &ffprobe_output, &keyframes)
 }
 
 impl Package {
@@ -214,4 +215,27 @@ impl Session {
         wait_for_file(&path, timeout).await?;
         Ok(path)
     }
+}
+
+fn resolve_ffprobe_bin() -> PathBuf {
+    if let Some(path) = configured_ffprobe_bin() {
+        return path;
+    }
+
+    if let Ok(path) = std::env::var("LYRA_FFPROBE_BIN") {
+        return PathBuf::from(path);
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let local_candidate = manifest_dir.join("bin/ffprobe");
+    if local_candidate.exists() {
+        return local_candidate;
+    }
+
+    let workspace_candidate = manifest_dir.join("../../bin/ffprobe");
+    if workspace_candidate.exists() {
+        return workspace_candidate;
+    }
+
+    PathBuf::from("ffprobe")
 }

@@ -38,9 +38,11 @@ mod config;
 mod entities;
 mod error;
 mod ffmpeg;
+mod file_analysis;
 mod graphql;
 mod hls;
 mod jobs;
+mod json_encoding;
 mod metadata;
 mod scanner;
 

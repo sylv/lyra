@@ -1,5 +1,7 @@
 pub mod assets;
 pub mod file_assets;
+pub mod file_keyframes;
+pub mod file_probe;
 pub mod files;
 pub mod item_files;
 pub mod item_metadata;

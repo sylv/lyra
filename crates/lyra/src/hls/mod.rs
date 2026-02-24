@@ -3,6 +3,8 @@ use crate::{
     auth::RequestAuth,
     config::get_config,
     entities::{files, libraries},
+    file_analysis,
+    jobs::handlers::{file_ffprobe, file_keyframes},
 };
 use axum::{
     Router,
@@ -12,9 +14,7 @@ use axum::{
     response::Response,
     routing::get,
 };
-use lyra_packager::{
-    KeyframePolicy, Package, Session, build_package_with_keyframe_policy, get_profiles,
-};
+use lyra_packager::{Package, Session, build_package, get_profiles};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -148,6 +148,80 @@ async fn get_or_build_packager_state(
     }
 
     let file_path = resolve_file_path(state, file_id).await?;
+    let mut generated_probe = false;
+    let ffprobe_output = match file_analysis::load_cached_ffprobe_output(&state.pool, file_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(
+                file_id,
+                error = %err,
+                "failed to load cached ffprobe data"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to prepare stream metadata",
+            )
+        })? {
+        Some(output) => output,
+        None => {
+            generated_probe = true;
+            file_ffprobe::extract_and_store_ffprobe(&state.pool, file_id, &file_path)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        file_id,
+                        error = %err,
+                        "failed to generate ffprobe data on-demand"
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
+        }
+    };
+
+    let mut generated_keyframes = false;
+    let keyframes_pts = match file_analysis::load_cached_keyframes(&state.pool, file_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(
+                file_id,
+                error = %err,
+                "failed to load cached keyframe data"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to prepare stream metadata",
+            )
+        })? {
+        Some(keyframes) => keyframes,
+        None => {
+            generated_keyframes = true;
+            file_keyframes::extract_and_store_keyframes(&state.pool, file_id, &file_path)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        file_id,
+                        error = %err,
+                        "failed to generate keyframe data on-demand"
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
+        }
+    };
+
+    if generated_probe || generated_keyframes {
+        tracing::warn!(
+            file_id,
+            generated_probe,
+            generated_keyframes,
+            "playback requested before background media analysis completed; generating missing probe data on-demand"
+        );
+    }
 
     let profiles = get_profiles();
     let segments_root = get_config()
@@ -155,11 +229,12 @@ async fn get_or_build_packager_state(
         .join(file_id.to_string());
 
     let packager_state = Arc::new(
-        build_package_with_keyframe_policy(
+        build_package(
             &file_path,
             &profiles,
             Some(&segments_root),
-            KeyframePolicy::CacheOnly,
+            &ffprobe_output,
+            &keyframes_pts,
         )
         .map_err(|err| {
             tracing::error!(file_id, error = %err, "failed to build packager state");

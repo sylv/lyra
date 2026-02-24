@@ -127,7 +127,7 @@ CREATE TABLE file_probe (
     audio_bitrate INTEGER,
     audio_channels INTEGER,
     has_subtitles INTEGER NOT NULL,
-    streams BLOB, -- ZSTD-compressed JSON, an array with info on each stream in the file
+    streams BLOB, -- ZSTD-compressed JSON from lyra-ffprobe (streams + format)
     generated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
@@ -349,7 +349,7 @@ CREATE INDEX item_node_matches_lookup_idx
 
 CREATE TABLE jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_type INTEGER NOT NULL, -- 0 file.generate_timeline_preview, 1 file.generate_thumbnail
+    job_type INTEGER NOT NULL, -- 0 file.generate_timeline_preview, 1 file.generate_thumbnail, 2 file.extract_ffprobe, 3 file.extract_keyframes
     file_id INTEGER NOT NULL,
     status INTEGER NOT NULL, -- 0 success, 1 error
     attempt_count INTEGER NOT NULL DEFAULT 0,

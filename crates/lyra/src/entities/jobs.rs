@@ -9,6 +9,10 @@ pub enum JobType {
     FileGenerateTimelinePreview,
     #[sea_orm(num_value = 1)]
     FileGenerateThumbnail,
+    #[sea_orm(num_value = 2)]
+    FileExtractFfprobe,
+    #[sea_orm(num_value = 3)]
+    FileExtractKeyframes,
 }
 
 impl JobType {
@@ -16,6 +20,8 @@ impl JobType {
         match self {
             JobType::FileGenerateTimelinePreview => 0,
             JobType::FileGenerateThumbnail => 1,
+            JobType::FileExtractFfprobe => 2,
+            JobType::FileExtractKeyframes => 3,
         }
     }
 
@@ -23,6 +29,8 @@ impl JobType {
         match self {
             JobType::FileGenerateTimelinePreview => "Timeline Preview",
             JobType::FileGenerateThumbnail => "Thumbnail",
+            JobType::FileExtractFfprobe => "FFprobe",
+            JobType::FileExtractKeyframes => "Keyframes",
         }
     }
 }
