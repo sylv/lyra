@@ -1,4 +1,7 @@
-use crate::entities::{files, jobs as jobs_entity};
+use crate::{
+    entities::{files, jobs as jobs_entity},
+    reactivity::{SharedSyncVersion, bump_sync_version},
+};
 use anyhow::Context;
 use sea_orm::{
     ActiveValue::Set,
@@ -139,6 +142,7 @@ pub struct JobManager {
     handler: Arc<dyn JobHandler>,
     database: DatabaseConnection,
     wake_signal: Arc<Notify>,
+    sync_version: SharedSyncVersion,
 }
 
 impl JobManager {
@@ -146,11 +150,13 @@ impl JobManager {
         handler: Arc<dyn JobHandler>,
         database: DatabaseConnection,
         wake_signal: Arc<Notify>,
+        sync_version: SharedSyncVersion,
     ) -> Self {
         Self {
             handler,
             database,
             wake_signal,
+            sync_version,
         }
     }
 
@@ -259,6 +265,8 @@ impl JobManager {
                 .await?;
             }
         }
+
+        bump_sync_version(&self.sync_version);
 
         Ok(())
     }

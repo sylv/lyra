@@ -5,6 +5,7 @@ use crate::jobs::{
         file_thumbnail::FileThumbnailJob, file_timeline_preview::FileTimelinePreviewJob,
     },
 };
+use crate::reactivity::SharedSyncVersion;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -18,9 +19,20 @@ pub fn get_registered_job_handlers() -> Vec<Arc<dyn JobHandler>> {
     ]
 }
 
-pub fn get_registered_jobs(pool: &DatabaseConnection, wake_signal: Arc<Notify>) -> Vec<JobManager> {
+pub fn get_registered_jobs(
+    pool: &DatabaseConnection,
+    wake_signal: Arc<Notify>,
+    sync_version: SharedSyncVersion,
+) -> Vec<JobManager> {
     get_registered_job_handlers()
         .into_iter()
-        .map(|handler| JobManager::new(handler, pool.clone(), wake_signal.clone()))
+        .map(|handler| {
+            JobManager::new(
+                handler,
+                pool.clone(),
+                wake_signal.clone(),
+                sync_version.clone(),
+            )
+        })
         .collect()
 }
