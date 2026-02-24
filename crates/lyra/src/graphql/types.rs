@@ -1,8 +1,8 @@
 use super::properties::{ItemNodeProperties, RootNodeProperties, SeasonNodeProperties};
 use crate::auth::RequestAuth;
 use crate::entities::{
-    files, item_files, item_metadata, items, root_metadata, roots, season_metadata, seasons,
-    watch_progress,
+    file_probe, files, item_files, item_metadata, items, root_metadata, roots, season_metadata,
+    seasons, watch_progress,
 };
 use async_graphql::{ComplexObject, Context, Union};
 use sea_orm::{
@@ -264,12 +264,20 @@ impl items::Model {
         } else {
             None
         };
+        let default_file = find_default_file_for_item(pool, self).await?;
+        let probe = if let Some(file) = default_file.as_ref() {
+            file_probe::Entity::find_by_id(file.id).one(pool).await?
+        } else {
+            None
+        };
 
         Ok(ItemNodeProperties::from_metadata(
             metadata,
             self.id.clone(),
             season_number,
             self.episode_number,
+            default_file,
+            probe,
         ))
     }
 

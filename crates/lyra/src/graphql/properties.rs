@@ -1,7 +1,7 @@
 use crate::entities::{
     assets,
     file_assets::{self, FileAssetRole},
-    files, item_files, item_metadata, root_metadata, season_metadata,
+    file_probe, files, item_files, item_metadata, root_metadata, season_metadata,
 };
 use async_graphql::{ComplexObject, Context, SimpleObject};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
@@ -76,6 +76,17 @@ pub struct ItemNodeProperties {
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     pub runtime_minutes: Option<i64>,
+    pub duration_seconds: Option<i64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    pub fps: Option<f64>,
+    pub video_bitrate: Option<i64>,
+    pub audio_bitrate: Option<i64>,
+    pub audio_channels: Option<i64>,
+    pub has_subtitles: Option<bool>,
+    pub file_size_bytes: Option<i64>,
     pub released_at: Option<i64>,
     pub ended_at: Option<i64>,
     pub created_at: Option<i64>,
@@ -312,14 +323,72 @@ impl ItemNodeProperties {
         item_id: String,
         season_number: Option<i64>,
         episode_number: Option<i64>,
+        default_file: Option<files::Model>,
+        probe: Option<file_probe::Model>,
     ) -> Self {
-        let Some(metadata) = metadata else {
-            return Self {
+        let duration_seconds = probe
+            .as_ref()
+            .and_then(|probe| probe.duration_s)
+            .filter(|seconds| *seconds > 0);
+        let runtime_from_probe = duration_seconds.map(minutes_from_seconds_ceil);
+        let runtime_from_metadata: Option<i64> = None;
+
+        match metadata {
+            Some(metadata) => Self {
+                description: metadata.description,
+                rating: metadata.score_normalized.map(|score| score as f64 / 10.0),
+                season_number,
+                episode_number,
+                runtime_minutes: runtime_from_probe.or(runtime_from_metadata),
+                duration_seconds,
+                width: probe
+                    .as_ref()
+                    .and_then(|probe| probe.width)
+                    .or(default_file.as_ref().and_then(|file| file.width)),
+                height: probe
+                    .as_ref()
+                    .and_then(|probe| probe.height)
+                    .or(default_file.as_ref().and_then(|file| file.height)),
+                video_codec: probe.as_ref().and_then(|probe| probe.video_codec.clone()),
+                audio_codec: probe.as_ref().and_then(|probe| probe.audio_codec.clone()),
+                fps: probe.as_ref().and_then(|probe| probe.fps),
+                video_bitrate: probe.as_ref().and_then(|probe| probe.video_bitrate),
+                audio_bitrate: probe.as_ref().and_then(|probe| probe.audio_bitrate),
+                audio_channels: probe.as_ref().and_then(|probe| probe.audio_channels),
+                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles),
+                file_size_bytes: default_file.as_ref().map(|file| file.size_bytes),
+                released_at: metadata.released_at,
+                ended_at: metadata.ended_at,
+                created_at: Some(metadata.created_at),
+                updated_at: Some(metadata.updated_at),
+                background_asset_id: metadata.background_asset_id,
+                poster_asset_id: metadata.poster_asset_id,
+                thumbnail_asset_id: metadata.thumbnail_asset_id,
+                item_id,
+            },
+            None => Self {
                 description: None,
                 rating: None,
                 season_number,
                 episode_number,
-                runtime_minutes: None,
+                runtime_minutes: runtime_from_probe.or(runtime_from_metadata),
+                duration_seconds,
+                width: probe
+                    .as_ref()
+                    .and_then(|probe| probe.width)
+                    .or(default_file.as_ref().and_then(|file| file.width)),
+                height: probe
+                    .as_ref()
+                    .and_then(|probe| probe.height)
+                    .or(default_file.as_ref().and_then(|file| file.height)),
+                video_codec: probe.as_ref().and_then(|probe| probe.video_codec.clone()),
+                audio_codec: probe.as_ref().and_then(|probe| probe.audio_codec.clone()),
+                fps: probe.as_ref().and_then(|probe| probe.fps),
+                video_bitrate: probe.as_ref().and_then(|probe| probe.video_bitrate),
+                audio_bitrate: probe.as_ref().and_then(|probe| probe.audio_bitrate),
+                audio_channels: probe.as_ref().and_then(|probe| probe.audio_channels),
+                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles),
+                file_size_bytes: default_file.as_ref().map(|file| file.size_bytes),
                 released_at: None,
                 ended_at: None,
                 created_at: None,
@@ -328,23 +397,7 @@ impl ItemNodeProperties {
                 poster_asset_id: None,
                 thumbnail_asset_id: None,
                 item_id,
-            };
-        };
-
-        Self {
-            description: metadata.description,
-            rating: metadata.score_normalized.map(|score| score as f64 / 10.0),
-            season_number,
-            episode_number,
-            runtime_minutes: None,
-            released_at: metadata.released_at,
-            ended_at: metadata.ended_at,
-            created_at: Some(metadata.created_at),
-            updated_at: Some(metadata.updated_at),
-            background_asset_id: metadata.background_asset_id,
-            poster_asset_id: metadata.poster_asset_id,
-            thumbnail_asset_id: metadata.thumbnail_asset_id,
-            item_id,
+            },
         }
     }
 
@@ -374,6 +427,10 @@ impl ItemNodeProperties {
 
         Ok(None)
     }
+}
+
+fn minutes_from_seconds_ceil(seconds: i64) -> i64 {
+    (seconds + 59) / 60
 }
 
 impl Asset {

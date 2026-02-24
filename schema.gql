@@ -114,6 +114,17 @@ type ItemNodeProperties {
 	seasonNumber: Int
 	episodeNumber: Int
 	runtimeMinutes: Int
+	durationSeconds: Int
+	width: Int
+	height: Int
+	videoCodec: String
+	audioCodec: String
+	fps: Float
+	videoBitrate: Int
+	audioBitrate: Int
+	audioChannels: Int
+	hasSubtitles: Boolean
+	fileSizeBytes: Int
 	releasedAt: Int
 	endedAt: Int
 	createdAt: Int
