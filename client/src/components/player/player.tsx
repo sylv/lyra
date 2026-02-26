@@ -212,7 +212,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		if (Hls.isSupported()) {
 			setErrorMessage(null);
 			setPlayerLoading(true);
-			const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/index.m3u8`;
+			const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/master.m3u8`;
 			const watchProgressPercent = currentMedia.watchProgress?.progressPercent;
 			const hasWatchProgress =
 				typeof watchProgressPercent === "number" &&
