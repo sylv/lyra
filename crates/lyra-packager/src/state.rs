@@ -16,7 +16,7 @@ use crate::{
     config::TARGET_SEGMENT_SECONDS,
     model::{StreamDescriptor, StreamInfo, StreamType},
     playlist,
-    profiles::{Profile, ProfileContext, ProfileType, SegmentLayout},
+    profiles::{Profile, ProfileContext, SegmentLayout},
 };
 
 #[derive(Clone, Debug)]
@@ -177,6 +177,12 @@ pub fn streams_from_probe_output(
             stream_index,
             stream_type,
             codec_name,
+            bit_rate: stream.bit_rate,
+            frame_rate: parse_stream_frame_rate(stream.avg_frame_rate.as_deref())
+                .or_else(|| parse_stream_frame_rate(stream.r_frame_rate.as_deref())),
+            width: stream.width,
+            height: stream.height,
+            channels: stream.channels,
             language: stream.language,
             is_primary_video,
         });
@@ -382,10 +388,19 @@ pub fn build_master_playlist(
             .unwrap_or_else(|| format!("Audio {}", stream.stream_id));
         let language = stream.language.as_deref().unwrap_or("und");
         let uri = format!("/stream/{}/{}/index.m3u8", stream.stream_id, "audio_aac");
-        playlist.push_str(&format!(
-            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"{}\",DEFAULT=NO,AUTOSELECT=YES,LANGUAGE=\"{}\",URI=\"{}\"\n",
-            name, language, uri
-        ));
+        let mut media_attrs = vec![
+            "TYPE=AUDIO".to_string(),
+            "GROUP-ID=\"audio\"".to_string(),
+            format!("NAME=\"{}\"", name),
+            "DEFAULT=NO".to_string(),
+            "AUTOSELECT=YES".to_string(),
+            format!("LANGUAGE=\"{}\"", language),
+            format!("URI=\"{}\"", uri),
+        ];
+        if let Some(channels) = stream.channels {
+            media_attrs.push(format!("CHANNELS=\"{}\"", channels));
+        }
+        playlist.push_str(&format!("#EXT-X-MEDIA:{}\n", media_attrs.join(",")));
     }
 
     let primary_video = streams
@@ -416,19 +431,75 @@ pub fn build_master_playlist(
             profile.stream.stream_id,
             profile.profile.id_name()
         );
-        let audio_attr = if has_audio { ",AUDIO=\"audio\"" } else { "" };
-        let bandwidth = match profile.profile.profile_type() {
-            ProfileType::Copy => 8_000_000,
-            ProfileType::Transcode => 4_000_000,
-        };
-        playlist.push_str(&format!(
-            "#EXT-X-STREAM-INF:BANDWIDTH={}{}\n",
-            bandwidth, audio_attr
-        ));
+        let mut attrs: Vec<String> = Vec::new();
+
+        if let Some(bandwidth) = estimate_video_profile_bandwidth(profile) {
+            attrs.push(format!("BANDWIDTH={bandwidth}"));
+            attrs.push(format!("AVERAGE-BANDWIDTH={bandwidth}"));
+        }
+
+        if let Some(frame_rate) = profile.stream.frame_rate {
+            attrs.push(format!("FRAME-RATE={:.3}", frame_rate));
+        }
+
+        if let (Some(width), Some(height)) = (profile.stream.width, profile.stream.height) {
+            attrs.push(format!("RESOLUTION={}x{}", width, height));
+        }
+
+        if has_audio {
+            attrs.push("AUDIO=\"audio\"".to_string());
+        }
+
+        playlist.push_str(&format!("#EXT-X-STREAM-INF:{}\n", attrs.join(",")));
         playlist.push_str(&format!("{}\n", uri));
     }
 
     Ok(playlist)
+}
+
+fn estimate_video_profile_bandwidth(profile: &StreamProfileState) -> Option<u64> {
+    let source_bitrate = profile.stream.bit_rate?;
+
+    match profile.profile.id_name() {
+        "video_copy" => Some(source_bitrate),
+        "video_h264" => {
+            if profile.stream.codec_name.eq_ignore_ascii_case("h264") {
+                Some(scale_bitrate(source_bitrate, 3, 2))
+            } else {
+                Some(scale_bitrate(source_bitrate, 2, 1))
+            }
+        }
+        _ => None,
+    }
+}
+
+fn scale_bitrate(value: u64, numerator: u64, denominator: u64) -> u64 {
+    value.saturating_mul(numerator) / denominator
+}
+
+fn parse_stream_frame_rate(value: Option<&str>) -> Option<f64> {
+    let raw = value?;
+    if raw.is_empty() || raw == "0/0" {
+        return None;
+    }
+    if let Some((num, den)) = raw.split_once('/') {
+        let num = num.parse::<f64>().ok()?;
+        let den = den.parse::<f64>().ok()?;
+        if den <= 0.0 {
+            return None;
+        }
+        let rate = num / den;
+        if rate > 0.0 && rate.is_finite() {
+            return Some(rate);
+        }
+        return None;
+    }
+    let rate = raw.parse::<f64>().ok()?;
+    if rate > 0.0 && rate.is_finite() {
+        Some(rate)
+    } else {
+        None
+    }
 }
 
 fn compute_segment_starts_from_keyframes_pts(

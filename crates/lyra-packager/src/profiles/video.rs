@@ -47,7 +47,7 @@ impl Profile for VideoCopyProfile {
         ctx: &ProfileContext,
         start_segment: i64,
         start_seconds: f64,
-        _hls_cuts: &str,
+        hls_cuts: &str,
     ) -> Vec<OsString> {
         let mut a: Vec<OsString> = Vec::new();
 
@@ -78,7 +78,7 @@ impl Profile for VideoCopyProfile {
         // hls stuff
         ffarg!(a, "-f", "hls");
         ffarg!(a, "-hls_time", TARGET_SEGMENT_SECONDS.to_string());
-        // ffarg!(a, "-hls_cuts", hls_cuts);
+        ffarg!(a, "-hls_cuts", hls_cuts);
         ffarg!(a, "-start_number", start_segment.to_string());
         ffarg!(a, "-hls_flags", "temp_file");
         ffarg!(a, "-hls_segment_type", "fmp4");

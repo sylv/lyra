@@ -23,6 +23,29 @@ pub struct Stream {
     pub codec_name: Option<String>,
     pub time_base: Option<TimeBase>,
     pub language: Option<String>,
+    pub bit_rate: Option<u64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub channels: Option<u32>,
+    pub sample_rate: Option<u32>,
+    pub channel_layout: Option<String>,
+    pub profile: Option<String>,
+    pub level: Option<i64>,
+    pub codec_tag_string: Option<String>,
+    pub codec_tag: Option<String>,
+    pub pix_fmt: Option<String>,
+    pub color_range: Option<String>,
+    pub color_space: Option<String>,
+    pub color_transfer: Option<String>,
+    pub color_primaries: Option<String>,
+    pub chroma_location: Option<String>,
+    pub bits_per_raw_sample: Option<u32>,
+    pub is_avc: Option<bool>,
+    pub nal_length_size: Option<u32>,
+    pub avg_frame_rate: Option<String>,
+    pub r_frame_rate: Option<String>,
+    pub extradata: Option<String>,
+    pub extradata_size: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +71,14 @@ pub struct FfprobeStream {
     #[serde(default)]
     pub codec_name: Option<String>,
     #[serde(default)]
+    pub profile: Option<String>,
+    #[serde(default)]
+    pub level: Option<i64>,
+    #[serde(default)]
+    pub codec_tag_string: Option<String>,
+    #[serde(default)]
+    pub codec_tag: Option<String>,
+    #[serde(default)]
     pub time_base: Option<String>,
     #[serde(default)]
     pub bit_rate: Option<String>,
@@ -58,9 +89,35 @@ pub struct FfprobeStream {
     #[serde(default)]
     pub channels: Option<i64>,
     #[serde(default)]
+    pub sample_rate: Option<String>,
+    #[serde(default)]
+    pub channel_layout: Option<String>,
+    #[serde(default)]
+    pub pix_fmt: Option<String>,
+    #[serde(default)]
+    pub color_range: Option<String>,
+    #[serde(default)]
+    pub color_space: Option<String>,
+    #[serde(default)]
+    pub color_transfer: Option<String>,
+    #[serde(default)]
+    pub color_primaries: Option<String>,
+    #[serde(default)]
+    pub chroma_location: Option<String>,
+    #[serde(default)]
+    pub bits_per_raw_sample: Option<String>,
+    #[serde(default)]
+    pub is_avc: Option<String>,
+    #[serde(default)]
+    pub nal_length_size: Option<String>,
+    #[serde(default)]
     pub avg_frame_rate: Option<String>,
     #[serde(default)]
     pub r_frame_rate: Option<String>,
+    #[serde(default)]
+    pub extradata: Option<String>,
+    #[serde(default)]
+    pub extradata_size: Option<i64>,
     #[serde(default)]
     pub tags: Option<HashMap<String, String>>,
 }
@@ -96,6 +153,7 @@ pub fn probe_output(ffprobe_bin: &Path, input: &Path) -> Result<FfprobeOutput> {
             "error",
             "-show_streams",
             "-show_format",
+            "-show_data",
             "-of",
             "json",
         ])
@@ -152,6 +210,29 @@ pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> 
                 codec_name: stream.codec_name.clone(),
                 time_base,
                 language,
+                bit_rate: parse_optional_u64(stream.bit_rate.as_deref()),
+                width: parse_optional_u32_from_i64(stream.width),
+                height: parse_optional_u32_from_i64(stream.height),
+                channels: parse_optional_u32_from_i64(stream.channels),
+                sample_rate: parse_optional_u32(stream.sample_rate.as_deref()),
+                channel_layout: stream.channel_layout.clone(),
+                profile: stream.profile.clone(),
+                level: stream.level,
+                codec_tag_string: stream.codec_tag_string.clone(),
+                codec_tag: stream.codec_tag.clone(),
+                pix_fmt: stream.pix_fmt.clone(),
+                color_range: stream.color_range.clone(),
+                color_space: stream.color_space.clone(),
+                color_transfer: stream.color_transfer.clone(),
+                color_primaries: stream.color_primaries.clone(),
+                chroma_location: stream.chroma_location.clone(),
+                bits_per_raw_sample: parse_optional_u32(stream.bits_per_raw_sample.as_deref()),
+                is_avc: parse_optional_bool(stream.is_avc.as_deref()),
+                nal_length_size: parse_optional_u32(stream.nal_length_size.as_deref()),
+                avg_frame_rate: stream.avg_frame_rate.clone(),
+                r_frame_rate: stream.r_frame_rate.clone(),
+                extradata: stream.extradata.clone(),
+                extradata_size: parse_optional_u32_from_i64(stream.extradata_size),
             })
         })
         .collect();
@@ -227,4 +308,24 @@ fn parse_time_base(value: &str) -> Result<TimeBase> {
         bail!("invalid time_base values: {value}");
     }
     Ok(TimeBase { num, den })
+}
+
+fn parse_optional_u64(value: Option<&str>) -> Option<u64> {
+    value.and_then(|raw| raw.parse::<u64>().ok())
+}
+
+fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
+    value.and_then(|raw| raw.parse::<u32>().ok())
+}
+
+fn parse_optional_u32_from_i64(value: Option<i64>) -> Option<u32> {
+    value.and_then(|raw| u32::try_from(raw).ok())
+}
+
+fn parse_optional_bool(value: Option<&str>) -> Option<bool> {
+    value.and_then(|raw| match raw {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    })
 }

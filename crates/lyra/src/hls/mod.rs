@@ -31,7 +31,7 @@ struct SegmentQuery {
 
 pub fn get_hls_router() -> Router<AppState> {
     let mut router = Router::new()
-        .route("/stream/{file_id}/index.m3u8", get(get_master_playlist))
+        .route("/stream/{file_id}/master.m3u8", get(get_master_playlist))
         .route(
             "/stream/{file_id}/{stream_id}/{profile_id}/index.m3u8",
             get(get_stream_playlist),

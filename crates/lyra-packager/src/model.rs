@@ -11,6 +11,11 @@ pub struct StreamDescriptor {
     pub stream_index: u32,
     pub stream_type: StreamType,
     pub codec_name: String,
+    pub bit_rate: Option<u64>,
+    pub frame_rate: Option<f64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub channels: Option<u32>,
     pub language: Option<String>,
     pub is_primary_video: bool,
 }
