@@ -186,7 +186,6 @@ type Query {
 	"""
 	listFiles(path: String!): [String!]!
 	libraries: [Library!]!
-	syncVersion: Int!
 	activities: [Activity!]!
 }
 

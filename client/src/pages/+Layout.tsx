@@ -10,7 +10,6 @@ import { SuspenseBoundary } from "../components/fallback";
 import { PlayerWrapper } from "../components/player/player-wrapper";
 import { SetupWrapper } from "../components/setup/setup-wrapper";
 import { Sidebar } from "../components/sidebar";
-import { SyncVersionWatcher } from "../components/sync-version-watcher";
 import { ThemeProvider } from "../components/theme-provider";
 import { Toaster } from "../components/ui/sonner";
 import "./globals.css";
@@ -40,7 +39,6 @@ export const Layout: FC<{ children: ReactNode }> = ({ children }) => {
 						<SetupWrapper>
 							<AppErrorBoundary className="fixed inset-0">
 								<SuspenseBoundary className="fixed inset-0">
-									<SyncVersionWatcher />
 									<Sidebar>{children}</Sidebar>
 									<PlayerWrapper />
 								</SuspenseBoundary>

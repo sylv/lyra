@@ -8,7 +8,6 @@ use crate::{
         seasons, watch_progress,
     },
     jobs,
-    reactivity::read_sync_version,
 };
 use async_graphql::{
     Context, Enum, InputObject, Object, SimpleObject,
@@ -21,7 +20,6 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, RelationTrait, prelude::Expr,
 };
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
 use tokio::task::spawn_blocking;
 
 const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
@@ -486,12 +484,6 @@ impl Query {
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
         Ok(libraries)
-    }
-
-    async fn sync_version(&self, ctx: &Context<'_>) -> Result<i64, async_graphql::Error> {
-        let sync_version = ctx.data::<std::sync::Arc<AtomicU64>>()?;
-        let value = read_sync_version(sync_version.as_ref());
-        Ok(i64::try_from(value).unwrap_or(i64::MAX))
     }
 
     async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {

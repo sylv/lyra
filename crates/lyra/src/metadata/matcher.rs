@@ -28,9 +28,8 @@ pub async fn process_roots(
     pool: &DatabaseConnection,
     provider: &dyn MetadataProvider,
     now: i64,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let provider_id = provider.id();
-    let mut changed = false;
     let root_rows = roots::Entity::find()
         .order_by_asc(roots::Column::LastAddedAt)
         .order_by_asc(roots::Column::Id)
@@ -85,7 +84,6 @@ pub async fn process_roots(
                     matched_name = %metadata.name,
                     "matched root metadata (series)"
                 );
-                changed = true;
             }
             Ok(RootMatchAttempt::MatchedMovie(metadata)) => {
                 upsert_remote_root_metadata_from_movie(pool, &root.id, provider_id, &metadata, now)
@@ -114,7 +112,6 @@ pub async fn process_roots(
                     matched_name = %metadata.name,
                     "matched root metadata (movie)"
                 );
-                changed = true;
             }
             Ok(RootMatchAttempt::Unmatched) => {
                 let retry_after = now + retry_backoff_seconds(attempts);
@@ -142,7 +139,6 @@ pub async fn process_roots(
                     retry_after,
                     "root metadata match returned unmatched"
                 );
-                changed = true;
             }
             Err(error) => {
                 let status = existing
@@ -175,19 +171,18 @@ pub async fn process_roots(
                     error = ?error,
                     "root metadata match attempt failed"
                 );
-                changed = true;
             }
         }
     }
 
-    Ok(changed)
+    Ok(())
 }
 
 pub async fn process_items(
     pool: &DatabaseConnection,
     provider: &dyn MetadataProvider,
     now: i64,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let provider_id = provider.id();
     let all_items = items::Entity::find()
         .order_by_asc(items::Column::RootId)
@@ -214,19 +209,17 @@ pub async fn process_items(
     }
 
     let mut processed_batches = HashSet::new();
-    let mut changed = false;
     for item in due_items {
         let batch_key = item_batch_key(&item);
         if !processed_batches.insert(batch_key.clone()) {
             continue;
         }
-        let batch_changed = process_item_batch(pool, provider, &batch_key, now)
+        process_item_batch(pool, provider, &batch_key, now)
             .await
             .with_context(|| format!("failed processing item batch key={batch_key}"))?;
-        changed = changed || batch_changed;
     }
 
-    Ok(changed)
+    Ok(())
 }
 
 async fn process_item_batch(
@@ -234,11 +227,11 @@ async fn process_item_batch(
     provider: &dyn MetadataProvider,
     batch_key: &str,
     now: i64,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let provider_id = provider.id();
     let batch = load_item_batch(pool, batch_key).await?;
     if batch.is_empty() {
-        return Ok(false);
+        return Ok(());
     }
 
     let root_id = batch
@@ -418,7 +411,7 @@ async fn process_item_batch(
         }
     }
 
-    Ok(true)
+    Ok(())
 }
 
 async fn run_root_match_attempt(

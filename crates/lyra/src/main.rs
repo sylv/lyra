@@ -44,7 +44,6 @@ mod hls;
 mod jobs;
 mod json_encoding;
 mod metadata;
-mod reactivity;
 mod scanner;
 
 type AppSchema =
@@ -152,7 +151,6 @@ async fn main() {
     let pool = DatabaseConnection::from(pool);
     let mut background_workers: JoinSet<anyhow::Result<()>> = JoinSet::new();
     let job_wake_signal = Arc::new(Notify::new());
-    let sync_version = reactivity::new_sync_version();
 
     let scanner_pool = pool.clone();
     let scanner_wake_signal = job_wake_signal.clone();
@@ -167,20 +165,12 @@ async fn main() {
 
     let metadata_pool = pool.clone();
     let metadata_providers = metadata::build_metadata_providers();
-    let metadata_sync_version = sync_version.clone();
     background_workers.spawn(async move {
         tracing::info!("starting metadata background worker");
-        metadata::worker::start_metadata_worker(
-            metadata_pool,
-            metadata_providers,
-            metadata_sync_version,
-        )
-        .await
+        metadata::worker::start_metadata_worker(metadata_pool, metadata_providers).await
     });
 
-    for job in
-        jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone(), sync_version.clone())
-    {
+    for job in jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone()) {
         let job_type = job.job_type();
         background_workers.spawn(async move {
             tracing::info!(job_type = ?job_type, "starting job worker");
@@ -199,7 +189,6 @@ async fn main() {
     .limit_complexity(100)
     .limit_directives(5)
     .data(pool.clone())
-    .data(sync_version.clone())
     .finish();
 
     // write the schema to a file in dev
