@@ -71,7 +71,7 @@ pub fn parse_single_input_path_arg() -> Result<PathBuf> {
     let mut args = std::env::args();
     let program = args
         .next()
-        .unwrap_or_else(|| "lyra-packager-debug".to_string());
+        .unwrap_or_else(|| "lyra-packager".to_string());
     parse_input_path_from_args(args, &program)
 }
 

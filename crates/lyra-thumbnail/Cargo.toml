@@ -3,10 +3,6 @@ name = "lyra-thumbnail"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "lyra-thumbnail-debug"
-path = "src/bin/lyra-thumbnail-debug.rs"
-
 [dependencies]
 anyhow = "1.0"
 image = { version = "0.25", default-features = false, features = ["webp"] }
