@@ -1,4 +1,4 @@
-import { type FC } from "react";
+import type { FC } from "react";
 import { useStore } from "zustand";
 import { Player } from "./player";
 import { playerState } from "./player-state";
