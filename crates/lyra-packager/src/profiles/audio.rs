@@ -5,6 +5,8 @@ use crate::{
 };
 use std::ffi::OsString;
 
+const CHANNELS: u32 = 2;
+
 #[derive(Debug)]
 pub struct AudioAacProfile;
 
@@ -55,8 +57,20 @@ impl Profile for AudioAacProfile {
         // we target aac with broad compatibility for simplicity
         ffarg!(a, "-codec:a", "aac");
         ffarg!(a, "-profile:a", "aac_low");
-        ffarg!(a, "-ac", "2");
+        ffarg!(a, "-ac", CHANNELS.to_string());
         ffarg!(a, "-b:a", "160k");
+
+        if ctx
+            .stream
+            .channels
+            .is_some_and(|channels| channels != CHANNELS)
+        {
+            ffarg!(
+                a,
+                "-af",
+                "pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE"
+            );
+        }
 
         // copy original timestamps so our segment boundaries (from keyframes) align.
         // because we're transcoding this isnt necessary, but if we don't our timestamps
