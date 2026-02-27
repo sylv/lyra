@@ -2,7 +2,7 @@ import { FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
 import { navigate } from "vike/client/router";
 import { cn } from "../lib/utils";
-import { setPlayerMedia } from "./player/player-state";
+import { openPlayerMedia } from "./player/player-state";
 
 interface PlayWrapperProps {
 	itemId?: string | null;
@@ -28,7 +28,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					)}
 					onClick={() => {
 						if (!itemId) return;
-						setPlayerMedia(itemId, true);
+						openPlayerMedia(itemId, true);
 						navigate(path);
 					}}
 				>

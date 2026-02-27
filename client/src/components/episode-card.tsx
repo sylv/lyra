@@ -4,8 +4,7 @@ import { navigate } from "vike/client/router";
 import { getPathForItem, GetPathForItemFrag } from "../lib/getPathForMedia";
 import { Image, ImageAssetFrag, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
-import { setPlayerMedia } from "./player/player-state";
-import { formatReleaseYear } from "../lib/format-release-year";
+import { openPlayerMedia } from "./player/player-state";
 
 interface EpisodeCardProps {
 	episode: FragmentOf<typeof EpisodeCardFrag>;
@@ -65,7 +64,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 			aria-label={`Play ${episode.name}`}
 			onClick={() => {
 				if (!episode.id) return;
-				setPlayerMedia(episode.id, true);
+				openPlayerMedia(episode.id, true);
 				navigate(path);
 			}}
 		>

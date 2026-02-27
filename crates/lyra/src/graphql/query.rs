@@ -33,7 +33,6 @@ const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
     "show",
     "pool",
     "array",
-    "plex",
     "video",
     "videos",
     "library",

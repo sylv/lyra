@@ -5,7 +5,7 @@
 import { useMutation, useQuery } from "@apollo/client/react";
 import { graphql } from "gql.tada";
 import Hls from "hls.js";
-import { ArrowLeft, ChevronDown, Loader2, XIcon } from "lucide-react";
+import { ChevronDown, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
 import { navigate } from "vike/client/router";
 import { useStore } from "zustand/react";
@@ -167,6 +167,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 	const isControlsPinned = isSettingsMenuOpen || isShortcutsDialogOpen;
 	const {
 		data,
+		previousData,
 		loading: isItemLoading,
 		error: itemLoadError,
 	} = useQuery(ItemPlaybackQuery, {
@@ -174,7 +175,8 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 			itemId,
 		},
 	});
-	const currentMedia = data?.item ?? null;
+	// Keep the previous item mounted while loading the next/previous item so browser fullscreen is preserved.
+	const currentMedia = data?.item ?? (isItemLoading ? previousData?.item : null) ?? null;
 
 	useEffect(() => {
 		if (!isItemLoading) {

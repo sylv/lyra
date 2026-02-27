@@ -46,13 +46,21 @@ export const setPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 	playerState.setState((prev) => ({
 		currentItemId: itemId,
 		autoplay: autoplay ?? prev.autoplay,
-		isFullscreen: prev.currentItemId ? prev.isFullscreen : true,
+	}));
+};
+
+export const openPlayerMedia = (itemId: string, autoplay: boolean | null) => {
+	playerState.setState((prev) => ({
+		currentItemId: itemId,
+		autoplay: autoplay ?? prev.autoplay,
+		isFullscreen: true,
 	}));
 };
 
 export const clearPlayerMedia = () => {
 	playerState.setState({
 		currentItemId: null,
+		isFullscreen: false,
 	});
 };
 
