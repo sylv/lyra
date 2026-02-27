@@ -1,3 +1,8 @@
+use crate::{
+    binaries::configured_ffmpeg_bin,
+    profiles::ProfileContext,
+    state::{FfmpegState, StreamProfileState},
+};
 use anyhow::{Context, Result, bail};
 use std::{
     path::{Path, PathBuf},
@@ -10,13 +15,6 @@ use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
     time::{Instant, sleep},
-};
-use tracing::{debug, error, info, warn};
-
-use crate::{
-    binaries::configured_ffmpeg_bin,
-    profiles::ProfileContext,
-    state::{FfmpegState, StreamProfileState},
 };
 
 const THROTTLE_AHEAD_SEGMENTS: i64 = 4;
@@ -32,7 +30,7 @@ pub async fn ensure_ffmpeg_for_init(state: &Arc<StreamProfileState>) -> Result<(
     };
 
     if needs_start {
-        info!(
+        tracing::info!(
             stream_id = state.stream.stream_id,
             profile = state.profile.id_name(),
             "starting ffmpeg for init segment"
@@ -51,7 +49,7 @@ pub async fn ensure_ffmpeg_for_segment(
     if requested_segment < 0 {
         return Ok(());
     }
-    debug!(
+    tracing::debug!(
         stream_id = state.stream.stream_id,
         profile = state.profile.id_name(),
         requested_segment,
@@ -68,7 +66,7 @@ pub async fn ensure_ffmpeg_for_segment(
         state.segment_start_pts.get(requested_segment as usize),
     ) {
         if *expected != start_pts {
-            warn!(expected, start_pts, "segment startPts mismatch");
+            tracing::warn!(expected, start_pts, "segment startPts mismatch");
         }
     }
 
@@ -97,7 +95,7 @@ pub async fn ensure_ffmpeg_for_segment(
                 FfmpegAction::Start
             }
         } else if should_restart_ffmpeg(state, &ffmpeg, requested_segment, last_generated) {
-            info!(
+            tracing::info!(
                 requested_segment,
                 start_segment = ffmpeg.start_segment,
                 last_generated,
@@ -114,12 +112,12 @@ pub async fn ensure_ffmpeg_for_segment(
     match action {
         FfmpegAction::None => Ok(()),
         FfmpegAction::Start => {
-            info!(start_segment = requested_segment, "starting ffmpeg");
+            tracing::info!(start_segment = requested_segment, "starting ffmpeg");
             clean_segments(&state.segment_dir).await?;
             start_ffmpeg(state, requested_segment).await
         }
         FfmpegAction::Restart => {
-            info!(start_segment = requested_segment, "restarting ffmpeg");
+            tracing::info!(start_segment = requested_segment, "restarting ffmpeg");
             stop_ffmpeg(state).await?;
             clean_segments(&state.segment_dir).await?;
             start_ffmpeg(state, requested_segment).await
@@ -159,7 +157,7 @@ async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Re
         state.timeline_time_base_den,
     );
 
-    info!(
+    tracing::info!(
         stream_id = state.stream.stream_id,
         profile = state.profile.id_name(),
         start_segment,
@@ -180,7 +178,7 @@ async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Re
         .build_args(&ctx, start_segment, start_seconds, &state.hls_cuts);
     let ffmpeg_bin = resolve_ffmpeg_bin();
 
-    debug!(
+    tracing::debug!(
         cwd = %state.segment_dir.display(),
         ffmpeg_bin = %ffmpeg_bin.display(),
         args = ?args,
@@ -215,7 +213,7 @@ async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Re
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                info!(target: "ffmpeg", "{line}");
+                tracing::debug!(target: "ffmpeg", "{line}");
             }
         });
     }
@@ -254,12 +252,12 @@ async fn stop_ffmpeg(state: &Arc<StreamProfileState>) -> Result<()> {
     }
 
     if let Some(pid) = pid {
-        info!(pid, "resuming ffmpeg before shutdown");
+        tracing::info!(pid, "resuming ffmpeg before shutdown");
         let _ = send_signal(pid, libc::SIGCONT);
     }
 
     if let Some(mut child) = child.take() {
-        info!("killing ffmpeg process");
+        tracing::info!("killing ffmpeg process");
         let _ = child.kill().await;
         let _ = child.wait().await;
     }
@@ -273,7 +271,7 @@ async fn throttle_loop(state: Arc<StreamProfileState>) {
         let last_generated = match find_last_generated(&state.segment_dir).await {
             Ok(value) => value,
             Err(err) => {
-                warn!(error = %err, "failed to scan segments");
+                tracing::warn!(error = %err, "failed to scan segments");
                 continue;
             }
         };
@@ -296,7 +294,7 @@ async fn throttle_loop(state: Arc<StreamProfileState>) {
         if let Some(pid) = ffmpeg.pid {
             if delta > THROTTLE_AHEAD_SEGMENTS && !ffmpeg.throttled {
                 if send_signal(pid, libc::SIGSTOP).is_ok() {
-                    info!(
+                    tracing::info!(
                         pid,
                         last_generated,
                         last_requested = ffmpeg.last_requested_segment,
@@ -306,7 +304,7 @@ async fn throttle_loop(state: Arc<StreamProfileState>) {
                 }
             } else if delta <= UNTHROTTLE_WITHIN_SEGMENTS && ffmpeg.throttled {
                 if send_signal(pid, libc::SIGCONT).is_ok() {
-                    info!(
+                    tracing::info!(
                         pid,
                         last_generated,
                         last_requested = ffmpeg.last_requested_segment,
@@ -330,7 +328,7 @@ fn send_signal(pid: u32, signal: i32) -> Result<()> {
 }
 
 async fn clean_segments(dir: &Path) -> Result<()> {
-    debug!(dir = %dir.display(), "cleaning segment files");
+    tracing::debug!(dir = %dir.display(), "cleaning segment files");
     let mut entries = fs::read_dir(dir).await?;
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
@@ -370,14 +368,18 @@ fn update_child_status(state: &StreamProfileState, ffmpeg: &mut FfmpegState) -> 
             let last_generated = state.last_generated.load(Ordering::Relaxed);
             let last_index = state.segment_start_pts.len() as i64 - 1;
             if last_index >= 0 && last_generated >= last_index {
-                info!(
+                tracing::info!(
                     ?status,
-                    last_generated, last_index, "ffmpeg exited after segment generation"
+                    last_generated,
+                    last_index,
+                    "ffmpeg exited after segment generation"
                 );
             } else {
-                error!(
+                tracing::error!(
                     ?status,
-                    last_generated, last_index, "ffmpeg exited prematurely"
+                    last_generated,
+                    last_index,
+                    "ffmpeg exited prematurely"
                 );
             }
             ffmpeg.child = None;

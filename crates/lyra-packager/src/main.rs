@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
 
     let bind_addr = "0.0.0.0:4422";
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
-    info!(bind_addr = %bind_addr, "listening");
+    tracing::info!(bind_addr = %bind_addr, "listening");
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -98,12 +98,12 @@ async fn stream_segment_handler(
             .ensure_segment(segment_index, query.start_pts)
             .await
             .map_err(|err| {
-                warn!(error = %err, "segment request failed");
+                tracing::warn!(error = %err, "segment request failed");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
     } else {
         session.ensure_init().await.map_err(|err| {
-            warn!(error = %err, "init request failed");
+            tracing::warn!(error = %err, "init request failed");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     }

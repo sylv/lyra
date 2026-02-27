@@ -1,13 +1,3 @@
-use anyhow::{Context, Result, bail};
-use lyra_ffprobe::{FfprobeOutput, probe_keyframes_pts, probe_output};
-use std::{
-    collections::HashMap,
-    path::{Path as FsPath, Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
-use tracing::warn;
-
 use crate::{
     binaries::configured_ffprobe_bin,
     ffmpeg::{
@@ -18,6 +8,14 @@ use crate::{
         build_master_playlist, build_stream_profiles, create_process_segment_dir,
         prepare_segments_root, prepare_segments_root_at, streams_from_probe_output,
     },
+};
+use anyhow::{Context, Result, bail};
+use lyra_ffprobe::{FfprobeOutput, probe_keyframes_pts, probe_output};
+use std::{
+    collections::HashMap,
+    path::{Path as FsPath, Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -69,9 +67,7 @@ where
 
 pub fn parse_single_input_path_arg() -> Result<PathBuf> {
     let mut args = std::env::args();
-    let program = args
-        .next()
-        .unwrap_or_else(|| "lyra-packager".to_string());
+    let program = args.next().unwrap_or_else(|| "lyra-packager".to_string());
     parse_input_path_from_args(args, &program)
 }
 
@@ -96,7 +92,7 @@ pub fn build_package(
         Some(Arc::new(keyframes_pts.to_vec()))
     } else {
         if primary_video_info.is_some() {
-            warn!(
+            tracing::warn!(
                 input = %input.display(),
                 "keyframe data is empty; keyframe-dependent profiles will be disabled"
             );

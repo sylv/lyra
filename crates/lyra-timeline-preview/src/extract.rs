@@ -16,7 +16,7 @@ pub(crate) async fn extract_frame_paths(
     options: &PreviewOptions,
 ) -> anyhow::Result<Vec<(u32, PathBuf)>> {
     let frames_dir = extract_frames(video_path, options).await?;
-    tracing::info!("frame dir: {}", frames_dir.display());
+    tracing::debug!("frame dir: {}", frames_dir.display());
 
     let mut handle = tokio::fs::read_dir(&frames_dir).await?;
     let mut frame_paths = Vec::new();
@@ -42,7 +42,7 @@ pub(crate) async fn extract_frame_paths(
     }
 
     frame_paths.sort_by_key(|(frame_num, _)| *frame_num);
-    tracing::info!("discovered {} extracted frames", frame_paths.len());
+    tracing::debug!("discovered {} extracted frames", frame_paths.len());
     Ok(frame_paths)
 }
 
@@ -111,7 +111,7 @@ async fn extract_frames(video_path: &PathBuf, options: &PreviewOptions) -> anyho
 
             if let (Some(speed_i), Some(time_i)) = (&speed, &time) {
                 if last_log.elapsed() > Duration::from_secs(10) {
-                    tracing::info!(
+                    tracing::debug!(
                         "generating timeline preview, speed={}, time={}",
                         speed_i,
                         time_i

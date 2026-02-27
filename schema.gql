@@ -61,6 +61,8 @@ type ItemNode {
 	watchProgress: WatchProgress
 	file: File
 	parent: RootNode
+	previousItem: ItemNode
+	nextItem: ItemNode
 }
 
 type ItemNodeConnection {

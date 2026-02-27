@@ -5,7 +5,6 @@ use crate::{
 use anyhow::Result;
 use lyra_ffprobe::FfprobeOutput;
 use sea_orm::{DatabaseConnection, EntityTrait};
-use tracing::warn;
 
 pub async fn load_cached_ffprobe_output(
     pool: &DatabaseConnection,
@@ -19,7 +18,7 @@ pub async fn load_cached_ffprobe_output(
     match row.decode_ffprobe_output() {
         Ok(output) => Ok(Some(output)),
         Err(error) => {
-            warn!(
+            tracing::warn!(
                 file_id,
                 error = %error,
                 "failed to decode cached ffprobe payload; probing will be retried"
@@ -43,7 +42,7 @@ pub async fn load_cached_keyframes(
     match json_encoding::decode_json_zstd::<Vec<i64>>(&row.keyframe_list) {
         Ok(keyframes) => Ok(Some(keyframes)),
         Err(error) => {
-            warn!(
+            tracing::warn!(
                 file_id,
                 error = %error,
                 "failed to decode cached keyframe payload; probing will be retried"

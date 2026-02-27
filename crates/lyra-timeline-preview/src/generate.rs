@@ -26,7 +26,7 @@ pub(crate) async fn generate_sheets(
     let frame_height = first_frame.height();
     let layout = compute_layout(frame_width, frame_height, frame_paths.len())?;
     let frame_interval = Duration::from_secs_f64(options.frame_interval_seconds);
-    tracing::info!(
+    tracing::debug!(
         "timeline layout: frame={}x{}, per_sheet={}",
         frame_width,
         frame_height,

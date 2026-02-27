@@ -21,13 +21,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Notify;
 use tokio::time::{Duration, sleep};
-use tracing::info;
 
-const MIN_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50MB
+const MIN_FILE_SIZE_MB: u64 = 25 * 1024 * 1024;
 const PARSE_BATCH_SIZE: usize = 100;
-const VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp", "ts", "m2ts",
-];
+const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mkv", "avi", "mov", "webm"];
 
 pub async fn start_scanner(
     pool: DatabaseConnection,
@@ -61,7 +58,7 @@ async fn scan_library(
     let scan_start_time = chrono::Utc::now().timestamp();
     let library_path = PathBuf::from(&library.path);
 
-    info!(
+    tracing::info!(
         "Scanning directory: {} for library: {}",
         library_path.display(),
         library.name
@@ -142,7 +139,7 @@ async fn scan_file(
         }
     };
 
-    if metadata.len() < MIN_FILE_SIZE {
+    if metadata.len() < MIN_FILE_SIZE_MB {
         return Ok(());
     }
 

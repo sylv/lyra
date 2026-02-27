@@ -211,6 +211,6 @@ pub fn run_batched_inference(texts: &[String]) -> Result<Vec<Vec<Entity>>, Model
         results.push(entities);
     }
 
-    tracing::info!("model inference in {:?}", start.elapsed());
+    tracing::debug!("model inference in {:?}", start.elapsed());
     Ok(results)
 }

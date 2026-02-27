@@ -1,3 +1,9 @@
+use crate::{
+    config::TARGET_SEGMENT_SECONDS,
+    model::{StreamDescriptor, StreamInfo, StreamType},
+    playlist,
+    profiles::{Profile, ProfileContext, SegmentLayout},
+};
 use anyhow::{Context, Result};
 use lyra_ffprobe::{
     FfprobeOutput, StreamType as ProbeStreamType, probe_streams_from_output as parse_probe_streams,
@@ -9,15 +15,7 @@ use std::{
     sync::{Arc, atomic::AtomicI64},
 };
 use tokio::sync::Mutex;
-use tracing::warn;
 use uuid::Uuid;
-
-use crate::{
-    config::TARGET_SEGMENT_SECONDS,
-    model::{StreamDescriptor, StreamInfo, StreamType},
-    playlist,
-    profiles::{Profile, ProfileContext, SegmentLayout},
-};
 
 #[derive(Clone, Debug)]
 pub struct StreamProfileKey {
@@ -154,7 +152,7 @@ pub fn streams_from_probe_output(
         let codec_name = match stream.codec_name {
             Some(value) => value,
             None => {
-                warn!(stream_index, "stream missing codec_name, skipping");
+                tracing::warn!(stream_index, "stream missing codec_name, skipping");
                 continue;
             }
         };
@@ -285,7 +283,7 @@ pub fn build_stream_profiles(
             let timeline = match profile.segment_layout() {
                 SegmentLayout::Keyframe => {
                     let Some(timeline) = keyframe_timeline.as_ref() else {
-                        warn!(
+                        tracing::warn!(
                             stream_id = stream.stream_id,
                             profile = profile.id_name(),
                             "keyframe timeline unavailable; disabling keyframe-dependent profile"
