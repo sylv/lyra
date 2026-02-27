@@ -1,6 +1,14 @@
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
 /** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
-import { MaximizeIcon, MinimizeIcon, PauseIcon, PlayIcon, SettingsIcon } from "lucide-react";
+import {
+	MaximizeIcon,
+	MinimizeIcon,
+	PauseIcon,
+	PlayIcon,
+	SettingsIcon,
+	SkipBackIcon,
+	SkipForwardIcon,
+} from "lucide-react";
 import { useMemo, type FC } from "react";
 import { cn } from "../../../lib/utils";
 import {
@@ -49,6 +57,10 @@ interface PlayerControlsProps {
 	isMuted: boolean;
 	onSeek: (time: number) => void;
 	onTogglePlaying: () => void;
+	hasPreviousItem: boolean;
+	hasNextItem: boolean;
+	onPreviousItem: () => void;
+	onNextItem: () => void;
 	onToggleMute: () => void;
 	onVolumeChange: (volume: number) => void;
 	onToggleFullscreen: () => void;
@@ -73,6 +85,10 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 	isMuted,
 	onSeek,
 	onTogglePlaying,
+	hasPreviousItem,
+	hasNextItem,
+	onPreviousItem,
+	onNextItem,
 	onToggleMute,
 	onVolumeChange,
 	onToggleFullscreen,
@@ -94,6 +110,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 			minute: "2-digit",
 		});
 	}, [duration, currentTime]);
+	const showItemNavigation = hasPreviousItem || hasNextItem;
 
 	return (
 		<div
@@ -126,6 +143,34 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 					<PaddedPlayerButton onClick={onTogglePlaying} side="left">
 						{playing ? <PauseIcon className="size-6 text-white" /> : <PlayIcon className="size-6 text-white" />}
 					</PaddedPlayerButton>
+					{showItemNavigation && (
+						<>
+							<PlayerButton
+								aria-label="Previous item"
+								disabled={!hasPreviousItem}
+								onClick={(event) => {
+									event.stopPropagation();
+									if (hasPreviousItem) {
+										onPreviousItem();
+									}
+								}}
+							>
+								<SkipBackIcon className="size-5" />
+							</PlayerButton>
+							<PlayerButton
+								aria-label="Next item"
+								disabled={!hasNextItem}
+								onClick={(event) => {
+									event.stopPropagation();
+									if (hasNextItem) {
+										onNextItem();
+									}
+								}}
+							>
+								<SkipForwardIcon className="size-5" />
+							</PlayerButton>
+						</>
+					)}
 					<PlayerVolumeControl
 						volume={volume}
 						isMuted={isMuted}

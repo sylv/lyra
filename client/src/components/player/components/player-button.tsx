@@ -1,10 +1,18 @@
-import type { FC, HTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, FC } from "react";
+import { cn } from "../../../lib/utils";
 
-export const PlayerButton: FC<HTMLAttributes<HTMLButtonElement>> = ({ children, ...props }) => {
+export const PlayerButton: FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({
+	children,
+	className,
+	...props
+}) => {
 	return (
 		<button
 			type="button"
-			className="p-3 hover:bg-zinc-600/30 hover:backdrop-blur-md rounded transition-colors text-white"
+			className={cn(
+				"p-3 rounded transition-colors text-white hover:bg-zinc-600/30 hover:backdrop-blur-md disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:backdrop-blur-none",
+				className,
+			)}
 			{...props}
 		>
 			{children}
@@ -12,9 +20,10 @@ export const PlayerButton: FC<HTMLAttributes<HTMLButtonElement>> = ({ children, 
 	);
 };
 
-export const PaddedPlayerButton: FC<HTMLAttributes<HTMLButtonElement> & { side: "left" | "right" }> = ({
+export const PaddedPlayerButton: FC<ButtonHTMLAttributes<HTMLButtonElement> & { side: "left" | "right" }> = ({
 	children,
 	side,
+	className,
 	...props
 }) => {
 	// todo: this is hacky. it makes it so moving your cursor to the bottom right of the window will activate
@@ -23,7 +32,7 @@ export const PaddedPlayerButton: FC<HTMLAttributes<HTMLButtonElement> & { side: 
 	const classes = side === "left" ? "-ml-6 -mb-10 pl-6 pb-10 group/button" : "-mr-6 -mb-10 pr-6 pb-10 group/button";
 
 	return (
-		<button type="button" className={classes} {...props}>
+		<button type="button" className={cn(classes, className)} {...props}>
 			<div className="p-3 group-hover/button:bg-zinc-600/30 group-hover/button:backdrop-blur-md rounded transition-colors text-white">
 				{children}
 			</div>

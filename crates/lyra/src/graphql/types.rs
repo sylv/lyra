@@ -8,7 +8,7 @@ use async_graphql::{ComplexObject, Context, Union};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const PLAYABLE_PROGRESS_THRESHOLD: f32 = 0.8;
 
@@ -309,6 +309,22 @@ impl items::Model {
             .one(pool)
             .await
     }
+
+    pub async fn previous_item(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<items::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        find_adjacent_item_without_shared_files(pool, self, ItemDirection::Previous).await
+    }
+
+    pub async fn next_item(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<items::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        find_adjacent_item_without_shared_files(pool, self, ItemDirection::Next).await
+    }
 }
 
 fn current_user_id(ctx: &Context<'_>) -> Option<String> {
@@ -474,6 +490,85 @@ async fn count_unplayed_items_for_ordered_items(
 
 fn saturating_i32_from_u64(value: u64) -> i32 {
     i32::try_from(value).unwrap_or(i32::MAX)
+}
+
+#[derive(Clone, Copy)]
+enum ItemDirection {
+    Previous,
+    Next,
+}
+
+async fn find_adjacent_item_without_shared_files(
+    pool: &DatabaseConnection,
+    item: &items::Model,
+    direction: ItemDirection,
+) -> Result<Option<items::Model>, sea_orm::DbErr> {
+    let ordered_items = find_ordered_items_for_root(pool, &item.root_id).await?;
+    if ordered_items.is_empty() {
+        return Ok(None);
+    }
+
+    let Some(current_index) = ordered_items
+        .iter()
+        .position(|candidate| candidate.id == item.id)
+    else {
+        return Ok(None);
+    };
+
+    let item_ids = ordered_items
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+
+    let links = item_files::Entity::find()
+        .filter(item_files::Column::ItemId.is_in(item_ids))
+        .all(pool)
+        .await?;
+
+    let mut file_ids_by_item: HashMap<String, HashSet<i64>> = HashMap::new();
+    for link in links {
+        file_ids_by_item
+            .entry(link.item_id)
+            .or_default()
+            .insert(link.file_id);
+    }
+
+    let current_item_file_ids = file_ids_by_item.get(&item.id).cloned().unwrap_or_default();
+
+    let candidate = match direction {
+        ItemDirection::Previous => ordered_items[..current_index]
+            .iter()
+            .rev()
+            .find(|candidate| {
+                is_navigation_candidate(candidate, &file_ids_by_item, &current_item_file_ids)
+            }),
+        ItemDirection::Next => ordered_items
+            .iter()
+            .skip(current_index + 1)
+            .find(|candidate| {
+                is_navigation_candidate(candidate, &file_ids_by_item, &current_item_file_ids)
+            }),
+    };
+
+    Ok(candidate.cloned())
+}
+
+fn is_navigation_candidate(
+    candidate: &items::Model,
+    file_ids_by_item: &HashMap<String, HashSet<i64>>,
+    current_item_file_ids: &HashSet<i64>,
+) -> bool {
+    let Some(candidate_file_ids) = file_ids_by_item.get(&candidate.id) else {
+        return false;
+    };
+
+    if candidate_file_ids.is_empty() {
+        return false;
+    }
+
+    !candidate_file_ids
+        .iter()
+        .any(|file_id| current_item_file_ids.contains(file_id))
 }
 
 async fn find_default_file_for_item(

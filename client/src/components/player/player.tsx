@@ -18,6 +18,7 @@ import {
 	clearPlayerMedia,
 	playerState,
 	setPlayerLoading,
+	setPlayerMedia,
 	setPlayerMuted,
 	setPlayerVolume,
 	togglePlayerFullscreen,
@@ -132,6 +133,12 @@ const ItemPlaybackQuery = graphql(`
 						height
 					}
 				}
+			}
+			previousItem {
+				id
+			}
+			nextItem {
+				id
 			}
 		}
 	}
@@ -634,6 +641,24 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		}
 	};
 
+	const onPreviousItem = () => {
+		const previousItemId = (currentMedia?.previousItem as { id: string } | null)?.id;
+		if (!previousItemId) {
+			return;
+		}
+
+		setPlayerMedia(previousItemId, true);
+	};
+
+	const onNextItem = () => {
+		const nextItemId = (currentMedia?.nextItem as { id: string } | null)?.id;
+		if (!nextItemId) {
+			return;
+		}
+
+		setPlayerMedia(nextItemId, true);
+	};
+
 	if (!currentMedia) {
 		return null;
 	}
@@ -780,6 +805,10 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 					isMuted={isMuted}
 					onSeek={onSeek}
 					onTogglePlaying={onTogglePlaying}
+					hasPreviousItem={!!currentMedia.previousItem}
+					hasNextItem={!!currentMedia.nextItem}
+					onPreviousItem={onPreviousItem}
+					onNextItem={onNextItem}
 					onToggleMute={onToggleMute}
 					onVolumeChange={onVolumeChange}
 					onToggleFullscreen={() => togglePlayerFullscreen()}
