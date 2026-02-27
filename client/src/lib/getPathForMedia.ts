@@ -29,7 +29,7 @@ interface ItemPathData {
 
 export const getPathForRoot = (mediaRaw: FragmentOf<typeof GetPathForRootFrag>) => {
 	const media = readFragment(GetPathForRootFrag, mediaRaw);
-	return `/library/${media.libraryId}/root/${media.id}`;
+	return `/library/${media.libraryId}/${media.id}`;
 };
 
 export const getPathForItemData = (media: ItemPathData) => {
@@ -41,12 +41,12 @@ export const getPathForItemData = (media: ItemPathData) => {
 
 	switch (media.kind) {
 		case "MOVIE":
-			return `/library/${libraryId}/root/${media.rootId}`;
+			return `/library/${libraryId}/${media.rootId}`;
 		case "EPISODE":
 			if (!media.seasonId) {
-				return `/library/${libraryId}/root/${media.rootId}`;
+				return `/library/${libraryId}/${media.rootId}`;
 			}
-			return `/library/${libraryId}/root/${media.rootId}/season/${media.seasonId}`;
+			return `/library/${libraryId}/${media.rootId}/${media.seasonId}`;
 	}
 };
 

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
-import { navigate } from "vike/client/router";
-import { SetupModal, type InitState } from "./setup-modal";
 import { useApolloClient } from "@apollo/client/react";
+import { useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
+import { SetupModal, type InitState } from "./setup-modal";
 
 export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 	const fetching = useRef(false);
 	const client = useApolloClient();
+	const navigate = useNavigate();
 	const [data, setData] = useState<InitState | null>(null);
 	const [showModal, setShowModal] = useState(false);
 
@@ -36,9 +37,9 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 			}
 		} else {
 			setShowModal(true);
-			navigate("/");
+			navigate({ to: "/" });
 		}
-	}, [data]);
+	}, [client, data, navigate, showModal]);
 
 	const mutate = async () => {
 		await fetchData();

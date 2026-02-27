@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type React from "react";
 import type { FC } from "react";
@@ -54,10 +55,10 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 				<Image type={ImageType.Poster} asset={media.properties.posterImage} alt={media.name} className="w-full" />
 				<UnplayedItemsTab count={media.unplayedItems} />
 			</PlayWrapper>
-			<a href={path} className="block w-full truncate text-sm group">
+			<Link to={path as never} className="block w-full truncate text-sm group">
 				<span className="group-hover:underline">{media.name}</span>
 				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
-			</a>
+			</Link>
 		</div>
 	);
 };

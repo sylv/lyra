@@ -1,6 +1,6 @@
+import { useNavigate } from "@tanstack/react-router";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { useMemo, type FC } from "react";
-import { navigate } from "vike/client/router";
 import { getPathForItem, GetPathForItemFrag } from "../lib/getPathForMedia";
 import { Image, ImageAssetFrag, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
@@ -47,6 +47,7 @@ export const EpisodeCardFrag = graphql(
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = readFragment(EpisodeCardFrag, episodeRef);
+	const navigate = useNavigate();
 	const path = getPathForItem(episode);
 	const releaseDate = useMemo(() => {
 		if (!episode.properties.releasedAt) return null;
@@ -65,7 +66,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 			onClick={() => {
 				if (!episode.id) return;
 				openPlayerMedia(episode.id, true);
-				navigate(path);
+				navigate({ to: path as never });
 			}}
 		>
 			<div className="relative overflow-hidden h-min rounded-sm shrink-0">

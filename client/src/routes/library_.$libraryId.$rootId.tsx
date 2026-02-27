@@ -1,12 +1,12 @@
 import { useSuspenseQuery } from "@apollo/client/react";
+import { createFileRoute } from "@tanstack/react-router";
 import { graphql, readFragment } from "gql.tada";
-import { usePageContext } from "vike-react/usePageContext";
-import { Image, ImageAssetFrag, ImageType } from "../../../../../components/image";
-import { PlayWrapper } from "../../../../../components/play-wrapper";
-import { SeasonCard, SeasonCardFrag } from "../../../../../components/season-card";
-import { UnplayedItemsTab } from "../../../../../components/unplayed-items-tab";
-import { useDynamicBackground } from "../../../../../hooks/use-background";
-import { formatReleaseYear } from "../../../../../lib/format-release-year";
+import { Image, ImageAssetFrag, ImageType } from "@/components/image";
+import { PlayWrapper } from "@/components/play-wrapper";
+import { SeasonCard, SeasonCardFrag } from "@/components/season-card";
+import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
+import { useDynamicBackground } from "@/hooks/use-background";
+import { formatReleaseYear } from "@/lib/format-release-year";
 
 const Query = graphql(
 	`
@@ -46,9 +46,12 @@ const Query = graphql(
 	[SeasonCardFrag, ImageAssetFrag],
 );
 
-export default function Page() {
-	const pageContext = usePageContext();
-	const rootId = pageContext.routeParams.rootId;
+export const Route = createFileRoute("/library_/$libraryId/$rootId")({
+	component: RootRoute,
+});
+
+function RootRoute() {
+	const { rootId } = Route.useParams();
 	const { data } = useSuspenseQuery(Query, {
 		variables: {
 			rootId,
@@ -56,7 +59,7 @@ export default function Page() {
 	});
 
 	const root = data.root;
-	const rootPath = `/library/${root.libraryId}/root/${root.id}`;
+	const rootPath = `/library/${root.libraryId}/${root.id}`;
 
 	const dynamicAsset = root.properties.backgroundImage || root.properties.posterImage;
 	useDynamicBackground(dynamicAsset);
@@ -100,11 +103,7 @@ export default function Page() {
 				{sortedSeasons.length > 0 ? (
 					<div className="flex flex-wrap gap-4">
 						{sortedSeasons.map((season) => (
-							<SeasonCard
-								key={season.id}
-								season={season}
-								path={`/library/${root.libraryId}/root/${root.id}/season/${season.id}`}
-							/>
+							<SeasonCard key={season.id} season={season} path={`/library/${root.libraryId}/${root.id}/${season.id}`} />
 						))}
 					</div>
 				) : (

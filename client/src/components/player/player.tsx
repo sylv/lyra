@@ -3,11 +3,11 @@
 /** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
 import { useMutation, useQuery } from "@apollo/client/react";
+import { useNavigate } from "@tanstack/react-router";
 import { graphql } from "gql.tada";
 import Hls from "hls.js";
 import { ChevronDown, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
-import { navigate } from "vike/client/router";
 import { useStore } from "zustand/react";
 import { getPathForItemData } from "../../lib/getPathForMedia";
 import { cn } from "../../lib/utils";
@@ -146,6 +146,7 @@ const ItemPlaybackQuery = graphql(`
 
 export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, autoplay = false }) => {
 	const { isFullscreen, volume, isMuted, isLoading } = useStore(playerState);
+	const navigate = useNavigate();
 
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
@@ -751,7 +752,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 									event.stopPropagation();
 									if (detailsPath) {
 										togglePlayerFullscreen(false);
-										navigate(detailsPath);
+										navigate({ to: detailsPath as never });
 									}
 								}}
 							>
@@ -773,7 +774,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 									event.stopPropagation();
 									if (detailsPath) {
 										togglePlayerFullscreen(false);
-										navigate(detailsPath);
+										navigate({ to: detailsPath as never });
 									}
 								}}
 							>

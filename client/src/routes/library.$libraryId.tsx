@@ -1,9 +1,9 @@
 import { useQuery } from "@apollo/client/react";
+import { createFileRoute } from "@tanstack/react-router";
 import { graphql, type VariablesOf } from "gql.tada";
 import { Fragment, useState } from "react";
-import { usePageContext } from "vike-react/usePageContext";
-import { MediaFilterList } from "../../../components/media-filter-list";
-import { MediaList, MediaListFrag } from "../../../components/media-list";
+import { MediaFilterList } from "@/components/media-filter-list";
+import { MediaList, MediaListFrag } from "@/components/media-list";
 
 const Query = graphql(
 	`
@@ -27,13 +27,17 @@ const Query = graphql(
 
 type RootNodeFilter = VariablesOf<typeof Query>["filter"];
 
-export default function Page() {
-	const pageContext = usePageContext();
-	const rawLibraryId = Number(pageContext.routeParams.libraryId);
-	const libraryId = Number.isNaN(rawLibraryId) ? null : rawLibraryId;
+export const Route = createFileRoute("/library/$libraryId")({
+	component: LibraryRoute,
+});
+
+function LibraryRoute() {
+	const { libraryId: rawLibraryId } = Route.useParams();
+	const parsedLibraryId = Number(rawLibraryId);
+	const libraryId = Number.isNaN(parsedLibraryId) ? null : parsedLibraryId;
 	const [filter, setFilter] = useState<RootNodeFilter>({
 		orderBy: "ADDED_AT",
-	});
+	})
 
 	const { data, loading, fetchMore } = useQuery(Query, {
 		variables: {
@@ -43,13 +47,13 @@ export default function Page() {
 			},
 		},
 		skip: libraryId == null,
-	});
+	})
 
 	const media =
 		libraryId == null
 			? []
 			: (data?.rootList?.edges
-					?.map((edge) => edge?.node)
+					.map((edge) => edge?.node)
 					.filter((node): node is NonNullable<typeof node> => node != null) ?? []);
 
 	return (
@@ -70,10 +74,10 @@ export default function Page() {
 							variables: {
 								after: data.rootList.pageInfo.endCursor,
 							},
-						});
+						})
 					}}
 				/>
 			</div>
 		</Fragment>
-	);
+	)
 }

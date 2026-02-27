@@ -1,8 +1,10 @@
 {
     "biome.lsp.bin": "client/node_modules/.bin/biome",
     "biome.requireConfiguration": true,
-    "typescript.tsdk": "node_modules/typescript/lib",
-    "typescript.enablePromptUseWorkspaceTsdk": true,
-    "sweep.privacyMode": true,
-    "sweep.useExperimentalNesApi": true
+    "files.readonlyInclude": {
+        "**/@generated/**": true
+    },
+    "files.watcherExclude": {
+        "**/@generated/**": true
+    }
 }

@@ -1,8 +1,8 @@
 import { useSuspenseQuery } from "@apollo/client/react";
+import { Link, useLocation } from "@tanstack/react-router";
 import { graphql } from "gql.tada";
 import { Activity, AudioLines, HomeIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
-import { usePageContext } from "vike-react/usePageContext";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
 import { cn } from "../lib/utils";
 import { ActivityPanel } from "./activity-panel";
@@ -10,19 +10,19 @@ import { SuspenseBoundary } from "./fallback";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
 const SidebarLink: FC<{
-	href: string;
+	to: string;
 	icon?: LucideIcon;
 	image?: string;
 	active?: boolean;
 	children: ReactNode;
 	subtext?: ReactNode;
-}> = ({ href, icon: Icon, image, active = false, children, subtext }) => {
+}> = ({ to, icon: Icon, image, active = false, children, subtext }) => {
 	if (!Icon && !image) {
 		throw new Error("SidebarLink requires either an icon or an image");
 	}
 
 	return (
-		<a href={href} className="flex items-center relative gap-3 group">
+		<Link to={to as never} className="flex items-center relative gap-3 group">
 			<div
 				className={cn(
 					"bg-zinc-600/50 size-9 rounded-md border border-transparent relative overflow-hidden flex items-center justify-center",
@@ -42,7 +42,7 @@ const SidebarLink: FC<{
 				<div className="text-sm group-hover:underline">{children}</div>
 				{subtext && <div className="text-xs text-zinc-400 font-semibold">{subtext}</div>}
 			</div>
-		</a>
+		</Link>
 	);
 };
 
@@ -57,8 +57,9 @@ const LibrariesQuery = graphql(`
 `);
 
 export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
-	const pageContext = usePageContext();
-	const pathname = pageContext.urlParsed.pathname;
+	const pathname = useLocation({
+		select: (location) => location.pathname,
+	});
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
 	const { data } = useSuspenseQuery(LibrariesQuery);
@@ -120,7 +121,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 				</div>
 				<div className="flex flex-col gap-2 mt-8 -mx-1.5">
 					<div className="font-semibold text-xs text-zinc-300">Media</div>
-					<SidebarLink href="/" icon={HomeIcon} active={pathname === "/"}>
+					<SidebarLink to="/" icon={HomeIcon} active={pathname === "/"}>
 						Home
 					</SidebarLink>
 					{data?.libraries?.map((library) => {
@@ -128,7 +129,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 						const isActive = pathname.startsWith(libraryPath);
 						const icon = generateGradientIcon(library.createdAt.toString(), { size: 32 });
 						return (
-							<SidebarLink href={libraryPath} image={icon} active={isActive} key={library.id}>
+							<SidebarLink to={libraryPath} image={icon} active={isActive} key={library.id}>
 								{library.name}
 							</SidebarLink>
 						);

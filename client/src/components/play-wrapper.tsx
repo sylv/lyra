@@ -1,6 +1,6 @@
+import { useNavigate } from "@tanstack/react-router";
 import { FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
-import { navigate } from "vike/client/router";
 import { cn } from "../lib/utils";
 import { openPlayerMedia } from "./player/player-state";
 
@@ -15,6 +15,8 @@ interface PlayWrapperProps {
 }
 
 export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watchProgress }) => {
+	const navigate = useNavigate();
+
 	return (
 		<div className="relative shrink-0 overflow-hidden group/play rounded-sm">
 			{itemId && (
@@ -29,7 +31,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					onClick={() => {
 						if (!itemId) return;
 						openPlayerMedia(itemId, true);
-						navigate(path);
+						navigate({ to: path as never });
 					}}
 				>
 					<PlayIcon className="h-10 w-10 text-white" />

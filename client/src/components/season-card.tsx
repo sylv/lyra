@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type { FC } from "react";
 import { formatReleaseYear } from "../lib/format-release-year";
@@ -52,10 +53,10 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => 
 				<Image type={ImageType.Poster} asset={imageAsset} alt={season.name} className="w-full" />
 				<UnplayedItemsTab count={season.unplayedItems} />
 			</PlayWrapper>
-			<a href={path} className="block w-full truncate text-sm group">
+			<Link to={path as never} className="block w-full truncate text-sm group">
 				<span className="group-hover:underline">{season.name || `Season ${season.seasonNumber}`}</span>
 				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
-			</a>
+			</Link>
 		</div>
 	);
 };

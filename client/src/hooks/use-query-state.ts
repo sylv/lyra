@@ -1,10 +1,11 @@
-import { usePageContext } from "vike-react/usePageContext";
-import { navigate } from "vike/client/router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 export const useQueryState = <T>(key: string, defaultValue?: T): [T, (value: T) => void] => {
-	const pageContext = usePageContext();
+	const location = useLocation();
+	const navigate = useNavigate();
+	const searchParams = new URLSearchParams(location.searchStr);
 
-	const rawValue = pageContext.urlParsed.search[key];
+	const rawValue = searchParams.get(key);
 	const value = rawValue ? JSON.parse(atob(rawValue)) : defaultValue;
 
 	const setValue = (value: T) => {
@@ -17,7 +18,7 @@ export const useQueryState = <T>(key: string, defaultValue?: T): [T, (value: T) 
 			url.searchParams.set(key, btoa(stringified));
 		}
 
-		navigate(url.toString());
+		navigate({ to: `${url.pathname}${url.search}${url.hash}` as never });
 	};
 
 	return [value, setValue];
