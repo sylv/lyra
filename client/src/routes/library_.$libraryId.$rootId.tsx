@@ -1,12 +1,13 @@
-import { useSuspenseQuery } from "@apollo/client/react";
-import { createFileRoute } from "@tanstack/react-router";
-import { graphql, readFragment } from "gql.tada";
 import { Image, ImageAssetFrag, ImageType } from "@/components/image";
 import { PlayWrapper } from "@/components/play-wrapper";
 import { SeasonCard, SeasonCardFrag } from "@/components/season-card";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
 import { useDynamicBackground } from "@/hooks/use-background";
 import { formatReleaseYear } from "@/lib/format-release-year";
+import { useSuspenseQuery } from "@apollo/client/react";
+import { createFileRoute } from "@tanstack/react-router";
+import { graphql, readFragment } from "gql.tada";
+import { client } from "../client";
 
 const Query = graphql(
 	`
@@ -48,6 +49,14 @@ const Query = graphql(
 
 export const Route = createFileRoute("/library_/$libraryId/$rootId")({
 	component: RootRoute,
+	loader: ({ params }) => {
+		client.query({
+			query: Query,
+			variables: {
+				rootId: params.rootId,
+			},
+		});
+	},
 });
 
 function RootRoute() {

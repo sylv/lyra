@@ -1,9 +1,7 @@
-import { ApolloClient, InMemoryCache } from "@apollo/client";
-import { HttpLink } from "@apollo/client/link/http";
 import { ApolloProvider } from "@apollo/client/react";
-import { relayStylePagination } from "@apollo/client/utilities";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { client } from "../client";
 import { DynamicBackground } from "../components/dynamic-background";
 import { AppErrorBoundary } from "../components/error-boundary";
 import { SuspenseBoundary } from "../components/fallback";
@@ -11,22 +9,6 @@ import { PlayerWrapper } from "../components/player/player-wrapper";
 import { SetupWrapper } from "../components/setup/setup-wrapper";
 import { Sidebar } from "../components/sidebar";
 import { Toaster } from "../components/ui/sonner";
-
-const client = new ApolloClient({
-	link: new HttpLink({
-		uri: "/api/graphql",
-	}),
-	cache: new InMemoryCache({
-		typePolicies: {
-			Query: {
-				fields: {
-					rootList: relayStylePagination(["filter"]),
-					itemList: relayStylePagination(["filter"]),
-				},
-			},
-		},
-	}),
-});
 
 export const Route = createRootRoute({
 	component: RootComponent,

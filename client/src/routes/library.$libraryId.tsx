@@ -4,6 +4,7 @@ import { graphql, type VariablesOf } from "gql.tada";
 import { Fragment, useState } from "react";
 import { MediaFilterList } from "@/components/media-filter-list";
 import { MediaList, MediaListFrag } from "@/components/media-list";
+import { client } from "../client";
 
 const Query = graphql(
 	`
@@ -29,6 +30,17 @@ type RootNodeFilter = VariablesOf<typeof Query>["filter"];
 
 export const Route = createFileRoute("/library/$libraryId")({
 	component: LibraryRoute,
+	loader: ({ params }) => {
+		client.query({
+			query: Query,
+			variables: {
+				filter: {
+					libraryId: Number(params.libraryId),
+					orderBy: "ADDED_AT",
+				},
+			},
+		});
+	},
 });
 
 function LibraryRoute() {
@@ -37,7 +49,7 @@ function LibraryRoute() {
 	const libraryId = Number.isNaN(parsedLibraryId) ? null : parsedLibraryId;
 	const [filter, setFilter] = useState<RootNodeFilter>({
 		orderBy: "ADDED_AT",
-	})
+	});
 
 	const { data, loading, fetchMore } = useQuery(Query, {
 		variables: {
@@ -47,7 +59,7 @@ function LibraryRoute() {
 			},
 		},
 		skip: libraryId == null,
-	})
+	});
 
 	const media =
 		libraryId == null
@@ -74,10 +86,10 @@ function LibraryRoute() {
 							variables: {
 								after: data.rootList.pageInfo.endCursor,
 							},
-						})
+						});
 					}}
 				/>
 			</div>
 		</Fragment>
-	)
+	);
 }

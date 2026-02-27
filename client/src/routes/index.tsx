@@ -4,6 +4,7 @@ import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
 import { MediaFilterList } from "../components/media-filter-list";
 import { MediaList, MediaListFrag } from "../components/media-list";
+import { client } from "../client";
 
 const Query = graphql(
 	`
@@ -28,6 +29,16 @@ type RootNodeFilter = VariablesOf<typeof Query>["filter"];
 
 export const Route = createFileRoute("/")({
 	component: HomeRoute,
+	loader: () => {
+		client.query({
+			query: Query,
+			variables: {
+				filter: {
+					orderBy: "ADDED_AT",
+				},
+			},
+		});
+	},
 });
 
 function HomeRoute() {

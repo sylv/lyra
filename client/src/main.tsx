@@ -4,7 +4,6 @@ import { router } from "./router";
 import "./globals.css";
 
 const rootElement = document.getElementById("app");
-
 if (!rootElement) {
 	throw new Error("Missing #app root element");
 }

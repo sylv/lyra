@@ -9,6 +9,7 @@ import { PlayWrapper } from "@/components/play-wrapper";
 import { ViewLoader } from "@/components/view-loader";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
 import { useDynamicBackground } from "@/hooks/use-background";
+import { client } from "../client";
 
 const RootAndSeasonQuery = graphql(
 	`
@@ -84,6 +85,15 @@ type EpisodeListFilter = Pick<ItemNodeFilter, "orderBy" | "orderDirection" | "wa
 
 export const Route = createFileRoute("/library_/$libraryId/$rootId_/$seasonId")({
 	component: SeasonRoute,
+	loader: ({ params }) => {
+		client.query({
+			query: RootAndSeasonQuery,
+			variables: {
+				rootId: params.rootId,
+				seasonId: params.seasonId,
+			},
+		});
+	},
 });
 
 function SeasonRoute() {
