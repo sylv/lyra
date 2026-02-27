@@ -1,11 +1,11 @@
 use crate::{
-    binaries::configured_ffmpeg_bin,
     profiles::ProfileContext,
     state::{FfmpegState, StreamProfileState},
 };
 use anyhow::{Context, Result, bail};
+use lyra_ffprobe::paths::get_ffmpeg_path;
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     process::Stdio,
     sync::{Arc, atomic::Ordering},
     time::Duration,
@@ -176,11 +176,11 @@ async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Re
     let args = state
         .profile
         .build_args(&ctx, start_segment, start_seconds, &state.hls_cuts);
-    let ffmpeg_bin = resolve_ffmpeg_bin();
+    let ffmpeg_bin = get_ffmpeg_path()?;
 
     tracing::debug!(
         cwd = %state.segment_dir.display(),
-        ffmpeg_bin = %ffmpeg_bin.display(),
+        ffmpeg_bin,
         args = ?args,
         "ffmpeg args"
     );
@@ -194,7 +194,7 @@ async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Re
 
     let mut child = command
         .spawn()
-        .with_context(|| format!("failed to start ffmpeg with {}", ffmpeg_bin.display()))?;
+        .with_context(|| format!("failed to start ffmpeg with {ffmpeg_bin}"))?;
     let pid = child.id().context("ffmpeg missing pid")?;
 
     if let Some(stdout) = child.stdout.take() {
@@ -433,29 +433,6 @@ enum FfmpegAction {
     None,
     Start,
     Restart,
-}
-
-fn resolve_ffmpeg_bin() -> PathBuf {
-    if let Some(path) = configured_ffmpeg_bin() {
-        return path;
-    }
-
-    if let Ok(path) = std::env::var("LYRA_FFMPEG_BIN") {
-        return PathBuf::from(path);
-    }
-
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let local_candidate = manifest_dir.join("bin/ffmpeg");
-    if local_candidate.exists() {
-        return local_candidate;
-    }
-
-    let workspace_candidate = manifest_dir.join("../../bin/ffmpeg");
-    if workspace_candidate.exists() {
-        return workspace_candidate;
-    }
-
-    PathBuf::from("ffmpeg")
 }
 
 fn pts_to_seconds(pts: i64, time_base_num: i64, time_base_den: i64) -> f64 {

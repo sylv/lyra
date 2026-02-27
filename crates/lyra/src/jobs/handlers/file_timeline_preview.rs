@@ -5,10 +5,10 @@ use crate::{
         file_assets::{self, FileAssetRole},
         jobs as jobs_entity,
     },
-    ffmpeg,
     jobs::{JobHandler, handlers::shared},
 };
 use anyhow::Context;
+use lyra_ffprobe::paths::get_ffmpeg_path;
 use lyra_timeline_preview::{PreviewOptions, generate_previews};
 use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait, TransactionTrait};
 use std::{path::PathBuf, time::Duration};
@@ -28,7 +28,7 @@ impl JobHandler for FileTimelinePreviewJob {
         };
 
         let preview_options = PreviewOptions {
-            ffmpeg_bin: PathBuf::from(ffmpeg::get_ffmpeg_path()),
+            ffmpeg_bin: PathBuf::from(get_ffmpeg_path()?),
             working_dir: get_config()
                 .data_dir
                 .join("tmp")

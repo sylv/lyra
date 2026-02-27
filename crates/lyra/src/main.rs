@@ -37,7 +37,6 @@ mod auth;
 mod config;
 mod entities;
 mod error;
-mod ffmpeg;
 mod file_analysis;
 mod graphql;
 mod hls;
@@ -119,8 +118,7 @@ async fn get_init_state(
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-    ffmpeg::ensure_ffmpeg().await.unwrap();
-    lyra_packager::configure_bins(ffmpeg::get_ffmpeg_path(), ffmpeg::get_ffprobe_path());
+    lyra_ffprobe::paths::init_ffmpeg().unwrap();
 
     let db_path = get_config().data_dir.join("data.db");
     let pool = SqlitePoolOptions::new()

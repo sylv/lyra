@@ -2,6 +2,8 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path, process::Command};
 
+pub mod paths;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StreamType {
     Video,

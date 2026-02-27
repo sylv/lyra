@@ -1,11 +1,10 @@
 use crate::{
     entities::{file_keyframes, files, jobs as jobs_entity},
-    ffmpeg,
     jobs::{JobHandler, handlers::shared},
     json_encoding,
 };
 use anyhow::Context;
-use lyra_ffprobe::probe_keyframes_pts;
+use lyra_ffprobe::{paths::get_ffprobe_path, probe_keyframes_pts};
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     sea_query::OnConflict, sea_query::Query,
@@ -56,7 +55,7 @@ pub(crate) async fn extract_and_store_keyframes(
     file_id: i64,
     file_path: &Path,
 ) -> anyhow::Result<Vec<i64>> {
-    let ffprobe_bin = PathBuf::from(ffmpeg::get_ffprobe_path());
+    let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
     let input = file_path.to_path_buf();
     let keyframes = tokio::task::spawn_blocking(move || probe_keyframes_pts(&ffprobe_bin, &input))
         .await

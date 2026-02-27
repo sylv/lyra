@@ -1,11 +1,10 @@
 use crate::{
     entities::{file_probe, files, jobs as jobs_entity},
-    ffmpeg,
     jobs::{JobHandler, handlers::shared},
     json_encoding,
 };
 use anyhow::Context;
-use lyra_ffprobe::{FfprobeOutput, probe_output};
+use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_output};
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     sea_query::OnConflict, sea_query::Query,
@@ -54,7 +53,7 @@ pub(crate) async fn extract_and_store_ffprobe(
     file_id: i64,
     file_path: &Path,
 ) -> anyhow::Result<FfprobeOutput> {
-    let ffprobe_bin = PathBuf::from(ffmpeg::get_ffprobe_path());
+    let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
     let input = file_path.to_path_buf();
     let ffprobe_output = tokio::task::spawn_blocking(move || probe_output(&ffprobe_bin, &input))
         .await

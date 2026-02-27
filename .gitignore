@@ -32,3 +32,6 @@ segments/
 *.mp4
 samples/
 .frame-cache
+
+/export-ffmpeg.sh
+/bin

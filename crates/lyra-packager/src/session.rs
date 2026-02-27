@@ -1,5 +1,4 @@
 use crate::{
-    binaries::configured_ffprobe_bin,
     ffmpeg::{
         ensure_ffmpeg_for_init, ensure_ffmpeg_for_segment, parse_segment_index, wait_for_file,
     },
@@ -10,10 +9,10 @@ use crate::{
     },
 };
 use anyhow::{Context, Result, bail};
-use lyra_ffprobe::{FfprobeOutput, probe_keyframes_pts, probe_output};
+use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_keyframes_pts, probe_output};
 use std::{
     collections::HashMap,
-    path::{Path as FsPath, Path, PathBuf},
+    path::{Path as FsPath, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -131,7 +130,7 @@ pub fn build_package(
 pub fn build_package_with_defaults(input: &FsPath) -> Result<Package> {
     let input = canonicalize_input_path(input)?;
     let profiles = get_profiles();
-    let ffprobe_bin = resolve_ffprobe_bin();
+    let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
     let ffprobe_output = probe_output(&ffprobe_bin, &input)?;
     let keyframes = probe_keyframes_pts(&ffprobe_bin, &input)?;
     build_package(&input, &profiles, None, &ffprobe_output, &keyframes)
@@ -211,27 +210,4 @@ impl Session {
         wait_for_file(&path, timeout).await?;
         Ok(path)
     }
-}
-
-fn resolve_ffprobe_bin() -> PathBuf {
-    if let Some(path) = configured_ffprobe_bin() {
-        return path;
-    }
-
-    if let Ok(path) = std::env::var("LYRA_FFPROBE_BIN") {
-        return PathBuf::from(path);
-    }
-
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let local_candidate = manifest_dir.join("bin/ffprobe");
-    if local_candidate.exists() {
-        return local_candidate;
-    }
-
-    let workspace_candidate = manifest_dir.join("../../bin/ffprobe");
-    if workspace_candidate.exists() {
-        return workspace_candidate;
-    }
-
-    PathBuf::from("ffprobe")
 }
