@@ -1,12 +1,12 @@
-import { Image, ImageAssetFrag, ImageType } from "@/components/image";
+import { Image, ImageType } from "@/components/image";
 import { PlayWrapper } from "@/components/play-wrapper";
-import { SeasonCard, SeasonCardFrag } from "@/components/season-card";
+import { SeasonCard } from "@/components/season-card";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
 import { useDynamicBackground } from "@/hooks/use-background";
 import { formatReleaseYear } from "@/lib/format-release-year";
 import { useSuspenseQuery } from "@apollo/client/react";
 import { createFileRoute } from "@tanstack/react-router";
-import { graphql, readFragment } from "gql.tada";
+import { graphql } from "../@generated/gql";
 import { client } from "../client";
 
 const Query = graphql(
@@ -19,6 +19,7 @@ const Query = graphql(
 			libraryId
 			seasons {
 				id
+				order
 				...SeasonCard
 			}
 			properties {
@@ -44,7 +45,6 @@ const Query = graphql(
 		}
 	}
 `,
-	[SeasonCardFrag, ImageAssetFrag],
 );
 
 export const Route = createFileRoute("/library_/$libraryId/$rootId")({
@@ -99,9 +99,7 @@ function RootRoute() {
 	}
 
 	const sortedSeasons = [...root.seasons].sort((a, b) => {
-		const seasonA = readFragment(SeasonCardFrag, a);
-		const seasonB = readFragment(SeasonCardFrag, b);
-		return seasonA.order - seasonB.order || seasonA.seasonNumber - seasonB.seasonNumber;
+		return a.order - b.order;
 	});
 
 	return (

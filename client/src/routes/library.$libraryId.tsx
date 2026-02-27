@@ -1,9 +1,10 @@
+import { MediaFilterList } from "@/components/media-filter-list";
+import { MediaList } from "@/components/media-list";
 import { useQuery } from "@apollo/client/react";
 import { createFileRoute } from "@tanstack/react-router";
-import { graphql, type VariablesOf } from "gql.tada";
 import { Fragment, useState } from "react";
-import { MediaFilterList } from "@/components/media-filter-list";
-import { MediaList, MediaListFrag } from "@/components/media-list";
+import { graphql } from "../@generated/gql";
+import { OrderBy, type RootNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
 
 const Query = graphql(
@@ -23,10 +24,7 @@ const Query = graphql(
 		}
 	}
 `,
-	[MediaListFrag],
 );
-
-type RootNodeFilter = VariablesOf<typeof Query>["filter"];
 
 export const Route = createFileRoute("/library/$libraryId")({
 	component: LibraryRoute,
@@ -36,7 +34,7 @@ export const Route = createFileRoute("/library/$libraryId")({
 			variables: {
 				filter: {
 					libraryId: Number(params.libraryId),
-					orderBy: "ADDED_AT",
+					orderBy: OrderBy.Alphabetical,
 				},
 			},
 		});
@@ -48,7 +46,7 @@ function LibraryRoute() {
 	const parsedLibraryId = Number(rawLibraryId);
 	const libraryId = Number.isNaN(parsedLibraryId) ? null : parsedLibraryId;
 	const [filter, setFilter] = useState<RootNodeFilter>({
-		orderBy: "ADDED_AT",
+		orderBy: OrderBy.Alphabetical,
 	});
 
 	const { data, loading, fetchMore } = useQuery(Query, {

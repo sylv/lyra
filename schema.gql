@@ -97,17 +97,9 @@ type ItemNodeEdge {
 input ItemNodeFilter {
 	rootId: String!
 	seasonNumbers: [Int!]
-	orderBy: ItemNodeOrderBy
+	orderBy: OrderBy
 	orderDirection: OrderDirection
 	watched: Boolean
-}
-
-enum ItemNodeOrderBy {
-	ADDED_AT
-	RELEASED_AT
-	ALPHABETICAL
-	RATING
-	SEASON_EPISODE
 }
 
 type ItemNodeProperties {
@@ -148,6 +140,14 @@ type Mutation {
 	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
 	updateWatchProgress(fileId: Int!, progressPercent: Float!, userId: String): [WatchProgress!]!
 	createLibrary(name: String!, path: String!): Library!
+}
+
+enum OrderBy {
+	ADDED_AT
+	RELEASED_AT
+	ALPHABETICAL
+	RATING
+	SEASON_EPISODE
 }
 
 enum OrderDirection {
@@ -249,17 +249,9 @@ type RootNodeEdge {
 input RootNodeFilter {
 	libraryId: Int
 	kinds: [RootKind!]
-	orderBy: RootNodeOrderBy
+	orderBy: OrderBy
 	orderDirection: OrderDirection
 	watched: Boolean
-}
-
-enum RootNodeOrderBy {
-	ADDED_AT
-	RELEASED_AT
-	ALPHABETICAL
-	RATING
-	SEASON_EPISODE
 }
 
 type RootNodeProperties {

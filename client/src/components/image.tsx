@@ -1,7 +1,8 @@
 import clsx from "clsx";
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
+import { graphql, unmask, type FragmentType } from "../@generated/gql";
+import type { ImageAssetFragment } from "../@generated/gql/graphql";
 import { getThumbhashDataUrl } from "../lib/thumbhash";
 
 export enum ImageType {
@@ -9,23 +10,12 @@ export enum ImageType {
 	Thumbnail = "thumbnail",
 }
 
-export const ImageAssetFrag = graphql(`
+export const Fragment = graphql(`
 	fragment ImageAsset on Asset {
 		id
-		source
-		sourceUrl
-		hashSha256
-		sizeBytes
-		mimeType
-		height
-		width
 		thumbhash
-		createdAt
-		deletedAt
 	}
 `);
-
-export type ImageAsset = FragmentOf<typeof ImageAssetFrag>;
 
 interface ImageTypeConfig {
 	baseClasses: string;
@@ -52,13 +42,13 @@ const IMAGE_TYPE_CONFIG: Record<ImageType, ImageTypeConfig> = {
 
 interface ImageProps {
 	type: ImageType;
-	asset: ImageAsset | null | undefined;
+	asset: FragmentType<typeof Fragment> | null | undefined;
 	alt: string;
 	className?: string;
 }
 
-export const getAssetImageUrl = (asset: ImageAsset | { id: number }, height: number): string => {
-	const assetId = "id" in asset ? asset.id : readFragment(ImageAssetFrag, asset).id;
+export const getAssetImageUrl = (asset: ImageAssetFragment | { id: number }, height: number): string => {
+	const assetId = "id" in asset ? asset.id : unmask(Fragment, asset).id;
 	const params = new URLSearchParams({
 		height: String(height),
 	});
@@ -68,7 +58,7 @@ export const getAssetImageUrl = (asset: ImageAsset | { id: number }, height: num
 export const Image: FC<ImageProps> = ({ type, asset, alt, className }) => {
 	const config = IMAGE_TYPE_CONFIG[type];
 	const resolvedClassName = className ?? config.defaultClassName;
-	const resolvedAsset = asset ? readFragment(ImageAssetFrag, asset) : null;
+	const resolvedAsset = asset ? unmask(Fragment, asset) : null;
 	const thumbhashPreview = getThumbhashDataUrl(resolvedAsset?.thumbhash);
 
 	if (!resolvedAsset) {

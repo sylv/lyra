@@ -1,17 +1,18 @@
 import { Link } from "@tanstack/react-router";
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type { FC } from "react";
+import { graphql, unmask, type FragmentType } from "../@generated/gql";
+import type { SeasonCardFragment } from "../@generated/gql/graphql";
 import { formatReleaseYear } from "../lib/format-release-year";
-import { Image, ImageAssetFrag, ImageType } from "./image";
+import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { UnplayedItemsTab } from "./unplayed-items-tab";
 
 interface SeasonCardProps {
-	season: FragmentOf<typeof SeasonCardFrag>;
+	season: FragmentType<typeof Fragment>;
 	path: string;
 }
 
-export const SeasonCardFrag = graphql(
+const Fragment = graphql(
 	`
 	fragment SeasonCard on SeasonNode {
 		id
@@ -39,11 +40,10 @@ export const SeasonCardFrag = graphql(
 		episodeCount
 	}
 `,
-	[ImageAssetFrag],
 );
 
 export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => {
-	const season = readFragment(SeasonCardFrag, seasonRaw);
+	const season = unmask(Fragment, seasonRaw);
 	const imageAsset = season.properties.posterImage ?? season.properties.thumbnailImage;
 	const detail = getSeasonPosterDetail(season);
 
@@ -61,7 +61,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => 
 	);
 };
 
-const getSeasonPosterDetail = (season: FragmentOf<typeof SeasonCardFrag>): string | number | null => {
+const getSeasonPosterDetail = (season: SeasonCardFragment): string | number | null => {
 	if (season.episodeCount > 0) {
 		return formatCountLabel(season.episodeCount, "episode", "episodes");
 	}

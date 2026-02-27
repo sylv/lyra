@@ -1,13 +1,14 @@
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
+import { graphql, unmask, type FragmentType } from "../@generated/gql";
+import type { GetPathForItemFragment } from "../@generated/gql/graphql";
 
-export const GetPathForRootFrag = graphql(`
+const RootFragment = graphql(`
 	fragment GetPathForRoot on RootNode {
 		id
 		libraryId
 	}
 `);
 
-export const GetPathForItemFrag = graphql(`
+const ItemFragment = graphql(`
 	fragment GetPathForItem on ItemNode {
 		kind
 		rootId
@@ -18,21 +19,13 @@ export const GetPathForItemFrag = graphql(`
 	}
 `);
 
-interface ItemPathData {
-	kind: "MOVIE" | "EPISODE";
-	rootId: string;
-	seasonId: string | null;
-	parent: {
-		libraryId: number;
-	} | null;
-}
 
-export const getPathForRoot = (mediaRaw: FragmentOf<typeof GetPathForRootFrag>) => {
-	const media = readFragment(GetPathForRootFrag, mediaRaw);
+export const getPathForRoot = (mediaRaw: FragmentType<typeof RootFragment>) => {
+	const media = unmask(RootFragment, mediaRaw);
 	return `/library/${media.libraryId}/${media.id}`;
 };
 
-export const getPathForItemData = (media: ItemPathData) => {
+export const getPathForItemData = (media: GetPathForItemFragment) => {
 	const libraryId = media.parent?.libraryId;
 
 	if (!libraryId) {
@@ -47,10 +40,12 @@ export const getPathForItemData = (media: ItemPathData) => {
 				return `/library/${libraryId}/${media.rootId}`;
 			}
 			return `/library/${libraryId}/${media.rootId}/${media.seasonId}`;
+		default:
+			throw new Error(`Unknown media kind: ${media.kind}`);
 	}
 };
 
-export const getPathForItem = (mediaRaw: FragmentOf<typeof GetPathForItemFrag>) => {
-	const media = readFragment(GetPathForItemFrag, mediaRaw);
+export const getPathForItem = (mediaRaw: FragmentType<typeof ItemFragment>) => {
+	const media = unmask(ItemFragment, mediaRaw);
 	return getPathForItemData(media);
 };

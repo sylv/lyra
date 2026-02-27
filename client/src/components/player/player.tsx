@@ -4,11 +4,11 @@
 /** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
 import { useMutation, useQuery } from "@apollo/client/react";
 import { useNavigate } from "@tanstack/react-router";
-import { graphql } from "gql.tada";
 import Hls from "hls.js";
 import { ChevronDown, Loader2, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
 import { useStore } from "zustand/react";
+import { graphql } from "../../@generated/gql";
 import { getPathForItemData } from "../../lib/getPathForMedia";
 import { cn } from "../../lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";

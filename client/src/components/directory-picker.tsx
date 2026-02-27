@@ -1,16 +1,16 @@
 import { useQuery } from "@apollo/client/react";
-import { graphql } from "gql.tada";
 import { CornerUpLeft, Folder } from "lucide-react";
 import { useEffect, useState, type FC } from "react";
 import { IconText } from "./icon-text";
 import { Spinner } from "./ui/spinner";
+import { graphql } from "../@generated/gql";
 
 export interface DirectoryPickerProps {
 	onPathChange: (path: string | null) => void;
 	initialPath?: string;
 }
 
-const GET_FILES = graphql(`
+const GetFiles = graphql(`
     query GetFiles($path: String!) {
         listFiles(path: $path)
     }
@@ -20,7 +20,7 @@ export const DirectoryPicker: FC<DirectoryPickerProps> = ({ onPathChange, initia
 	const [currentPath, setCurrentPath] = useState<string>(initialPath);
 	const [pathInput, setPathInput] = useState<string>(initialPath);
 
-	const { data, loading, error } = useQuery(GET_FILES, {
+	const { data, loading, error } = useQuery(GetFiles, {
 		variables: {
 			path: currentPath,
 		},

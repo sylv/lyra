@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@apollo/client/react";
-import { graphql } from "gql.tada";
-import { Folder, Plus, X } from "lucide-react";
+import { Folder, Plus } from "lucide-react";
 import { useState, type FC } from "react";
+import { graphql } from "../../../@generated/gql";
 import { DirectoryPicker } from "../../directory-picker";
 import { SetupModalStep } from "../setup-modal-step";
 
@@ -9,7 +9,7 @@ interface CreateLibraryStepProps {
 	refetch: () => Promise<void>;
 }
 
-const GET_LIBRARIES = graphql(`
+const Query = graphql(`
 	query GetLibraries {
 		libraries {
 			id
@@ -19,7 +19,7 @@ const GET_LIBRARIES = graphql(`
 	}
 `);
 
-const CREATE_LIBRARY = graphql(`
+const Mutation = graphql(`
 	mutation CreateLibrary($name: String!, $path: String!) {
 		createLibrary(name: $name, path: $path) {
 			id
@@ -31,7 +31,7 @@ const CREATE_LIBRARY = graphql(`
 
 export const CreateLibraryStep: FC<CreateLibraryStepProps> = ({ refetch }) => {
 	const [showAddForm, setShowAddForm] = useState(false);
-	const { data: librariesData } = useQuery(GET_LIBRARIES);
+	const { data: librariesData } = useQuery(Query);
 	const libraries = librariesData?.libraries || [];
 
 	return (
@@ -69,8 +69,8 @@ export const CreateLibraryStep: FC<CreateLibraryStepProps> = ({ refetch }) => {
 };
 
 const CreateLibraryForm: FC<{ onClose: () => void }> = ({ onClose }) => {
-	const [createLibrary, { loading: creating }] = useMutation(CREATE_LIBRARY, {
-		refetchQueries: [GET_LIBRARIES],
+	const [createLibrary, { loading: creating }] = useMutation(Mutation, {
+		refetchQueries: [Query],
 	});
 
 	const [libraryName, setLibraryName] = useState("");

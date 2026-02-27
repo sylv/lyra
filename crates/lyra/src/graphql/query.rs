@@ -68,7 +68,7 @@ fn directory_sort_key(name: &str) -> (u8, usize, String) {
 pub struct RootNodeFilter {
     pub library_id: Option<i64>,
     pub kinds: Option<Vec<RootKind>>,
-    pub order_by: Option<RootNodeOrderBy>,
+    pub order_by: Option<OrderBy>,
     pub order_direction: Option<OrderDirection>,
     pub watched: Option<bool>,
 }
@@ -78,7 +78,7 @@ pub struct RootNodeFilter {
 pub struct ItemNodeFilter {
     pub root_id: String,
     pub season_numbers: Option<Vec<i64>>,
-    pub order_by: Option<ItemNodeOrderBy>,
+    pub order_by: Option<OrderBy>,
     pub order_direction: Option<OrderDirection>,
     pub watched: Option<bool>,
 }
@@ -100,7 +100,7 @@ impl OrderDirection {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Enum, serde::Deserialize)]
-pub enum RootNodeOrderBy {
+pub enum OrderBy {
     AddedAt,
     ReleasedAt,
     Alphabetical,
@@ -108,34 +108,11 @@ pub enum RootNodeOrderBy {
     SeasonEpisode,
 }
 
-impl RootNodeOrderBy {
+impl OrderBy {
     pub fn default_direction(self) -> OrderDirection {
         match self {
-            RootNodeOrderBy::AddedAt | RootNodeOrderBy::ReleasedAt | RootNodeOrderBy::Rating => {
-                OrderDirection::Desc
-            }
-            RootNodeOrderBy::Alphabetical | RootNodeOrderBy::SeasonEpisode => OrderDirection::Asc,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Enum, serde::Deserialize)]
-pub enum ItemNodeOrderBy {
-    AddedAt,
-    ReleasedAt,
-    Alphabetical,
-    Rating,
-    SeasonEpisode,
-}
-
-impl ItemNodeOrderBy {
-    pub fn default_direction(self) -> OrderDirection {
-        match self {
-            ItemNodeOrderBy::AddedAt | ItemNodeOrderBy::ReleasedAt | ItemNodeOrderBy::Rating => {
-                OrderDirection::Desc
-            }
-            ItemNodeOrderBy::SeasonEpisode => OrderDirection::Asc,
-            ItemNodeOrderBy::Alphabetical => OrderDirection::Asc,
+            OrderBy::AddedAt | OrderBy::ReleasedAt | OrderBy::Rating => OrderDirection::Desc,
+            OrderBy::Alphabetical | OrderBy::SeasonEpisode => OrderDirection::Asc,
         }
     }
 }
@@ -223,26 +200,26 @@ impl Query {
                     }
                 }
 
-                let order_by = filter.order_by.unwrap_or(RootNodeOrderBy::Alphabetical);
+                let order_by = filter.order_by.unwrap_or(OrderBy::Alphabetical);
                 let order_direction = filter
                     .order_direction
                     .unwrap_or_else(|| order_by.default_direction())
                     .to_sea_orm();
 
                 match order_by {
-                    RootNodeOrderBy::AddedAt => {
+                    OrderBy::AddedAt => {
                         qb = qb.order_by(roots::Column::LastAddedAt, order_direction);
                     }
-                    RootNodeOrderBy::ReleasedAt => {
+                    OrderBy::ReleasedAt => {
                         qb = qb.order_by(root_metadata::Column::ReleasedAt, order_direction);
                     }
-                    RootNodeOrderBy::Alphabetical => {
+                    OrderBy::Alphabetical => {
                         qb = qb.order_by(root_metadata::Column::Name, order_direction);
                     }
-                    RootNodeOrderBy::Rating => {
+                    OrderBy::Rating => {
                         qb = qb.order_by(root_metadata::Column::ScoreNormalized, order_direction);
                     }
-                    RootNodeOrderBy::SeasonEpisode => {
+                    OrderBy::SeasonEpisode => {
                         qb = qb.order_by(roots::Column::LastAddedAt, order_direction);
                     }
                 }
@@ -342,26 +319,26 @@ impl Query {
                     }
                 }
 
-                let order_by = filter.order_by.unwrap_or(ItemNodeOrderBy::SeasonEpisode);
+                let order_by = filter.order_by.unwrap_or(OrderBy::SeasonEpisode);
                 let order_direction = filter
                     .order_direction
                     .unwrap_or_else(|| order_by.default_direction())
                     .to_sea_orm();
 
                 match order_by {
-                    ItemNodeOrderBy::AddedAt => {
+                    OrderBy::AddedAt => {
                         qb = qb.order_by(items::Column::LastAddedAt, order_direction);
                     }
-                    ItemNodeOrderBy::ReleasedAt => {
+                    OrderBy::ReleasedAt => {
                         qb = qb.order_by(item_metadata::Column::ReleasedAt, order_direction);
                     }
-                    ItemNodeOrderBy::Alphabetical => {
+                    OrderBy::Alphabetical => {
                         qb = qb.order_by(item_metadata::Column::Name, order_direction);
                     }
-                    ItemNodeOrderBy::Rating => {
+                    OrderBy::Rating => {
                         qb = qb.order_by(item_metadata::Column::ScoreNormalized, order_direction);
                     }
-                    ItemNodeOrderBy::SeasonEpisode => {
+                    OrderBy::SeasonEpisode => {
                         qb = qb.order_by(items::Column::Order, order_direction);
                     }
                 }

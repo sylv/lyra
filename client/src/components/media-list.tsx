@@ -1,21 +1,20 @@
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { useCallback, useEffect, useRef, useState, type FC } from "react";
-import { MediaPoster, MediaPosterFrag } from "./media-poster";
+import { graphql, unmask, type FragmentType } from "../@generated/gql";
+import { MediaPoster } from "./media-poster";
 import { Spinner } from "./ui/spinner";
 import { ViewLoader } from "./view-loader";
 
-export const MediaListFrag = graphql(
+const Fragment = graphql(
 	`
 	fragment MediaList on RootNode {
 		id
 		...MediaPoster
 	}
 `,
-	[MediaPosterFrag],
 );
 
 interface MediaListProps {
-	media?: FragmentOf<typeof MediaListFrag>[];
+	media?: FragmentType<typeof Fragment>[];
 	loading: boolean;
 	onLoadMore?: () => void;
 }
@@ -24,7 +23,7 @@ const POSTER_WIDTH = 185;
 const GAP_SIZE = 16;
 
 export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoadMore }) => {
-	const media = mediaRaw ? readFragment(MediaListFrag, mediaRaw) : [];
+	const media = mediaRaw ? unmask(Fragment, mediaRaw) : [];
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [columns, setColumns] = useState<number | null>(null);
 

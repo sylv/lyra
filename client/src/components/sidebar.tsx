@@ -1,6 +1,5 @@
 import { useSuspenseQuery } from "@apollo/client/react";
 import { Link, useLocation } from "@tanstack/react-router";
-import { graphql } from "gql.tada";
 import { Activity, AudioLines, HomeIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
@@ -8,6 +7,7 @@ import { cn } from "../lib/utils";
 import { ActivityPanel } from "./activity-panel";
 import { SuspenseBoundary } from "./fallback";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { graphql } from "../@generated/gql";
 
 const SidebarLink: FC<{
 	to: string;

@@ -1,21 +1,15 @@
+import { CalendarClockIcon, CalendarPlusIcon, SortAscIcon, StarIcon } from "lucide-react";
 import { Fragment, type FC } from "react";
+import { OrderBy, type ItemNodeFilter, type RootNodeFilter } from "../@generated/gql/graphql";
 import { FilterButton, FilterSelect } from "./filter-button";
-import { CalendarClockIcon, CalendarPlusIcon, ListVideoIcon, SortAscIcon, StarIcon } from "lucide-react";
-
-type NodeOrderBy = "ADDED_AT" | "RELEASED_AT" | "ALPHABETICAL" | "RATING" | "SEASON_EPISODE";
-
-interface MediaFilterValue {
-	watched?: boolean | null;
-	orderBy?: NodeOrderBy | null;
-}
 
 interface MediaFilterListProps {
-	value: MediaFilterValue;
-	onChange: (value: Partial<MediaFilterValue>) => void;
+	value: RootNodeFilter | Partial<ItemNodeFilter>;
+	onChange: (value: RootNodeFilter | Partial<ItemNodeFilter>) => void;
 }
 
 export const MediaFilterList: FC<MediaFilterListProps> = ({ value, onChange }) => {
-	const produceChange = (partial: Partial<MediaFilterValue>) => {
+	const produceChange = (partial: Partial<RootNodeFilter>) => {
 		onChange({ ...value, ...partial });
 	};
 
@@ -41,32 +35,27 @@ export const MediaFilterList: FC<MediaFilterListProps> = ({ value, onChange }) =
 			</FilterButton>
 			<FilterSelect
 				label="Order By"
-				value={value.orderBy || "ALPHABETICAL"}
+				value={value.orderBy || OrderBy.Alphabetical}
 				options={[
 					{
-						value: "ALPHABETICAL",
+						value: OrderBy.Alphabetical,
 						label: "Alphabetical",
 						icon: SortAscIcon,
 					},
 					{
-						value: "RATING",
+						value: OrderBy.Rating,
 						label: "Rating",
 						icon: StarIcon,
 					},
 					{
-						value: "RELEASED_AT",
+						value: OrderBy.ReleasedAt,
 						label: "Release Date",
 						icon: CalendarClockIcon,
 					},
 					{
-						value: "ADDED_AT",
+						value: OrderBy.AddedAt,
 						label: "Added Date",
 						icon: CalendarPlusIcon,
-					},
-					{
-						value: "SEASON_EPISODE",
-						label: "Episode Number",
-						icon: ListVideoIcon,
 					},
 				]}
 				onValueChange={(value) => {

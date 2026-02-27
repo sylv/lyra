@@ -1,10 +1,11 @@
 import { useQuery } from "@apollo/client/react";
 import { createFileRoute } from "@tanstack/react-router";
-import { graphql, type VariablesOf } from "gql.tada";
 import { useState } from "react";
-import { MediaFilterList } from "../components/media-filter-list";
-import { MediaList, MediaListFrag } from "../components/media-list";
+import { graphql } from "../@generated/gql";
+import { OrderBy, type RootNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
+import { MediaFilterList } from "../components/media-filter-list";
+import { MediaList } from "../components/media-list";
 
 const Query = graphql(
 	`
@@ -22,10 +23,7 @@ const Query = graphql(
 		}
 	}
 `,
-	[MediaListFrag],
 );
-
-type RootNodeFilter = VariablesOf<typeof Query>["filter"];
 
 export const Route = createFileRoute("/")({
 	component: HomeRoute,
@@ -34,7 +32,7 @@ export const Route = createFileRoute("/")({
 			query: Query,
 			variables: {
 				filter: {
-					orderBy: "ADDED_AT",
+					orderBy: OrderBy.AddedAt,
 				},
 			},
 		});
@@ -43,7 +41,7 @@ export const Route = createFileRoute("/")({
 
 function HomeRoute() {
 	const [filter, setFilter] = useState<RootNodeFilter>({
-		orderBy: "ADDED_AT",
+		orderBy: OrderBy.AddedAt,
 	});
 
 	const { data, loading, fetchMore } = useQuery(Query, {

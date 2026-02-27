@@ -15,13 +15,18 @@
             "recommended": true,
             "correctness": {
                 "useExhaustiveDependencies": "off"
-            },
-            "style": {
-                "noNonNullAssertion": "off"
-            },
-            "suspicious": {
-                "noArrayIndexKey": "off"
             }
+        },
+        "style": {
+            "noNonNullAssertion": "off"
+        },
+        "suspicious": {
+            "noArrayIndexKey": "off"
         }
+    },
+    "files": {
+        "ignore": [
+            "**/@generated/**"
+        ]
     }
 }

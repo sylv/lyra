@@ -1,24 +1,23 @@
-import { readFragment } from "gql.tada";
 import { useEffect } from "react";
 import { create } from "zustand";
-import { ImageAssetFrag, type ImageAsset } from "../components/image";
+import { unmask, type FragmentType } from "../@generated/gql";
+import type { ImageAssetFragment } from "../@generated/gql/graphql";
+import { Fragment } from "../components/image";
 
-export const backgroundStore = create<ImageAsset | null>(() => null);
+export const backgroundStore = create<ImageAssetFragment | null>(() => null);
 
-export const useDynamicBackground = (asset: ImageAsset | null, use?: boolean) => {
-	const assetId = asset ? readFragment(ImageAssetFrag, asset).id : null;
-
+export const useDynamicBackground = (assetRaw: FragmentType<typeof Fragment> | null, use?: boolean) => {
+	const asset = unmask(Fragment, assetRaw);
 	useEffect(() => {
 		if (use === false) return;
 		backgroundStore.setState(asset, true);
 		return () => {
-			if (!assetId) return;
+			if (!asset) return;
 			backgroundStore.setState((prev) => {
 				if (!prev) return prev;
-				const resolvedPrev = readFragment(ImageAssetFrag, prev);
-				if (resolvedPrev.id !== assetId) return prev;
+				if (prev.id !== asset.id) return prev;
 				return null;
 			}, true);
 		};
-	}, [asset, assetId, use]);
+	}, [asset, use]);
 };

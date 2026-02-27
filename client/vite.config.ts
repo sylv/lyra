@@ -4,9 +4,12 @@ import { defineConfig } from "vite";
 import path from "node:path";
 import webfontDownload from 'vite-plugin-webfont-dl';
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
+import codegen from 'vite-plugin-graphql-codegen';
+import { babelOptimizerPlugin } from '@graphql-codegen/client-preset'
 
 export default defineConfig({
 	plugins: [
+		codegen(),
 		tanstackRouter({
 			target: 'react',
 			autoCodeSplitting: true,
@@ -14,7 +17,10 @@ export default defineConfig({
 		}),
 		react({
 			babel: {
-				plugins: [["babel-plugin-react-compiler", { target: "19" }]],
+				plugins: [
+					["babel-plugin-react-compiler", { target: "19" }],
+					[babelOptimizerPlugin, { artifactDirectory: './src/@generated/gql/', gqlTagName: 'graphql' }]
+				],
 			},
 		}),
 		webfontDownload([]),
@@ -26,6 +32,7 @@ export default defineConfig({
 		},
 	},
 	server: {
+		port: 3000,
 		proxy: {
 			"/api": {
 				target: "http://localhost:8000",

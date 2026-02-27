@@ -1,13 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import { useMemo, type FC } from "react";
-import { getPathForItem, GetPathForItemFrag } from "../lib/getPathForMedia";
-import { Image, ImageAssetFrag, ImageType } from "./image";
+import { graphql, unmask, type FragmentType } from "../@generated/gql";
+import { getPathForItem } from "../lib/getPathForMedia";
+import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { openPlayerMedia } from "./player/player-state";
 
 interface EpisodeCardProps {
-	episode: FragmentOf<typeof EpisodeCardFrag>;
+	episode: FragmentType<typeof Fragment>;
 }
 
 const formatRuntime = (minutes: number | null) => {
@@ -20,7 +20,7 @@ const formatRuntime = (minutes: number | null) => {
 	return `${mins}m`;
 };
 
-export const EpisodeCardFrag = graphql(
+const Fragment = graphql(
 	`
 	fragment EpisodeCard on ItemNode {
 		id
@@ -42,11 +42,10 @@ export const EpisodeCardFrag = graphql(
 		...GetPathForItem
 	}
 `,
-	[GetPathForItemFrag, ImageAssetFrag],
 );
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
-	const episode = readFragment(EpisodeCardFrag, episodeRef);
+	const episode = unmask(Fragment, episodeRef);
 	const navigate = useNavigate();
 	const path = getPathForItem(episode);
 	const releaseDate = useMemo(() => {

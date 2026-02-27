@@ -1,21 +1,22 @@
 import { Link } from "@tanstack/react-router";
-import { graphql, readFragment, type FragmentOf } from "gql.tada";
 import type React from "react";
 import type { FC } from "react";
+import { graphql, unmask, type FragmentType } from "../@generated/gql";
+import type { MediaPosterFragment } from "../@generated/gql/graphql";
 import { formatReleaseYear } from "../lib/format-release-year";
-import { getPathForRoot, GetPathForRootFrag } from "../lib/getPathForMedia";
+import { getPathForRoot } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
-import { Image, ImageAssetFrag, ImageType } from "./image";
+import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { UnplayedItemsTab } from "./unplayed-items-tab";
 
 interface MediaPosterProps {
-	media: FragmentOf<typeof MediaPosterFrag>;
+	media: FragmentType<typeof Fragment>;
 	className?: string;
 	style?: React.CSSProperties;
 }
 
-export const MediaPosterFrag = graphql(
+const Fragment = graphql(
 	`
 	fragment MediaPoster on RootNode {
 		id
@@ -41,11 +42,10 @@ export const MediaPosterFrag = graphql(
 		...GetPathForRoot
 	}
 `,
-	[GetPathForRootFrag, ImageAssetFrag],
 );
 
 export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, style }) => {
-	const media = readFragment(MediaPosterFrag, mediaRaw);
+	const media = unmask(Fragment, mediaRaw);
 	const path = getPathForRoot(media);
 	const detail = getRootPosterDetail(media);
 
@@ -63,7 +63,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 	);
 };
 
-const getRootPosterDetail = (media: FragmentOf<typeof MediaPosterFrag>): string | number | null => {
+const getRootPosterDetail = (media: MediaPosterFragment): string | number | null => {
 	if (media.kind === "SERIES") {
 		if (media.seasonCount > 0) {
 			return formatCountLabel(media.seasonCount, "season", "seasons");

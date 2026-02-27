@@ -1,6 +1,6 @@
 import { useQuery } from "@apollo/client/react";
-import { graphql } from "gql.tada";
 import type { FC } from "react";
+import { graphql } from "../@generated/gql";
 
 const Query = graphql(`
 	query GetActivities {

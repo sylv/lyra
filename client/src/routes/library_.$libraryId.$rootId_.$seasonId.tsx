@@ -1,14 +1,15 @@
-import { useSuspenseQuery } from "@apollo/client/react";
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { graphql, type VariablesOf } from "gql.tada";
-import { useState } from "react";
-import { EpisodeCard, EpisodeCardFrag } from "@/components/episode-card";
-import { Image, ImageAssetFrag, ImageType } from "@/components/image";
+import { EpisodeCard } from "@/components/episode-card";
+import { Image, ImageType } from "@/components/image";
 import { MediaFilterList } from "@/components/media-filter-list";
 import { PlayWrapper } from "@/components/play-wrapper";
-import { ViewLoader } from "@/components/view-loader";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
+import { ViewLoader } from "@/components/view-loader";
 import { useDynamicBackground } from "@/hooks/use-background";
+import { useSuspenseQuery } from "@apollo/client/react";
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { graphql } from "../@generated/gql";
+import { OrderBy, type ItemNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
 
 const RootAndSeasonQuery = graphql(
@@ -57,7 +58,6 @@ const RootAndSeasonQuery = graphql(
 		}
 	}
 `,
-	[ImageAssetFrag],
 );
 
 const EpisodesQuery = graphql(
@@ -77,11 +77,7 @@ const EpisodesQuery = graphql(
 		}
 	}
 `,
-	[EpisodeCardFrag],
 );
-
-type ItemNodeFilter = VariablesOf<typeof EpisodesQuery>["filter"];
-type EpisodeListFilter = Pick<ItemNodeFilter, "orderBy" | "orderDirection" | "watched">;
 
 export const Route = createFileRoute("/library_/$libraryId/$rootId_/$seasonId")({
 	component: SeasonRoute,
@@ -98,9 +94,6 @@ export const Route = createFileRoute("/library_/$libraryId/$rootId_/$seasonId")(
 
 function SeasonRoute() {
 	const { rootId, seasonId } = Route.useParams();
-	const [filter, setFilter] = useState<EpisodeListFilter>({
-		orderBy: "SEASON_EPISODE",
-	});
 	const { data } = useSuspenseQuery(RootAndSeasonQuery, {
 		variables: {
 			rootId,
@@ -108,15 +101,17 @@ function SeasonRoute() {
 		},
 	});
 
-	const episodeFilter: ItemNodeFilter = {
-		rootId,
-		seasonNumbers: [data?.season.seasonNumber ?? -1],
-		...filter,
-	};
+	const [filter, setFilter] = useState<Partial<ItemNodeFilter>>({
+		orderBy: OrderBy.SeasonEpisode,
+	});
 
 	const { data: episodes, fetchMore } = useSuspenseQuery(EpisodesQuery, {
 		variables: {
-			filter: episodeFilter,
+			filter: {
+				rootId,
+				seasonNumbers: [data?.season.seasonNumber ?? -1],
+				...filter,
+			},
 		},
 		skip: !data,
 	});
