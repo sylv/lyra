@@ -44,6 +44,7 @@ mod jobs;
 mod json_encoding;
 mod metadata;
 mod scanner;
+mod segment_markers;
 
 type AppSchema =
     Schema<graphql::query::Query, graphql::mutation::Mutation, async_graphql::EmptySubscription>;
@@ -166,6 +167,12 @@ async fn main() {
     background_workers.spawn(async move {
         tracing::info!("starting metadata background worker");
         metadata::worker::start_metadata_worker(metadata_pool, metadata_providers).await
+    });
+
+    let segments_pool = pool.clone();
+    background_workers.spawn(async move {
+        tracing::info!("starting file segment background worker");
+        segment_markers::worker::start_file_segment_worker(segments_pool).await
     });
 
     for job in jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone()) {

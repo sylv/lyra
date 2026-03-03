@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "@apollo/client/react";
 import { useNavigate } from "@tanstack/react-router";
 import Hls from "hls.js";
 import { ChevronDown, Loader2, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, type FC } from "react";
+import { useEffect, useMemo, useRef, useState, type FC } from "react";
 import { useStore } from "zustand/react";
 import { graphql } from "../../@generated/gql";
 import { getPathForItemData } from "../../lib/getPathForMedia";
@@ -14,6 +14,7 @@ import { cn } from "../../lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { PlayerButton } from "./components/player-button";
 import { PlayerControls } from "./components/player-controls";
+import { SkipIntroButton } from "./components/skip-intro-button";
 import {
 	clearPlayerMedia,
 	playerState,
@@ -122,6 +123,11 @@ const ItemPlaybackQuery = graphql(`
 			}
 			file {
 				id
+				segments {
+					kind
+					startMs
+					endMs
+				}
 				timelinePreview {
 					positionMs
 					endMs
@@ -178,6 +184,43 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 	});
 	// Keep the previous item mounted while loading the next/previous item so browser fullscreen is preserved.
 	const currentMedia = data?.item ?? (isItemLoading ? previousData?.item : null) ?? null;
+	const introSegment = useMemo(() => {
+		const segments = currentMedia?.file?.segments;
+		if (!Array.isArray(segments)) {
+			return null;
+		}
+
+		return (
+			segments.find(
+				(segment) =>
+					segment.kind === "INTRO" &&
+					typeof segment.startMs === "number" &&
+					typeof segment.endMs === "number" &&
+					segment.endMs > segment.startMs,
+			) ?? null
+		);
+	}, [currentMedia?.file?.segments]);
+	const introProgressPercent = useMemo(() => {
+		if (!introSegment) {
+			return 0;
+		}
+
+		const introDurationMs = introSegment.endMs - introSegment.startMs;
+		if (introDurationMs <= 0) {
+			return 0;
+		}
+
+		const positionMs = currentTime * 1000;
+		return Math.max(0, Math.min(1, (positionMs - introSegment.startMs) / introDurationMs));
+	}, [currentTime, introSegment]);
+	const isInsideIntroSegment = useMemo(() => {
+		if (!introSegment) {
+			return false;
+		}
+
+		const positionMs = currentTime * 1000;
+		return positionMs >= introSegment.startMs && positionMs < introSegment.endMs;
+	}, [currentTime, introSegment]);
 
 	useEffect(() => {
 		if (!isItemLoading) {
@@ -644,6 +687,14 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		}
 	};
 
+	const onSkipIntro = () => {
+		if (!videoRef.current || !introSegment) {
+			return;
+		}
+
+		videoRef.current.currentTime = introSegment.endMs / 1000;
+	};
+
 	const onPreviousItem = () => {
 		const previousItemId = (currentMedia?.previousItem as { id: string } | null)?.id;
 		if (!previousItemId) {
@@ -794,6 +845,21 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 						</PlayerButton>
 					</div>
 				</div>
+
+				{introSegment && isInsideIntroSegment && isFullscreen && (
+					<div
+						className={cn(
+							"absolute right-0 flex justify-end px-4 pointer-events-none bottom-36"
+						)}
+					>
+						<div className="pointer-events-auto">
+							<SkipIntroButton
+								progressPercent={introProgressPercent}
+								onSkip={onSkipIntro}
+							/>
+						</div>
+					</div>
+				)}
 
 				{/* Bottom controls */}
 				<PlayerControls

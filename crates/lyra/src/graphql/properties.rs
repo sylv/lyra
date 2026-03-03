@@ -1,9 +1,10 @@
 use crate::entities::{
     assets,
     file_assets::{self, FileAssetRole},
-    file_probe, files, item_files, item_metadata, root_metadata, season_metadata,
+    file_probe, file_segments, files, item_files, item_metadata, root_metadata, season_metadata,
 };
-use async_graphql::{ComplexObject, Context, SimpleObject};
+use crate::segment_markers::StoredFileSegmentKind;
+use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use std::collections::HashMap;
 
@@ -29,6 +30,18 @@ pub struct TimelinePreviewSheet {
     pub sheet_interval_ms: i64,
     pub sheet_gap_size: i64,
     pub asset: Asset,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum FileSegmentKind {
+    Intro,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct FileSegment {
+    pub kind: FileSegmentKind,
+    pub start_ms: i64,
+    pub end_ms: i64,
 }
 
 #[derive(Clone, Debug, SimpleObject)]
@@ -245,6 +258,44 @@ impl files::Model {
         }
 
         Ok(sheets)
+    }
+
+    pub async fn segments(&self, ctx: &Context<'_>) -> Result<Vec<FileSegment>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let Some(row) = file_segments::Entity::find_by_id(self.id).one(pool).await? else {
+            return Ok(Vec::new());
+        };
+
+        if row.status != file_segments::FileSegmentsStatus::Ready {
+            return Ok(Vec::new());
+        }
+
+        let decoded = match row.decode_segments() {
+            Ok(segments) => segments,
+            Err(error) => {
+                tracing::warn!(file_id = self.id, error = ?error, "failed to decode file segments");
+                return Ok(Vec::new());
+            }
+        };
+
+        Ok(decoded
+            .into_iter()
+            .filter_map(|segment| {
+                if segment.end_ms <= segment.start_ms {
+                    return None;
+                }
+
+                let kind = match segment.kind {
+                    StoredFileSegmentKind::Intro => FileSegmentKind::Intro,
+                };
+
+                Some(FileSegment {
+                    kind,
+                    start_ms: segment.start_ms,
+                    end_ms: segment.end_ms,
+                })
+            })
+            .collect())
     }
 }
 

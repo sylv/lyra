@@ -63,9 +63,11 @@ lyra-parser = { path = "../lyra-parser" }
 lyra-ffprobe = { path = "../lyra-ffprobe" }
 lyra-thumbnail = { path = "../lyra-thumbnail" }
 lyra-timeline-preview = { path = "../lyra-timeline-preview" }
+lyra-marker = { path = "../lyra-marker" }
 async-recursion = "1.1.1"
 async-trait = "0.1.89"
 zstd = "0.13.3"
+rusty-chromaprint = "0.3.0"
 
 [features]
 static = []

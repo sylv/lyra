@@ -39,6 +39,8 @@ pub enum Relation {
     FileProbe,
     #[sea_orm(has_one = "super::file_keyframes::Entity")]
     FileKeyframes,
+    #[sea_orm(has_one = "super::file_segments::Entity")]
+    FileSegments,
     #[sea_orm(has_many = "super::items::Entity")]
     PrimaryItems,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
@@ -72,6 +74,12 @@ impl Related<super::file_probe::Entity> for Entity {
 impl Related<super::file_keyframes::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileKeyframes.def()
+    }
+}
+
+impl Related<super::file_segments::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileSegments.def()
     }
 }
 

@@ -133,6 +133,24 @@ CREATE TABLE file_probe (
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 ) STRICT;
 
+CREATE TABLE file_segments (
+    file_id INTEGER PRIMARY KEY,
+    segment_list BLOB NOT NULL, -- zstd-encoded json list of marked file segments.
+    status INTEGER NOT NULL, -- 0 ready, 1 error
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempted_at INTEGER,
+    retry_after INTEGER,
+    last_error_message TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+    CHECK (status IN (0, 1))
+) STRICT;
+
+CREATE INDEX file_segments_status_retry_idx
+    ON file_segments(status, retry_after, last_attempted_at);
+
 CREATE TABLE roots (
     id TEXT PRIMARY KEY,
     library_id INTEGER NOT NULL,

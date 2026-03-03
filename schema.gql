@@ -38,6 +38,17 @@ type File {
 	scannedAt: Int
 	discoveredAt: Int!
 	timelinePreview: [TimelinePreviewSheet!]!
+	segments: [FileSegment!]!
+}
+
+type FileSegment {
+	kind: FileSegmentKind!
+	startMs: Int!
+	endMs: Int!
+}
+
+enum FileSegmentKind {
+	INTRO
 }
 
 enum ItemKind {
