@@ -229,12 +229,12 @@ async fn main() {
             last_setup_code_attempt: Arc::new(AtomicI64::new(0)),
         });
 
-    #[cfg(feature = "static")]
+    #[cfg(all(feature = "static", not(debug_assertions)))]
     {
         use tower_http::services::{ServeDir, ServeFile};
 
         let static_path = std::env::var("LYRA_STATIC_PATH")
-            .expect("LYRA_STATIC_PATH not set with static feature");
+            .expect("LYRA_STATIC_PATH must be set for release builds with static feature");
         let index_path = static_path.clone() + "/index.html";
         let serve_dir = ServeDir::new(static_path)
             .not_found_service(ServeFile::new(index_path))

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.vscode
+
+target
+node_modules
+client/node_modules
+
+.lyra
+.segments
+sample
+
+*.log
