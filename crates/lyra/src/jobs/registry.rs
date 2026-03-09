@@ -4,6 +4,7 @@ use crate::jobs::{
         asset_download::AssetDownloadJob, asset_thumbhash::AssetThumbhashJob,
         file_ffprobe::FileFfprobeJob, file_keyframes::FileKeyframesJob,
         file_thumbnail::FileThumbnailJob, file_timeline_preview::FileTimelinePreviewJob,
+        root_intro_segments::RootIntroSegmentsJob,
     },
 };
 use sea_orm::DatabaseConnection;
@@ -18,6 +19,7 @@ pub fn get_registered_job_handlers() -> Vec<Arc<dyn JobHandler>> {
         Arc::new(FileKeyframesJob),
         Arc::new(FileTimelinePreviewJob),
         Arc::new(FileThumbnailJob),
+        Arc::new(RootIntroSegmentsJob),
     ]
 }
 

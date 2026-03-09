@@ -1,8 +1,11 @@
 use crate::{
     entities::{
-        files, item_files, items, libraries,
+        files, item_files, items, jobs as jobs_entity, libraries,
         roots::{self, RootKind},
         seasons,
+    },
+    jobs::{
+        JobHandler, JobTarget, JobTargetId, TARGET_ID_COLUMN, VERSION_KEY_COLUMN, handlers::shared,
     },
     json_encoding,
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
@@ -13,16 +16,15 @@ use lyra_marker::{
 };
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, sea_query::SelectStatement,
 };
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
 };
-use tokio::time::{Duration, sleep};
 
-const WORKER_INTERVAL: Duration = Duration::from_secs(60);
-const MAX_ROOTS_PER_TICK: usize = 3;
+#[derive(Debug, Default)]
+pub struct RootIntroSegmentsJob;
 
 #[derive(Clone, Debug)]
 struct RootFile {
@@ -46,149 +48,136 @@ struct RootFileQueryRow {
     segments_json: Vec<u8>,
 }
 
-pub async fn start_file_segment_worker(pool: DatabaseConnection) -> anyhow::Result<()> {
-    tracing::info!(
-        interval_secs = WORKER_INTERVAL.as_secs(),
-        "file segment worker started"
-    );
-
-    loop {
-        if let Err(error) = run_tick(&pool).await {
-            tracing::error!(error = ?error, "file segment worker tick failed");
-        }
-
-        sleep(WORKER_INTERVAL).await;
-    }
-}
-
-async fn run_tick(pool: &DatabaseConnection) -> anyhow::Result<()> {
-    let pending_root_ids = load_pending_series_root_ids(pool).await?;
-    for root_id in pending_root_ids.into_iter().take(MAX_ROOTS_PER_TICK) {
-        if let Err(error) = process_root(pool, &root_id).await {
-            tracing::warn!(root_id, error = ?error, "failed processing root intro segments");
-        }
-    }
-    Ok(())
-}
-
-async fn load_pending_series_root_ids(pool: &DatabaseConnection) -> anyhow::Result<Vec<String>> {
-    let roots = item_files::Entity::find()
-        .join(JoinType::InnerJoin, item_files::Relation::Items.def())
-        .join(JoinType::InnerJoin, items::Relation::Roots.def())
-        .join(JoinType::InnerJoin, item_files::Relation::Files.def())
-        .filter(roots::Column::Kind.eq(RootKind::Series))
-        .filter(files::Column::UnavailableAt.is_null())
-        .filter(files::Column::SegmentsJson.eq(Vec::<u8>::new()))
-        .select_only()
-        .column(items::Column::RootId)
-        .distinct()
-        .order_by_asc(items::Column::RootId)
-        .into_tuple()
-        .all(pool)
-        .await?;
-
-    Ok(roots)
-}
-
-async fn process_root(pool: &DatabaseConnection, root_id: &str) -> anyhow::Result<()> {
-    let mut root_files = load_root_files(pool, root_id).await?;
-    if root_files.len() < INTRO_DETECTION_BATCH_MIN_FILES {
-        return Ok(());
+#[async_trait::async_trait]
+impl JobHandler for RootIntroSegmentsJob {
+    fn job_kind(&self) -> jobs_entity::JobKind {
+        jobs_entity::JobKind::RootGenerateIntroSegments
     }
 
-    let mut pending_file_ids = root_files
-        .iter()
-        .filter_map(|file| {
-            if file.pending_segments {
-                Some(file.file_id)
-            } else {
-                None
-            }
-        })
-        .collect::<HashSet<_>>();
+    fn targets(&self) -> (JobTarget, SelectStatement) {
+        let mut query = item_files::Entity::find()
+            .join(JoinType::InnerJoin, item_files::Relation::Items.def())
+            .join(JoinType::InnerJoin, items::Relation::Roots.def())
+            .join(JoinType::InnerJoin, item_files::Relation::Files.def())
+            .filter(roots::Column::Kind.eq(RootKind::Series))
+            .filter(files::Column::UnavailableAt.is_null())
+            .filter(files::Column::SegmentsJson.eq(Vec::<u8>::new()))
+            .select_only()
+            .column_as(items::Column::RootId, TARGET_ID_COLUMN)
+            .column_as(roots::Column::LastAddedAt, VERSION_KEY_COLUMN)
+            .distinct()
+            .order_by_asc(items::Column::RootId);
+        (JobTarget::Root, QuerySelect::query(&mut query).to_owned())
+    }
 
-    while !pending_file_ids.is_empty() {
-        let Some(seed) = root_files
-            .iter()
-            .find(|file| pending_file_ids.contains(&file.file_id))
-            .cloned()
-        else {
-            break;
-        };
+    async fn execute(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        let root_id = shared::expect_root_target(target_id)?;
 
-        let batch = build_intro_batch(&seed, &root_files);
-        if batch.len() < INTRO_DETECTION_BATCH_MIN_FILES {
-            pending_file_ids.remove(&seed.file_id);
-            continue;
+        let mut root_files = load_root_files(pool, root_id).await?;
+        if root_files.len() < INTRO_DETECTION_BATCH_MIN_FILES {
+            return Ok(());
         }
 
-        let target_file_ids = batch
+        let mut pending_file_ids = root_files
             .iter()
             .filter_map(|file| {
-                if pending_file_ids.contains(&file.file_id) {
+                if file.pending_segments {
                     Some(file.file_id)
                 } else {
                     None
                 }
             })
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
 
-        if target_file_ids.is_empty() {
-            pending_file_ids.remove(&seed.file_id);
-            continue;
-        }
+        while !pending_file_ids.is_empty() {
+            let Some(seed) = root_files
+                .iter()
+                .find(|file| pending_file_ids.contains(&file.file_id))
+                .cloned()
+            else {
+                break;
+            };
 
-        let batch_paths = batch
-            .iter()
-            .map(|file| file.file_path.clone())
-            .collect::<Vec<_>>();
+            let batch = build_intro_batch(&seed, &root_files);
+            if batch.len() < INTRO_DETECTION_BATCH_MIN_FILES {
+                pending_file_ids.remove(&seed.file_id);
+                continue;
+            }
 
-        let outcome = tokio::task::spawn_blocking(move || detect_intros(&batch_paths))
-            .await
-            .context("intro detection task panicked")?;
+            let target_file_ids = batch
+                .iter()
+                .filter_map(|file| {
+                    if pending_file_ids.contains(&file.file_id) {
+                        Some(file.file_id)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
 
-        match outcome {
-            Ok(detections) => {
-                let detections_by_path = detections
-                    .into_iter()
-                    .map(|detection| (detection.path, detection.intro))
-                    .collect::<HashMap<_, _>>();
+            if target_file_ids.is_empty() {
+                pending_file_ids.remove(&seed.file_id);
+                continue;
+            }
 
-                for file_id in &target_file_ids {
-                    let Some(target_file) = root_files.iter().find(|file| file.file_id == *file_id)
-                    else {
-                        continue;
-                    };
+            let batch_paths = batch
+                .iter()
+                .map(|file| file.file_path.clone())
+                .collect::<Vec<_>>();
 
-                    let segments = detections_by_path
-                        .get(&target_file.file_path)
-                        .and_then(|maybe_intro| maybe_intro.as_ref().copied())
-                        .and_then(intro_segment_from_range)
+            let outcome = tokio::task::spawn_blocking(move || detect_intros(&batch_paths))
+                .await
+                .context("intro detection task panicked")?;
+
+            match outcome {
+                Ok(detections) => {
+                    let detections_by_path = detections
                         .into_iter()
-                        .collect::<Vec<_>>();
+                        .map(|detection| (detection.path, detection.intro))
+                        .collect::<HashMap<_, _>>();
 
-                    store_segments(pool, *file_id, &segments).await?;
+                    for file_id in &target_file_ids {
+                        let Some(target_file) =
+                            root_files.iter().find(|file| file.file_id == *file_id)
+                        else {
+                            continue;
+                        };
 
-                    if let Some(file) = root_files.iter_mut().find(|file| file.file_id == *file_id)
-                    {
-                        file.has_intro_marker = segments
-                            .iter()
-                            .any(|segment| segment.kind == StoredFileSegmentKind::Intro);
-                        file.pending_segments = false;
+                        let segments = detections_by_path
+                            .get(&target_file.file_path)
+                            .and_then(|maybe_intro| maybe_intro.as_ref().copied())
+                            .and_then(intro_segment_from_range)
+                            .into_iter()
+                            .collect::<Vec<_>>();
+
+                        store_segments(pool, *file_id, &segments).await?;
+
+                        if let Some(file) =
+                            root_files.iter_mut().find(|file| file.file_id == *file_id)
+                        {
+                            file.has_intro_marker = segments
+                                .iter()
+                                .any(|segment| segment.kind == StoredFileSegmentKind::Intro);
+                            file.pending_segments = false;
+                        }
                     }
                 }
+                Err(error) => {
+                    tracing::warn!(root_id, error = ?error, "intro detection batch failed");
+                }
             }
-            Err(error) => {
-                tracing::warn!(root_id, error = ?error, "intro detection batch failed");
+
+            for file_id in target_file_ids {
+                pending_file_ids.remove(&file_id);
             }
         }
 
-        for file_id in target_file_ids {
-            pending_file_ids.remove(&file_id);
-        }
+        Ok(())
     }
-
-    Ok(())
 }
 
 async fn load_root_files(

@@ -17,6 +17,8 @@ pub enum JobKind {
     AssetDownload,
     #[sea_orm(num_value = 5)]
     AssetGenerateThumbhash,
+    #[sea_orm(num_value = 6)]
+    RootGenerateIntroSegments,
 }
 
 impl JobKind {
@@ -28,6 +30,7 @@ impl JobKind {
             JobKind::FileExtractKeyframes => 3,
             JobKind::AssetDownload => 4,
             JobKind::AssetGenerateThumbhash => 5,
+            JobKind::RootGenerateIntroSegments => 6,
         }
     }
 
@@ -39,6 +42,7 @@ impl JobKind {
             JobKind::FileExtractKeyframes => "Keyframes",
             JobKind::AssetDownload => "Asset Download",
             JobKind::AssetGenerateThumbhash => "Asset Thumbhash",
+            JobKind::RootGenerateIntroSegments => "Intro Segments",
         }
     }
 
@@ -50,6 +54,7 @@ impl JobKind {
             JobKind::FileExtractKeyframes => "keyframes",
             JobKind::AssetDownload => "download",
             JobKind::AssetGenerateThumbhash => "thumbhash",
+            JobKind::RootGenerateIntroSegments => "intro_segments",
         }
     }
 }

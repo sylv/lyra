@@ -30,6 +30,13 @@ pub fn expect_asset_target(target_id: &JobTargetId) -> anyhow::Result<i64> {
     }
 }
 
+pub fn expect_root_target(target_id: &JobTargetId) -> anyhow::Result<&str> {
+    match target_id {
+        JobTargetId::Root(root_id) => Ok(root_id.as_str()),
+        other => anyhow::bail!("expected root target, got {other:?}"),
+    }
+}
+
 pub fn base_file_targets_query() -> SelectStatement {
     let mut query = files::Entity::find()
         .select_only()
