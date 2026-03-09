@@ -1,5 +1,5 @@
 use crate::entities::{
-    assets::{self, AssetSource},
+    assets::{self},
     item_metadata, item_node_matches, items,
     metadata_source::MetadataSource,
     root_metadata, season_metadata, seasons,
@@ -483,9 +483,7 @@ async fn ensure_remote_asset(
     }
 
     if let Some(existing) = assets::Entity::find()
-        .filter(assets::Column::Source.eq(AssetSource::Remote))
         .filter(assets::Column::SourceUrl.eq(source_url.to_string()))
-        .filter(assets::Column::DeletedAt.is_null())
         .order_by_desc(assets::Column::Id)
         .one(pool)
         .await?
@@ -494,7 +492,6 @@ async fn ensure_remote_asset(
     }
 
     let inserted = assets::ActiveModel {
-        source: Set(AssetSource::Remote),
         source_url: Set(Some(source_url.to_string())),
         created_at: Set(now),
         ..Default::default()

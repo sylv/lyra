@@ -1,7 +1,4 @@
-use crate::{
-    entities::{file_keyframes, file_probe},
-    json_encoding,
-};
+use crate::entities::{file_probe, files};
 use anyhow::Result;
 use lyra_ffprobe::FfprobeOutput;
 use sea_orm::{DatabaseConnection, EntityTrait};
@@ -32,14 +29,15 @@ pub async fn load_cached_keyframes(
     pool: &DatabaseConnection,
     file_id: i64,
 ) -> Result<Option<Vec<i64>>> {
-    let maybe_row = file_keyframes::Entity::find_by_id(file_id)
-        .one(pool)
-        .await?;
+    let maybe_row = files::Entity::find_by_id(file_id).one(pool).await?;
     let Some(row) = maybe_row else {
         return Ok(None);
     };
+    if row.keyframes_json.is_empty() {
+        return Ok(None);
+    }
 
-    match json_encoding::decode_json_zstd::<Vec<i64>>(&row.keyframe_list) {
+    match row.decode_keyframes() {
         Ok(keyframes) => Ok(Some(keyframes)),
         Err(error) => {
             tracing::warn!(

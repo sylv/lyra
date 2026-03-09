@@ -1,14 +1,11 @@
 use crate::{
-    entities::{file_keyframes, files, jobs as jobs_entity},
-    jobs::{JobHandler, handlers::shared},
+    entities::{files, jobs as jobs_entity},
+    jobs::{JobHandler, JobTarget, JobTargetId, handlers::shared},
     json_encoding,
 };
 use anyhow::Context;
 use lyra_ffprobe::{paths::get_ffprobe_path, probe_keyframes_pts};
-use sea_orm::{
-    ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    sea_query::OnConflict, sea_query::Query,
-};
+use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait, sea_query::SelectStatement};
 use std::{path::Path, path::PathBuf};
 
 #[derive(Debug, Default)]
@@ -16,25 +13,26 @@ pub struct FileKeyframesJob;
 
 #[async_trait::async_trait]
 impl JobHandler for FileKeyframesJob {
-    fn job_type(&self) -> jobs_entity::JobType {
-        jobs_entity::JobType::FileExtractKeyframes
+    fn job_kind(&self) -> jobs_entity::JobKind {
+        jobs_entity::JobKind::FileExtractKeyframes
     }
 
-    fn filter_condition(&self) -> Option<Condition> {
-        Some(
-            Condition::all().add(
-                files::Column::Id.not_in_subquery(
-                    Query::select()
-                        .column(file_keyframes::Column::FileId)
-                        .from(file_keyframes::Entity)
-                        .to_owned(),
-                ),
-            ),
-        )
+    fn targets(&self) -> (JobTarget, SelectStatement) {
+        let mut query = shared::base_file_targets_query();
+        query.and_where(
+            sea_orm::sea_query::Expr::col((files::Entity, files::Column::KeyframesJson))
+                .eq(Vec::<u8>::new()),
+        );
+        (JobTarget::File, query)
     }
 
-    async fn execute(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
-        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_type()).await? else {
+    async fn execute(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        let file_id = shared::expect_file_target(target_id)?;
+        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
             return Ok(());
         };
 
@@ -42,10 +40,19 @@ impl JobHandler for FileKeyframesJob {
         Ok(())
     }
 
-    async fn cleanup(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
-        file_keyframes::Entity::delete_by_id(file_id)
-            .exec(pool)
-            .await?;
+    async fn cleanup(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        let file_id = shared::expect_file_target(target_id)?;
+        files::Entity::update(files::ActiveModel {
+            id: Set(file_id),
+            keyframes_json: Set(Vec::new()),
+            ..Default::default()
+        })
+        .exec(pool)
+        .await?;
         Ok(())
     }
 }
@@ -72,21 +79,12 @@ async fn upsert_keyframes(
 ) -> anyhow::Result<()> {
     let payload =
         json_encoding::encode_json_zstd(&keyframes).context("failed to encode keyframe payload")?;
-    let now = chrono::Utc::now().timestamp();
 
-    file_keyframes::Entity::insert(file_keyframes::ActiveModel {
-        file_id: Set(file_id),
-        keyframe_list: Set(payload),
-        generated_at: Set(now),
+    files::Entity::update(files::ActiveModel {
+        id: Set(file_id),
+        keyframes_json: Set(payload),
+        ..Default::default()
     })
-    .on_conflict(
-        OnConflict::column(file_keyframes::Column::FileId)
-            .update_columns([
-                file_keyframes::Column::KeyframeList,
-                file_keyframes::Column::GeneratedAt,
-            ])
-            .to_owned(),
-    )
     .exec(pool)
     .await?;
 

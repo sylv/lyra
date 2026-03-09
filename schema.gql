@@ -8,7 +8,6 @@ type Activity {
 
 type Asset {
 	id: Int!
-	source: AssetSource!
 	sourceUrl: String
 	hashSha256: String
 	sizeBytes: Int
@@ -17,12 +16,6 @@ type Asset {
 	width: Int
 	thumbhash: String
 	createdAt: Int!
-	deletedAt: Int
-}
-
-enum AssetSource {
-	LOCAL
-	REMOTE
 }
 
 type File {
@@ -34,7 +27,6 @@ type File {
 	width: Int
 	editionName: String
 	unavailableAt: Int
-	corruptedAt: Int
 	scannedAt: Int
 	discoveredAt: Int!
 	timelinePreview: [TimelinePreviewSheet!]!

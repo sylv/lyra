@@ -1,7 +1,7 @@
 use crate::entities::{
     assets,
     file_assets::{self, FileAssetRole},
-    file_probe, file_segments, files, item_files, item_metadata, root_metadata, season_metadata,
+    file_probe, files, item_files, item_metadata, root_metadata, season_metadata,
 };
 use crate::segment_markers::StoredFileSegmentKind;
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
@@ -11,7 +11,6 @@ use std::collections::HashMap;
 #[derive(Clone, Debug, SimpleObject)]
 pub struct Asset {
     pub id: i64,
-    pub source: assets::AssetSource,
     pub source_url: Option<String>,
     pub hash_sha256: Option<String>,
     pub size_bytes: Option<i64>,
@@ -20,7 +19,6 @@ pub struct Asset {
     pub width: Option<i64>,
     pub thumbhash: Option<String>,
     pub created_at: i64,
-    pub deleted_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, SimpleObject)]
@@ -260,20 +258,19 @@ impl files::Model {
         Ok(sheets)
     }
 
-    pub async fn segments(&self, ctx: &Context<'_>) -> Result<Vec<FileSegment>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let Some(row) = file_segments::Entity::find_by_id(self.id).one(pool).await? else {
-            return Ok(Vec::new());
-        };
-
-        if row.status != file_segments::FileSegmentsStatus::Ready {
+    pub async fn segments(&self, _ctx: &Context<'_>) -> Result<Vec<FileSegment>, sea_orm::DbErr> {
+        if self.segments_json.is_empty() {
             return Ok(Vec::new());
         }
 
-        let decoded = match row.decode_segments() {
+        let decoded = match self.decode_segments() {
             Ok(segments) => segments,
             Err(error) => {
-                tracing::warn!(file_id = self.id, error = ?error, "failed to decode file segments");
+                tracing::warn!(
+                    file_id = self.id,
+                    error = ?error,
+                    "failed to decode file segments"
+                );
                 return Ok(Vec::new());
             }
         };
@@ -488,7 +485,6 @@ impl Asset {
     pub(crate) fn from_model(model: assets::Model) -> Self {
         Self {
             id: model.id,
-            source: model.source,
             source_url: model.source_url,
             hash_sha256: model.hash_sha256,
             size_bytes: model.size_bytes,
@@ -497,7 +493,6 @@ impl Asset {
             width: model.width,
             thumbhash: model.thumbhash.map(hex::encode),
             created_at: model.created_at,
-            deleted_at: model.deleted_at,
         }
     }
 }

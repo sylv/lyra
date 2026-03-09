@@ -464,30 +464,42 @@ impl Query {
 
     async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        let now = chrono::Utc::now().timestamp();
-
-        let completed_rows: Vec<(jobs_entity::JobType, i64)> = jobs_entity::Entity::find()
+        let completed_rows: Vec<(jobs_entity::JobKind, i64)> = jobs_entity::Entity::find()
             .select_only()
-            .column(jobs_entity::Column::JobType)
+            .column(jobs_entity::Column::JobKind)
             .column_as(jobs_entity::Column::Id.count(), "completed_count")
-            .filter(jobs_entity::Column::Status.eq(jobs_entity::JobStatus::Success))
-            .group_by(jobs_entity::Column::JobType)
+            .filter(jobs_entity::Column::RunAfter.is_null())
+            .filter(jobs_entity::Column::LastRunAt.gt(0))
+            .filter(jobs_entity::Column::AttemptCount.eq(0))
+            .group_by(jobs_entity::Column::JobKind)
             .into_tuple()
             .all(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        let completed_by_type: HashMap<jobs_entity::JobType, i64> =
+        let completed_by_kind: HashMap<jobs_entity::JobKind, i64> =
             completed_rows.into_iter().collect();
+
+        let pending_rows: Vec<(jobs_entity::JobKind, i64)> = jobs_entity::Entity::find()
+            .select_only()
+            .column(jobs_entity::Column::JobKind)
+            .column_as(jobs_entity::Column::Id.count(), "pending_count")
+            .filter(jobs_entity::Column::RunAfter.is_not_null())
+            .group_by(jobs_entity::Column::JobKind)
+            .into_tuple()
+            .all(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        let pending_by_kind: HashMap<jobs_entity::JobKind, i64> =
+            pending_rows.into_iter().collect();
 
         let handlers = jobs::registry::get_registered_job_handlers();
         let mut activities = Vec::new();
         for handler in handlers {
-            let job_type = handler.job_type();
-            let pending = jobs::count_pending_files(pool, handler.final_condition(now))
-                .await
-                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-            let completed = *completed_by_type.get(&job_type).unwrap_or(&0);
+            let job_kind = handler.job_kind();
+            let pending = *pending_by_kind.get(&job_kind).unwrap_or(&0);
+            let completed = *completed_by_kind.get(&job_kind).unwrap_or(&0);
             let total = completed + pending;
 
             if pending == 0 || total == 0 {
@@ -495,8 +507,8 @@ impl Query {
             }
 
             activities.push(Activity {
-                task_type: job_type.code().to_string(),
-                title: job_type.title().to_string(),
+                task_type: job_kind.code().to_string(),
+                title: job_kind.title().to_string(),
                 current: completed,
                 total,
                 progress_percent: completed as f64 / total as f64,

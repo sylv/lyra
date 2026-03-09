@@ -40,10 +40,6 @@ async fn get_asset(
         .await?
         .ok_or_else(|| anyhow::anyhow!("asset not found"))?;
 
-    if asset.deleted_at.is_some() {
-        return Err(anyhow::anyhow!("asset has been deleted").into());
-    }
-
     if asset.hash_sha256.is_none() {
         asset = download_asset_to_local(&state.pool, &asset).await?;
     }

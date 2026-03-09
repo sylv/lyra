@@ -1,11 +1,13 @@
-use crate::entities::{files, jobs as jobs_entity};
+use crate::entities::jobs as jobs_entity;
 use anyhow::Context;
 use sea_orm::{
+    ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect,
-    sea_query::{Expr, OnConflict, Query},
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
+    sea_query::{OnConflict, SelectStatement},
 };
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Notify;
@@ -15,8 +17,12 @@ pub mod handlers;
 pub mod registry;
 
 const BATCH_SIZE: u64 = 100;
-const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60 * 5);
+const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 const DEFAULT_BACKOFF_SECONDS: &[i64] = &[24 * 60 * 60, 7 * 24 * 60 * 60, 30 * 24 * 60 * 60];
+const EXISTING_SUBJECT_LOOKUP_CHUNK_SIZE: usize = 400;
+
+pub const TARGET_ID_COLUMN: &str = "target_id";
+pub const VERSION_KEY_COLUMN: &str = "version_key";
 
 pub struct JobExecutionPolicy {
     backoff_seconds: &'static [i64],
@@ -46,93 +52,183 @@ impl JobExecutionPolicy {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobTarget {
+    File,
+    Asset,
+    Root,
+    Item,
+}
+
+impl JobTarget {
+    fn read_target_id_from_query_row(
+        self,
+        row: &sea_orm::QueryResult,
+    ) -> anyhow::Result<JobTargetId> {
+        match self {
+            JobTarget::File => {
+                let target_id = row
+                    .try_get_by::<i64, _>(TARGET_ID_COLUMN)
+                    .context("missing or invalid file target_id")?;
+                Ok(JobTargetId::File(target_id))
+            }
+            JobTarget::Asset => {
+                let target_id = row
+                    .try_get_by::<i64, _>(TARGET_ID_COLUMN)
+                    .context("missing or invalid asset target_id")?;
+                Ok(JobTargetId::Asset(target_id))
+            }
+            JobTarget::Root => {
+                let target_id = row
+                    .try_get_by::<String, _>(TARGET_ID_COLUMN)
+                    .context("missing or invalid root target_id")?;
+                Ok(JobTargetId::Root(target_id))
+            }
+            JobTarget::Item => {
+                let target_id = row
+                    .try_get_by::<String, _>(TARGET_ID_COLUMN)
+                    .context("missing or invalid item target_id")?;
+                Ok(JobTargetId::Item(target_id))
+            }
+        }
+    }
+
+    fn read_target_id_from_job_row(self, job: &jobs_entity::Model) -> anyhow::Result<JobTargetId> {
+        match self {
+            JobTarget::File => job
+                .file_id
+                .map(JobTargetId::File)
+                .with_context(|| format!("job {} missing file_id", job.id)),
+            JobTarget::Asset => {
+                let raw = job
+                    .asset_id
+                    .as_deref()
+                    .with_context(|| format!("job {} missing asset_id", job.id))?;
+                let parsed = raw
+                    .parse::<i64>()
+                    .with_context(|| format!("job {} has non-integer asset_id '{raw}'", job.id))?;
+                Ok(JobTargetId::Asset(parsed))
+            }
+            JobTarget::Root => job
+                .root_id
+                .clone()
+                .map(JobTargetId::Root)
+                .with_context(|| format!("job {} missing root_id", job.id)),
+            JobTarget::Item => job
+                .item_id
+                .clone()
+                .map(JobTargetId::Item)
+                .with_context(|| format!("job {} missing item_id", job.id)),
+        }
+    }
+
+    fn apply_target_id(
+        self,
+        model: &mut jobs_entity::ActiveModel,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        model.file_id = Set(None);
+        model.asset_id = Set(None);
+        model.root_id = Set(None);
+        model.item_id = Set(None);
+
+        match (self, target_id) {
+            (JobTarget::File, JobTargetId::File(id)) => {
+                model.file_id = Set(Some(*id));
+            }
+            (JobTarget::Asset, JobTargetId::Asset(id)) => {
+                model.asset_id = Set(Some(id.to_string()));
+            }
+            (JobTarget::Root, JobTargetId::Root(id)) => {
+                model.root_id = Set(Some(id.clone()));
+            }
+            (JobTarget::Item, JobTargetId::Item(id)) => {
+                model.item_id = Set(Some(id.clone()));
+            }
+            _ => {
+                anyhow::bail!(
+                    "job target {:?} does not match target id {:?}",
+                    self,
+                    target_id
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum JobTargetId {
+    File(i64),
+    Asset(i64),
+    Root(String),
+    Item(String),
+}
+
+impl JobTargetId {
+    fn as_subject_prefix(&self) -> &'static str {
+        match self {
+            JobTargetId::File(_) => "file",
+            JobTargetId::Asset(_) => "asset",
+            JobTargetId::Root(_) => "root",
+            JobTargetId::Item(_) => "item",
+        }
+    }
+
+    fn as_subject_id(&self) -> String {
+        match self {
+            JobTargetId::File(id) => id.to_string(),
+            JobTargetId::Asset(id) => id.to_string(),
+            JobTargetId::Root(id) => id.clone(),
+            JobTargetId::Item(id) => id.clone(),
+        }
+    }
+
+    fn as_log_value(&self) -> String {
+        self.as_subject_id()
+    }
+}
+
 #[async_trait::async_trait]
 pub trait JobHandler: Send + Sync {
-    fn job_type(&self) -> jobs_entity::JobType;
+    fn job_kind(&self) -> jobs_entity::JobKind;
+
+    fn targets(&self) -> (JobTarget, SelectStatement);
 
     fn execution_policy(&self) -> JobExecutionPolicy {
         JobExecutionPolicy::default()
     }
 
-    /// Optional job-specific filter (for example, by file metadata).
-    /// Returning `None` means "all files".
-    fn filter_condition(&self) -> Option<Condition> {
-        None
+    fn subject_key(&self, target: &JobTargetId) -> String {
+        format!(
+            "{}:{}:{}",
+            target.as_subject_prefix(),
+            self.job_kind().subject_segment(),
+            target.as_subject_id()
+        )
     }
 
-    fn final_condition(&self, now: i64) -> Condition {
-        let mut base = build_pending_condition(self.job_type(), &self.execution_policy(), now);
-        if let Some(filter) = self.filter_condition() {
-            base = base.add(filter);
-        }
-        base
-    }
-
-    /// Called before execution when a previous job row exists for this file and job type.
-    async fn cleanup(&self, _pool: &DatabaseConnection, _file_id: i64) -> anyhow::Result<()> {
+    async fn cleanup(
+        &self,
+        _pool: &DatabaseConnection,
+        _target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn execute(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()>;
+    async fn execute(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()>;
 }
 
-pub fn build_pending_condition(
-    job_type: jobs_entity::JobType,
-    policy: &JobExecutionPolicy,
-    now: i64,
-) -> Condition {
-    let no_job_row_for_type = files::Column::Id.not_in_subquery(
-        Query::select()
-            .column(jobs_entity::Column::FileId)
-            .from(jobs_entity::Entity)
-            .and_where(Expr::col(jobs_entity::Column::JobType).eq(job_type))
-            .to_owned(),
-    );
-
-    let retryable_job_row_for_type = files::Column::Id.in_subquery(
-        Query::select()
-            .column(jobs_entity::Column::FileId)
-            .from(jobs_entity::Entity)
-            .and_where(Expr::col(jobs_entity::Column::JobType).eq(job_type))
-            .and_where(Expr::col(jobs_entity::Column::Status).eq(jobs_entity::JobStatus::Error))
-            .and_where(Expr::col(jobs_entity::Column::AttemptCount).lt(policy.max_attempts()))
-            .and_where(Expr::col(jobs_entity::Column::NextRetryAt).is_not_null())
-            .and_where(Expr::col(jobs_entity::Column::NextRetryAt).lte(now))
-            .to_owned(),
-    );
-
-    Condition::all()
-        .add(files::Column::UnavailableAt.is_null())
-        .add(files::Column::CorruptedAt.is_null())
-        .add(
-            Condition::any()
-                .add(no_job_row_for_type)
-                .add(retryable_job_row_for_type),
-        )
-}
-
-pub async fn find_pending_file_ids(
-    pool: &DatabaseConnection,
-    condition: Condition,
-    limit: u64,
-) -> anyhow::Result<Vec<i64>> {
-    Ok(files::Entity::find()
-        .select_only()
-        .column(files::Column::Id)
-        .filter(condition)
-        .order_by_asc(files::Column::Id)
-        .limit(limit)
-        .into_tuple()
-        .all(pool)
-        .await?)
-}
-
-pub async fn count_pending_files(
-    pool: &DatabaseConnection,
-    condition: Condition,
-) -> anyhow::Result<i64> {
-    let count = files::Entity::find().filter(condition).count(pool).await?;
-    Ok(i64::try_from(count).context("pending file count overflowed i64")?)
+struct PendingTargetRecord {
+    target_id: JobTargetId,
+    version_key: Option<i64>,
+    subject_key: String,
 }
 
 pub struct JobManager {
@@ -154,33 +250,26 @@ impl JobManager {
         }
     }
 
-    pub fn job_type(&self) -> jobs_entity::JobType {
-        self.handler.job_type()
+    pub fn job_kind(&self) -> jobs_entity::JobKind {
+        self.handler.job_kind()
     }
 
     pub async fn start_thread(&self) -> anyhow::Result<()> {
         loop {
             let now = chrono::Utc::now().timestamp();
-            let batch = find_pending_file_ids(
-                &self.database,
-                self.handler.final_condition(now),
-                BATCH_SIZE,
-            )
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to find batch for job type {:?}",
-                    self.handler.job_type()
-                )
-            })?;
+            let (target_kind, target_query) = self.handler.targets();
+            let enqueued = self.sync_targets(target_kind, target_query, now).await?;
+            let due_jobs = self.find_due_jobs(now).await?;
 
-            if batch.is_empty() {
-                self.wait_for_work().await;
+            if due_jobs.is_empty() {
+                if enqueued == 0 {
+                    self.wait_for_work().await;
+                }
                 continue;
             }
 
-            for file_id in batch {
-                self.run_job_for_file(file_id).await?;
+            for job in due_jobs {
+                self.run_job_for_entry(target_kind, job).await?;
             }
         }
     }
@@ -192,69 +281,194 @@ impl JobManager {
         }
     }
 
-    async fn run_job_for_file(&self, file_id: i64) -> anyhow::Result<()> {
-        let job_type = self.handler.job_type();
+    async fn sync_targets(
+        &self,
+        target_kind: JobTarget,
+        target_query: SelectStatement,
+        now: i64,
+    ) -> anyhow::Result<usize> {
+        let statement = self.database.get_database_backend().build(&target_query);
+        let rows = self.database.query_all(statement).await.with_context(|| {
+            format!(
+                "failed to query targets for job kind {:?}",
+                self.handler.job_kind()
+            )
+        })?;
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        let mut seen_subject_keys = HashSet::new();
+        let mut targets = Vec::with_capacity(rows.len());
+        for row in rows {
+            let target_id = target_kind.read_target_id_from_query_row(&row)?;
+            let version_key = row
+                .try_get_by::<Option<i64>, _>(VERSION_KEY_COLUMN)
+                .ok()
+                .flatten();
+            let subject_key = self.handler.subject_key(&target_id);
+
+            if !seen_subject_keys.insert(subject_key.clone()) {
+                continue;
+            }
+
+            targets.push(PendingTargetRecord {
+                target_id,
+                version_key,
+                subject_key,
+            });
+        }
+
+        if targets.is_empty() {
+            return Ok(0);
+        }
+
+        let mut existing_by_subject: HashMap<String, jobs_entity::Model> = HashMap::new();
+        let subject_keys = targets
+            .iter()
+            .map(|row| row.subject_key.clone())
+            .collect::<Vec<_>>();
+        for chunk in subject_keys.chunks(EXISTING_SUBJECT_LOOKUP_CHUNK_SIZE) {
+            let existing = jobs_entity::Entity::find()
+                .filter(jobs_entity::Column::SubjectKey.is_in(chunk.to_vec()))
+                .all(&self.database)
+                .await?;
+            for row in existing {
+                existing_by_subject.insert(row.subject_key.clone(), row);
+            }
+        }
+
+        let mut enqueued = 0usize;
+        for target in targets {
+            let existing = existing_by_subject.get(&target.subject_key);
+
+            if let Some(existing) = existing {
+                if existing.job_kind != self.handler.job_kind() {
+                    anyhow::bail!(
+                        "subject key '{}' is already used by {:?}, not {:?}",
+                        target.subject_key,
+                        existing.job_kind,
+                        self.handler.job_kind()
+                    );
+                }
+
+                if existing.version_key == target.version_key {
+                    continue;
+                }
+
+                let mut updated: jobs_entity::ActiveModel = existing.clone().into();
+                updated.version_key = Set(target.version_key);
+                target_kind.apply_target_id(&mut updated, &target.target_id)?;
+                updated.run_after = Set(Some(now));
+                updated.last_error_message = Set(None);
+                updated.attempt_count = Set(0);
+                updated.updated_at = Set(now);
+                updated.update(&self.database).await?;
+                enqueued += 1;
+                continue;
+            }
+
+            let mut job = jobs_entity::ActiveModel {
+                job_kind: Set(self.handler.job_kind()),
+                subject_key: Set(target.subject_key),
+                version_key: Set(target.version_key),
+                run_after: Set(Some(now)),
+                last_run_at: Set(0),
+                last_error_message: Set(None),
+                attempt_count: Set(0),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            };
+            target_kind.apply_target_id(&mut job, &target.target_id)?;
+
+            jobs_entity::Entity::insert(job)
+                .on_conflict(
+                    OnConflict::column(jobs_entity::Column::SubjectKey)
+                        .do_nothing()
+                        .to_owned(),
+                )
+                .exec(&self.database)
+                .await?;
+
+            enqueued += 1;
+        }
+
+        Ok(enqueued)
+    }
+
+    async fn find_due_jobs(&self, now: i64) -> anyhow::Result<Vec<jobs_entity::Model>> {
+        Ok(jobs_entity::Entity::find()
+            .filter(jobs_entity::Column::JobKind.eq(self.handler.job_kind()))
+            .filter(jobs_entity::Column::RunAfter.is_not_null())
+            .filter(jobs_entity::Column::RunAfter.lte(now))
+            .order_by_asc(jobs_entity::Column::RunAfter)
+            .order_by_asc(jobs_entity::Column::Id)
+            .limit(BATCH_SIZE)
+            .all(&self.database)
+            .await?)
+    }
+
+    async fn run_job_for_entry(
+        &self,
+        target_kind: JobTarget,
+        job: jobs_entity::Model,
+    ) -> anyhow::Result<()> {
+        let job_kind = self.handler.job_kind();
         let policy = self.handler.execution_policy();
         let now = chrono::Utc::now().timestamp();
+        let target_id = target_kind.read_target_id_from_job_row(&job)?;
 
-        let existing = jobs_entity::Entity::find()
-            .filter(jobs_entity::Column::JobType.eq(job_type))
-            .filter(jobs_entity::Column::FileId.eq(file_id))
-            .one(&self.database)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to load existing job row for type={:?} file_id={file_id}",
-                    job_type
-                )
-            })?;
-
-        if existing.is_some() {
+        if job.last_run_at > 0 {
             self.handler
-                .cleanup(&self.database, file_id)
+                .cleanup(&self.database, &target_id)
                 .await
                 .with_context(|| {
                     format!(
-                        "cleanup failed for job type={:?} file_id={file_id}",
-                        job_type
+                        "cleanup failed for job kind={:?} target={}",
+                        job_kind,
+                        target_id.as_log_value()
                     )
                 })?;
         }
 
         let start = Instant::now();
-        tracing::info!(job_type = ?job_type, file_id, "executing job");
+        tracing::info!(
+            job_kind = ?job_kind,
+            target = target_id.as_log_value(),
+            "executing job"
+        );
 
-        match self.handler.execute(&self.database, file_id).await {
+        match self.handler.execute(&self.database, &target_id).await {
             Ok(()) => {
                 tracing::debug!(
-                    job_type = ?job_type,
-                    file_id,
+                    job_kind = ?job_kind,
+                    target = target_id.as_log_value(),
                     elapsed = ?start.elapsed(),
                     "finished job"
                 );
 
-                self.persist_job_outcome(file_id, job_type, now, JobOutcome::success())
+                self.persist_job_outcome(job, now, JobOutcome::success())
                     .await?;
             }
             Err(error) => {
-                let prior_attempts = existing.as_ref().map_or(0, |row| row.attempt_count);
-                let attempt_count = prior_attempts + 1;
-                let next_retry_at = policy.next_retry_at(now, attempt_count);
+                let attempt_count = job.attempt_count + 1;
+                let run_after = policy.next_retry_at(now, attempt_count);
 
                 tracing::warn!(
-                    job_type = ?job_type,
-                    file_id,
+                    job_kind = ?job_kind,
+                    target = target_id.as_log_value(),
                     attempt_count,
-                    next_retry_at,
+                    run_after,
                     error = %error,
                     "job execution failed"
                 );
 
                 self.persist_job_outcome(
-                    file_id,
-                    job_type,
+                    job,
                     now,
-                    JobOutcome::error(attempt_count, next_retry_at, error.to_string()),
+                    JobOutcome::error(attempt_count, run_after, error.to_string()),
                 )
                 .await?;
             }
@@ -265,64 +479,41 @@ impl JobManager {
 
     async fn persist_job_outcome(
         &self,
-        file_id: i64,
-        job_type: jobs_entity::JobType,
+        job: jobs_entity::Model,
         now: i64,
         outcome: JobOutcome,
     ) -> anyhow::Result<()> {
-        jobs_entity::Entity::insert(jobs_entity::ActiveModel {
-            job_type: Set(job_type),
-            file_id: Set(file_id),
-            status: Set(outcome.status),
-            attempt_count: Set(outcome.attempt_count),
-            next_retry_at: Set(outcome.next_retry_at),
-            last_error_message: Set(outcome.last_error_message),
-            last_run_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        })
-        .on_conflict(
-            OnConflict::columns([jobs_entity::Column::JobType, jobs_entity::Column::FileId])
-                .update_columns([
-                    jobs_entity::Column::Status,
-                    jobs_entity::Column::AttemptCount,
-                    jobs_entity::Column::NextRetryAt,
-                    jobs_entity::Column::LastErrorMessage,
-                    jobs_entity::Column::LastRunAt,
-                    jobs_entity::Column::UpdatedAt,
-                ])
-                .to_owned(),
-        )
-        .exec(&self.database)
-        .await?;
+        let mut updated: jobs_entity::ActiveModel = job.into();
+        updated.run_after = Set(outcome.run_after);
+        updated.attempt_count = Set(outcome.attempt_count);
+        updated.last_error_message = Set(outcome.last_error_message);
+        updated.last_run_at = Set(now);
+        updated.updated_at = Set(now);
+        updated.update(&self.database).await?;
 
         Ok(())
     }
 }
 
 struct JobOutcome {
-    status: jobs_entity::JobStatus,
+    run_after: Option<i64>,
     attempt_count: i64,
-    next_retry_at: Option<i64>,
     last_error_message: Option<String>,
 }
 
 impl JobOutcome {
     fn success() -> Self {
         Self {
-            status: jobs_entity::JobStatus::Success,
+            run_after: None,
             attempt_count: 0,
-            next_retry_at: None,
             last_error_message: None,
         }
     }
 
-    fn error(attempt_count: i64, next_retry_at: Option<i64>, message: String) -> Self {
+    fn error(attempt_count: i64, run_after: Option<i64>, message: String) -> Self {
         Self {
-            status: jobs_entity::JobStatus::Error,
+            run_after,
             attempt_count,
-            next_retry_at,
             last_error_message: Some(message),
         }
     }

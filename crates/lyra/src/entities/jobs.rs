@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum, Hash)]
 #[sea_orm(rs_type = "i64", db_type = "Integer")]
-pub enum JobType {
+pub enum JobKind {
     #[sea_orm(num_value = 0)]
     FileGenerateTimelinePreview,
     #[sea_orm(num_value = 1)]
@@ -13,35 +13,45 @@ pub enum JobType {
     FileExtractFfprobe,
     #[sea_orm(num_value = 3)]
     FileExtractKeyframes,
+    #[sea_orm(num_value = 4)]
+    AssetDownload,
+    #[sea_orm(num_value = 5)]
+    AssetGenerateThumbhash,
 }
 
-impl JobType {
+impl JobKind {
     pub const fn code(self) -> i64 {
         match self {
-            JobType::FileGenerateTimelinePreview => 0,
-            JobType::FileGenerateThumbnail => 1,
-            JobType::FileExtractFfprobe => 2,
-            JobType::FileExtractKeyframes => 3,
+            JobKind::FileGenerateTimelinePreview => 0,
+            JobKind::FileGenerateThumbnail => 1,
+            JobKind::FileExtractFfprobe => 2,
+            JobKind::FileExtractKeyframes => 3,
+            JobKind::AssetDownload => 4,
+            JobKind::AssetGenerateThumbhash => 5,
         }
     }
 
     pub const fn title(self) -> &'static str {
         match self {
-            JobType::FileGenerateTimelinePreview => "Timeline Preview",
-            JobType::FileGenerateThumbnail => "Thumbnail",
-            JobType::FileExtractFfprobe => "FFprobe",
-            JobType::FileExtractKeyframes => "Keyframes",
+            JobKind::FileGenerateTimelinePreview => "Timeline Preview",
+            JobKind::FileGenerateThumbnail => "Thumbnail",
+            JobKind::FileExtractFfprobe => "FFprobe",
+            JobKind::FileExtractKeyframes => "Keyframes",
+            JobKind::AssetDownload => "Asset Download",
+            JobKind::AssetGenerateThumbhash => "Asset Thumbhash",
         }
     }
-}
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "i64", db_type = "Integer")]
-pub enum JobStatus {
-    #[sea_orm(num_value = 0)]
-    Success,
-    #[sea_orm(num_value = 1)]
-    Error,
+    pub const fn subject_segment(self) -> &'static str {
+        match self {
+            JobKind::FileGenerateTimelinePreview => "timeline_preview",
+            JobKind::FileGenerateThumbnail => "thumbnail",
+            JobKind::FileExtractFfprobe => "ffprobe",
+            JobKind::FileExtractKeyframes => "keyframes",
+            JobKind::AssetDownload => "download",
+            JobKind::AssetGenerateThumbhash => "thumbhash",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
@@ -49,14 +59,22 @@ pub enum JobStatus {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub job_type: JobType,
-    pub file_id: i64,
-    pub status: JobStatus,
-    pub attempt_count: i64,
-    pub next_retry_at: Option<i64>,
+    pub job_kind: JobKind,
+    #[sea_orm(column_type = "Text")]
+    pub subject_key: String,
+    pub version_key: Option<i64>,
+    pub file_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub asset_id: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub root_id: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub item_id: Option<String>,
+    pub run_after: Option<i64>,
+    pub last_run_at: i64,
     #[sea_orm(column_type = "Text", nullable)]
     pub last_error_message: Option<String>,
-    pub last_run_at: i64,
+    pub attempt_count: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }

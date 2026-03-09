@@ -28,7 +28,6 @@ export type Activity = {
 export type Asset = {
   __typename: 'Asset';
   createdAt: Scalars['Int']['output'];
-  deletedAt: Maybe<Scalars['Int']['output']>;
   hashSha256: Maybe<Scalars['String']['output']>;
   height: Maybe<Scalars['Int']['output']>;
   id: Scalars['Int']['output'];

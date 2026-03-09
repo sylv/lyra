@@ -3,14 +3,18 @@ use crate::{
     config::get_config,
     entities::{
         file_assets::{self, FileAssetRole},
-        jobs as jobs_entity,
+        files, jobs as jobs_entity,
     },
-    jobs::{JobHandler, handlers::shared},
+    jobs::{JobHandler, JobTarget, JobTargetId, handlers::shared},
 };
 use anyhow::Context;
 use lyra_ffprobe::paths::get_ffmpeg_path;
 use lyra_timeline_preview::{PreviewOptions, generate_previews};
-use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait, TransactionTrait};
+use sea_orm::{
+    ActiveValue::Set,
+    DatabaseConnection, EntityTrait, TransactionTrait,
+    sea_query::{Expr, Query, SelectStatement},
+};
 use std::{path::PathBuf, time::Duration};
 
 #[derive(Debug, Default)]
@@ -18,12 +22,34 @@ pub struct FileTimelinePreviewJob;
 
 #[async_trait::async_trait]
 impl JobHandler for FileTimelinePreviewJob {
-    fn job_type(&self) -> jobs_entity::JobType {
-        jobs_entity::JobType::FileGenerateTimelinePreview
+    fn job_kind(&self) -> jobs_entity::JobKind {
+        jobs_entity::JobKind::FileGenerateTimelinePreview
     }
 
-    async fn execute(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
-        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_type()).await? else {
+    fn targets(&self) -> (JobTarget, SelectStatement) {
+        let mut query = shared::base_file_targets_query();
+        query.and_where(
+            Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
+                Query::select()
+                    .column(file_assets::Column::FileId)
+                    .from(file_assets::Entity)
+                    .and_where(
+                        Expr::col((file_assets::Entity, file_assets::Column::Role))
+                            .eq(FileAssetRole::TimelinePreviewSheet),
+                    )
+                    .to_owned(),
+            ),
+        );
+        (JobTarget::File, query)
+    }
+
+    async fn execute(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        let file_id = shared::expect_file_target(target_id)?;
+        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
             return Ok(());
         };
 
@@ -70,7 +96,12 @@ impl JobHandler for FileTimelinePreviewJob {
         Ok(())
     }
 
-    async fn cleanup(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
+    async fn cleanup(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        let file_id = shared::expect_file_target(target_id)?;
         shared::cleanup_file_assets_for_role(pool, file_id, FileAssetRole::TimelinePreviewSheet)
             .await
     }

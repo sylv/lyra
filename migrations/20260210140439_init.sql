@@ -1,7 +1,6 @@
 -- assets represent things like episode thumbnails, posters, backgrounds, etc.
 CREATE TABLE assets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source INTEGER NOT NULL,
     -- when remote and not downloaded yet
     source_url TEXT,
     -- when stored locally
@@ -12,23 +11,13 @@ CREATE TABLE assets (
     width INTEGER,
     thumbhash BLOB,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    deleted_at INTEGER,
 
-    -- if hash_sha256 or source == local, then size_bytes, mime_type, height and width must be set
+    -- if hash_sha256, then size_bytes, mime_type, height and width must be set
     CHECK (
-        (hash_sha256 IS NOT NULL AND source = 0 AND size_bytes IS NOT NULL AND mime_type IS NOT NULL AND height IS NOT NULL AND width IS NOT NULL) OR
-        (hash_sha256 IS NULL OR source != 0)
+        (hash_sha256 IS NOT NULL AND size_bytes IS NOT NULL AND mime_type IS NOT NULL AND height IS NOT NULL AND width IS NOT NULL) OR 
+        (hash_sha256 IS NULL)
     )
 ) STRICT;
-
--- require deleted_at be set to delete an asset, so that assets cannot be deleted without properly removing on-disk files
-CREATE TRIGGER assets_prevent_delete_unless_marked
-BEFORE DELETE ON assets
-FOR EACH ROW
-WHEN OLD.deleted_at IS NULL
-BEGIN
-  SELECT RAISE(ABORT, 'assets must be soft deleted (set deleted_at)');
-END;
 
 CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -82,8 +71,9 @@ CREATE TABLE files (
     height INTEGER,
     width INTEGER,
     edition_name TEXT,
+    segments_json BLOB NOT NULL,
+    keyframes_json BLOB NOT NULL,
     unavailable_at INTEGER,
-    corrupted_at INTEGER,
     scanned_at INTEGER,
     discovered_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
@@ -107,14 +97,6 @@ CREATE TABLE file_assets (
     FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TABLE file_keyframes (
-    file_id INTEGER PRIMARY KEY,
-    keyframe_list BLOB NOT NULL, -- zstd-encoded json list of keyframe positions.
-    generated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-
-    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
-) STRICT;
-
 CREATE TABLE file_probe (
     file_id INTEGER PRIMARY KEY,
     duration_s INTEGER,
@@ -132,24 +114,6 @@ CREATE TABLE file_probe (
 
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 ) STRICT;
-
-CREATE TABLE file_segments (
-    file_id INTEGER PRIMARY KEY,
-    segment_list BLOB NOT NULL, -- zstd-encoded json list of marked file segments.
-    status INTEGER NOT NULL, -- 0 ready, 1 error
-    attempts INTEGER NOT NULL DEFAULT 0,
-    last_attempted_at INTEGER,
-    retry_after INTEGER,
-    last_error_message TEXT,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-
-    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
-    CHECK (status IN (0, 1))
-) STRICT;
-
-CREATE INDEX file_segments_status_retry_idx
-    ON file_segments(status, retry_after, last_attempted_at);
 
 CREATE TABLE roots (
     id TEXT PRIMARY KEY,
@@ -367,23 +331,25 @@ CREATE INDEX item_node_matches_lookup_idx
 
 CREATE TABLE jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_type INTEGER NOT NULL, -- 0 file.generate_timeline_preview, 1 file.generate_thumbnail, 2 file.extract_ffprobe, 3 file.extract_keyframes
-    file_id INTEGER NOT NULL,
-    status INTEGER NOT NULL, -- 0 success, 1 error
-    attempt_count INTEGER NOT NULL DEFAULT 0,
-    next_retry_at INTEGER,
-    last_error_message TEXT,
+    job_kind INTEGER NOT NULL,
+    subject_key TEXT NOT NULL UNIQUE, -- used to identify each job (ie, "file:thumbnail:123" or "item:metadata_match:root123:provider123")
+    version_key INTEGER, -- used to re-run jobs when their targets or logic change
+    file_id INTEGER,
+    asset_id TEXT,
+    root_id TEXT,
+    item_id TEXT,
+    run_after INTEGER, -- if null, the job is not scheduled to run
     last_run_at INTEGER NOT NULL,
+    last_error_message TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
-    CHECK (status IN (0, 1))
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
 ) STRICT;
-
-CREATE UNIQUE INDEX jobs_type_file_unique ON jobs(job_type, file_id);
-CREATE INDEX jobs_type_status_retry_idx ON jobs(job_type, status, next_retry_at);
-CREATE INDEX jobs_file_id_idx ON jobs(file_id);
 
 CREATE TABLE watch_progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

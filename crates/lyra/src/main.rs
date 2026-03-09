@@ -156,12 +156,6 @@ async fn main() {
     background_workers
         .spawn(async move { scanner::start_scanner(scanner_pool, scanner_wake_signal).await });
 
-    let assets_pool = pool.clone();
-    background_workers.spawn(async move {
-        tracing::info!("starting asset background worker");
-        assets::start_asset_worker(assets_pool).await
-    });
-
     let metadata_pool = pool.clone();
     let metadata_providers = metadata::build_metadata_providers();
     background_workers.spawn(async move {
@@ -176,12 +170,12 @@ async fn main() {
     });
 
     for job in jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone()) {
-        let job_type = job.job_type();
+        let job_kind = job.job_kind();
         background_workers.spawn(async move {
-            tracing::info!(job_type = ?job_type, "starting job worker");
+            tracing::info!(job_kind = ?job_kind, "starting job worker");
             job.start_thread()
                 .await
-                .with_context(|| format!("job worker '{job_type:?}' exited"))
+                .with_context(|| format!("job worker '{job_kind:?}' exited"))
         });
     }
 

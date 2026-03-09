@@ -1,13 +1,14 @@
 use crate::{
     entities::{file_probe, files, jobs as jobs_entity},
-    jobs::{JobHandler, handlers::shared},
+    jobs::{JobHandler, JobTarget, JobTargetId, handlers::shared},
     json_encoding,
 };
 use anyhow::Context;
 use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_output};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    sea_query::OnConflict, sea_query::Query,
+    ActiveValue::Set,
+    DatabaseConnection, EntityTrait,
+    sea_query::{Expr, OnConflict, Query, SelectStatement},
 };
 use std::{path::Path, path::PathBuf};
 
@@ -16,25 +17,30 @@ pub struct FileFfprobeJob;
 
 #[async_trait::async_trait]
 impl JobHandler for FileFfprobeJob {
-    fn job_type(&self) -> jobs_entity::JobType {
-        jobs_entity::JobType::FileExtractFfprobe
+    fn job_kind(&self) -> jobs_entity::JobKind {
+        jobs_entity::JobKind::FileExtractFfprobe
     }
 
-    fn filter_condition(&self) -> Option<Condition> {
-        Some(
-            Condition::all().add(
-                files::Column::Id.not_in_subquery(
-                    Query::select()
-                        .column(file_probe::Column::FileId)
-                        .from(file_probe::Entity)
-                        .to_owned(),
-                ),
+    fn targets(&self) -> (JobTarget, SelectStatement) {
+        let mut query = shared::base_file_targets_query();
+        query.and_where(
+            Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
+                Query::select()
+                    .column(file_probe::Column::FileId)
+                    .from(file_probe::Entity)
+                    .to_owned(),
             ),
-        )
+        );
+        (JobTarget::File, query)
     }
 
-    async fn execute(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
-        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_type()).await? else {
+    async fn execute(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        let file_id = shared::expect_file_target(target_id)?;
+        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
             return Ok(());
         };
 
@@ -42,7 +48,12 @@ impl JobHandler for FileFfprobeJob {
         Ok(())
     }
 
-    async fn cleanup(&self, pool: &DatabaseConnection, file_id: i64) -> anyhow::Result<()> {
+    async fn cleanup(
+        &self,
+        pool: &DatabaseConnection,
+        target_id: &JobTargetId,
+    ) -> anyhow::Result<()> {
+        let file_id = shared::expect_file_target(target_id)?;
         file_probe::Entity::delete_by_id(file_id).exec(pool).await?;
         Ok(())
     }

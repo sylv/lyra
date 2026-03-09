@@ -1,6 +1,5 @@
 use crate::{
     entities::{
-        file_segments::{self, FileSegmentsStatus},
         files, item_files, items, libraries,
         roots::{self, RootKind},
         seasons,
@@ -13,8 +12,8 @@ use lyra_marker::{
     INTRO_DETECTION_BATCH_MAX_FILES, INTRO_DETECTION_BATCH_MIN_FILES, detect_intros,
 };
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait, FromQueryResult,
-    JoinType, QueryFilter, QueryOrder, QuerySelect, RelationTrait, sea_query::OnConflict,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -24,7 +23,6 @@ use tokio::time::{Duration, sleep};
 
 const WORKER_INTERVAL: Duration = Duration::from_secs(60);
 const MAX_ROOTS_PER_TICK: usize = 3;
-const RETRY_BACKOFF_SECONDS: &[i64] = &[30 * 60, 2 * 60 * 60, 24 * 60 * 60];
 
 #[derive(Clone, Debug)]
 struct RootFile {
@@ -34,7 +32,7 @@ struct RootFile {
     season_order: Option<i64>,
     item_order: i64,
     has_intro_marker: bool,
-    segment_row: Option<file_segments::Model>,
+    pending_segments: bool,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -45,6 +43,7 @@ struct RootFileQueryRow {
     season_id: Option<String>,
     season_order: Option<i64>,
     item_order: i64,
+    segments_json: Vec<u8>,
 }
 
 pub async fn start_file_segment_worker(pool: DatabaseConnection) -> anyhow::Result<()> {
@@ -54,8 +53,7 @@ pub async fn start_file_segment_worker(pool: DatabaseConnection) -> anyhow::Resu
     );
 
     loop {
-        let now = chrono::Utc::now().timestamp();
-        if let Err(error) = run_tick(&pool, now).await {
+        if let Err(error) = run_tick(&pool).await {
             tracing::error!(error = ?error, "file segment worker tick failed");
         }
 
@@ -63,29 +61,24 @@ pub async fn start_file_segment_worker(pool: DatabaseConnection) -> anyhow::Resu
     }
 }
 
-async fn run_tick(pool: &DatabaseConnection, now: i64) -> anyhow::Result<()> {
-    let pending_root_ids = load_pending_series_root_ids(pool, now).await?;
+async fn run_tick(pool: &DatabaseConnection) -> anyhow::Result<()> {
+    let pending_root_ids = load_pending_series_root_ids(pool).await?;
     for root_id in pending_root_ids.into_iter().take(MAX_ROOTS_PER_TICK) {
-        if let Err(error) = process_root(pool, &root_id, now).await {
+        if let Err(error) = process_root(pool, &root_id).await {
             tracing::warn!(root_id, error = ?error, "failed processing root intro segments");
         }
     }
     Ok(())
 }
 
-async fn load_pending_series_root_ids(
-    pool: &DatabaseConnection,
-    now: i64,
-) -> anyhow::Result<Vec<String>> {
+async fn load_pending_series_root_ids(pool: &DatabaseConnection) -> anyhow::Result<Vec<String>> {
     let roots = item_files::Entity::find()
         .join(JoinType::InnerJoin, item_files::Relation::Items.def())
         .join(JoinType::InnerJoin, items::Relation::Roots.def())
         .join(JoinType::InnerJoin, item_files::Relation::Files.def())
-        .join(JoinType::LeftJoin, files::Relation::FileSegments.def())
         .filter(roots::Column::Kind.eq(RootKind::Series))
         .filter(files::Column::UnavailableAt.is_null())
-        .filter(files::Column::CorruptedAt.is_null())
-        .filter(pending_segment_condition(now))
+        .filter(files::Column::SegmentsJson.eq(Vec::<u8>::new()))
         .select_only()
         .column(items::Column::RootId)
         .distinct()
@@ -97,7 +90,7 @@ async fn load_pending_series_root_ids(
     Ok(roots)
 }
 
-async fn process_root(pool: &DatabaseConnection, root_id: &str, now: i64) -> anyhow::Result<()> {
+async fn process_root(pool: &DatabaseConnection, root_id: &str) -> anyhow::Result<()> {
     let mut root_files = load_root_files(pool, root_id).await?;
     if root_files.len() < INTRO_DETECTION_BATCH_MIN_FILES {
         return Ok(());
@@ -106,7 +99,7 @@ async fn process_root(pool: &DatabaseConnection, root_id: &str, now: i64) -> any
     let mut pending_file_ids = root_files
         .iter()
         .filter_map(|file| {
-            if is_pending_segment_row(file.segment_row.as_ref(), now) {
+            if file.pending_segments {
                 Some(file.file_id)
             } else {
                 None
@@ -174,59 +167,19 @@ async fn process_root(pool: &DatabaseConnection, root_id: &str, now: i64) -> any
                         .into_iter()
                         .collect::<Vec<_>>();
 
-                    upsert_ready_segments(pool, *file_id, &segments, now).await?;
+                    store_segments(pool, *file_id, &segments).await?;
 
                     if let Some(file) = root_files.iter_mut().find(|file| file.file_id == *file_id)
                     {
                         file.has_intro_marker = segments
                             .iter()
                             .any(|segment| segment.kind == StoredFileSegmentKind::Intro);
-                        file.segment_row = Some(file_segments::Model {
-                            file_id: *file_id,
-                            segment_list: json_encoding::encode_json_zstd(&segments)?,
-                            status: FileSegmentsStatus::Ready,
-                            attempts: 0,
-                            last_attempted_at: Some(now),
-                            retry_after: None,
-                            last_error_message: None,
-                            created_at: now,
-                            updated_at: now,
-                        });
+                        file.pending_segments = false;
                     }
                 }
             }
             Err(error) => {
-                for file_id in &target_file_ids {
-                    let prior_attempts = root_files
-                        .iter()
-                        .find(|file| file.file_id == *file_id)
-                        .and_then(|file| file.segment_row.as_ref())
-                        .map(|row| row.attempts)
-                        .unwrap_or(0);
-
-                    let attempts = prior_attempts + 1;
-                    let retry_after = now + retry_backoff_seconds(attempts);
-                    upsert_error_segments(pool, *file_id, attempts, retry_after, &error, now)
-                        .await?;
-
-                    if let Some(file) = root_files.iter_mut().find(|file| file.file_id == *file_id)
-                    {
-                        file.has_intro_marker = false;
-                        file.segment_row = Some(file_segments::Model {
-                            file_id: *file_id,
-                            segment_list: json_encoding::encode_json_zstd(
-                                &Vec::<StoredFileSegment>::new(),
-                            )?,
-                            status: FileSegmentsStatus::Error,
-                            attempts,
-                            last_attempted_at: Some(now),
-                            retry_after: Some(retry_after),
-                            last_error_message: Some(error.to_string()),
-                            created_at: now,
-                            updated_at: now,
-                        });
-                    }
-                }
+                tracing::warn!(root_id, error = ?error, "intro detection batch failed");
             }
         }
 
@@ -249,7 +202,6 @@ async fn load_root_files(
         .join(JoinType::LeftJoin, items::Relation::Seasons.def())
         .filter(items::Column::RootId.eq(root_id.to_string()))
         .filter(files::Column::UnavailableAt.is_null())
-        .filter(files::Column::CorruptedAt.is_null())
         .select_only()
         .column_as(files::Column::Id, "file_id")
         .column_as(files::Column::RelativePath, "relative_path")
@@ -257,6 +209,7 @@ async fn load_root_files(
         .column_as(items::Column::SeasonId, "season_id")
         .column_as(seasons::Column::Order, "season_order")
         .column_as(items::Column::Order, "item_order")
+        .column_as(files::Column::SegmentsJson, "segments_json")
         .order_by_asc(seasons::Column::Order)
         .order_by_asc(items::Column::Order)
         .order_by_asc(files::Column::Id)
@@ -272,30 +225,15 @@ async fn load_root_files(
         }
     }
 
-    if unique_rows.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let file_ids = unique_rows
-        .iter()
-        .map(|row| row.file_id)
-        .collect::<Vec<_>>();
-    let segment_rows = file_segments::Entity::find()
-        .filter(file_segments::Column::FileId.is_in(file_ids))
-        .all(pool)
-        .await?;
-    let segments_by_file_id = segment_rows
-        .into_iter()
-        .map(|row| (row.file_id, row))
-        .collect::<HashMap<_, _>>();
-
     let mut output = Vec::with_capacity(unique_rows.len());
     for row in unique_rows {
         let file_path = PathBuf::from(row.library_path).join(row.relative_path);
-        let segment_row = segments_by_file_id.get(&row.file_id).cloned();
-        let has_intro_marker = segment_row
-            .as_ref()
-            .is_some_and(|row| file_has_intro_marker(row, row.file_id));
+        let segments = decode_segments_payload(&row.segments_json, row.file_id);
+        let has_intro_marker = segments.as_ref().is_some_and(|segments| {
+            segments
+                .iter()
+                .any(|segment| segment.kind == StoredFileSegmentKind::Intro)
+        });
 
         output.push(RootFile {
             file_id: row.file_id,
@@ -304,7 +242,7 @@ async fn load_root_files(
             season_order: row.season_order,
             item_order: row.item_order,
             has_intro_marker,
-            segment_row,
+            pending_segments: row.segments_json.is_empty() || segments.is_none(),
         });
     }
 
@@ -376,129 +314,35 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
     batch
 }
 
-fn pending_segment_condition(now: i64) -> Condition {
-    Condition::any()
-        .add(file_segments::Column::FileId.is_null())
-        .add(
-            Condition::all()
-                .add(file_segments::Column::Status.eq(FileSegmentsStatus::Error))
-                .add(
-                    Condition::any()
-                        .add(file_segments::Column::RetryAfter.is_null())
-                        .add(file_segments::Column::RetryAfter.lte(now)),
-                ),
-        )
-}
-
-fn is_pending_segment_row(row: Option<&file_segments::Model>, now: i64) -> bool {
-    let Some(row) = row else {
-        return true;
-    };
-
-    row.status == FileSegmentsStatus::Error
-        && row.retry_after.is_none_or(|retry_after| retry_after <= now)
-}
-
-fn file_has_intro_marker(row: &file_segments::Model, file_id: i64) -> bool {
-    if row.status != FileSegmentsStatus::Ready {
-        return false;
+fn decode_segments_payload(payload: &[u8], file_id: i64) -> Option<Vec<StoredFileSegment>> {
+    if payload.is_empty() {
+        return None;
     }
 
-    match row.decode_segments() {
-        Ok(segments) => segments
-            .iter()
-            .any(|segment| segment.kind == StoredFileSegmentKind::Intro),
+    match json_encoding::decode_json_zstd::<Vec<StoredFileSegment>>(payload) {
+        Ok(segments) => Some(segments),
         Err(error) => {
-            tracing::warn!(file_id, error = ?error, "failed to decode file segments row");
-            false
+            tracing::warn!(file_id, error = ?error, "failed to decode file segments payload");
+            None
         }
     }
 }
 
-async fn upsert_ready_segments(
+async fn store_segments(
     pool: &DatabaseConnection,
     file_id: i64,
     segments: &[StoredFileSegment],
-    now: i64,
 ) -> anyhow::Result<()> {
     let payload = json_encoding::encode_json_zstd(&segments)
         .with_context(|| format!("failed to encode intro segments for file {file_id}"))?;
 
-    file_segments::Entity::insert(file_segments::ActiveModel {
-        file_id: Set(file_id),
-        segment_list: Set(payload),
-        status: Set(FileSegmentsStatus::Ready),
-        attempts: Set(0),
-        last_attempted_at: Set(Some(now)),
-        retry_after: Set(None),
-        last_error_message: Set(None),
-        created_at: Set(now),
-        updated_at: Set(now),
+    files::Entity::update(files::ActiveModel {
+        id: Set(file_id),
+        segments_json: Set(payload),
+        ..Default::default()
     })
-    .on_conflict(
-        OnConflict::column(file_segments::Column::FileId)
-            .update_columns([
-                file_segments::Column::SegmentList,
-                file_segments::Column::Status,
-                file_segments::Column::Attempts,
-                file_segments::Column::LastAttemptedAt,
-                file_segments::Column::RetryAfter,
-                file_segments::Column::LastErrorMessage,
-                file_segments::Column::UpdatedAt,
-            ])
-            .to_owned(),
-    )
     .exec(pool)
     .await?;
 
     Ok(())
-}
-
-async fn upsert_error_segments(
-    pool: &DatabaseConnection,
-    file_id: i64,
-    attempts: i64,
-    retry_after: i64,
-    error: &anyhow::Error,
-    now: i64,
-) -> anyhow::Result<()> {
-    let empty_segments = json_encoding::encode_json_zstd(&Vec::<StoredFileSegment>::new())
-        .with_context(|| format!("failed to encode empty segment list for file {file_id}"))?;
-
-    file_segments::Entity::insert(file_segments::ActiveModel {
-        file_id: Set(file_id),
-        segment_list: Set(empty_segments),
-        status: Set(FileSegmentsStatus::Error),
-        attempts: Set(attempts),
-        last_attempted_at: Set(Some(now)),
-        retry_after: Set(Some(retry_after)),
-        last_error_message: Set(Some(error.to_string())),
-        created_at: Set(now),
-        updated_at: Set(now),
-    })
-    .on_conflict(
-        OnConflict::column(file_segments::Column::FileId)
-            .update_columns([
-                file_segments::Column::SegmentList,
-                file_segments::Column::Status,
-                file_segments::Column::Attempts,
-                file_segments::Column::LastAttemptedAt,
-                file_segments::Column::RetryAfter,
-                file_segments::Column::LastErrorMessage,
-                file_segments::Column::UpdatedAt,
-            ])
-            .to_owned(),
-    )
-    .exec(pool)
-    .await?;
-
-    Ok(())
-}
-
-fn retry_backoff_seconds(attempts: i64) -> i64 {
-    let index = attempts.saturating_sub(1) as usize;
-    RETRY_BACKOFF_SECONDS
-        .get(index)
-        .copied()
-        .unwrap_or(*RETRY_BACKOFF_SECONDS.last().unwrap_or(&(24 * 60 * 60)))
 }
