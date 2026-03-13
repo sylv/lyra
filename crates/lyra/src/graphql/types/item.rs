@@ -5,10 +5,11 @@ use crate::entities::{
 use crate::graphql::properties::ItemNodeProperties;
 use async_graphql::{ComplexObject, Context};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    sea_query::{Alias, Cond, Expr, JoinType as SeaJoinType, Order, Query},
+    ColumnTrait, DatabaseConnection, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait,
+    sea_query::{Cond, Expr, Query},
 };
+use std::cmp::Ordering;
 
 async fn find_primary_available_file(
     pool: &DatabaseConnection,
@@ -22,6 +23,82 @@ async fn find_primary_available_file(
         .order_by_asc(item_files::Column::FileId)
         .one(pool)
         .await
+}
+
+async fn find_adjacent_item(
+    pool: &DatabaseConnection,
+    current_item: &items::Model,
+    direction: Ordering,
+) -> Result<Option<items::Model>, sea_orm::DbErr> {
+    // find the nearest item in the same root before/after the current one,
+    // but skip any item that points at one of the same files. This matters for
+    // multi-episode files, where multiple item rows can map to the same media
+    // file and would otherwise navigate to the same playback target.
+    let order_condition = match direction {
+        Ordering::Less => Cond::any()
+            .add(items::Column::Order.lt(current_item.order))
+            .add(
+                Cond::all()
+                    .add(items::Column::Order.eq(current_item.order))
+                    .add(items::Column::Id.lt(current_item.id.clone())),
+            ),
+        Ordering::Greater => Cond::any()
+            .add(items::Column::Order.gt(current_item.order))
+            .add(
+                Cond::all()
+                    .add(items::Column::Order.eq(current_item.order))
+                    .add(items::Column::Id.gt(current_item.id.clone())),
+            ),
+        Ordering::Equal => unreachable!(),
+    };
+
+    let mut query = items::Entity::find()
+        .filter(items::Column::RootId.eq(current_item.root_id.clone()))
+        .filter(order_condition)
+        .filter(
+            Expr::col((items::Entity, items::Column::Id)).in_subquery(
+                Query::select()
+                    .column(item_files::Column::ItemId)
+                    .from(item_files::Entity)
+                    .to_owned(),
+            ),
+        )
+        .filter(
+            Expr::col((items::Entity, items::Column::Id)).not_in_subquery(
+                Query::select()
+                    .column(item_files::Column::ItemId)
+                    .from(item_files::Entity)
+                    .and_where(
+                        Expr::col((item_files::Entity, item_files::Column::FileId)).in_subquery(
+                            Query::select()
+                                .column(item_files::Column::FileId)
+                                .from(item_files::Entity)
+                                .and_where(
+                                    Expr::col((item_files::Entity, item_files::Column::ItemId))
+                                        .eq(current_item.id.clone()),
+                                )
+                                .to_owned(),
+                        ),
+                    )
+                    .to_owned(),
+            ),
+        );
+
+    match direction {
+        Ordering::Less => {
+            query = query
+                .order_by_desc(items::Column::Order)
+                .order_by_desc(items::Column::Id);
+        }
+        Ordering::Greater => {
+            query = query
+                .order_by_asc(items::Column::Order)
+                .order_by_asc(items::Column::Id);
+        }
+        Ordering::Equal => unreachable!(),
+    }
+
+    query.one(pool).await
 }
 
 #[ComplexObject]
@@ -100,79 +177,7 @@ impl items::Model {
         ctx: &Context<'_>,
     ) -> Result<Option<items::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let candidate = Alias::new("candidate");
-        let candidate_files = Alias::new("candidate_files");
-        let current_files = Alias::new("current_files");
-
-        let mut query = Query::select();
-        query
-            .column((candidate.clone(), items::Column::Id))
-            .column((candidate.clone(), items::Column::RootId))
-            .column((candidate.clone(), items::Column::SeasonId))
-            .column((candidate.clone(), items::Column::Kind))
-            .column((candidate.clone(), items::Column::EpisodeNumber))
-            .column((candidate.clone(), items::Column::Order))
-            .column((candidate.clone(), items::Column::Name))
-            .column((candidate.clone(), items::Column::LastAddedAt))
-            .column((candidate.clone(), items::Column::CreatedAt))
-            .column((candidate.clone(), items::Column::UpdatedAt))
-            .from_as(items::Entity, candidate.clone())
-            .and_where(
-                Expr::col((candidate.clone(), items::Column::RootId)).eq(self.root_id.clone()),
-            )
-            .cond_where(
-                Cond::any()
-                    .add(Expr::col((candidate.clone(), items::Column::Order)).lt(self.order))
-                    .add(
-                        Cond::all()
-                            .add(
-                                Expr::col((candidate.clone(), items::Column::Order)).eq(self.order),
-                            )
-                            .add(
-                                Expr::col((candidate.clone(), items::Column::Id))
-                                    .lt(self.id.clone()),
-                            ),
-                    ),
-            )
-            .and_where(Expr::exists(
-                Query::select()
-                    .expr(Expr::val(1))
-                    .from(item_files::Entity)
-                    .and_where(
-                        Expr::col((item_files::Entity, item_files::Column::ItemId))
-                            .equals((candidate.clone(), items::Column::Id)),
-                    )
-                    .to_owned(),
-            ))
-            .cond_where(
-                Cond::all().not().add(Expr::exists(
-                    Query::select()
-                        .expr(Expr::val(1))
-                        .from_as(item_files::Entity, candidate_files.clone())
-                        .join_as(
-                            SeaJoinType::InnerJoin,
-                            item_files::Entity,
-                            current_files.clone(),
-                            Expr::col((current_files.clone(), item_files::Column::FileId))
-                                .equals((candidate_files.clone(), item_files::Column::FileId)),
-                        )
-                        .and_where(
-                            Expr::col((candidate_files.clone(), item_files::Column::ItemId))
-                                .equals((candidate.clone(), items::Column::Id)),
-                        )
-                        .and_where(
-                            Expr::col((current_files.clone(), item_files::Column::ItemId))
-                                .eq(self.id.clone()),
-                        )
-                        .to_owned(),
-                )),
-            )
-            .order_by((candidate.clone(), items::Column::Order), Order::Desc)
-            .order_by((candidate.clone(), items::Column::Id), Order::Desc)
-            .limit(1);
-
-        let statement = pool.get_database_backend().build(&query);
-        items::Model::find_by_statement(statement).one(pool).await
+        find_adjacent_item(pool, self, Ordering::Less).await
     }
 
     pub async fn next_item(
@@ -180,78 +185,6 @@ impl items::Model {
         ctx: &Context<'_>,
     ) -> Result<Option<items::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let candidate = Alias::new("candidate");
-        let candidate_files = Alias::new("candidate_files");
-        let current_files = Alias::new("current_files");
-
-        let mut query = Query::select();
-        query
-            .column((candidate.clone(), items::Column::Id))
-            .column((candidate.clone(), items::Column::RootId))
-            .column((candidate.clone(), items::Column::SeasonId))
-            .column((candidate.clone(), items::Column::Kind))
-            .column((candidate.clone(), items::Column::EpisodeNumber))
-            .column((candidate.clone(), items::Column::Order))
-            .column((candidate.clone(), items::Column::Name))
-            .column((candidate.clone(), items::Column::LastAddedAt))
-            .column((candidate.clone(), items::Column::CreatedAt))
-            .column((candidate.clone(), items::Column::UpdatedAt))
-            .from_as(items::Entity, candidate.clone())
-            .and_where(
-                Expr::col((candidate.clone(), items::Column::RootId)).eq(self.root_id.clone()),
-            )
-            .cond_where(
-                Cond::any()
-                    .add(Expr::col((candidate.clone(), items::Column::Order)).gt(self.order))
-                    .add(
-                        Cond::all()
-                            .add(
-                                Expr::col((candidate.clone(), items::Column::Order)).eq(self.order),
-                            )
-                            .add(
-                                Expr::col((candidate.clone(), items::Column::Id))
-                                    .gt(self.id.clone()),
-                            ),
-                    ),
-            )
-            .and_where(Expr::exists(
-                Query::select()
-                    .expr(Expr::val(1))
-                    .from(item_files::Entity)
-                    .and_where(
-                        Expr::col((item_files::Entity, item_files::Column::ItemId))
-                            .equals((candidate.clone(), items::Column::Id)),
-                    )
-                    .to_owned(),
-            ))
-            .cond_where(
-                Cond::all().not().add(Expr::exists(
-                    Query::select()
-                        .expr(Expr::val(1))
-                        .from_as(item_files::Entity, candidate_files.clone())
-                        .join_as(
-                            SeaJoinType::InnerJoin,
-                            item_files::Entity,
-                            current_files.clone(),
-                            Expr::col((current_files.clone(), item_files::Column::FileId))
-                                .equals((candidate_files.clone(), item_files::Column::FileId)),
-                        )
-                        .and_where(
-                            Expr::col((candidate_files.clone(), item_files::Column::ItemId))
-                                .equals((candidate.clone(), items::Column::Id)),
-                        )
-                        .and_where(
-                            Expr::col((current_files.clone(), item_files::Column::ItemId))
-                                .eq(self.id.clone()),
-                        )
-                        .to_owned(),
-                )),
-            )
-            .order_by((candidate.clone(), items::Column::Order), Order::Asc)
-            .order_by((candidate.clone(), items::Column::Id), Order::Asc)
-            .limit(1);
-
-        let statement = pool.get_database_backend().build(&query);
-        items::Model::find_by_statement(statement).one(pool).await
+        find_adjacent_item(pool, self, Ordering::Greater).await
     }
 }
