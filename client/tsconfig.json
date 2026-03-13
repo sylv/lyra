@@ -17,7 +17,7 @@
       "ESNext"
     ],
     "types": [
-      "vite/client"
+      "vite/client",
     ],
     "jsx": "preserve",
     "jsxImportSource": "react",

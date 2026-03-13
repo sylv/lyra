@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './../routes/__root'
+import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as PlaygroundRouteImport } from './../routes/playground'
 import { Route as IndexRouteImport } from './../routes/index'
 import { Route as LibraryLibraryIdRouteImport } from './../routes/library.$libraryId'
 import { Route as LibraryLibraryIdRootIdRouteImport } from './../routes/library_.$libraryId.$rootId'
 import { Route as LibraryLibraryIdRootIdSeasonIdRouteImport } from './../routes/library_.$libraryId.$rootId_.$seasonId'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlaygroundRoute = PlaygroundRouteImport.update({
   id: '/playground',
   path: '/playground',
@@ -45,6 +51,7 @@ const LibraryLibraryIdRootIdSeasonIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
+  '/settings': typeof SettingsRoute
   '/library/$libraryId': typeof LibraryLibraryIdRoute
   '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
+  '/settings': typeof SettingsRoute
   '/library/$libraryId': typeof LibraryLibraryIdRoute
   '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
@@ -60,6 +68,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
+  '/settings': typeof SettingsRoute
   '/library/$libraryId': typeof LibraryLibraryIdRoute
   '/library_/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library_/$libraryId/$rootId_/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
@@ -69,6 +78,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/playground'
+    | '/settings'
     | '/library/$libraryId'
     | '/library/$libraryId/$rootId'
     | '/library/$libraryId/$rootId/$seasonId'
@@ -76,6 +86,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/playground'
+    | '/settings'
     | '/library/$libraryId'
     | '/library/$libraryId/$rootId'
     | '/library/$libraryId/$rootId/$seasonId'
@@ -83,6 +94,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/playground'
+    | '/settings'
     | '/library/$libraryId'
     | '/library_/$libraryId/$rootId'
     | '/library_/$libraryId/$rootId_/$seasonId'
@@ -91,6 +103,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PlaygroundRoute: typeof PlaygroundRoute
+  SettingsRoute: typeof SettingsRoute
   LibraryLibraryIdRoute: typeof LibraryLibraryIdRoute
   LibraryLibraryIdRootIdRoute: typeof LibraryLibraryIdRootIdRoute
   LibraryLibraryIdRootIdSeasonIdRoute: typeof LibraryLibraryIdRootIdSeasonIdRoute
@@ -98,6 +111,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/playground': {
       id: '/playground'
       path: '/playground'
@@ -139,6 +159,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PlaygroundRoute: PlaygroundRoute,
+  SettingsRoute: SettingsRoute,
   LibraryLibraryIdRoute: LibraryLibraryIdRoute,
   LibraryLibraryIdRootIdRoute: LibraryLibraryIdRootIdRoute,
   LibraryLibraryIdRootIdSeasonIdRoute: LibraryLibraryIdRootIdSeasonIdRoute,
