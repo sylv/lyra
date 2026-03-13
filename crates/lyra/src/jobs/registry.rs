@@ -7,6 +7,10 @@ use crate::jobs::{
         root_intro_segments::RootIntroSegmentsJob,
     },
 };
+use crate::metadata::{
+    build_metadata_providers, job_item_batch::RootMetadataMatchGroupsJob,
+    job_root::RootMetadataMatchRootJob,
+};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -20,6 +24,8 @@ pub fn get_registered_job_handlers() -> Vec<Arc<dyn JobHandler>> {
         Arc::new(FileTimelinePreviewJob),
         Arc::new(FileThumbnailJob),
         Arc::new(RootIntroSegmentsJob),
+        Arc::new(RootMetadataMatchRootJob::new(build_metadata_providers())),
+        Arc::new(RootMetadataMatchGroupsJob::new(build_metadata_providers())),
     ]
 }
 

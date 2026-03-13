@@ -62,8 +62,6 @@ pub enum Relation {
     ItemFiles,
     #[sea_orm(has_many = "super::item_metadata::Entity")]
     ItemMetadata,
-    #[sea_orm(has_many = "super::item_node_matches::Entity")]
-    ItemNodeMatches,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
 }
@@ -95,12 +93,6 @@ impl Related<super::item_files::Entity> for Entity {
 impl Related<super::item_metadata::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ItemMetadata.def()
-    }
-}
-
-impl Related<super::item_node_matches::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::ItemNodeMatches.def()
     }
 }
 

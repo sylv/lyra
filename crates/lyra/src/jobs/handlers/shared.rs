@@ -1,13 +1,9 @@
-use crate::entities::{
-    assets as assets_entity,
-    file_assets::{self, FileAssetRole},
-    files, jobs as jobs_entity, libraries,
-};
-use crate::jobs::{JobTargetId, TARGET_ID_COLUMN};
+use crate::entities::{files, jobs as jobs_entity, libraries};
+use crate::jobs::FILE_ID_COLUMN;
 use anyhow::Context;
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait, sea_query::SelectStatement,
+    QuerySelect, sea_query::SelectStatement,
 };
 use std::path::PathBuf;
 
@@ -16,31 +12,31 @@ pub struct JobFileContext {
     pub file_path: PathBuf,
 }
 
-pub fn expect_file_target(target_id: &JobTargetId) -> anyhow::Result<i64> {
-    match target_id {
-        JobTargetId::File(file_id) => Ok(*file_id),
-        other => anyhow::bail!("expected file target, got {other:?}"),
-    }
+pub fn expect_job_file_id(job: &jobs_entity::Model) -> anyhow::Result<i64> {
+    job.file_id
+        .with_context(|| format!("job {} is missing file_id", job.id))
 }
 
-pub fn expect_asset_target(target_id: &JobTargetId) -> anyhow::Result<i64> {
-    match target_id {
-        JobTargetId::Asset(asset_id) => Ok(*asset_id),
-        other => anyhow::bail!("expected asset target, got {other:?}"),
-    }
+pub fn expect_job_asset_id(job: &jobs_entity::Model) -> anyhow::Result<i64> {
+    let raw = job
+        .asset_id
+        .as_deref()
+        .with_context(|| format!("job {} is missing asset_id", job.id))?;
+
+    raw.parse::<i64>()
+        .with_context(|| format!("job {} has non-integer asset_id '{raw}'", job.id))
 }
 
-pub fn expect_root_target(target_id: &JobTargetId) -> anyhow::Result<&str> {
-    match target_id {
-        JobTargetId::Root(root_id) => Ok(root_id.as_str()),
-        other => anyhow::bail!("expected root target, got {other:?}"),
-    }
+pub fn expect_job_root_id<'a>(job: &'a jobs_entity::Model) -> anyhow::Result<&'a str> {
+    job.root_id
+        .as_deref()
+        .with_context(|| format!("job {} is missing root_id", job.id))
 }
 
 pub fn base_file_targets_query() -> SelectStatement {
     let mut query = files::Entity::find()
         .select_only()
-        .column_as(files::Column::Id, TARGET_ID_COLUMN)
+        .column_as(files::Column::Id, FILE_ID_COLUMN)
         .filter(files::Column::UnavailableAt.is_null())
         .order_by_asc(files::Column::Id);
     QuerySelect::query(&mut query).to_owned()
@@ -89,36 +85,4 @@ pub async fn load_job_file_context(
     }
 
     Ok(Some(JobFileContext { file, file_path }))
-}
-
-pub async fn cleanup_file_assets_for_role(
-    pool: &DatabaseConnection,
-    file_id: i64,
-    role: FileAssetRole,
-) -> anyhow::Result<()> {
-    let tx = pool.begin().await?;
-    let stale_asset_ids: Vec<i64> = file_assets::Entity::find()
-        .filter(file_assets::Column::FileId.eq(file_id))
-        .filter(file_assets::Column::Role.eq(role))
-        .all(&tx)
-        .await?
-        .into_iter()
-        .map(|row| row.asset_id)
-        .collect();
-
-    file_assets::Entity::delete_many()
-        .filter(file_assets::Column::FileId.eq(file_id))
-        .filter(file_assets::Column::Role.eq(role))
-        .exec(&tx)
-        .await?;
-
-    if !stale_asset_ids.is_empty() {
-        assets_entity::Entity::delete_many()
-            .filter(assets_entity::Column::Id.is_in(stale_asset_ids))
-            .exec(&tx)
-            .await?;
-    }
-
-    tx.commit().await?;
-    Ok(())
 }

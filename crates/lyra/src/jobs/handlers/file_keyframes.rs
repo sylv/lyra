@@ -1,6 +1,7 @@
 use crate::{
     entities::{files, jobs as jobs_entity},
-    jobs::{JobHandler, JobTarget, JobTargetId, handlers::shared},
+    jobs::handlers::shared,
+    jobs::{JobHandler, JobTarget},
     json_encoding,
 };
 use anyhow::Context;
@@ -29,30 +30,14 @@ impl JobHandler for FileKeyframesJob {
     async fn execute(
         &self,
         pool: &DatabaseConnection,
-        target_id: &JobTargetId,
+        job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let file_id = shared::expect_file_target(target_id)?;
+        let file_id = shared::expect_job_file_id(job)?;
         let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
             return Ok(());
         };
 
         extract_and_store_keyframes(pool, ctx.file.id, &ctx.file_path).await?;
-        Ok(())
-    }
-
-    async fn cleanup(
-        &self,
-        pool: &DatabaseConnection,
-        target_id: &JobTargetId,
-    ) -> anyhow::Result<()> {
-        let file_id = shared::expect_file_target(target_id)?;
-        files::Entity::update(files::ActiveModel {
-            id: Set(file_id),
-            keyframes_json: Set(Vec::new()),
-            ..Default::default()
-        })
-        .exec(pool)
-        .await?;
         Ok(())
     }
 }

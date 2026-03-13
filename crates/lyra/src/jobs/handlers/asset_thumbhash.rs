@@ -1,7 +1,8 @@
 use crate::{
     assets::storage,
     entities::{assets, jobs as jobs_entity},
-    jobs::{JobHandler, JobTarget, JobTargetId, TARGET_ID_COLUMN, handlers::shared},
+    jobs::handlers::shared,
+    jobs::{ASSET_ID_COLUMN, JobHandler, JobTarget},
 };
 use anyhow::Context;
 use sea_orm::{
@@ -21,7 +22,7 @@ impl JobHandler for AssetThumbhashJob {
     fn targets(&self) -> (JobTarget, SelectStatement) {
         let mut query = assets::Entity::find()
             .select_only()
-            .column_as(assets::Column::Id, TARGET_ID_COLUMN)
+            .column_as(assets::Column::Id, ASSET_ID_COLUMN)
             .filter(assets::Column::HashSha256.is_not_null())
             .filter(
                 Condition::any()
@@ -36,9 +37,9 @@ impl JobHandler for AssetThumbhashJob {
     async fn execute(
         &self,
         pool: &DatabaseConnection,
-        target_id: &JobTargetId,
+        job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let asset_id = shared::expect_asset_target(target_id)?;
+        let asset_id = shared::expect_job_asset_id(job)?;
         let Some(asset) = assets::Entity::find_by_id(asset_id).one(pool).await? else {
             return Ok(());
         };

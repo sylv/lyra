@@ -1,10 +1,9 @@
 use crate::entities::{
     assets::{self},
-    item_metadata, item_node_matches, items,
+    item_metadata, items,
     metadata_source::MetadataSource,
     root_metadata, season_metadata, seasons,
 };
-use crate::metadata::shared::{ItemMatchRowInput, RootMatchRowInput};
 use lyra_metadata::{EpisodeMetadata, ImageSet, MovieMetadata, SeasonMetadata, SeriesMetadata};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -179,88 +178,6 @@ pub async fn clear_remote_item_metadata_for_batch(
         .exec(pool)
         .await?;
 
-    Ok(())
-}
-
-pub async fn upsert_root_match_row(
-    pool: &DatabaseConnection,
-    row: RootMatchRowInput,
-) -> anyhow::Result<()> {
-    crate::entities::root_node_matches::Entity::insert(
-        crate::entities::root_node_matches::ActiveModel {
-            root_id: Set(row.root_id),
-            provider_id: Set(row.provider_id),
-            status: Set(row.status),
-            last_attempted_at: Set(row.last_attempted_at),
-            last_added_at: Set(row.last_added_at),
-            last_error_message: Set(row.last_error_message),
-            retry_after: Set(row.retry_after),
-            attempts: Set(row.attempts),
-            created_at: Set(row.created_at),
-            updated_at: Set(row.updated_at),
-            ..Default::default()
-        },
-    )
-    .on_conflict(
-        OnConflict::columns([
-            crate::entities::root_node_matches::Column::RootId,
-            crate::entities::root_node_matches::Column::ProviderId,
-        ])
-        .update_columns([
-            crate::entities::root_node_matches::Column::Status,
-            crate::entities::root_node_matches::Column::LastAttemptedAt,
-            crate::entities::root_node_matches::Column::LastAddedAt,
-            crate::entities::root_node_matches::Column::LastErrorMessage,
-            crate::entities::root_node_matches::Column::RetryAfter,
-            crate::entities::root_node_matches::Column::Attempts,
-            crate::entities::root_node_matches::Column::UpdatedAt,
-        ])
-        .to_owned(),
-    )
-    .exec(pool)
-    .await?;
-    Ok(())
-}
-
-pub async fn upsert_item_match_rows(
-    pool: &DatabaseConnection,
-    rows: Vec<ItemMatchRowInput>,
-) -> anyhow::Result<()> {
-    for row in rows {
-        item_node_matches::Entity::insert(item_node_matches::ActiveModel {
-            root_id: Set(row.root_id),
-            item_id: Set(row.item_id),
-            provider_id: Set(row.provider_id),
-            status: Set(row.status),
-            last_attempted_at: Set(row.last_attempted_at),
-            last_added_at: Set(row.last_added_at),
-            last_error_message: Set(row.last_error_message),
-            retry_after: Set(row.retry_after),
-            attempts: Set(row.attempts),
-            created_at: Set(row.created_at),
-            updated_at: Set(row.updated_at),
-            ..Default::default()
-        })
-        .on_conflict(
-            OnConflict::columns([
-                item_node_matches::Column::RootId,
-                item_node_matches::Column::ItemId,
-                item_node_matches::Column::ProviderId,
-            ])
-            .update_columns([
-                item_node_matches::Column::Status,
-                item_node_matches::Column::LastAttemptedAt,
-                item_node_matches::Column::LastAddedAt,
-                item_node_matches::Column::LastErrorMessage,
-                item_node_matches::Column::RetryAfter,
-                item_node_matches::Column::Attempts,
-                item_node_matches::Column::UpdatedAt,
-            ])
-            .to_owned(),
-        )
-        .exec(pool)
-        .await?;
-    }
     Ok(())
 }
 

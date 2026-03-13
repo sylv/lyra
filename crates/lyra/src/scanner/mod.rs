@@ -231,6 +231,7 @@ async fn upsert_derived_media(
             library_id: Set(library_id),
             kind: Set(root.kind),
             name: Set(root.name.clone()),
+            match_candidates_json: Set(None),
             last_added_at: Set(root.last_added_at),
             created_at: Set(now),
             updated_at: Set(now),

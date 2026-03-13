@@ -120,6 +120,7 @@ CREATE TABLE roots (
     library_id INTEGER NOT NULL,
     kind INTEGER NOT NULL, -- 0 movie, 1 series
     name TEXT NOT NULL,
+    match_candidates_json BLOB,
     last_added_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -280,63 +281,15 @@ CREATE UNIQUE INDEX item_metadata_unique_provider
 CREATE UNIQUE INDEX item_metadata_unique_source_layer
     ON item_metadata(root_id, item_id, source);
 
-CREATE TABLE root_node_matches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    root_id TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    status INTEGER NOT NULL, -- 0 unmatched, 1 matched
-    last_attempted_at INTEGER,
-    last_added_at INTEGER,
-    last_error_message TEXT,
-    retry_after INTEGER,
-    attempts INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-
-    FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
-    UNIQUE (root_id, provider_id),
-    CHECK (status IN (0, 1))
-) STRICT;
-
-CREATE UNIQUE INDEX root_node_matches_single_matched_idx
-    ON root_node_matches(root_id)
-    WHERE status = 1;
-CREATE INDEX root_node_matches_retry_idx
-    ON root_node_matches(status, retry_after, last_attempted_at);
-
-CREATE TABLE item_node_matches (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    root_id TEXT NOT NULL,
-    item_id TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    status INTEGER NOT NULL, -- 0 unmatched, 1 matched
-    last_attempted_at INTEGER,
-    last_added_at INTEGER,
-    last_error_message TEXT,
-    retry_after INTEGER,
-    attempts INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-
-    FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
-    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
-    UNIQUE (root_id, item_id, provider_id),
-    CHECK (status IN (0, 1))
-) STRICT;
-
-CREATE INDEX item_node_matches_retry_idx
-    ON item_node_matches(status, retry_after, last_attempted_at);
-CREATE INDEX item_node_matches_lookup_idx
-    ON item_node_matches(root_id, item_id, provider_id);
-
 CREATE TABLE jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_kind INTEGER NOT NULL,
-    subject_key TEXT NOT NULL UNIQUE, -- used to identify each job (ie, "file:thumbnail:123" or "item:metadata_match:root123:provider123")
+    subject_key TEXT NOT NULL UNIQUE, -- used to identify each job target (ie, "file:thumbnail:123")
     version_key INTEGER, -- used to re-run jobs when their targets or logic change
     file_id INTEGER,
     asset_id TEXT,
     root_id TEXT,
+    season_id TEXT,
     item_id TEXT,
     run_after INTEGER, -- if null, the job is not scheduled to run
     last_run_at INTEGER NOT NULL,
@@ -348,6 +301,7 @@ CREATE TABLE jobs (
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
     FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
     FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
+    FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE CASCADE,
     FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
 ) STRICT;
 

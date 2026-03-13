@@ -156,13 +156,6 @@ async fn main() {
     background_workers
         .spawn(async move { scanner::start_scanner(scanner_pool, scanner_wake_signal).await });
 
-    let metadata_pool = pool.clone();
-    let metadata_providers = metadata::build_metadata_providers();
-    background_workers.spawn(async move {
-        tracing::info!("starting metadata background worker");
-        metadata::worker::start_metadata_worker(metadata_pool, metadata_providers).await
-    });
-
     for job in jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone()) {
         let job_kind = job.job_kind();
         background_workers.spawn(async move {

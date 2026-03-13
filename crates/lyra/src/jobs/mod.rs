@@ -21,8 +21,14 @@ const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(
 const DEFAULT_BACKOFF_SECONDS: &[i64] = &[24 * 60 * 60, 7 * 24 * 60 * 60, 30 * 24 * 60 * 60];
 const EXISTING_SUBJECT_LOOKUP_CHUNK_SIZE: usize = 400;
 
+pub const SUBJECT_KEY_COLUMN: &str = "subject_key";
 pub const TARGET_ID_COLUMN: &str = "target_id";
 pub const VERSION_KEY_COLUMN: &str = "version_key";
+pub const FILE_ID_COLUMN: &str = "file_id";
+pub const ASSET_ID_COLUMN: &str = "asset_id";
+pub const ROOT_ID_COLUMN: &str = "root_id";
+pub const SEASON_ID_COLUMN: &str = "season_id";
+pub const ITEM_ID_COLUMN: &str = "item_id";
 
 pub struct JobExecutionPolicy {
     backoff_seconds: &'static [i64],
@@ -37,18 +43,14 @@ impl Default for JobExecutionPolicy {
 }
 
 impl JobExecutionPolicy {
-    pub fn max_attempts(&self) -> i64 {
-        self.backoff_seconds.len() as i64
+    pub const fn with_backoff_seconds(backoff_seconds: &'static [i64]) -> Self {
+        Self { backoff_seconds }
     }
 
     fn next_retry_at(&self, now: i64, attempt_count: i64) -> Option<i64> {
-        if attempt_count >= self.max_attempts() {
-            None
-        } else {
-            self.backoff_seconds
-                .get(attempt_count.saturating_sub(1) as usize)
-                .map(|offset| now + offset)
-        }
+        self.backoff_seconds
+            .get(attempt_count.saturating_sub(1) as usize)
+            .map(|offset| now + offset)
     }
 }
 
@@ -62,132 +64,110 @@ pub enum JobTarget {
 }
 
 impl JobTarget {
-    fn read_target_id_from_query_row(
+    fn populate_required_target_fields(
         self,
         row: &sea_orm::QueryResult,
-    ) -> anyhow::Result<JobTargetId> {
+        target: &mut PendingTargetRecord,
+    ) -> anyhow::Result<()> {
         match self {
             JobTarget::File => {
-                let target_id = row
-                    .try_get_by::<i64, _>(TARGET_ID_COLUMN)
-                    .context("missing or invalid file target_id")?;
-                Ok(JobTargetId::File(target_id))
+                if target.file_id.is_none() {
+                    target.file_id = row
+                        .try_get_by::<Option<i64>, _>(TARGET_ID_COLUMN)
+                        .ok()
+                        .flatten();
+                }
+
+                if target.file_id.is_none() {
+                    anyhow::bail!(
+                        "missing file target id (expected `{FILE_ID_COLUMN}` or `{TARGET_ID_COLUMN}`)"
+                    );
+                }
             }
             JobTarget::Asset => {
-                let target_id = row
-                    .try_get_by::<i64, _>(TARGET_ID_COLUMN)
-                    .context("missing or invalid asset target_id")?;
-                Ok(JobTargetId::Asset(target_id))
+                if target.asset_id.is_none() {
+                    target.asset_id = read_optional_string_or_i64(row, TARGET_ID_COLUMN)?;
+                }
+
+                if target.asset_id.is_none() {
+                    anyhow::bail!(
+                        "missing asset target id (expected `{ASSET_ID_COLUMN}` or `{TARGET_ID_COLUMN}`)"
+                    );
+                }
             }
             JobTarget::Root => {
-                let target_id = row
-                    .try_get_by::<String, _>(TARGET_ID_COLUMN)
-                    .context("missing or invalid root target_id")?;
-                Ok(JobTargetId::Root(target_id))
+                if target.root_id.is_none() {
+                    target.root_id = row
+                        .try_get_by::<Option<String>, _>(TARGET_ID_COLUMN)
+                        .ok()
+                        .flatten();
+                }
+
+                if target.root_id.is_none() {
+                    anyhow::bail!(
+                        "missing root target id (expected `{ROOT_ID_COLUMN}` or `{TARGET_ID_COLUMN}`)"
+                    );
+                }
             }
             JobTarget::Item => {
-                let target_id = row
-                    .try_get_by::<String, _>(TARGET_ID_COLUMN)
-                    .context("missing or invalid item target_id")?;
-                Ok(JobTargetId::Item(target_id))
-            }
-        }
-    }
+                if target.item_id.is_none() {
+                    target.item_id = row
+                        .try_get_by::<Option<String>, _>(TARGET_ID_COLUMN)
+                        .ok()
+                        .flatten();
+                }
 
-    fn read_target_id_from_job_row(self, job: &jobs_entity::Model) -> anyhow::Result<JobTargetId> {
-        match self {
-            JobTarget::File => job
-                .file_id
-                .map(JobTargetId::File)
-                .with_context(|| format!("job {} missing file_id", job.id)),
-            JobTarget::Asset => {
-                let raw = job
-                    .asset_id
-                    .as_deref()
-                    .with_context(|| format!("job {} missing asset_id", job.id))?;
-                let parsed = raw
-                    .parse::<i64>()
-                    .with_context(|| format!("job {} has non-integer asset_id '{raw}'", job.id))?;
-                Ok(JobTargetId::Asset(parsed))
-            }
-            JobTarget::Root => job
-                .root_id
-                .clone()
-                .map(JobTargetId::Root)
-                .with_context(|| format!("job {} missing root_id", job.id)),
-            JobTarget::Item => job
-                .item_id
-                .clone()
-                .map(JobTargetId::Item)
-                .with_context(|| format!("job {} missing item_id", job.id)),
-        }
-    }
-
-    fn apply_target_id(
-        self,
-        model: &mut jobs_entity::ActiveModel,
-        target_id: &JobTargetId,
-    ) -> anyhow::Result<()> {
-        model.file_id = Set(None);
-        model.asset_id = Set(None);
-        model.root_id = Set(None);
-        model.item_id = Set(None);
-
-        match (self, target_id) {
-            (JobTarget::File, JobTargetId::File(id)) => {
-                model.file_id = Set(Some(*id));
-            }
-            (JobTarget::Asset, JobTargetId::Asset(id)) => {
-                model.asset_id = Set(Some(id.to_string()));
-            }
-            (JobTarget::Root, JobTargetId::Root(id)) => {
-                model.root_id = Set(Some(id.clone()));
-            }
-            (JobTarget::Item, JobTargetId::Item(id)) => {
-                model.item_id = Set(Some(id.clone()));
-            }
-            _ => {
-                anyhow::bail!(
-                    "job target {:?} does not match target id {:?}",
-                    self,
-                    target_id
-                );
+                if target.item_id.is_none() {
+                    anyhow::bail!(
+                        "missing item target id (expected `{ITEM_ID_COLUMN}` or `{TARGET_ID_COLUMN}`)"
+                    );
+                }
             }
         }
 
         Ok(())
     }
-}
 
-#[derive(Clone, Debug)]
-pub enum JobTargetId {
-    File(i64),
-    Asset(i64),
-    Root(String),
-    Item(String),
-}
+    fn build_default_subject_key(
+        self,
+        job_kind: jobs_entity::JobKind,
+        target: &PendingTargetRecord,
+    ) -> anyhow::Result<String> {
+        let segment = job_kind.subject_segment();
 
-impl JobTargetId {
-    fn as_subject_prefix(&self) -> &'static str {
         match self {
-            JobTargetId::File(_) => "file",
-            JobTargetId::Asset(_) => "asset",
-            JobTargetId::Root(_) => "root",
-            JobTargetId::Item(_) => "item",
+            JobTarget::File => Ok(format!(
+                "file:{segment}:{}",
+                target
+                    .file_id
+                    .with_context(|| "missing file_id while building subject key")?
+            )),
+            JobTarget::Asset => Ok(format!(
+                "asset:{segment}:{}",
+                target
+                    .asset_id
+                    .as_deref()
+                    .with_context(|| "missing asset_id while building subject key")?
+            )),
+            JobTarget::Item => Ok(format!(
+                "item:{segment}:{}",
+                target
+                    .item_id
+                    .as_deref()
+                    .with_context(|| "missing item_id while building subject key")?
+            )),
+            JobTarget::Root => {
+                let root_id = target
+                    .root_id
+                    .as_deref()
+                    .with_context(|| "missing root_id while building subject key")?;
+                if let Some(season_id) = target.season_id.as_deref() {
+                    Ok(format!("root_season:{segment}:{root_id}:{season_id}"))
+                } else {
+                    Ok(format!("root:{segment}:{root_id}"))
+                }
+            }
         }
-    }
-
-    fn as_subject_id(&self) -> String {
-        match self {
-            JobTargetId::File(id) => id.to_string(),
-            JobTargetId::Asset(id) => id.to_string(),
-            JobTargetId::Root(id) => id.clone(),
-            JobTargetId::Item(id) => id.clone(),
-        }
-    }
-
-    fn as_log_value(&self) -> String {
-        self.as_subject_id()
     }
 }
 
@@ -201,34 +181,21 @@ pub trait JobHandler: Send + Sync {
         JobExecutionPolicy::default()
     }
 
-    fn subject_key(&self, target: &JobTargetId) -> String {
-        format!(
-            "{}:{}:{}",
-            target.as_subject_prefix(),
-            self.job_kind().subject_segment(),
-            target.as_subject_id()
-        )
-    }
-
-    async fn cleanup(
-        &self,
-        _pool: &DatabaseConnection,
-        _target_id: &JobTargetId,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     async fn execute(
         &self,
         pool: &DatabaseConnection,
-        target_id: &JobTargetId,
+        job: &jobs_entity::Model,
     ) -> anyhow::Result<()>;
 }
 
 struct PendingTargetRecord {
-    target_id: JobTargetId,
-    version_key: Option<i64>,
     subject_key: String,
+    version_key: Option<i64>,
+    file_id: Option<i64>,
+    asset_id: Option<String>,
+    root_id: Option<String>,
+    season_id: Option<String>,
+    item_id: Option<String>,
 }
 
 pub struct JobManager {
@@ -269,7 +236,7 @@ impl JobManager {
             }
 
             for job in due_jobs {
-                self.run_job_for_entry(target_kind, job).await?;
+                self.run_job_for_entry(job).await?;
             }
         }
     }
@@ -302,22 +269,55 @@ impl JobManager {
         let mut seen_subject_keys = HashSet::new();
         let mut targets = Vec::with_capacity(rows.len());
         for row in rows {
-            let target_id = target_kind.read_target_id_from_query_row(&row)?;
             let version_key = row
                 .try_get_by::<Option<i64>, _>(VERSION_KEY_COLUMN)
                 .ok()
                 .flatten();
-            let subject_key = self.handler.subject_key(&target_id);
+            let file_id = row
+                .try_get_by::<Option<i64>, _>(FILE_ID_COLUMN)
+                .ok()
+                .flatten();
+            let asset_id = read_optional_string_or_i64(&row, ASSET_ID_COLUMN)?;
+            let root_id = row
+                .try_get_by::<Option<String>, _>(ROOT_ID_COLUMN)
+                .ok()
+                .flatten();
+            let season_id = row
+                .try_get_by::<Option<String>, _>(SEASON_ID_COLUMN)
+                .ok()
+                .flatten();
+            let item_id = row
+                .try_get_by::<Option<String>, _>(ITEM_ID_COLUMN)
+                .ok()
+                .flatten();
+
+            let mut target = PendingTargetRecord {
+                subject_key: String::new(),
+                version_key,
+                file_id,
+                asset_id,
+                root_id,
+                season_id,
+                item_id,
+            };
+
+            target_kind.populate_required_target_fields(&row, &mut target)?;
+
+            let subject_key = row
+                .try_get_by::<Option<String>, _>(SUBJECT_KEY_COLUMN)
+                .ok()
+                .flatten()
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    target_kind.build_default_subject_key(self.handler.job_kind(), &target)
+                })?;
 
             if !seen_subject_keys.insert(subject_key.clone()) {
                 continue;
             }
 
-            targets.push(PendingTargetRecord {
-                target_id,
-                version_key,
-                subject_key,
-            });
+            target.subject_key = subject_key;
+            targets.push(target);
         }
 
         if targets.is_empty() {
@@ -359,7 +359,11 @@ impl JobManager {
 
                 let mut updated: jobs_entity::ActiveModel = existing.clone().into();
                 updated.version_key = Set(target.version_key);
-                target_kind.apply_target_id(&mut updated, &target.target_id)?;
+                updated.file_id = Set(target.file_id);
+                updated.asset_id = Set(target.asset_id.clone());
+                updated.root_id = Set(target.root_id.clone());
+                updated.season_id = Set(target.season_id.clone());
+                updated.item_id = Set(target.item_id.clone());
                 updated.run_after = Set(Some(now));
                 updated.last_error_message = Set(None);
                 updated.attempt_count = Set(0);
@@ -369,10 +373,15 @@ impl JobManager {
                 continue;
             }
 
-            let mut job = jobs_entity::ActiveModel {
+            let job = jobs_entity::ActiveModel {
                 job_kind: Set(self.handler.job_kind()),
                 subject_key: Set(target.subject_key),
                 version_key: Set(target.version_key),
+                file_id: Set(target.file_id),
+                asset_id: Set(target.asset_id),
+                root_id: Set(target.root_id),
+                season_id: Set(target.season_id),
+                item_id: Set(target.item_id),
                 run_after: Set(Some(now)),
                 last_run_at: Set(0),
                 last_error_message: Set(None),
@@ -381,7 +390,6 @@ impl JobManager {
                 updated_at: Set(now),
                 ..Default::default()
             };
-            target_kind.apply_target_id(&mut job, &target.target_id)?;
 
             jobs_entity::Entity::insert(job)
                 .on_conflict(
@@ -410,41 +418,24 @@ impl JobManager {
             .await?)
     }
 
-    async fn run_job_for_entry(
-        &self,
-        target_kind: JobTarget,
-        job: jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+    async fn run_job_for_entry(&self, job: jobs_entity::Model) -> anyhow::Result<()> {
         let job_kind = self.handler.job_kind();
         let policy = self.handler.execution_policy();
         let now = chrono::Utc::now().timestamp();
-        let target_id = target_kind.read_target_id_from_job_row(&job)?;
-
-        if job.last_run_at > 0 {
-            self.handler
-                .cleanup(&self.database, &target_id)
-                .await
-                .with_context(|| {
-                    format!(
-                        "cleanup failed for job kind={:?} target={}",
-                        job_kind,
-                        target_id.as_log_value()
-                    )
-                })?;
-        }
+        let subject_key = job.subject_key.clone();
 
         let start = Instant::now();
         tracing::info!(
             job_kind = ?job_kind,
-            target = target_id.as_log_value(),
+            subject_key = %subject_key,
             "executing job"
         );
 
-        match self.handler.execute(&self.database, &target_id).await {
+        match self.handler.execute(&self.database, &job).await {
             Ok(()) => {
                 tracing::debug!(
                     job_kind = ?job_kind,
-                    target = target_id.as_log_value(),
+                    subject_key = %subject_key,
                     elapsed = ?start.elapsed(),
                     "finished job"
                 );
@@ -458,7 +449,7 @@ impl JobManager {
 
                 tracing::warn!(
                     job_kind = ?job_kind,
-                    target = target_id.as_log_value(),
+                    subject_key = %subject_key,
                     attempt_count,
                     run_after,
                     error = %error,
@@ -493,6 +484,21 @@ impl JobManager {
 
         Ok(())
     }
+}
+
+fn read_optional_string_or_i64(
+    row: &sea_orm::QueryResult,
+    column_name: &str,
+) -> anyhow::Result<Option<String>> {
+    if let Ok(value) = row.try_get_by::<Option<String>, _>(column_name) {
+        return Ok(value);
+    }
+
+    if let Ok(value) = row.try_get_by::<Option<i64>, _>(column_name) {
+        return Ok(value.map(|value| value.to_string()));
+    }
+
+    Ok(None)
 }
 
 struct JobOutcome {

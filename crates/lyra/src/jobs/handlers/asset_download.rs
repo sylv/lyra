@@ -1,7 +1,8 @@
 use crate::{
     assets::download_asset_to_local,
     entities::{assets, jobs as jobs_entity},
-    jobs::{JobHandler, JobTarget, JobTargetId, TARGET_ID_COLUMN, handlers::shared},
+    jobs::handlers::shared,
+    jobs::{ASSET_ID_COLUMN, JobHandler, JobTarget},
 };
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
@@ -20,7 +21,7 @@ impl JobHandler for AssetDownloadJob {
     fn targets(&self) -> (JobTarget, SelectStatement) {
         let mut query = assets::Entity::find()
             .select_only()
-            .column_as(assets::Column::Id, TARGET_ID_COLUMN)
+            .column_as(assets::Column::Id, ASSET_ID_COLUMN)
             .filter(assets::Column::SourceUrl.is_not_null())
             .filter(assets::Column::HashSha256.is_null())
             .order_by_asc(assets::Column::Id);
@@ -31,9 +32,9 @@ impl JobHandler for AssetDownloadJob {
     async fn execute(
         &self,
         pool: &DatabaseConnection,
-        target_id: &JobTargetId,
+        job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let asset_id = shared::expect_asset_target(target_id)?;
+        let asset_id = shared::expect_job_asset_id(job)?;
         let Some(asset) = assets::Entity::find_by_id(asset_id).one(pool).await? else {
             return Ok(());
         };

@@ -21,6 +21,9 @@ pub struct Model {
     pub kind: RootKind,
     #[sea_orm(column_type = "Text")]
     pub name: String,
+    #[graphql(skip)]
+    #[sea_orm(column_type = "Blob", nullable)]
+    pub match_candidates_json: Option<Vec<u8>>,
     pub last_added_at: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -42,10 +45,6 @@ pub enum Relation {
     Items,
     #[sea_orm(has_many = "super::root_metadata::Entity")]
     RootMetadata,
-    #[sea_orm(has_many = "super::root_node_matches::Entity")]
-    RootNodeMatches,
-    #[sea_orm(has_many = "super::item_node_matches::Entity")]
-    ItemNodeMatches,
 }
 
 impl Related<super::libraries::Entity> for Entity {
@@ -69,18 +68,6 @@ impl Related<super::items::Entity> for Entity {
 impl Related<super::root_metadata::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::RootMetadata.def()
-    }
-}
-
-impl Related<super::root_node_matches::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::RootNodeMatches.def()
-    }
-}
-
-impl Related<super::item_node_matches::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::ItemNodeMatches.def()
     }
 }
 

@@ -1,16 +1,18 @@
 use crate::{
     assets as assets_api,
     entities::{
+        assets as assets_entity,
         file_assets::{self, FileAssetRole},
         files, jobs as jobs_entity,
     },
-    jobs::{JobHandler, JobTarget, JobTargetId, handlers::shared},
+    jobs::handlers::shared,
+    jobs::{JobHandler, JobTarget},
 };
 use lyra_ffprobe::paths::get_ffmpeg_path;
 use lyra_thumbnail::{ThumbnailOptions, generate_thumbnail};
 use sea_orm::{
     ActiveValue::Set,
-    DatabaseConnection, EntityTrait, TransactionTrait,
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
     sea_query::{Expr, Query, SelectStatement},
 };
 use std::path::PathBuf;
@@ -25,6 +27,8 @@ impl JobHandler for FileThumbnailJob {
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
+        // todo: only run for items that have no remote metadata attached (or that are missing a remote thumbnail?)
+        // we are just wasting time generating thumbnails if remote metadata is gonna give it to us for free
         let mut query = shared::base_file_targets_query();
         query.and_where(
             Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
@@ -44,9 +48,9 @@ impl JobHandler for FileThumbnailJob {
     async fn execute(
         &self,
         pool: &DatabaseConnection,
-        target_id: &JobTargetId,
+        job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let file_id = shared::expect_file_target(target_id)?;
+        let file_id = shared::expect_job_file_id(job)?;
         let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
             return Ok(());
         };
@@ -57,7 +61,30 @@ impl JobHandler for FileThumbnailJob {
         };
         let thumbnail = generate_thumbnail(&ctx.file_path, &thumbnail_options).await?;
 
+        // todo: we could skip this with a smarter query
         let mut tx = pool.begin().await?;
+        let stale_asset_ids = file_assets::Entity::find()
+            .filter(file_assets::Column::FileId.eq(ctx.file.id))
+            .filter(file_assets::Column::Role.eq(FileAssetRole::Thumbnail))
+            .all(&tx)
+            .await?
+            .into_iter()
+            .map(|row| row.asset_id)
+            .collect::<Vec<_>>();
+
+        file_assets::Entity::delete_many()
+            .filter(file_assets::Column::FileId.eq(ctx.file.id))
+            .filter(file_assets::Column::Role.eq(FileAssetRole::Thumbnail))
+            .exec(&tx)
+            .await?;
+
+        if !stale_asset_ids.is_empty() {
+            assets_entity::Entity::delete_many()
+                .filter(assets_entity::Column::Id.is_in(stale_asset_ids))
+                .exec(&tx)
+                .await?;
+        }
+
         let asset = assets_api::create_local_asset_from_bytes(&tx, &thumbnail.image_bytes).await?;
 
         file_assets::Entity::insert(file_assets::ActiveModel {
@@ -77,14 +104,5 @@ impl JobHandler for FileThumbnailJob {
 
         tx.commit().await?;
         Ok(())
-    }
-
-    async fn cleanup(
-        &self,
-        pool: &DatabaseConnection,
-        target_id: &JobTargetId,
-    ) -> anyhow::Result<()> {
-        let file_id = shared::expect_file_target(target_id)?;
-        shared::cleanup_file_assets_for_role(pool, file_id, FileAssetRole::Thumbnail).await
     }
 }

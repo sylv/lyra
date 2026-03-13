@@ -19,6 +19,10 @@ pub enum JobKind {
     AssetGenerateThumbhash,
     #[sea_orm(num_value = 6)]
     RootGenerateIntroSegments,
+    #[sea_orm(num_value = 7)]
+    RootMatchMetadataRoot,
+    #[sea_orm(num_value = 8)]
+    RootMatchMetadataGroups,
 }
 
 impl JobKind {
@@ -31,6 +35,8 @@ impl JobKind {
             JobKind::AssetDownload => 4,
             JobKind::AssetGenerateThumbhash => 5,
             JobKind::RootGenerateIntroSegments => 6,
+            JobKind::RootMatchMetadataRoot => 7,
+            JobKind::RootMatchMetadataGroups => 8,
         }
     }
 
@@ -43,6 +49,8 @@ impl JobKind {
             JobKind::AssetDownload => "Asset Download",
             JobKind::AssetGenerateThumbhash => "Asset Thumbhash",
             JobKind::RootGenerateIntroSegments => "Intro Segments",
+            JobKind::RootMatchMetadataRoot => "Metadata Match Root",
+            JobKind::RootMatchMetadataGroups => "Metadata Match Groups",
         }
     }
 
@@ -55,6 +63,8 @@ impl JobKind {
             JobKind::AssetDownload => "download",
             JobKind::AssetGenerateThumbhash => "thumbhash",
             JobKind::RootGenerateIntroSegments => "intro_segments",
+            JobKind::RootMatchMetadataRoot => "metadata_match_root",
+            JobKind::RootMatchMetadataGroups => "metadata_match_groups",
         }
     }
 }
@@ -73,6 +83,8 @@ pub struct Model {
     pub asset_id: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub root_id: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub season_id: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub item_id: Option<String>,
     pub run_after: Option<i64>,

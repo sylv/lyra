@@ -4,9 +4,7 @@ use crate::{
         roots::{self, RootKind},
         seasons,
     },
-    jobs::{
-        JobHandler, JobTarget, JobTargetId, TARGET_ID_COLUMN, VERSION_KEY_COLUMN, handlers::shared,
-    },
+    jobs::{JobHandler, JobTarget, ROOT_ID_COLUMN, VERSION_KEY_COLUMN, handlers::shared},
     json_encoding,
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
 };
@@ -63,7 +61,7 @@ impl JobHandler for RootIntroSegmentsJob {
             .filter(files::Column::UnavailableAt.is_null())
             .filter(files::Column::SegmentsJson.eq(Vec::<u8>::new()))
             .select_only()
-            .column_as(items::Column::RootId, TARGET_ID_COLUMN)
+            .column_as(items::Column::RootId, ROOT_ID_COLUMN)
             .column_as(roots::Column::LastAddedAt, VERSION_KEY_COLUMN)
             .distinct()
             .order_by_asc(items::Column::RootId);
@@ -73,9 +71,9 @@ impl JobHandler for RootIntroSegmentsJob {
     async fn execute(
         &self,
         pool: &DatabaseConnection,
-        target_id: &JobTargetId,
+        job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let root_id = shared::expect_root_target(target_id)?;
+        let root_id = shared::expect_job_root_id(job)?;
 
         let mut root_files = load_root_files(pool, root_id).await?;
         if root_files.len() < INTRO_DETECTION_BATCH_MIN_FILES {
