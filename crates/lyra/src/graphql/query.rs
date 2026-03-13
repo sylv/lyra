@@ -448,6 +448,19 @@ impl Query {
         .await?
     }
 
+    async fn library(
+        &self,
+        ctx: &Context<'_>,
+        library_id: i64,
+    ) -> Result<libraries::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        libraries::Entity::find_by_id(library_id)
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("Library not found".to_string()))
+    }
+
     async fn libraries(
         &self,
         ctx: &Context<'_>,

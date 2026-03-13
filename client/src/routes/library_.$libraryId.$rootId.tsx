@@ -8,6 +8,7 @@ import { useSuspenseQuery } from "@apollo/client/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { graphql } from "../@generated/gql";
 import { client } from "../client";
+import { useTitle } from "../hooks/use-title";
 
 const Query = graphql(
 	`
@@ -72,6 +73,7 @@ function RootRoute() {
 
 	const dynamicAsset = root.properties.backgroundImage || root.properties.posterImage;
 	useDynamicBackground(dynamicAsset);
+	useTitle(root.name)
 
 	const header = (
 		<div className="flex gap-6 container mx-auto">

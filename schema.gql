@@ -190,6 +190,7 @@ type Query {
 	Used during library setup to pick the library path
 	"""
 	listFiles(path: String!): [String!]!
+	library(libraryId: Int!): Library!
 	libraries: [Library!]!
 	activities: [Activity!]!
 }

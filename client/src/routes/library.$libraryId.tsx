@@ -6,10 +6,11 @@ import { Fragment, useState } from "react";
 import { graphql } from "../@generated/gql";
 import { OrderBy, type RootNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
+import { useTitle } from "../hooks/use-title";
 
 const Query = graphql(
 	`
-	query GetLibraryMedia($filter: RootNodeFilter!, $after: String) {
+	query GetLibraryMedia($libraryId: Int!, $filter: RootNodeFilter!, $after: String) {
 		rootList(filter: $filter, first: 45, after: $after) {
 			edges {
 				node {
@@ -22,6 +23,10 @@ const Query = graphql(
 				hasNextPage
 			}
 		}
+		library(libraryId: $libraryId) {
+			id
+			name
+		}
 	}
 `,
 );
@@ -32,6 +37,7 @@ export const Route = createFileRoute("/library/$libraryId")({
 		client.query({
 			query: Query,
 			variables: {
+				libraryId: Number(params.libraryId),
 				filter: {
 					libraryId: Number(params.libraryId),
 					orderBy: OrderBy.Alphabetical,
@@ -43,14 +49,14 @@ export const Route = createFileRoute("/library/$libraryId")({
 
 function LibraryRoute() {
 	const { libraryId: rawLibraryId } = Route.useParams();
-	const parsedLibraryId = Number(rawLibraryId);
-	const libraryId = Number.isNaN(parsedLibraryId) ? null : parsedLibraryId;
+	const libraryId = +rawLibraryId;
 	const [filter, setFilter] = useState<RootNodeFilter>({
 		orderBy: OrderBy.Alphabetical,
 	});
 
 	const { data, loading, fetchMore } = useQuery(Query, {
 		variables: {
+			libraryId: libraryId,
 			filter: {
 				libraryId,
 				...filter,
@@ -65,6 +71,8 @@ function LibraryRoute() {
 			: (data?.rootList?.edges
 					.map((edge) => edge?.node)
 					.filter((node): node is NonNullable<typeof node> => node != null) ?? []);
+
+	useTitle(data?.library.name)
 
 	return (
 		<Fragment>

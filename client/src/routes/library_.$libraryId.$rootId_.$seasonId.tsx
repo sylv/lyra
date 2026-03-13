@@ -11,6 +11,7 @@ import { useState } from "react";
 import { graphql } from "../@generated/gql";
 import { OrderBy, type ItemNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
+import { useTitle } from "../hooks/use-title";
 
 const RootAndSeasonQuery = graphql(
 	`
@@ -132,6 +133,7 @@ function SeasonRoute() {
 
 	const dynamicAsset = root.properties.backgroundImage || root.properties.posterImage;
 	useDynamicBackground(dynamicAsset);
+	useTitle(`${root.name}: ${seasonTitle}`)
 
 	return (
 		<div className="pt-6">
