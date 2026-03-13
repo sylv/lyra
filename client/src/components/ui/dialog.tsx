@@ -1,26 +1,30 @@
-import type * as React from "react";
+import type { ComponentProps, FC } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+type DialogContentProps = ComponentProps<typeof DialogPrimitive.Content> & {
+	portalContainer?: HTMLElement | null;
+};
+
+export const Dialog: FC<ComponentProps<typeof DialogPrimitive.Root>> = ({ ...props }) => {
 	return <DialogPrimitive.Root data-slot="dialog" {...props} />;
-}
+};
 
-function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
+export const DialogTrigger: FC<ComponentProps<typeof DialogPrimitive.Trigger>> = ({ ...props }) => {
 	return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
-}
+};
 
-function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
+export const DialogPortal: FC<ComponentProps<typeof DialogPrimitive.Portal>> = ({ ...props }) => {
 	return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
-}
+};
 
-function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
+export const DialogClose: FC<ComponentProps<typeof DialogPrimitive.Close>> = ({ ...props }) => {
 	return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
-}
+};
 
-function DialogOverlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+export const DialogOverlay: FC<ComponentProps<typeof DialogPrimitive.Overlay>> = ({ className, ...props }) => {
 	return (
 		<DialogPrimitive.Overlay
 			data-slot="dialog-overlay"
@@ -31,16 +35,14 @@ function DialogOverlay({ className, ...props }: React.ComponentProps<typeof Dial
 			{...props}
 		/>
 	);
-}
+};
 
-function DialogContent({
+export const DialogContent: FC<DialogContentProps> = ({
 	className,
 	portalContainer,
 	children,
 	...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & {
-	portalContainer?: HTMLElement | null;
-}) {
+}) => {
 	return (
 		<DialogPortal data-slot="dialog-portal" container={portalContainer}>
 			<DialogOverlay />
@@ -60,9 +62,9 @@ function DialogContent({
 			</DialogPrimitive.Content>
 		</DialogPortal>
 	);
-}
+};
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+export const DialogHeader: FC<ComponentProps<"div">> = ({ className, ...props }) => {
 	return (
 		<div
 			data-slot="dialog-header"
@@ -70,9 +72,9 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 			{...props}
 		/>
 	);
-}
+};
 
-function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
+export const DialogFooter: FC<ComponentProps<"div">> = ({ className, ...props }) => {
 	return (
 		<div
 			data-slot="dialog-footer"
@@ -80,9 +82,9 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
 			{...props}
 		/>
 	);
-}
+};
 
-function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
+export const DialogTitle: FC<ComponentProps<typeof DialogPrimitive.Title>> = ({ className, ...props }) => {
 	return (
 		<DialogPrimitive.Title
 			data-slot="dialog-title"
@@ -90,9 +92,9 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
 			{...props}
 		/>
 	);
-}
+};
 
-function DialogDescription({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Description>) {
+export const DialogDescription: FC<ComponentProps<typeof DialogPrimitive.Description>> = ({ className, ...props }) => {
 	return (
 		<DialogPrimitive.Description
 			data-slot="dialog-description"
@@ -100,17 +102,4 @@ function DialogDescription({ className, ...props }: React.ComponentProps<typeof 
 			{...props}
 		/>
 	);
-}
-
-export {
-	Dialog,
-	DialogClose,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogOverlay,
-	DialogPortal,
-	DialogTitle,
-	DialogTrigger,
 };
