@@ -110,7 +110,6 @@ type ItemNode {
 	episodeNumber: Int
 	order: Int!
 	name: String!
-	primaryFileId: Int
 	lastAddedAt: Int!
 	createdAt: Int!
 	updatedAt: Int!
