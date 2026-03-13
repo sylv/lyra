@@ -11,7 +11,7 @@ import { useStore } from "zustand/react";
 import { graphql } from "../../@generated/gql";
 import { getPathForItemData } from "../../lib/getPathForMedia";
 import { cn } from "../../lib/utils";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { PlayerButton } from "./components/player-button";
 import { PlayerControls } from "./components/player-controls";
 import { SkipIntroButton } from "./components/skip-intro-button";
@@ -181,7 +181,6 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	const [audioTrackOptions, setAudioTrackOptions] = useState<Array<{ id: number; label: string }>>([]);
 	const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<number | null>(null);
 	const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(false);
-	const [isShortcutsDialogOpen, setIsShortcutsDialogOpen] = useState<boolean>(false);
 	const [resumePromptPosition, setResumePromptPosition] = useState<number | null>(null);
 
 	const videoRef = useRef<HTMLVideoElement>(null);
@@ -192,7 +191,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	const resumePromptDecisionRef = useRef<"confirm" | "cancel" | null>(null);
 	const pendingResumePositionRef = useRef<number | null>(null);
 	const pendingStartLoadRef = useRef<((startPosition: number) => void) | null>(null);
-	const isControlsPinned = isSettingsMenuOpen || isShortcutsDialogOpen;
+	const isControlsPinned = isSettingsMenuOpen;
 	const {
 		data,
 		previousData,
@@ -265,7 +264,6 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		setAudioTrackOptions([]);
 		setSelectedAudioTrackId(null);
 		setIsSettingsMenuOpen(false);
-		setIsShortcutsDialogOpen(false);
 		setResumePromptPosition(null);
 		resumePromptDecisionRef.current = null;
 		pendingResumePositionRef.current = null;
@@ -668,7 +666,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (isShortcutsDialogOpen || isSettingsMenuOpen) {
+			if (isSettingsMenuOpen) {
 				return;
 			}
 
@@ -726,7 +724,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 			document.removeEventListener("keydown", handleKeyDown);
 			document.removeEventListener("fullscreenchange", handleFullscreenChange);
 		};
-	}, [duration, onToggleMute, onTogglePlaying, isShortcutsDialogOpen, isSettingsMenuOpen]);
+	}, [duration, onToggleMute, onTogglePlaying, isSettingsMenuOpen]);
 
 	const onAudioTrackChange = (trackId: number) => {
 		const hls = hlsRef.current;
@@ -941,57 +939,11 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 					audioTrackOptions={audioTrackOptions}
 					selectedAudioTrackId={selectedAudioTrackId}
 					onAudioTrackChange={onAudioTrackChange}
-					onOpenShortcuts={() => setIsShortcutsDialogOpen(true)}
 					isSettingsMenuOpen={isSettingsMenuOpen}
 					onSettingsMenuOpenChange={setIsSettingsMenuOpen}
 					dropdownPortalContainer={containerRef.current}
 				/>
 			</div>
-
-			<Dialog open={isShortcutsDialogOpen} onOpenChange={setIsShortcutsDialogOpen}>
-				<DialogContent
-					portalContainer={containerRef.current}
-					className="max-w-md"
-					onClick={(event) => {
-						event.stopPropagation();
-					}}
-				>
-					<DialogHeader>
-						<DialogTitle>Player shortcuts</DialogTitle>
-						<DialogDescription>Keyboard controls available in the player.</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-3 text-sm">
-						<div className="flex items-center justify-between gap-3">
-							<span>Play / pause</span>
-							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Space</kbd>
-						</div>
-						<div className="flex items-center justify-between gap-3">
-							<span>Skip back</span>
-							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Left Arrow (-10s)</kbd>
-						</div>
-						<div className="flex items-center justify-between gap-3">
-							<span>Skip forward</span>
-							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Right Arrow (+30s)</kbd>
-						</div>
-						<div className="flex items-center justify-between gap-3">
-							<span>Toggle mute</span>
-							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">M</kbd>
-						</div>
-						<div className="flex items-center justify-between gap-3">
-							<span>Toggle fullscreen</span>
-							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">F</kbd>
-						</div>
-						<div className="flex items-center justify-between gap-3">
-							<span>Exit fullscreen</span>
-							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">Esc</kbd>
-						</div>
-						<div className="flex items-center justify-between gap-3">
-							<span>Seek to timeline position</span>
-							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">0-9</kbd>
-						</div>
-					</div>
-				</DialogContent>
-			</Dialog>
 
 			<Dialog
 				open={resumePromptPosition != null}

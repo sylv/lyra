@@ -17,7 +17,6 @@ import {
 	DropdownMenuItem,
 	DropdownMenuRadioGroup,
 	DropdownMenuRadioItem,
-	DropdownMenuSeparator,
 	DropdownMenuSub,
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
@@ -67,7 +66,6 @@ interface PlayerControlsProps {
 	audioTrackOptions: PlayerAudioTrackOption[];
 	selectedAudioTrackId: number | null;
 	onAudioTrackChange: (trackId: number) => void;
-	onOpenShortcuts: () => void;
 	isSettingsMenuOpen: boolean;
 	onSettingsMenuOpenChange: (open: boolean) => void;
 	dropdownPortalContainer: HTMLElement | null;
@@ -95,7 +93,6 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 	audioTrackOptions,
 	selectedAudioTrackId,
 	onAudioTrackChange,
-	onOpenShortcuts,
 	isSettingsMenuOpen,
 	onSettingsMenuOpenChange,
 	dropdownPortalContainer,
@@ -225,10 +222,6 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 									)}
 								</DropdownMenuSubContent>
 							</DropdownMenuSub>
-							<DropdownMenuSeparator className="bg-zinc-700/80" />
-							<DropdownMenuItem className="py-2.5 focus:bg-zinc-800" onSelect={onOpenShortcuts}>
-								Shortcuts
-							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
 					<PaddedPlayerButton
