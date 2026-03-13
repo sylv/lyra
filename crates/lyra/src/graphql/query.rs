@@ -181,6 +181,10 @@ impl Query {
                     let watched_root_ids: Vec<String> = items::Entity::find()
                         .join(JoinType::InnerJoin, items::Relation::WatchProgress.def())
                         .filter(watch_progress::Column::UserId.eq(user.id.clone()))
+                        .filter(
+                            watch_progress::Column::ProgressPercent
+                                .gt(watch_progress::completed_progress_threshold()),
+                        )
                         .select_only()
                         .column(items::Column::RootId)
                         .distinct()
@@ -301,6 +305,10 @@ impl Query {
                     let user = auth.get_user_or_err()?;
                     let watched_item_ids: Vec<String> = watch_progress::Entity::find()
                         .filter(watch_progress::Column::UserId.eq(user.id.clone()))
+                        .filter(
+                            watch_progress::Column::ProgressPercent
+                                .gt(watch_progress::completed_progress_threshold()),
+                        )
                         .select_only()
                         .column(watch_progress::Column::ItemId)
                         .into_tuple()

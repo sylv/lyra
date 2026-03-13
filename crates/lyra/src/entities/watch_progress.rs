@@ -18,11 +18,6 @@ pub fn is_completed_progress(progress_percent: f32) -> bool {
     normalize_progress_percent(progress_percent) > completed_progress_threshold()
 }
 
-pub fn is_in_progress(progress_percent: f32) -> bool {
-    let normalized = normalize_progress_percent(progress_percent);
-    normalized >= minimum_progress_threshold() && normalized <= completed_progress_threshold()
-}
-
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, SimpleObject)]
 #[sea_orm(table_name = "watch_progress")]
 #[graphql(name = "WatchProgress", complex)]

@@ -80,7 +80,7 @@ function RootRoute() {
 		<div className="flex gap-6 container mx-auto">
 			<PlayWrapper itemId={root.nextItem?.id} path={rootPath} watchProgress={root.nextItem?.watchProgress}>
 				<Image type={ImageType.Poster} asset={root.properties.posterImage} alt={root.name} className="h-96" />
-				<UnplayedItemsTab count={root.unplayedItems} />
+				<UnplayedItemsTab>{root.unplayedItems}</UnplayedItemsTab>
 			</PlayWrapper>
 			<div className="flex flex-col gap-2 justify-between">
 				<div className="flex flex-col gap-2 mt-3">

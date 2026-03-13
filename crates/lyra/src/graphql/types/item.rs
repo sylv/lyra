@@ -80,7 +80,7 @@ impl items::Model {
             .one(pool)
             .await?;
 
-        Ok(progress.filter(|progress| watch_progress::is_in_progress(progress.progress_percent)))
+        Ok(progress)
     }
 
     pub async fn file(&self, ctx: &Context<'_>) -> Result<Option<files::Model>, sea_orm::DbErr> {

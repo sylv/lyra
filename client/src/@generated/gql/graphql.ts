@@ -140,7 +140,6 @@ export type ItemNode = {
   order: Scalars['Int']['output'];
   parent: Maybe<RootNode>;
   previousItem: Maybe<ItemNode>;
-  primaryFileId: Maybe<Scalars['Int']['output']>;
   properties: ItemNodeProperties;
   rootId: Scalars['String']['output'];
   seasonId: Maybe<Scalars['String']['output']>;

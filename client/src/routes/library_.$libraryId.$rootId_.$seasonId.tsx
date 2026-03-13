@@ -142,7 +142,7 @@ function SeasonRoute() {
 				<div className="shrink-0">
 					<PlayWrapper itemId={season.nextItem?.id} path={seasonPath} watchProgress={season.nextItem?.watchProgress}>
 						<Image type={ImageType.Poster} asset={seasonImage} alt={seasonTitle} className="h-96" />
-						<UnplayedItemsTab count={season.unplayedItems} />
+						<UnplayedItemsTab>{season.unplayedItems}</UnplayedItemsTab>
 					</PlayWrapper>
 				</div>
 				<div className="flex flex-col gap-2 justify-between w-full">

@@ -1,8 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FileWarningIcon, PlayIcon } from "lucide-react";
+import { CheckCheckIcon, CheckIcon, FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { openPlayerMedia } from "./player/player-state";
+import { UnplayedItemsTab } from "./unplayed-items-tab";
 
 interface PlayWrapperProps {
 	itemId?: string | null;
@@ -17,12 +18,6 @@ interface PlayWrapperProps {
 
 export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watchProgress }) => {
 	const navigate = useNavigate();
-	const showWatchProgress =
-		watchProgress &&
-		watchProgress.progressPercent > 0 &&
-		!watchProgress.completed
-			? watchProgress
-			: null;
 
 	return (
 		<div className="relative shrink-0 overflow-hidden group/play rounded-sm">
@@ -44,16 +39,21 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					<PlayIcon className="h-10 w-10 text-white" />
 				</button>
 			)}
-			{showWatchProgress && (
+			{watchProgress && !watchProgress.completed && (
 				<Fragment>
 					<div
 						className="z-10 absolute bottom-0 left-0 bg-white/80 h-1"
 						style={{
-							width: `${showWatchProgress.progressPercent * 100}%`,
+							width: `${watchProgress.progressPercent * 100}%`,
 						}}
 					/>
 					<div className="z-10 absolute bottom-0 left-0 right-0 bg-white/20 h-1" />
 				</Fragment>
+			)}
+			{watchProgress && watchProgress.completed && (
+				<UnplayedItemsTab>
+					<CheckCheckIcon className="size-4.5" />
+				</UnplayedItemsTab>
 			)}
 			{!itemId && (
 				<div className="absolute top-0 left-0 w-full h-full flex items-center justify-center gap-2 p-3 bg-black/60 select-none">

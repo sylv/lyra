@@ -52,7 +52,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => 
 		<div className="flex flex-col gap-2 overflow-hidden w-38">
 			<PlayWrapper itemId={season.nextItem?.id} path={path} watchProgress={season.nextItem?.watchProgress}>
 				<Image type={ImageType.Poster} asset={imageAsset} alt={season.name} className="w-full" />
-				<UnplayedItemsTab count={season.unplayedItems} />
+				<UnplayedItemsTab>{season.unplayedItems}</UnplayedItemsTab>
 			</PlayWrapper>
 			<Link to={path as never} className="block w-full truncate text-sm group">
 				<span className="group-hover:underline">{season.name || `Season ${season.seasonNumber}`}</span>
