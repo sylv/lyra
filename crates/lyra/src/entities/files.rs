@@ -18,6 +18,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub edition_name: Option<String>,
     #[graphql(skip)]
+    pub audio_fingerprint: Vec<u8>,
+    #[graphql(skip)]
     pub segments_json: Vec<u8>,
     #[graphql(skip)]
     pub keyframes_json: Vec<u8>,

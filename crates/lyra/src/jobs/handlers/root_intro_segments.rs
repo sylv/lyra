@@ -10,7 +10,8 @@ use crate::{
 };
 use anyhow::Context;
 use lyra_marker::{
-    INTRO_DETECTION_BATCH_MAX_FILES, INTRO_DETECTION_BATCH_MIN_FILES, detect_intros,
+    INTRO_DETECTION_BATCH_MAX_FILES, INTRO_DETECTION_BATCH_MIN_FILES, IntroDetectionInputFile,
+    detect_intros,
 };
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
@@ -28,6 +29,7 @@ pub struct RootIntroSegmentsJob;
 struct RootFile {
     file_id: i64,
     file_path: PathBuf,
+    audio_fingerprint: Vec<u8>,
     season_id: Option<String>,
     season_order: Option<i64>,
     item_order: i64,
@@ -43,6 +45,7 @@ struct RootFileQueryRow {
     season_id: Option<String>,
     season_order: Option<i64>,
     item_order: i64,
+    audio_fingerprint: Vec<u8>,
     segments_json: Vec<u8>,
 }
 
@@ -122,12 +125,21 @@ impl JobHandler for RootIntroSegmentsJob {
                 continue;
             }
 
-            let batch_paths = batch
+            let target_file_id_set = target_file_ids.iter().copied().collect::<HashSet<_>>();
+
+            let detection_inputs = batch
                 .iter()
-                .map(|file| file.file_path.clone())
+                .map(|file| IntroDetectionInputFile {
+                    path: file.file_path.clone(),
+                    fingerprint_cache: if file.audio_fingerprint.is_empty() {
+                        None
+                    } else {
+                        Some(file.audio_fingerprint.clone())
+                    },
+                })
                 .collect::<Vec<_>>();
 
-            let outcome = tokio::task::spawn_blocking(move || detect_intros(&batch_paths))
+            let outcome = tokio::task::spawn_blocking(move || detect_intros(&detection_inputs))
                 .await
                 .context("intro detection task panicked")?;
 
@@ -135,27 +147,44 @@ impl JobHandler for RootIntroSegmentsJob {
                 Ok(detections) => {
                     let detections_by_path = detections
                         .into_iter()
-                        .map(|detection| (detection.path, detection.intro))
+                        .map(|detection| (detection.path.clone(), detection))
                         .collect::<HashMap<_, _>>();
 
-                    for file_id in &target_file_ids {
-                        let Some(target_file) =
-                            root_files.iter().find(|file| file.file_id == *file_id)
-                        else {
+                    for batch_file in &batch {
+                        let Some(detection) = detections_by_path.get(&batch_file.file_path) else {
                             continue;
                         };
 
-                        let segments = detections_by_path
-                            .get(&target_file.file_path)
-                            .and_then(|maybe_intro| maybe_intro.as_ref().copied())
+                        if batch_file.audio_fingerprint != detection.fingerprint_cache {
+                            store_audio_fingerprint(
+                                pool,
+                                batch_file.file_id,
+                                &detection.fingerprint_cache,
+                            )
+                            .await?;
+                            if let Some(file) = root_files
+                                .iter_mut()
+                                .find(|file| file.file_id == batch_file.file_id)
+                            {
+                                file.audio_fingerprint = detection.fingerprint_cache.clone();
+                            }
+                        }
+
+                        if !target_file_id_set.contains(&batch_file.file_id) {
+                            continue;
+                        }
+
+                        let segments = detection
+                            .intro
                             .and_then(intro_segment_from_range)
                             .into_iter()
                             .collect::<Vec<_>>();
 
-                        store_segments(pool, *file_id, &segments).await?;
+                        store_segments(pool, batch_file.file_id, &segments).await?;
 
-                        if let Some(file) =
-                            root_files.iter_mut().find(|file| file.file_id == *file_id)
+                        if let Some(file) = root_files
+                            .iter_mut()
+                            .find(|file| file.file_id == batch_file.file_id)
                         {
                             file.has_intro_marker = segments
                                 .iter()
@@ -196,6 +225,7 @@ async fn load_root_files(
         .column_as(items::Column::SeasonId, "season_id")
         .column_as(seasons::Column::Order, "season_order")
         .column_as(items::Column::Order, "item_order")
+        .column_as(files::Column::AudioFingerprint, "audio_fingerprint")
         .column_as(files::Column::SegmentsJson, "segments_json")
         .order_by_asc(seasons::Column::Order)
         .order_by_asc(items::Column::Order)
@@ -225,6 +255,7 @@ async fn load_root_files(
         output.push(RootFile {
             file_id: row.file_id,
             file_path,
+            audio_fingerprint: row.audio_fingerprint,
             season_id: row.season_id,
             season_order: row.season_order,
             item_order: row.item_order,
@@ -326,6 +357,22 @@ async fn store_segments(
     files::Entity::update(files::ActiveModel {
         id: Set(file_id),
         segments_json: Set(payload),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn store_audio_fingerprint(
+    pool: &DatabaseConnection,
+    file_id: i64,
+    fingerprint: &[u8],
+) -> anyhow::Result<()> {
+    files::Entity::update(files::ActiveModel {
+        id: Set(file_id),
+        audio_fingerprint: Set(fingerprint.to_vec()),
         ..Default::default()
     })
     .exec(pool)

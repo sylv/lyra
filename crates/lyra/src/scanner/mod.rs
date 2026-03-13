@@ -153,6 +153,7 @@ async fn scan_file(
         library_id: Set(library.id),
         relative_path: Set(relative_path.clone()),
         size_bytes: Set(metadata.len() as i64),
+        audio_fingerprint: Set(Vec::new()),
         segments_json: Set(Vec::new()),
         keyframes_json: Set(Vec::new()),
         scanned_at: Set(Some(scan_start_time)),

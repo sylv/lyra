@@ -10,6 +10,7 @@ use tracing::{debug, info};
 
 pub const INTRO_DETECTION_BATCH_MIN_FILES: usize = 3;
 pub const INTRO_DETECTION_BATCH_MAX_FILES: usize = 20;
+pub const AUDIO_FINGERPRINT_VERSION: u32 = 1;
 
 const FINGERPRINT_SCAN_RATIO: f64 = 0.40;
 const FINGERPRINT_SAMPLE_RATE: u32 = 48_000;
@@ -17,6 +18,8 @@ const FINGERPRINT_CHANNELS: u32 = 2;
 const MIN_MATCH_DURATION_SECONDS: f32 = 8.0;
 const MAX_MATCH_DURATION_SECONDS: f32 = 180.0;
 const MERGE_SEGMENT_GAP_SECONDS: f32 = 2.0;
+const AUDIO_FINGERPRINT_CACHE_MAGIC: [u8; 4] = *b"LAFP";
+const AUDIO_FINGERPRINT_CACHE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IntroRange {
@@ -25,15 +28,23 @@ pub struct IntroRange {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct IntroDetectionInputFile {
+    pub path: PathBuf,
+    pub fingerprint_cache: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct FileIntroDetection {
     pub path: PathBuf,
     pub intro: Option<IntroRange>,
+    pub fingerprint_cache: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
 struct InputFingerprint {
     path: PathBuf,
     fingerprint: Vec<u32>,
+    fingerprint_cache: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -50,7 +61,9 @@ impl IntroSegmentCandidate {
     }
 }
 
-pub fn detect_intros(input_files: &[PathBuf]) -> anyhow::Result<Vec<FileIntroDetection>> {
+pub fn detect_intros(
+    input_files: &[IntroDetectionInputFile],
+) -> anyhow::Result<Vec<FileIntroDetection>> {
     if input_files.len() < INTRO_DETECTION_BATCH_MIN_FILES
         || input_files.len() > INTRO_DETECTION_BATCH_MAX_FILES
     {
@@ -73,21 +86,36 @@ pub fn detect_intros(input_files: &[PathBuf]) -> anyhow::Result<Vec<FileIntroDet
 fn detect_intros_with_tools(
     ffmpeg_path: &str,
     ffprobe_path: &str,
-    input_files: &[PathBuf],
+    input_files: &[IntroDetectionInputFile],
 ) -> anyhow::Result<Vec<FileIntroDetection>> {
     let config = Configuration::preset_test1()
         .with_id(50)
         .with_removed_silence(50);
 
     let mut fingerprints = Vec::with_capacity(input_files.len());
-    for (index, path) in input_files.iter().enumerate() {
-        info!(
-            file_index = index + 1,
-            file_total = input_files.len(),
-            path = %path.display(),
-            "extracting fingerprint"
-        );
-        let fingerprint = calc_fingerprint(ffmpeg_path, ffprobe_path, path, &config)?;
+    for (index, input_file) in input_files.iter().enumerate() {
+        let path = &input_file.path;
+        let fingerprint = if let Some(fingerprint) =
+            decode_fingerprint_cache(input_file.fingerprint_cache.as_deref())
+        {
+            debug!(
+                file_index = index + 1,
+                file_total = input_files.len(),
+                path = %path.display(),
+                fingerprint_length = fingerprint.len(),
+                "using cached fingerprint"
+            );
+            fingerprint
+        } else {
+            info!(
+                file_index = index + 1,
+                file_total = input_files.len(),
+                path = %path.display(),
+                "extracting fingerprint"
+            );
+            calc_fingerprint(ffmpeg_path, ffprobe_path, path, &config)?
+        };
+
         debug!(
             file_index = index + 1,
             fingerprint_length = fingerprint.len(),
@@ -95,6 +123,7 @@ fn detect_intros_with_tools(
         );
         fingerprints.push(InputFingerprint {
             path: path.clone(),
+            fingerprint_cache: encode_fingerprint_cache(AUDIO_FINGERPRINT_VERSION, &fingerprint),
             fingerprint,
         });
     }
@@ -184,6 +213,7 @@ fn detect_intros_with_tools(
         output.push(FileIntroDetection {
             path: file.path.clone(),
             intro,
+            fingerprint_cache: file.fingerprint_cache.clone(),
         });
     }
 
@@ -298,6 +328,60 @@ fn calc_fingerprint(
 
     printer.finish();
     Ok(printer.fingerprint().to_vec())
+}
+
+fn decode_fingerprint_cache(cache: Option<&[u8]>) -> Option<Vec<u32>> {
+    let cache = cache?;
+    if cache.is_empty() {
+        return None;
+    }
+
+    if cache.len() < 16 {
+        return None;
+    }
+    if cache[0..4] != AUDIO_FINGERPRINT_CACHE_MAGIC {
+        return None;
+    }
+
+    let schema_version = read_u32_le(cache, 4)?;
+    if schema_version != AUDIO_FINGERPRINT_CACHE_SCHEMA_VERSION {
+        return None;
+    }
+
+    let fingerprint_version = read_u32_le(cache, 8)?;
+    if fingerprint_version != AUDIO_FINGERPRINT_VERSION {
+        return None;
+    }
+
+    let value_count = read_u32_le(cache, 12)? as usize;
+    let payload = cache.get(16..)?;
+    if payload.len() != value_count.saturating_mul(4) {
+        return None;
+    }
+
+    let mut output = Vec::with_capacity(value_count);
+    for chunk in payload.chunks_exact(4) {
+        output.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    Some(output)
+}
+
+fn encode_fingerprint_cache(fingerprint_version: u32, fingerprint: &[u32]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(16 + fingerprint.len().saturating_mul(4));
+    output.extend_from_slice(&AUDIO_FINGERPRINT_CACHE_MAGIC);
+    output.extend_from_slice(&AUDIO_FINGERPRINT_CACHE_SCHEMA_VERSION.to_le_bytes());
+    output.extend_from_slice(&fingerprint_version.to_le_bytes());
+    output.extend_from_slice(&(fingerprint.len() as u32).to_le_bytes());
+    for value in fingerprint {
+        output.extend_from_slice(&value.to_le_bytes());
+    }
+    output
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+    let end = offset.checked_add(4)?;
+    let chunk = bytes.get(offset..end)?;
+    Some(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
 }
 
 fn merge_segments(mut segments: Vec<IntroSegmentCandidate>) -> Vec<IntroSegmentCandidate> {

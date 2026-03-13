@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use lyra_marker::detect_intros;
+use lyra_marker::{IntroDetectionInputFile, detect_intros};
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -23,7 +23,16 @@ fn main() -> anyhow::Result<()> {
     let mut input_files = collect_input_files(input_dir)?;
     input_files.sort();
 
-    let intros = detect_intros(&input_files)?;
+    let intros = detect_intros(
+        &input_files
+            .iter()
+            .cloned()
+            .map(|path| IntroDetectionInputFile {
+                path,
+                fingerprint_cache: None,
+            })
+            .collect::<Vec<_>>(),
+    )?;
     for detection in intros {
         println!("{}", detection.path.display());
         if let Some(intro) = detection.intro {

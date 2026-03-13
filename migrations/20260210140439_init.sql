@@ -71,6 +71,7 @@ CREATE TABLE files (
     height INTEGER,
     width INTEGER,
     edition_name TEXT,
+    audio_fingerprint BLOB NOT NULL,
     segments_json BLOB NOT NULL,
     keyframes_json BLOB NOT NULL,
     unavailable_at INTEGER,
