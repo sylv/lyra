@@ -269,8 +269,7 @@ type RootNode {
 	seasons: [SeasonNode!]!
 	files: [ItemNode!]!
 	children: [RootChild!]!
-	playableItem: ItemNode
-	watchProgress: WatchProgress
+	nextItem: ItemNode
 	unplayedItems: Int!
 	seasonCount: Int!
 	episodeCount: Int!
@@ -337,8 +336,7 @@ type SeasonNode {
 	updatedAt: Int!
 	properties: SeasonNodeProperties!
 	files: [ItemNode!]!
-	playableItem: ItemNode
-	watchProgress: WatchProgress
+	nextItem: ItemNode
 	unplayedItems: Int!
 	episodeCount: Int!
 }
@@ -380,9 +378,9 @@ type WatchProgress {
 	userId: String!
 	itemId: String!
 	fileId: Int!
-	progressPercent: Float!
 	createdAt: Int!
 	updatedAt: Int!
+	progressPercent: Float!
 	completed: Boolean!
 }
 

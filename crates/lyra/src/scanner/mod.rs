@@ -319,7 +319,6 @@ async fn upsert_derived_media(
             episode_number: Set(item.episode_number),
             order: Set(item.order),
             name: Set(item.name.clone()),
-            primary_file_id: Set(item.primary_file_id),
             last_added_at: Set(item.last_added_at),
             created_at: Set(now),
             updated_at: Set(now),
@@ -333,7 +332,6 @@ async fn upsert_derived_media(
                     items::Column::EpisodeNumber,
                     items::Column::Order,
                     items::Column::Name,
-                    items::Column::PrimaryFileId,
                     items::Column::LastAddedAt,
                     items::Column::UpdatedAt,
                 ])
@@ -371,17 +369,12 @@ async fn upsert_derived_media(
                 item_id: Set(item_file.item_id.clone()),
                 file_id: Set(item_file.file_id),
                 order: Set(item_file.order),
-                is_primary: Set(item_file.is_primary),
                 created_at: Set(now),
                 updated_at: Set(now),
             })
             .on_conflict(
                 OnConflict::columns([item_files::Column::ItemId, item_files::Column::FileId])
-                    .update_columns([
-                        item_files::Column::Order,
-                        item_files::Column::IsPrimary,
-                        item_files::Column::UpdatedAt,
-                    ])
+                    .update_columns([item_files::Column::Order, item_files::Column::UpdatedAt])
                     .to_owned(),
             )
             .exec(&txn)

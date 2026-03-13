@@ -3,7 +3,8 @@ use crate::{
     entities::{
         assets as assets_entity,
         file_assets::{self, FileAssetRole},
-        files, item_files, item_metadata, jobs as jobs_entity, metadata_source::MetadataSource,
+        files, item_files, item_metadata, jobs as jobs_entity,
+        metadata_source::MetadataSource,
     },
     jobs::handlers::shared,
     jobs::{JobHandler, JobTarget},
@@ -51,8 +52,11 @@ impl JobHandler for FileThumbnailJob {
                                 .column(item_metadata::Column::ItemId)
                                 .from(item_metadata::Entity)
                                 .and_where(
-                                    Expr::col((item_metadata::Entity, item_metadata::Column::Source))
-                                        .eq(MetadataSource::Remote),
+                                    Expr::col((
+                                        item_metadata::Entity,
+                                        item_metadata::Column::Source,
+                                    ))
+                                    .eq(MetadataSource::Remote),
                                 )
                                 .and_where(
                                     Expr::col((

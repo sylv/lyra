@@ -2,8 +2,8 @@ use crate::entities::{files, item_files, items, root_metadata, seasons, watch_pr
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait, Set, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -625,13 +625,6 @@ async fn load_match_lookups(
             .collect::<HashMap<_, _>>();
 
         for item in &root_item_rows {
-            if let Some(primary_file_id) = item.primary_file_id {
-                lookups
-                    .fallback_file_id_by_item_id
-                    .entry(item.id.clone())
-                    .or_insert(primary_file_id);
-            }
-
             match item.kind {
                 items::ItemKind::Movie => {
                     let item_ids = lookups
@@ -669,7 +662,10 @@ async fn load_match_lookups(
 
         let linked_files = item_files::Entity::find()
             .filter(item_files::Column::ItemId.is_in(item_ids))
+            .join(JoinType::InnerJoin, item_files::Relation::Files.def())
+            .filter(files::Column::UnavailableAt.is_null())
             .order_by_asc(item_files::Column::Order)
+            .order_by_asc(item_files::Column::FileId)
             .all(pool)
             .await?;
 

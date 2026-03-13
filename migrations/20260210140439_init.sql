@@ -153,14 +153,12 @@ CREATE TABLE items (
     episode_number INTEGER,
     "order" INTEGER NOT NULL,
     name TEXT NOT NULL,
-    primary_file_id INTEGER,
     last_added_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
     FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
     FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE SET NULL,
-    FOREIGN KEY (primary_file_id) REFERENCES files(id) ON DELETE SET NULL,
     CHECK (kind IN (0, 1)),
     CHECK (
         (kind = 0 AND season_id IS NULL AND episode_number IS NULL) OR
@@ -173,7 +171,6 @@ CREATE TABLE item_files (
     item_id TEXT NOT NULL,
     file_id INTEGER NOT NULL,
     "order" INTEGER NOT NULL,
-    is_primary INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
@@ -182,7 +179,6 @@ CREATE TABLE item_files (
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 ) STRICT;
 
-CREATE UNIQUE INDEX item_files_primary_unique ON item_files(item_id) WHERE is_primary = 1;
 CREATE INDEX item_files_file_id_idx ON item_files(file_id);
 CREATE INDEX item_files_item_order_idx ON item_files(item_id, "order", file_id);
 CREATE INDEX items_root_order_idx ON items(root_id, "order");

@@ -44,8 +44,6 @@ pub enum Relation {
     Jobs,
     #[sea_orm(has_one = "super::file_probe::Entity")]
     FileProbe,
-    #[sea_orm(has_many = "super::items::Entity")]
-    PrimaryItems,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
 }
@@ -71,12 +69,6 @@ impl Related<super::jobs::Entity> for Entity {
 impl Related<super::file_probe::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileProbe.def()
-    }
-}
-
-impl Related<super::items::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::PrimaryItems.def()
     }
 }
 

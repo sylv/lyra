@@ -11,6 +11,8 @@ pub struct Config {
     pub port: u16,
     pub clear_transcode_cache_on_start: bool,
     pub library_scan_interval: i64,
+    pub watch_progress_minimum_threshold: f32,
+    pub watch_progress_completed_threshold: f32,
 }
 
 impl Config {
@@ -59,6 +61,8 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         .set_default("port", "8000")?
         .set_default("clear_transcode_cache_on_start", false)?
         .set_default("library_scan_interval", 4 * 60 * 60)? // 4 hours
+        .set_default("watch_progress_minimum_threshold", 0.05)?
+        .set_default("watch_progress_completed_threshold", 0.8)?
         .build()
         .unwrap();
 

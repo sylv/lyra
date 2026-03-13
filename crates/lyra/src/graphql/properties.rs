@@ -5,7 +5,10 @@ use crate::entities::{
 };
 use crate::segment_markers::StoredFileSegmentKind;
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait,
+};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, SimpleObject)]
@@ -454,7 +457,12 @@ impl ItemNodeProperties {
         pool: &DatabaseConnection,
     ) -> Result<Option<i64>, sea_orm::DbErr> {
         let links = item_files::Entity::find()
+            .join(
+                sea_orm::JoinType::InnerJoin,
+                item_files::Relation::Files.def(),
+            )
             .filter(item_files::Column::ItemId.eq(self.item_id.clone()))
+            .filter(files::Column::UnavailableAt.is_null())
             .order_by_asc(item_files::Column::Order)
             .order_by_asc(item_files::Column::FileId)
             .all(pool)

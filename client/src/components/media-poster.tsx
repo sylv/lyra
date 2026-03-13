@@ -29,12 +29,13 @@ const Fragment = graphql(
 			releasedAt
 			endedAt
 		}
-		playableItem {
+		nextItem {
 			id
-		}
-		watchProgress {
-			progressPercent
-			updatedAt
+			watchProgress {
+				progressPercent
+				completed
+				updatedAt
+			}
 		}
 		unplayedItems
 		seasonCount
@@ -51,7 +52,7 @@ export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, 
 
 	return (
 		<div className={cn("flex flex-col gap-2 overflow-hidden select-none", className)} style={style}>
-			<PlayWrapper itemId={media.playableItem?.id} path={path} watchProgress={media.watchProgress}>
+			<PlayWrapper itemId={media.nextItem?.id} path={path} watchProgress={media.nextItem?.watchProgress}>
 				<Image type={ImageType.Poster} asset={media.properties.posterImage} alt={media.name} className="w-full" />
 				<UnplayedItemsTab count={media.unplayedItems} />
 			</PlayWrapper>

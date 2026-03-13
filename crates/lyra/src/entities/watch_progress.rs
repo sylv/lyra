@@ -1,28 +1,26 @@
+use crate::config::get_config;
 use async_graphql::{ComplexObject, SimpleObject};
 use sea_orm::entity::prelude::*;
 
-pub const DEFAULT_MINIMUM_PROGRESS_THRESHOLD: f32 = 0.05;
-pub const DEFAULT_COMPLETED_PROGRESS_THRESHOLD: f32 = 0.8;
+pub fn minimum_progress_threshold() -> f32 {
+    get_config().watch_progress_minimum_threshold
+}
+
+pub fn completed_progress_threshold() -> f32 {
+    get_config().watch_progress_completed_threshold
+}
 
 pub fn normalize_progress_percent(progress_percent: f32) -> f32 {
-    let clamped = progress_percent.clamp(0.0, 1.0);
-
-    if clamped <= DEFAULT_MINIMUM_PROGRESS_THRESHOLD {
-        0.0
-    } else if clamped >= DEFAULT_COMPLETED_PROGRESS_THRESHOLD {
-        1.0
-    } else {
-        clamped
-    }
+    progress_percent.clamp(0.0, 1.0)
 }
 
 pub fn is_completed_progress(progress_percent: f32) -> bool {
-    normalize_progress_percent(progress_percent) >= 1.0
+    normalize_progress_percent(progress_percent) > completed_progress_threshold()
 }
 
 pub fn is_in_progress(progress_percent: f32) -> bool {
     let normalized = normalize_progress_percent(progress_percent);
-    normalized > 0.0 && normalized < 1.0
+    normalized >= minimum_progress_threshold() && normalized <= completed_progress_threshold()
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, SimpleObject)]
@@ -108,11 +106,11 @@ mod tests {
     #[test]
     fn normalizes_threshold_edges() {
         assert_eq!(normalize_progress_percent(-0.5), 0.0);
-        assert_eq!(normalize_progress_percent(0.03), 0.0);
-        assert_eq!(normalize_progress_percent(0.05), 0.0);
+        assert_eq!(normalize_progress_percent(0.03), 0.03);
+        assert_eq!(normalize_progress_percent(0.05), 0.05);
         assert_eq!(normalize_progress_percent(0.2), 0.2);
-        assert_eq!(normalize_progress_percent(0.8), 1.0);
-        assert_eq!(normalize_progress_percent(0.95), 1.0);
+        assert_eq!(normalize_progress_percent(0.8), 0.8);
+        assert_eq!(normalize_progress_percent(0.95), 0.95);
         assert_eq!(normalize_progress_percent(1.5), 1.0);
     }
 }

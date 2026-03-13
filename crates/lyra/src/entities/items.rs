@@ -26,7 +26,6 @@ pub struct Model {
     pub order: i64,
     #[sea_orm(column_type = "Text")]
     pub name: String,
-    pub primary_file_id: Option<i64>,
     pub last_added_at: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -50,14 +49,6 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Seasons,
-    #[sea_orm(
-        belongs_to = "super::files::Entity",
-        from = "Column::PrimaryFileId",
-        to = "super::files::Column::Id",
-        on_update = "NoAction",
-        on_delete = "SetNull"
-    )]
-    PrimaryFiles,
     #[sea_orm(has_many = "super::item_files::Entity")]
     ItemFiles,
     #[sea_orm(has_many = "super::item_metadata::Entity")]
@@ -75,12 +66,6 @@ impl Related<super::roots::Entity> for Entity {
 impl Related<super::seasons::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Seasons.def()
-    }
-}
-
-impl Related<super::files::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::PrimaryFiles.def()
     }
 }
 

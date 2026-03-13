@@ -8,7 +8,6 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub file_id: i64,
     pub order: i64,
-    pub is_primary: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }

@@ -33,7 +33,6 @@ pub struct DerivedItem {
     pub episode_number: Option<i64>,
     pub order: i64,
     pub name: String,
-    pub primary_file_id: Option<i64>,
     pub last_added_at: i64,
 }
 
@@ -42,7 +41,6 @@ pub struct DerivedItemFile {
     pub item_id: String,
     pub file_id: i64,
     pub order: i64,
-    pub is_primary: bool,
 }
 
 pub struct DerivedLibraryMedia {
@@ -266,13 +264,11 @@ pub fn derive_library_media(
                     .then_with(|| a.file_id.cmp(&b.file_id))
             });
 
-            let primary_file_id = links.first().map(|link| link.file_id);
-            for (link_index, link) in links.iter().enumerate() {
+            for link in &links {
                 derived_item_files.push(DerivedItemFile {
                     item_id: item.id.clone(),
                     file_id: link.file_id,
                     order: item_file_order_for_size(link.size_bytes),
-                    is_primary: link_index == 0,
                 });
             }
 
@@ -284,7 +280,6 @@ pub fn derive_library_media(
                 episode_number: item.episode_number,
                 order: index as i64,
                 name: item.name.clone(),
-                primary_file_id,
                 last_added_at: item.last_added_at,
             });
         }

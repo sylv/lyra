@@ -35,12 +35,13 @@ const Query = graphql(
 				runtimeMinutes
 				description
 			}
-			playableItem {
+			nextItem {
 				id
-			}
-			watchProgress {
-				progressPercent
-				updatedAt
+				watchProgress {
+					progressPercent
+					completed
+					updatedAt
+				}
 			}
 			unplayedItems
 		}
@@ -77,7 +78,7 @@ function RootRoute() {
 
 	const header = (
 		<div className="flex gap-6 container mx-auto">
-			<PlayWrapper itemId={root.playableItem?.id} path={rootPath} watchProgress={root.watchProgress}>
+			<PlayWrapper itemId={root.nextItem?.id} path={rootPath} watchProgress={root.nextItem?.watchProgress}>
 				<Image type={ImageType.Poster} asset={root.properties.posterImage} alt={root.name} className="h-96" />
 				<UnplayedItemsTab count={root.unplayedItems} />
 			</PlayWrapper>

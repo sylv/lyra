@@ -48,12 +48,13 @@ const RootAndSeasonQuery = graphql(
 				runtimeMinutes
 				description
 			}
-			playableItem {
+			nextItem {
 				id
-			}
-			watchProgress {
-				progressPercent
-				updatedAt
+				watchProgress {
+					progressPercent
+					completed
+					updatedAt
+				}
 			}
 			unplayedItems
 		}
@@ -139,7 +140,7 @@ function SeasonRoute() {
 		<div className="pt-6">
 			<div className="flex gap-6 container mx-auto">
 				<div className="shrink-0">
-					<PlayWrapper itemId={season.playableItem?.id} path={seasonPath} watchProgress={season.watchProgress}>
+					<PlayWrapper itemId={season.nextItem?.id} path={seasonPath} watchProgress={season.nextItem?.watchProgress}>
 						<Image type={ImageType.Poster} asset={seasonImage} alt={seasonTitle} className="h-96" />
 						<UnplayedItemsTab count={season.unplayedItems} />
 					</PlayWrapper>
