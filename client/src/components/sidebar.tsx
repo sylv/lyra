@@ -9,6 +9,7 @@ import { SuspenseBoundary } from "./fallback";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { graphql } from "../@generated/gql";
 import { Spinner } from "./ui/spinner";
+import BrandLogo from '../assets/logo.svg'
 
 const SidebarLink: FC<{
 	to: string;
@@ -82,7 +83,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 			<div className="w-96 z-10 p-6">
 				<div className="flex items-center justify-between gap-1">
 					<div className="flex items-center gap-3">
-						<AudioLines />
+						<img src={BrandLogo} />
 						<div className="flex flex-col">
 							<div className="text-zinc-100 font-semibold text-lg -mt-2">Lyra</div>
 							<div className="text-zinc-400 font-semibold text-xs leading-1">preview</div>
