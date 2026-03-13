@@ -448,12 +448,6 @@ fn select_watch_progress_for_ordered_items(
         return Some(progress);
     }
 
-    for item in ordered_items {
-        if let Some(progress) = progress_by_item.get(&item.id) {
-            return Some(progress.clone());
-        }
-    }
-
     None
 }
 

@@ -37,6 +37,7 @@ const Fragment = graphql(
 		}
 		watchProgress {
 			progressPercent
+			completed
 			updatedAt
 		}
 		...GetPathForItem

@@ -319,7 +319,7 @@ where
 }
 
 fn normalize_row(row: ImportWatchStateRow) -> NormalizedImportWatchStateRow {
-    let progress_percent = row.progress_percent.clamp(0.0, 1.0);
+    let progress_percent = watch_progress::normalize_progress_percent(row.progress_percent);
 
     let file_basename = row
         .file_basename

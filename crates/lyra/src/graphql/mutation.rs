@@ -253,6 +253,8 @@ impl Mutation {
             ));
         }
 
+        let normalized_progress_percent =
+            watch_progress::normalize_progress_percent(progress_percent);
         let now = Utc::now().timestamp();
         let mut updated_rows = Vec::with_capacity(linked_item_ids.len());
 
@@ -261,7 +263,7 @@ impl Mutation {
                 user_id: Set(user_id.clone()),
                 item_id: Set(item_id),
                 file_id: Set(file.id),
-                progress_percent: Set(progress_percent),
+                progress_percent: Set(normalized_progress_percent),
                 updated_at: Set(now),
                 ..Default::default()
             })

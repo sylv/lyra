@@ -8,6 +8,7 @@ interface PlayWrapperProps {
 	itemId?: string | null;
 	path: string;
 	watchProgress?: {
+		completed?: boolean;
 		progressPercent: number;
 		updatedAt: number;
 	} | null;
@@ -16,6 +17,12 @@ interface PlayWrapperProps {
 
 export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watchProgress }) => {
 	const navigate = useNavigate();
+	const showWatchProgress =
+		watchProgress &&
+		watchProgress.progressPercent > 0 &&
+		!watchProgress.completed
+			? watchProgress
+			: null;
 
 	return (
 		<div className="relative shrink-0 overflow-hidden group/play rounded-sm">
@@ -37,12 +44,12 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					<PlayIcon className="h-10 w-10 text-white" />
 				</button>
 			)}
-			{watchProgress && (
+			{showWatchProgress && (
 				<Fragment>
 					<div
 						className="z-10 absolute bottom-0 left-0 bg-white/80 h-1"
 						style={{
-							width: `${watchProgress.progressPercent * 100}%`,
+							width: `${showWatchProgress.progressPercent * 100}%`,
 						}}
 					/>
 					<div className="z-10 absolute bottom-0 left-0 right-0 bg-white/20 h-1" />
