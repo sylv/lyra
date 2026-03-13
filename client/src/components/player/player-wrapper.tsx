@@ -4,11 +4,11 @@ import { Player } from "./player";
 import { playerState } from "./player-state";
 
 export const PlayerWrapper: FC = () => {
-	const { currentItemId, autoplay } = useStore(playerState);
+	const { currentItemId, autoplay, shouldPromptResume } = useStore(playerState);
 
 	if (!currentItemId) {
 		return null;
 	}
 
-	return <Player itemId={currentItemId} autoplay={autoplay} />;
+	return <Player itemId={currentItemId} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />;
 };

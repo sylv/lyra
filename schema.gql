@@ -383,6 +383,7 @@ type WatchProgress {
 	progressPercent: Float!
 	createdAt: Int!
 	updatedAt: Int!
+	completed: Boolean!
 }
 
 """

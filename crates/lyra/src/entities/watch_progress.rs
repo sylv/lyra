@@ -1,9 +1,19 @@
-use async_graphql::SimpleObject;
+use async_graphql::{ComplexObject, SimpleObject};
 use sea_orm::entity::prelude::*;
+
+pub const DEFAULT_COMPLETED_PROGRESS_THRESHOLD: f32 = 0.8;
+
+pub fn is_completed_progress(progress_percent: f32) -> bool {
+    progress_percent >= DEFAULT_COMPLETED_PROGRESS_THRESHOLD
+}
+
+pub fn is_in_progress(progress_percent: f32) -> bool {
+    progress_percent > 0.05 && !is_completed_progress(progress_percent)
+}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, SimpleObject)]
 #[sea_orm(table_name = "watch_progress")]
-#[graphql(name = "WatchProgress")]
+#[graphql(name = "WatchProgress", complex)]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
@@ -15,6 +25,13 @@ pub struct Model {
     pub progress_percent: f32,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[ComplexObject]
+impl Model {
+    async fn completed(&self) -> bool {
+        is_completed_progress(self.progress_percent)
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

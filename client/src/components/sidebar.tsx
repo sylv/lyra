@@ -118,7 +118,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 								<ActivityPanel open={isActivityOpen} data={activityData} />
 							</DropdownMenuContent>
 						</DropdownMenu>
-						<a
+						<Link
 							href="/settings"
 							className={cn(
 								"flex items-center p-2 rounded transition hover:bg-zinc-200/10",
@@ -126,7 +126,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 							)}
 						>
 							<SettingsIcon className="size-4" />
-						</a>
+						</Link>
 					</div>
 				</div>
 				<div className="mt-6 -mx-1.5">

@@ -4,6 +4,7 @@ import { createJSONStorage, persist, type PersistOptions, type StateStorage } fr
 interface PlayerState {
 	currentItemId: string | null;
 	autoplay: boolean;
+	shouldPromptResume: boolean;
 	isFullscreen: boolean | null;
 	volume: number;
 	isMuted: boolean;
@@ -33,6 +34,7 @@ export const playerState = create<PlayerState>()(
 		() => ({
 			currentItemId: null,
 			autoplay: false,
+			shouldPromptResume: false,
 			isFullscreen: false,
 			volume: 1,
 			isMuted: false,
@@ -46,6 +48,7 @@ export const setPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 	playerState.setState((prev) => ({
 		currentItemId: itemId,
 		autoplay: autoplay ?? prev.autoplay,
+		shouldPromptResume: false,
 	}));
 };
 
@@ -53,6 +56,7 @@ export const openPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 	playerState.setState((prev) => ({
 		currentItemId: itemId,
 		autoplay: autoplay ?? prev.autoplay,
+		shouldPromptResume: true,
 		isFullscreen: true,
 	}));
 };
@@ -60,6 +64,7 @@ export const openPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 export const clearPlayerMedia = () => {
 	playerState.setState({
 		currentItemId: null,
+		shouldPromptResume: false,
 		isFullscreen: false,
 	});
 };

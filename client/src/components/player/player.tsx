@@ -91,6 +91,18 @@ const getAudioTrackLabel = (
 	return `Track ${id + 1}`;
 };
 
+const formatResumeTimestamp = (seconds: number): string => {
+	const safeSeconds = Math.max(0, Math.floor(seconds));
+	const hours = Math.floor(safeSeconds / 3600);
+	const minutes = Math.floor((safeSeconds % 3600) / 60);
+	const remainingSeconds = safeSeconds % 60;
+	if (hours > 0) {
+		return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+	}
+
+	return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+};
+
 const UpdateWatchState = graphql(`
 	mutation UpdateWatchState($fileId: Int!, $progressPercent: Float!) {
 		updateWatchProgress(fileId: $fileId, progressPercent: $progressPercent) {
@@ -119,6 +131,7 @@ const ItemPlaybackQuery = graphql(`
 			}
 			watchProgress {
 				progressPercent
+				completed
 				updatedAt
 			}
 			file {
@@ -150,7 +163,11 @@ const ItemPlaybackQuery = graphql(`
 	}
 `);
 
-export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, autoplay = false }) => {
+export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume?: boolean }> = ({
+	itemId,
+	autoplay = false,
+	shouldPromptResume = false,
+}) => {
 	const { isFullscreen, volume, isMuted, isLoading } = useStore(playerState);
 	const navigate = useNavigate();
 
@@ -165,12 +182,16 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 	const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<number | null>(null);
 	const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(false);
 	const [isShortcutsDialogOpen, setIsShortcutsDialogOpen] = useState<boolean>(false);
+	const [resumePromptPosition, setResumePromptPosition] = useState<number | null>(null);
 
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const hlsRef = useRef<Hls | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const doubleClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	const resumePromptDecisionRef = useRef<"confirm" | "cancel" | null>(null);
+	const pendingResumePositionRef = useRef<number | null>(null);
+	const pendingStartLoadRef = useRef<((startPosition: number) => void) | null>(null);
 	const isControlsPinned = isSettingsMenuOpen || isShortcutsDialogOpen;
 	const {
 		data,
@@ -245,7 +266,38 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		setSelectedAudioTrackId(null);
 		setIsSettingsMenuOpen(false);
 		setIsShortcutsDialogOpen(false);
+		setResumePromptPosition(null);
+		resumePromptDecisionRef.current = null;
+		pendingResumePositionRef.current = null;
+		pendingStartLoadRef.current = null;
 	}, [currentMedia?.id]);
+
+	const handleResumePromptConfirm = () => {
+		const resumePosition = pendingResumePositionRef.current;
+		const startLoadAt = pendingStartLoadRef.current;
+		resumePromptDecisionRef.current = "confirm";
+		pendingResumePositionRef.current = null;
+		pendingStartLoadRef.current = null;
+		setResumePromptPosition(null);
+
+		if (resumePosition == null || !startLoadAt) {
+			return;
+		}
+
+		if (videoRef.current) {
+			videoRef.current.currentTime = resumePosition;
+		}
+		startLoadAt(resumePosition);
+	};
+
+	const handleResumePromptCancel = () => {
+		const startLoadAt = pendingStartLoadRef.current;
+		resumePromptDecisionRef.current = "cancel";
+		pendingResumePositionRef.current = null;
+		pendingStartLoadRef.current = null;
+		setResumePromptPosition(null);
+		startLoadAt?.(-1);
+	};
 
 	useEffect(() => {
 		if (!videoRef.current || !currentMedia) return;
@@ -266,22 +318,25 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 			setErrorMessage(null);
 			setPlayerLoading(true);
 			const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/master.m3u8`;
-			const watchProgressPercent = currentMedia.watchProgress?.progressPercent;
-			const hasWatchProgress =
+			const watchProgressPercent = currentMedia.watchProgress?.completed
+				? null
+				: currentMedia.watchProgress?.progressPercent;
+			const hasResumableWatchProgress =
 				typeof watchProgressPercent === "number" &&
 				Number.isFinite(watchProgressPercent) &&
 				watchProgressPercent > 0 &&
 				watchProgressPercent < 1;
+			const safeWatchProgressPercent = hasResumableWatchProgress ? watchProgressPercent : 0;
 			const runtimeMinutes = currentMedia.properties.runtimeMinutes;
 			const runtimeDurationSeconds =
 				typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
 					? runtimeMinutes * 60
 					: null;
 			const clampResumePosition = (durationSeconds: number) => {
-				if (!hasWatchProgress) {
+				if (!hasResumableWatchProgress) {
 					return null;
 				}
-				const progress = Math.max(0, Math.min(0.999, watchProgressPercent));
+				const progress = Math.max(0, Math.min(0.999, safeWatchProgressPercent));
 				const maxStart = Math.max(0, durationSeconds - 0.5);
 				return Math.max(0, Math.min(progress * durationSeconds, maxStart));
 			};
@@ -317,7 +372,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 			});
 			hls.on(Hls.Events.MANIFEST_PARSED, () => {
 				syncAudioTracks();
-				if (!hasWatchProgress) {
+				if (!hasResumableWatchProgress) {
 					startLoadAt(-1);
 					return;
 				}
@@ -330,6 +385,14 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 				const resumePosition = durationSeconds == null ? null : clampResumePosition(durationSeconds);
 
 				if (resumePosition != null) {
+					if (shouldPromptResume) {
+						resumePromptDecisionRef.current = null;
+						pendingResumePositionRef.current = resumePosition;
+						pendingStartLoadRef.current = startLoadAt;
+						setResumePromptPosition(resumePosition);
+						return;
+					}
+
 					if (videoRef.current) {
 						videoRef.current.currentTime = resumePosition;
 					}
@@ -352,6 +415,10 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 			hls.attachMedia(videoRef.current);
 
 			return () => {
+				setResumePromptPosition(null);
+				resumePromptDecisionRef.current = null;
+				pendingResumePositionRef.current = null;
+				pendingStartLoadRef.current = null;
 				hls.destroy();
 				if (hlsRef.current === hls) {
 					hlsRef.current = null;
@@ -360,7 +427,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		} else {
 			setErrorMessage("Sorry, your browser does not support this video.");
 		}
-	}, [currentMedia]);
+	}, [currentMedia, shouldPromptResume]);
 
 	useEffect(() => {
 		if (autoplay) {
@@ -400,14 +467,6 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		const media = currentMedia;
 		const video = videoRef.current;
 
-		const onVideoLoad = () => {
-			// load the watch state
-			// todo: prompt the user to see if they want to resume where they left off
-			if (media.watchProgress) {
-				video.currentTime = media.watchProgress.progressPercent * video.duration;
-			}
-		};
-
 		let lastUpdate = Date.now();
 		const onTimeUpdate = () => {
 			if (Date.now() - lastUpdate < 10_000) return;
@@ -430,12 +489,10 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 		};
 
 		video.addEventListener("timeupdate", onTimeUpdate);
-		video.addEventListener("loadedmetadata", onVideoLoad);
 		video.addEventListener("seeked", onSeek);
 
 		return () => {
 			video.removeEventListener("timeupdate", onTimeUpdate);
-			video.removeEventListener("loadedmetadata", onVideoLoad);
 			video.removeEventListener("seeked", onSeek);
 		};
 	}, [currentMedia?.id, currentMedia?.file?.id, videoRef]);
@@ -932,6 +989,50 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 							<span>Seek to timeline position</span>
 							<kbd className="rounded border px-2 py-0.5 font-mono text-xs">0-9</kbd>
 						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog
+				open={resumePromptPosition != null}
+				onOpenChange={(open) => {
+					if (open) {
+						return;
+					}
+
+					if (resumePromptDecisionRef.current) {
+						resumePromptDecisionRef.current = null;
+						return;
+					}
+
+					handleResumePromptCancel();
+				}}
+			>
+				<DialogContent
+					portalContainer={containerRef.current}
+					className="max-w-sm p-0 gap-0 overflow-hidden [&>button.absolute]:hidden"
+					onClick={(event) => {
+						event.stopPropagation();
+					}}
+				>
+					<DialogHeader className="sr-only">
+						<DialogTitle>Choose playback start</DialogTitle>
+					</DialogHeader>
+					<div className="flex flex-col">
+						<button
+							type="button"
+							className="w-full px-5 py-4 text-left text-sm font-semibold transition-colors bg-zinc-900/95 hover:bg-zinc-800/95 border-b border-zinc-700/80"
+							onClick={handleResumePromptConfirm}
+						>
+							Resume from {resumePromptPosition == null ? "0:00" : formatResumeTimestamp(resumePromptPosition)}
+						</button>
+						<button
+							type="button"
+							className="w-full px-5 py-4 text-left text-sm font-semibold transition-colors bg-zinc-900/95 hover:bg-zinc-800/95"
+							onClick={handleResumePromptCancel}
+						>
+							Start from the beginning
+						</button>
 					</div>
 				</DialogContent>
 			</Dialog>

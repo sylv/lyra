@@ -10,8 +10,6 @@ use sea_orm::{
 };
 use std::collections::{HashMap, HashSet};
 
-const PLAYABLE_PROGRESS_THRESHOLD: f32 = 0.8;
-
 #[derive(Union)]
 pub enum RootChild {
     SeasonNode(seasons::Model),
@@ -391,8 +389,7 @@ async fn find_playable_item_for_ordered_items(
                 continue;
             };
 
-            let is_in_progress =
-                row.progress_percent > 0.0 && row.progress_percent < PLAYABLE_PROGRESS_THRESHOLD;
+            let is_in_progress = watch_progress::is_in_progress(row.progress_percent);
             if !is_in_progress {
                 continue;
             }
@@ -432,8 +429,7 @@ fn select_watch_progress_for_ordered_items(
             continue;
         };
 
-        let is_in_progress = progress.progress_percent > 0.0
-            && progress.progress_percent < PLAYABLE_PROGRESS_THRESHOLD;
+        let is_in_progress = watch_progress::is_in_progress(progress.progress_percent);
         if !is_in_progress {
             continue;
         }
@@ -481,7 +477,7 @@ async fn count_unplayed_items_for_ordered_items(
         .all(pool)
         .await?
         .into_iter()
-        .filter(|progress| progress.progress_percent >= PLAYABLE_PROGRESS_THRESHOLD)
+        .filter(|progress| watch_progress::is_completed_progress(progress.progress_percent))
         .count();
 
     let unplayed_count = ordered_items.len().saturating_sub(watched_count);
