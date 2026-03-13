@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PlexImportModal } from "../components/import/plex-import-modal";
 import { Button } from "../components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import { useTitle } from "../hooks/use-title";
 
 export const Route = createFileRoute("/settings")({
 	component: RouteComponent,
@@ -11,6 +12,8 @@ export const Route = createFileRoute("/settings")({
 function RouteComponent() {
 	const buildDate = new Date(__BUILD_TIME__).toLocaleString();
 	const [isPlexImportOpen, setIsPlexImportOpen] = useState(false);
+
+	useTitle('Settings')
 
 	return (
 		<div className="pt-6">

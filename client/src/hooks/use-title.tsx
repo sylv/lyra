@@ -1,10 +1,10 @@
 import { useEffect } from "react"
 
-const defaultTitle = "Home"
+const defaultTitle = "Lyra"
 const defaultSuffix = " — Lyra"
 
 const resetTitle = () => {
-    document.title = defaultTitle + defaultSuffix
+    document.title = defaultTitle
 }
 
 export const useTitle = (title?: string) => {

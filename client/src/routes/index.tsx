@@ -6,6 +6,7 @@ import { OrderBy, type RootNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
 import { MediaFilterList } from "../components/media-filter-list";
 import { MediaList } from "../components/media-list";
+import { useTitle } from "../hooks/use-title";
 
 const Query = graphql(
 	`
@@ -49,6 +50,8 @@ function HomeRoute() {
 			filter,
 		},
 	});
+
+	useTitle('Home')
 
 	return (
 		<div>
