@@ -115,6 +115,20 @@ impl TmdbMetadataProvider {
         cache.retain(|_, entry| entry.expires_at > now);
         cache.get(cache_key).map(|entry| entry.value.clone())
     }
+
+    async fn get_imdb_id_for_tv(&self, tmdb_id: u64) -> Result<Option<String>> {
+        let external_ids: ExternalIds = self
+            .get_json(&format!("/tv/{tmdb_id}/external_ids"), &[])
+            .await?;
+        Ok(empty_to_none(external_ids.imdb_id))
+    }
+
+    async fn get_imdb_id_for_movie(&self, tmdb_id: u64) -> Result<Option<String>> {
+        let external_ids: ExternalIds = self
+            .get_json(&format!("/movie/{tmdb_id}/external_ids"), &[])
+            .await?;
+        Ok(empty_to_none(external_ids.imdb_id))
+    }
 }
 
 #[async_trait]
@@ -174,8 +188,11 @@ impl MetadataProvider for TmdbMetadataProvider {
         let details: TvDetails = self
             .get_json(&format!("/tv/{}", candidate.tmdb_id), &[])
             .await?;
+        let imdb_id = self.get_imdb_id_for_tv(details.id).await?;
 
         Ok(SeriesMetadata {
+            imdb_id,
+            tmdb_id: Some(details.id),
             name: details.name,
             description: empty_to_none(details.overview),
             score_display: score_display(details.vote_average),
@@ -298,8 +315,11 @@ impl MetadataProvider for TmdbMetadataProvider {
         let details: MovieDetails = self
             .get_json(&format!("/movie/{}", candidate.tmdb_id), &[])
             .await?;
+        let imdb_id = self.get_imdb_id_for_movie(details.id).await?;
 
         Ok(MovieMetadata {
+            imdb_id,
+            tmdb_id: Some(details.id),
             name: details.title,
             description: empty_to_none(details.overview),
             score_display: score_display(details.vote_average),
@@ -482,6 +502,11 @@ struct FindResponse {
     tv_results: Vec<TvSearchResult>,
     #[serde(default)]
     movie_results: Vec<MovieSearchResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExternalIds {
+    imdb_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

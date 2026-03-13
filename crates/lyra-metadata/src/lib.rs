@@ -50,6 +50,8 @@ pub struct ImageSet {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeriesMetadata {
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<u64>,
     pub name: String,
     pub description: Option<String>,
     pub score_display: Option<String>,
@@ -61,6 +63,8 @@ pub struct SeriesMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MovieMetadata {
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<u64>,
     pub name: String,
     pub description: Option<String>,
     pub score_display: Option<String>,

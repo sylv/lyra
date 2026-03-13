@@ -11,6 +11,9 @@ pub struct Model {
     pub source: MetadataSource,
     #[sea_orm(column_type = "Text")]
     pub provider_id: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<i64>,
     #[sea_orm(column_type = "Text")]
     pub name: String,
     #[sea_orm(column_type = "Text", nullable)]

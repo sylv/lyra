@@ -7,12 +7,16 @@ pub async fn insert_local_root_metadata<C: ConnectionTrait>(
     pool: &C,
     root_id: &str,
     name: &str,
+    imdb_id: Option<String>,
+    tmdb_id: Option<i64>,
     now: i64,
 ) -> Result<(), sea_orm::DbErr> {
     root_metadata::ActiveModel {
         root_id: Set(root_id.to_string()),
         source: Set(MetadataSource::Local),
         provider_id: Set("local".to_string()),
+        imdb_id: Set(imdb_id),
+        tmdb_id: Set(tmdb_id),
         name: Set(name.to_string()),
         description: Set(None),
         score_display: Set(None),

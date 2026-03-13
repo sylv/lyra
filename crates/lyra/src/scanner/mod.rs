@@ -396,7 +396,15 @@ async fn upsert_derived_media(
         .await?;
 
     for root in &derived.roots {
-        insert_local_root_metadata(&txn, &root.id, &root.name, now).await?;
+        insert_local_root_metadata(
+            &txn,
+            &root.id,
+            &root.name,
+            root.imdb_id.clone(),
+            root.tmdb_id,
+            now,
+        )
+        .await?;
     }
 
     if !season_ids.is_empty() {

@@ -193,6 +193,8 @@ CREATE TABLE root_metadata (
     root_id TEXT NOT NULL,
     source INTEGER NOT NULL, -- 0 local, 1 remote
     provider_id TEXT NOT NULL,
+    imdb_id TEXT,
+    tmdb_id INTEGER,
     name TEXT NOT NULL,
     description TEXT,
     score_display TEXT,
@@ -217,6 +219,8 @@ CREATE UNIQUE INDEX root_metadata_unique_provider
 -- todo: when multiple remote providers exist, replace this with priority-based selection.
 CREATE UNIQUE INDEX root_metadata_unique_source_layer
     ON root_metadata(root_id, source);
+CREATE INDEX root_metadata_imdb_id_idx ON root_metadata(imdb_id);
+CREATE INDEX root_metadata_tmdb_id_idx ON root_metadata(tmdb_id);
 
 CREATE TABLE season_metadata (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

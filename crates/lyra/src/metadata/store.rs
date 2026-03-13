@@ -67,6 +67,8 @@ pub async fn overwrite_remote_item_metadata_for_batch(
             &item.id,
             provider_id,
             MetadataFields {
+                imdb_id: None,
+                tmdb_id: None,
                 name: episode.name.clone(),
                 description: episode.description.clone(),
                 score_display: episode.score_display.clone(),
@@ -150,6 +152,8 @@ pub async fn overwrite_remote_season_metadata_for_batch(
             season_id,
             provider_id,
             MetadataFields {
+                imdb_id: None,
+                tmdb_id: None,
                 name: season.name.clone(),
                 description: season.description.clone(),
                 score_display: season.score_display.clone(),
@@ -183,6 +187,8 @@ pub async fn clear_remote_item_metadata_for_batch(
 
 #[derive(Clone)]
 struct MetadataFields {
+    imdb_id: Option<String>,
+    tmdb_id: Option<i64>,
     name: String,
     description: Option<String>,
     score_display: Option<String>,
@@ -194,6 +200,8 @@ struct MetadataFields {
 
 fn metadata_fields_from_series(metadata: &SeriesMetadata) -> MetadataFields {
     MetadataFields {
+        imdb_id: metadata.imdb_id.clone(),
+        tmdb_id: metadata.tmdb_id.and_then(|value| i64::try_from(value).ok()),
         name: metadata.name.clone(),
         description: metadata.description.clone(),
         score_display: metadata.score_display.clone(),
@@ -206,6 +214,8 @@ fn metadata_fields_from_series(metadata: &SeriesMetadata) -> MetadataFields {
 
 fn metadata_fields_from_movie(metadata: &MovieMetadata) -> MetadataFields {
     MetadataFields {
+        imdb_id: metadata.imdb_id.clone(),
+        tmdb_id: metadata.tmdb_id.and_then(|value| i64::try_from(value).ok()),
         name: metadata.name.clone(),
         description: metadata.description.clone(),
         score_display: metadata.score_display.clone(),
@@ -234,6 +244,8 @@ async fn upsert_remote_root_metadata(
         root_id: Set(root_id.to_string()),
         source: Set(MetadataSource::Remote),
         provider_id: Set(provider_id.to_string()),
+        imdb_id: Set(metadata.imdb_id),
+        tmdb_id: Set(metadata.tmdb_id),
         name: Set(metadata.name),
         description: Set(metadata.description),
         score_display: Set(metadata.score_display),
@@ -251,6 +263,8 @@ async fn upsert_remote_root_metadata(
         OnConflict::columns([root_metadata::Column::RootId, root_metadata::Column::Source])
             .update_columns([
                 root_metadata::Column::ProviderId,
+                root_metadata::Column::ImdbId,
+                root_metadata::Column::TmdbId,
                 root_metadata::Column::Name,
                 root_metadata::Column::Description,
                 root_metadata::Column::ScoreDisplay,

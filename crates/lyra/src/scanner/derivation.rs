@@ -9,6 +9,8 @@ pub struct DerivedRoot {
     pub id: String,
     pub kind: RootKind,
     pub name: String,
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<i64>,
     pub last_added_at: i64,
 }
 
@@ -61,6 +63,8 @@ struct RootAcc {
     id: String,
     kind: RootKind,
     name: String,
+    imdb_id: Option<String>,
+    tmdb_id: Option<i64>,
     last_added_at: i64,
 }
 
@@ -87,6 +91,8 @@ struct FileRecommendation {
     root_id: String,
     root_kind: RootKind,
     root_name: String,
+    root_imdb_id: Option<String>,
+    root_tmdb_id: Option<i64>,
     season: Option<(String, i64, String)>,
     items: Vec<(String, ItemKind, Option<i64>, String)>,
 }
@@ -109,8 +115,16 @@ pub fn derive_library_media(
             id: rec.root_id.clone(),
             kind: rec.root_kind,
             name: rec.root_name.clone(),
+            imdb_id: rec.root_imdb_id.clone(),
+            tmdb_id: rec.root_tmdb_id,
             last_added_at: file.discovered_at,
         });
+        if root_entry.imdb_id.is_none() {
+            root_entry.imdb_id = rec.root_imdb_id.clone();
+        }
+        if root_entry.tmdb_id.is_none() {
+            root_entry.tmdb_id = rec.root_tmdb_id;
+        }
         root_entry.last_added_at = root_entry.last_added_at.max(file.discovered_at);
 
         if let Some((season_id, season_number, season_name)) = &rec.season {
@@ -282,6 +296,8 @@ pub fn derive_library_media(
             id: root.id,
             kind: root.kind,
             name: root.name,
+            imdb_id: root.imdb_id,
+            tmdb_id: root.tmdb_id,
             last_added_at: root.last_added_at,
         })
         .collect::<Vec<_>>();
@@ -354,6 +370,8 @@ fn derive_file_recommendation(
             root_id,
             root_kind,
             root_name: title.to_string(),
+            root_imdb_id: parsed.imdb_id.clone(),
+            root_tmdb_id: parsed.tmdb_id.and_then(|value| i64::try_from(value).ok()),
             season: None,
             items: vec![(item_id, ItemKind::Movie, None, title.to_string())],
         });
@@ -394,6 +412,8 @@ fn derive_file_recommendation(
         root_id,
         root_kind,
         root_name: title.to_string(),
+        root_imdb_id: parsed.imdb_id.clone(),
+        root_tmdb_id: parsed.tmdb_id.and_then(|value| i64::try_from(value).ok()),
         season,
         items,
     })
