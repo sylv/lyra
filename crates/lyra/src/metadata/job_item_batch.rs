@@ -49,8 +49,8 @@ impl JobHandler for RootMetadataMatchGroupsJob {
             .column_as(items::Column::RootId, ROOT_ID_COLUMN)
             .column_as(items::Column::SeasonId, SEASON_ID_COLUMN)
             .column_as(
-                Expr::expr(Expr::col(items::Column::LastAddedAt).max())
-                    .add(Expr::col(roots::Column::UpdatedAt)),
+                Expr::expr(Expr::col((items::Entity, items::Column::LastAddedAt)).max())
+                    .add(Expr::col((roots::Entity, roots::Column::UpdatedAt))),
                 VERSION_KEY_COLUMN,
             )
             .filter(roots::Column::MatchCandidatesJson.is_not_null())

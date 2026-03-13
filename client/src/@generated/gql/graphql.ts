@@ -33,20 +33,13 @@ export type Asset = {
   id: Scalars['Int']['output'];
   mimeType: Maybe<Scalars['String']['output']>;
   sizeBytes: Maybe<Scalars['Int']['output']>;
-  source: AssetSource;
   sourceUrl: Maybe<Scalars['String']['output']>;
   thumbhash: Maybe<Scalars['String']['output']>;
   width: Maybe<Scalars['Int']['output']>;
 };
 
-export enum AssetSource {
-  Local = 'LOCAL',
-  Remote = 'REMOTE'
-}
-
 export type File = {
   __typename: 'File';
-  corruptedAt: Maybe<Scalars['Int']['output']>;
   discoveredAt: Scalars['Int']['output'];
   editionName: Maybe<Scalars['String']['output']>;
   height: Maybe<Scalars['Int']['output']>;
