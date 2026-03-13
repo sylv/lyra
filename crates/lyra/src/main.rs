@@ -40,6 +40,7 @@ mod error;
 mod file_analysis;
 mod graphql;
 mod hls;
+mod import;
 mod jobs;
 mod json_encoding;
 mod metadata;

@@ -43,6 +43,60 @@ enum FileSegmentKind {
 	INTRO
 }
 
+type ImportWatchStateConflict {
+	rowIndex: Int!
+	sourceItemId: String
+	title: String
+	itemId: String!
+	existingProgressPercent: Float!
+	importedProgressPercent: Float!
+	reason: String!
+}
+
+input ImportWatchStateRowInput {
+	source: String!
+	sourceItemId: String
+	title: String
+	mediaType: String
+	seasonNumber: Int
+	episodeNumber: Int
+	progressPercent: Float!
+	viewedAt: Int
+	filePath: String
+	fileBasename: String
+	fileSizeBytes: Int
+	imdbId: String
+	tmdbId: Int
+}
+
+type ImportWatchStateUnmatched {
+	rowIndex: Int!
+	sourceItemId: String
+	title: String
+	reason: String!
+	ambiguous: Boolean!
+}
+
+input ImportWatchStatesInput {
+	dryRun: Boolean!
+	overwriteConflicts: Boolean!
+	rows: [ImportWatchStateRowInput!]!
+}
+
+type ImportWatchStatesResult {
+	dryRun: Boolean!
+	totalRows: Int!
+	matchedRows: Int!
+	unmatchedRows: Int!
+	conflictRows: Int!
+	willInsert: Int!
+	willOverwrite: Int!
+	imported: Int!
+	skipped: Int!
+	conflicts: [ImportWatchStateConflict!]!
+	unmatched: [ImportWatchStateUnmatched!]!
+}
+
 enum ItemKind {
 	MOVIE
 	EPISODE
@@ -142,6 +196,7 @@ type Library {
 type Mutation {
 	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
 	updateWatchProgress(fileId: Int!, progressPercent: Float!, userId: String): [WatchProgress!]!
+	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
 	createLibrary(name: String!, path: String!): Library!
 }
 

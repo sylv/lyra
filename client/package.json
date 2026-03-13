@@ -5,7 +5,7 @@
   "scripts": {
     "watch": "vite dev",
     "build": "vite build",
-    "generate": "graphql-codegen --config codegen.yml"
+    "generate": "graphql-codegen --config codegen.ts"
   },
   "dependencies": {
     "@apollo/client": "^4.1.6",

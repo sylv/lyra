@@ -2,11 +2,12 @@ use crate::RequestAuth;
 use crate::auth::{PermissionGuard, create_session_for_user};
 use crate::entities::users::UserPerms;
 use crate::entities::{files, item_files, libraries, users, watch_progress};
+use crate::import::watch_state_import;
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
-use async_graphql::{Context, Object};
+use async_graphql::{Context, InputObject, Object, SimpleObject};
 use chrono::Utc;
 use sea_orm::Set;
 use sea_orm::sea_query::OnConflict;
@@ -16,6 +17,109 @@ use sea_orm::{
 };
 
 pub struct Mutation;
+
+#[derive(Debug, Clone, InputObject)]
+pub struct ImportWatchStatesInput {
+    pub dry_run: bool,
+    pub overwrite_conflicts: bool,
+    pub rows: Vec<ImportWatchStateRowInput>,
+}
+
+#[derive(Debug, Clone, InputObject)]
+pub struct ImportWatchStateRowInput {
+    pub source: String,
+    pub source_item_id: Option<String>,
+    pub title: Option<String>,
+    pub media_type: Option<String>,
+    pub season_number: Option<i64>,
+    pub episode_number: Option<i64>,
+    pub progress_percent: f32,
+    pub viewed_at: Option<i64>,
+    pub file_path: Option<String>,
+    pub file_basename: Option<String>,
+    pub file_size_bytes: Option<i64>,
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct ImportWatchStateConflict {
+    pub row_index: i32,
+    pub source_item_id: Option<String>,
+    pub title: Option<String>,
+    pub item_id: String,
+    pub existing_progress_percent: f32,
+    pub imported_progress_percent: f32,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct ImportWatchStateUnmatched {
+    pub row_index: i32,
+    pub source_item_id: Option<String>,
+    pub title: Option<String>,
+    pub reason: String,
+    pub ambiguous: bool,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct ImportWatchStatesResult {
+    pub dry_run: bool,
+    pub total_rows: i32,
+    pub matched_rows: i32,
+    pub unmatched_rows: i32,
+    pub conflict_rows: i32,
+    pub will_insert: i32,
+    pub will_overwrite: i32,
+    pub imported: i32,
+    pub skipped: i32,
+    pub conflicts: Vec<ImportWatchStateConflict>,
+    pub unmatched: Vec<ImportWatchStateUnmatched>,
+}
+
+impl From<watch_state_import::ImportWatchStateConflictData> for ImportWatchStateConflict {
+    fn from(value: watch_state_import::ImportWatchStateConflictData) -> Self {
+        Self {
+            row_index: value.row_index,
+            source_item_id: value.source_item_id,
+            title: value.title,
+            item_id: value.item_id,
+            existing_progress_percent: value.existing_progress_percent,
+            imported_progress_percent: value.imported_progress_percent,
+            reason: value.reason,
+        }
+    }
+}
+
+impl From<watch_state_import::ImportWatchStateUnmatchedData> for ImportWatchStateUnmatched {
+    fn from(value: watch_state_import::ImportWatchStateUnmatchedData) -> Self {
+        Self {
+            row_index: value.row_index,
+            source_item_id: value.source_item_id,
+            title: value.title,
+            reason: value.reason,
+            ambiguous: value.ambiguous,
+        }
+    }
+}
+
+impl From<watch_state_import::ImportWatchStatesResultData> for ImportWatchStatesResult {
+    fn from(value: watch_state_import::ImportWatchStatesResultData) -> Self {
+        Self {
+            dry_run: value.dry_run,
+            total_rows: value.total_rows,
+            matched_rows: value.matched_rows,
+            unmatched_rows: value.unmatched_rows,
+            conflict_rows: value.conflict_rows,
+            will_insert: value.will_insert,
+            will_overwrite: value.will_overwrite,
+            imported: value.imported,
+            skipped: value.skipped,
+            conflicts: value.conflicts.into_iter().map(Into::into).collect(),
+            unmatched: value.unmatched.into_iter().map(Into::into).collect(),
+        }
+    }
+}
 
 #[Object]
 impl Mutation {
@@ -181,6 +285,49 @@ impl Mutation {
         }
 
         Ok(updated_rows)
+    }
+
+    async fn import_watch_states(
+        &self,
+        ctx: &Context<'_>,
+        input: ImportWatchStatesInput,
+    ) -> Result<ImportWatchStatesResult, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+
+        let request = watch_state_import::ImportWatchStatesRequest {
+            user_id: user.id.clone(),
+            overwrite_conflicts: input.overwrite_conflicts,
+            rows: input
+                .rows
+                .into_iter()
+                .map(|row| watch_state_import::ImportWatchStateRow {
+                    source: row.source,
+                    source_item_id: row.source_item_id,
+                    title: row.title,
+                    media_type: row.media_type,
+                    season_number: row.season_number,
+                    episode_number: row.episode_number,
+                    progress_percent: row.progress_percent,
+                    viewed_at: row.viewed_at,
+                    file_path: row.file_path,
+                    file_basename: row.file_basename,
+                    file_size_bytes: row.file_size_bytes,
+                    imdb_id: row.imdb_id,
+                    tmdb_id: row.tmdb_id,
+                })
+                .collect(),
+        };
+
+        let result = if input.dry_run {
+            watch_state_import::dry_run(pool, request).await
+        } else {
+            watch_state_import::commit(pool, request).await
+        }
+        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+
+        Ok(result.into())
     }
 
     async fn create_library(
