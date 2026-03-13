@@ -19,7 +19,6 @@ use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, RelationTrait, prelude::Expr,
 };
-use std::collections::HashMap;
 use tokio::task::spawn_blocking;
 
 const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
@@ -464,45 +463,41 @@ impl Query {
 
     async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        let completed_rows: Vec<(jobs_entity::JobKind, i64)> = jobs_entity::Entity::find()
-            .select_only()
-            .column(jobs_entity::Column::JobKind)
-            .column_as(jobs_entity::Column::Id.count(), "completed_count")
-            .filter(jobs_entity::Column::RunAfter.is_null())
-            .filter(jobs_entity::Column::LastRunAt.gt(0))
-            .filter(jobs_entity::Column::AttemptCount.eq(0))
-            .group_by(jobs_entity::Column::JobKind)
-            .into_tuple()
-            .all(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        let activity_registry = ctx.data::<jobs::JobActivityRegistry>()?;
+        let now = chrono::Utc::now().timestamp();
 
-        let completed_by_kind: HashMap<jobs_entity::JobKind, i64> =
-            completed_rows.into_iter().collect();
-
-        let pending_rows: Vec<(jobs_entity::JobKind, i64)> = jobs_entity::Entity::find()
-            .select_only()
-            .column(jobs_entity::Column::JobKind)
-            .column_as(jobs_entity::Column::Id.count(), "pending_count")
-            .filter(jobs_entity::Column::RunAfter.is_not_null())
-            .group_by(jobs_entity::Column::JobKind)
-            .into_tuple()
-            .all(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-
-        let pending_by_kind: HashMap<jobs_entity::JobKind, i64> =
-            pending_rows.into_iter().collect();
-
-        let handlers = jobs::registry::get_registered_job_handlers();
         let mut activities = Vec::new();
-        for handler in handlers {
-            let job_kind = handler.job_kind();
-            let pending = *pending_by_kind.get(&job_kind).unwrap_or(&0);
-            let completed = *completed_by_kind.get(&job_kind).unwrap_or(&0);
+        for job_kind in activity_registry.job_kinds() {
+            let Some(snapshot) = activity_registry.snapshot(job_kind) else {
+                continue;
+            };
+
+            let completed = jobs_entity::Entity::find()
+                .filter(jobs_entity::Column::JobKind.eq(job_kind))
+                .filter(jobs_entity::Column::RunAfter.is_null())
+                .filter(jobs_entity::Column::UpdatedAt.gte(snapshot.idle_at))
+                .count(pool)
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?
+                as i64;
+
+            let pending = jobs_entity::Entity::find()
+                .filter(jobs_entity::Column::JobKind.eq(job_kind))
+                .filter(jobs_entity::Column::RunAfter.is_not_null())
+                .filter(jobs_entity::Column::RunAfter.lte(now))
+                .count(pool)
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?
+                as i64;
+
             let total = completed + pending;
 
-            if pending == 0 || total == 0 {
+            if total == 0 {
+                continue;
+            }
+
+            if pending == 0 && now - snapshot.last_activity_at > jobs::ACTIVITY_STALE_AFTER_SECONDS
+            {
                 continue;
             }
 

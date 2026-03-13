@@ -1,5 +1,5 @@
 use crate::jobs::{
-    JobHandler, JobManager,
+    JobActivityRegistry, JobHandler, JobManager,
     handlers::{
         asset_download::AssetDownloadJob, asset_thumbhash::AssetThumbhashJob,
         file_ffprobe::FileFfprobeJob, file_keyframes::FileKeyframesJob,
@@ -15,6 +15,11 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
+pub struct RegisteredJobs {
+    pub managers: Vec<JobManager>,
+    pub activity_registry: JobActivityRegistry,
+}
+
 pub fn get_registered_job_handlers() -> Vec<Arc<dyn JobHandler>> {
     vec![
         Arc::new(AssetDownloadJob),
@@ -29,9 +34,25 @@ pub fn get_registered_job_handlers() -> Vec<Arc<dyn JobHandler>> {
     ]
 }
 
-pub fn get_registered_jobs(pool: &DatabaseConnection, wake_signal: Arc<Notify>) -> Vec<JobManager> {
-    get_registered_job_handlers()
+pub fn get_registered_jobs(pool: &DatabaseConnection, wake_signal: Arc<Notify>) -> RegisteredJobs {
+    let handlers = get_registered_job_handlers();
+    let now = chrono::Utc::now().timestamp();
+    let activity_registry =
+        JobActivityRegistry::new(handlers.iter().map(|handler| handler.job_kind()), now);
+
+    let managers = handlers
         .into_iter()
-        .map(|handler| JobManager::new(handler, pool.clone(), wake_signal.clone()))
-        .collect()
+        .map(|handler| {
+            let job_kind = handler.job_kind();
+            let activity_state = activity_registry
+                .state(job_kind)
+                .expect("missing activity state for registered job kind");
+            JobManager::new(handler, pool.clone(), wake_signal.clone(), activity_state)
+        })
+        .collect();
+
+    RegisteredJobs {
+        managers,
+        activity_registry,
+    }
 }

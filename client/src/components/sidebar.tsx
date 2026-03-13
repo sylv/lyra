@@ -1,13 +1,14 @@
-import { useSuspenseQuery } from "@apollo/client/react";
+import { useQuery, useSuspenseQuery } from "@apollo/client/react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { Activity, AudioLines, HomeIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
-import { useState, type FC, type ReactNode } from "react";
+import { useEffect, useState, type FC, type ReactNode } from "react";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
 import { cn } from "../lib/utils";
-import { ActivityPanel } from "./activity-panel";
+import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
 import { SuspenseBoundary } from "./fallback";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { graphql } from "../@generated/gql";
+import { Spinner } from "./ui/spinner";
 
 const SidebarLink: FC<{
 	to: string;
@@ -63,6 +64,18 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
 	const { data } = useSuspenseQuery(LibrariesQuery);
+	const [pollInterval, setPollInterval] = useState(10000);
+	const [activitiesRunning, setActivitiesRunning] = useState(false);
+	const { data: activityData } = useQuery(ActivityPanelQuery, {
+		pollInterval: pollInterval,
+	});
+
+	useEffect(() => {
+		if (!activityData) return
+		const hasRunning = activityData.activities.some(a => a.current < a.total)
+		setActivitiesRunning(hasRunning)
+		setPollInterval(hasRunning ? 1000 : 10000)
+	}, [activityData])
 
 	return (
 		<div className="flex w-dvw h-dvh overflow-hidden">
@@ -82,11 +95,17 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 								<button
 									type="button"
 									className={cn(
-										"flex items-center p-2 rounded transition hover:bg-zinc-200/10",
+										"flex items-center p-2 rounded transition hover:bg-zinc-200/10 relative",
 										isActivityOpen && "bg-zinc-200/10",
 									)}
 								>
+									{/* todo: kinda gross but we can't use the bg trick to add an outline to a little spinner because the background can change */}
 									<Activity className="size-4" />
+									{activitiesRunning && (
+										<div className="absolute top-1 right-1 rounded-md">
+											<Spinner className="size-2.5" />
+										</div>
+									)}
 								</button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent
@@ -95,7 +114,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 								sideOffset={12}
 								className="border-0 bg-transparent p-0 shadow-none"
 							>
-								<ActivityPanel open={isActivityOpen} />
+								<ActivityPanel open={isActivityOpen} data={activityData} />
 							</DropdownMenuContent>
 						</DropdownMenu>
 						<a

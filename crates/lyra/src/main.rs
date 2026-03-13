@@ -156,7 +156,9 @@ async fn main() {
     background_workers
         .spawn(async move { scanner::start_scanner(scanner_pool, scanner_wake_signal).await });
 
-    for job in jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone()) {
+    let registered_jobs = jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone());
+    let job_activity_registry = registered_jobs.activity_registry.clone();
+    for job in registered_jobs.managers {
         let job_kind = job.job_kind();
         background_workers.spawn(async move {
             tracing::info!(job_kind = ?job_kind, "starting job worker");
@@ -175,6 +177,7 @@ async fn main() {
     .limit_complexity(100)
     .limit_directives(5)
     .data(pool.clone())
+    .data(job_activity_registry)
     .finish();
 
     // write the schema to a file in dev

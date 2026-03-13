@@ -797,7 +797,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 								type="button"
 								className={cn(
 									"text-left rounded-sm transition-colors",
-									detailsPath ? "cursor-pointer hover:text-gray-200" : "cursor-default",
+									detailsPath ? "cursor-pointer group" : "cursor-default",
 								)}
 								onClick={(event) => {
 									event.stopPropagation();
@@ -807,7 +807,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 									}
 								}}
 							>
-								<h2 className="text-xl font-semibold">
+								<h2 className="text-xl font-semibold group-hover:underline">
 									{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
 								</h2>
 								<p className="text-sm text-gray-300">
@@ -819,7 +819,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean }> = ({ itemId, aut
 								type="button"
 								className={cn(
 									"text-left rounded-sm transition-colors",
-									detailsPath ? "cursor-pointer hover:text-gray-200" : "cursor-default",
+									detailsPath ? "cursor-pointer hover:underline" : "cursor-default",
 								)}
 								onClick={(event) => {
 									event.stopPropagation();

@@ -8,7 +8,10 @@ use sea_orm::{
     sea_query::{OnConflict, SelectStatement},
 };
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicI64, Ordering},
+};
 use std::time::Instant;
 use tokio::sync::Notify;
 use tokio::time::sleep;
@@ -20,6 +23,8 @@ const BATCH_SIZE: u64 = 100;
 const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 const DEFAULT_BACKOFF_SECONDS: &[i64] = &[24 * 60 * 60, 7 * 24 * 60 * 60, 30 * 24 * 60 * 60];
 const EXISTING_SUBJECT_LOOKUP_CHUNK_SIZE: usize = 400;
+pub const IDLE_RESET_AFTER_SECONDS: i64 = 5 * 60;
+pub const ACTIVITY_STALE_AFTER_SECONDS: i64 = 60;
 
 pub const SUBJECT_KEY_COLUMN: &str = "subject_key";
 pub const TARGET_ID_COLUMN: &str = "target_id";
@@ -198,10 +203,91 @@ struct PendingTargetRecord {
     item_id: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct JobActivityState {
+    idle_at: AtomicI64,
+    last_activity_at: AtomicI64,
+    idle_started_at: AtomicI64,
+}
+
+impl JobActivityState {
+    fn new(now: i64) -> Self {
+        Self {
+            idle_at: AtomicI64::new(now),
+            last_activity_at: AtomicI64::new(now),
+            idle_started_at: AtomicI64::new(0),
+        }
+    }
+
+    fn mark_active(&self, now: i64) {
+        self.last_activity_at.store(now, Ordering::Relaxed);
+        self.idle_started_at.store(0, Ordering::Relaxed);
+    }
+
+    fn mark_idle(&self, now: i64) {
+        let idle_started_at = self.idle_started_at.load(Ordering::Relaxed);
+        if idle_started_at == 0 {
+            self.idle_started_at.store(now, Ordering::Relaxed);
+            return;
+        }
+
+        if now - idle_started_at >= IDLE_RESET_AFTER_SECONDS {
+            self.idle_at.store(now, Ordering::Relaxed);
+            self.idle_started_at.store(now, Ordering::Relaxed);
+        }
+    }
+
+    fn snapshot(&self) -> JobActivitySnapshot {
+        JobActivitySnapshot {
+            idle_at: self.idle_at.load(Ordering::Relaxed),
+            last_activity_at: self.last_activity_at.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct JobActivitySnapshot {
+    pub idle_at: i64,
+    pub last_activity_at: i64,
+}
+
+#[derive(Clone)]
+pub struct JobActivityRegistry {
+    states: Arc<HashMap<jobs_entity::JobKind, Arc<JobActivityState>>>,
+}
+
+impl JobActivityRegistry {
+    pub fn new(job_kinds: impl IntoIterator<Item = jobs_entity::JobKind>, now: i64) -> Self {
+        let mut states = HashMap::new();
+        for job_kind in job_kinds {
+            states.insert(job_kind, Arc::new(JobActivityState::new(now)));
+        }
+
+        Self {
+            states: Arc::new(states),
+        }
+    }
+
+    pub fn state(&self, job_kind: jobs_entity::JobKind) -> Option<Arc<JobActivityState>> {
+        self.states.get(&job_kind).cloned()
+    }
+
+    pub fn snapshot(&self, job_kind: jobs_entity::JobKind) -> Option<JobActivitySnapshot> {
+        self.states
+            .get(&job_kind)
+            .map(|state| state.as_ref().snapshot())
+    }
+
+    pub fn job_kinds(&self) -> Vec<jobs_entity::JobKind> {
+        self.states.keys().copied().collect()
+    }
+}
+
 pub struct JobManager {
     handler: Arc<dyn JobHandler>,
     database: DatabaseConnection,
     wake_signal: Arc<Notify>,
+    activity_state: Arc<JobActivityState>,
 }
 
 impl JobManager {
@@ -209,11 +295,13 @@ impl JobManager {
         handler: Arc<dyn JobHandler>,
         database: DatabaseConnection,
         wake_signal: Arc<Notify>,
+        activity_state: Arc<JobActivityState>,
     ) -> Self {
         Self {
             handler,
             database,
             wake_signal,
+            activity_state,
         }
     }
 
@@ -227,6 +315,13 @@ impl JobManager {
             let (target_kind, target_query) = self.handler.targets();
             let enqueued = self.sync_targets(target_kind, target_query, now).await?;
             let due_jobs = self.find_due_jobs(now).await?;
+            let had_work = enqueued > 0 || !due_jobs.is_empty();
+
+            if had_work {
+                self.activity_state.mark_active(now);
+            } else {
+                self.activity_state.mark_idle(now);
+            }
 
             if due_jobs.is_empty() {
                 if enqueued == 0 {
@@ -237,6 +332,8 @@ impl JobManager {
 
             for job in due_jobs {
                 self.run_job_for_entry(job).await?;
+                self.activity_state
+                    .mark_active(chrono::Utc::now().timestamp());
             }
         }
     }

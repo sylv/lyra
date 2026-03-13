@@ -1,8 +1,9 @@
 import { useQuery } from "@apollo/client/react";
 import type { FC } from "react";
 import { graphql } from "../@generated/gql";
+import type { GetActivitiesQuery } from "../@generated/gql/graphql";
 
-const Query = graphql(`
+export const ActivityPanelQuery = graphql(`
 	query GetActivities {
 		activities {
 			taskType
@@ -40,11 +41,7 @@ const CircularProgress: FC<{ progress: number }> = ({ progress }) => {
 	);
 };
 
-export const ActivityPanel: FC<{ open: boolean }> = ({ open }) => {
-	const { data } = useQuery(Query, {
-		skip: !open,
-		pollInterval: open ? 2000 : 0,
-	});
+export const ActivityPanel: FC<{ data?: GetActivitiesQuery, open: boolean }> = ({ data, open }) => {
 
 	return (
 		<div className="w-95 max-h-[70vh] overflow-y-auto bg-black p-3 shadow-lg shadow-black/30">
@@ -59,7 +56,7 @@ export const ActivityPanel: FC<{ open: boolean }> = ({ open }) => {
 							<div className="flex-1">
 								<p className="text-sm font-semibold text-zinc-100">{task.title}</p>
 								<p className="text-[0.67rem] text-zinc-400">
-									Processing {task.current.toLocaleString()} of {task.total.toLocaleString()}
+									{task.current < task.total ? "Processing" : "Processed"} {task.current.toLocaleString()} of {task.total.toLocaleString()}
 								</p>
 							</div>
 						</div>
