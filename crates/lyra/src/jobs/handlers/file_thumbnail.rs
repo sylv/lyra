@@ -3,7 +3,7 @@ use crate::{
     entities::{
         assets as assets_entity,
         file_assets::{self, FileAssetRole},
-        files, jobs as jobs_entity,
+        files, item_files, item_metadata, jobs as jobs_entity, metadata_source::MetadataSource,
     },
     jobs::handlers::shared,
     jobs::{JobHandler, JobTarget},
@@ -27,8 +27,6 @@ impl JobHandler for FileThumbnailJob {
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
-        // todo: only run for items that have no remote metadata attached (or that are missing a remote thumbnail?)
-        // we are just wasting time generating thumbnails if remote metadata is gonna give it to us for free
         let mut query = shared::base_file_targets_query();
         query.and_where(
             Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
@@ -38,6 +36,33 @@ impl JobHandler for FileThumbnailJob {
                     .and_where(
                         Expr::col((file_assets::Entity, file_assets::Column::Role))
                             .eq(FileAssetRole::Thumbnail),
+                    )
+                    .to_owned(),
+            ),
+        );
+        query.and_where(
+            Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
+                Query::select()
+                    .column(item_files::Column::FileId)
+                    .from(item_files::Entity)
+                    .and_where(
+                        Expr::col((item_files::Entity, item_files::Column::ItemId)).in_subquery(
+                            Query::select()
+                                .column(item_metadata::Column::ItemId)
+                                .from(item_metadata::Entity)
+                                .and_where(
+                                    Expr::col((item_metadata::Entity, item_metadata::Column::Source))
+                                        .eq(MetadataSource::Remote),
+                                )
+                                .and_where(
+                                    Expr::col((
+                                        item_metadata::Entity,
+                                        item_metadata::Column::ThumbnailAssetId,
+                                    ))
+                                    .is_not_null(),
+                                )
+                                .to_owned(),
+                        ),
                     )
                     .to_owned(),
             ),
