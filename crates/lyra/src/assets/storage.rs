@@ -2,7 +2,10 @@ use crate::config::get_config;
 use anyhow::Context;
 use image::{GenericImageView, ImageFormat};
 use sha2::{Digest, Sha256};
-use std::{io::ErrorKind, path::PathBuf};
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 use tokio::{
     fs::File,
     io::{AsyncWriteExt, BufWriter},
@@ -92,22 +95,22 @@ pub fn get_transformed_cache_path(
         .join(format!("{hash_sha256}_{width}x{height}.jpg"))
 }
 
-pub async fn persist_image_bytes(bytes: &[u8], image: &PreparedImage) -> anyhow::Result<PathBuf> {
-    let output_path = get_asset_output_path(&image.hash_sha256, image.extension)?;
+pub async fn persist_bytes_atomically(output_path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let parent = output_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_path.display()))?;
+    tokio::fs::create_dir_all(parent).await?;
 
-    if let Some(parent) = output_path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
+    if tokio::fs::try_exists(output_path).await? {
+        return Ok(());
     }
 
-    if tokio::fs::try_exists(&output_path).await? {
-        return Ok(output_path);
-    }
-
-    let tmp_dir = get_config().get_tmp_dir().join("assets");
-    tokio::fs::create_dir_all(&tmp_dir).await?;
-    let tmp_path = tmp_dir.join(format!(
-        "{}.{}.tmp",
-        image.hash_sha256,
+    let tmp_path = parent.join(format!(
+        ".{}.{}.tmp",
+        output_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow::anyhow!("output path has invalid file name"))?,
         rand::random::<u64>()
     ));
 
@@ -116,15 +119,21 @@ pub async fn persist_image_bytes(bytes: &[u8], image: &PreparedImage) -> anyhow:
     file.flush().await?;
     file.get_ref().sync_all().await?;
 
-    match tokio::fs::rename(&tmp_path, &output_path).await {
-        Ok(()) => Ok(output_path),
+    match tokio::fs::rename(&tmp_path, output_path).await {
+        Ok(()) => Ok(()),
         Err(error) if error.kind() == ErrorKind::AlreadyExists => {
             tokio::fs::remove_file(&tmp_path).await?;
-            Ok(output_path)
+            Ok(())
         }
         Err(error) => {
             let _ = tokio::fs::remove_file(&tmp_path).await;
             Err(error.into())
         }
     }
+}
+
+pub async fn persist_image_bytes(bytes: &[u8], image: &PreparedImage) -> anyhow::Result<PathBuf> {
+    let output_path = get_asset_output_path(&image.hash_sha256, image.extension)?;
+    persist_bytes_atomically(&output_path, bytes).await?;
+    Ok(output_path)
 }

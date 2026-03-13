@@ -16,7 +16,7 @@ use reqwest::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
 use std::{io::Cursor, path::Path as FsPath};
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -83,9 +83,7 @@ async fn serve_asset(
         resized.write_to(&mut cursor, ImageOutputFormat::Jpeg(80))?;
         let bytes = cursor.into_inner();
 
-        let mut file = File::create(&transformed_path).await?;
-        file.write_all(&bytes).await?;
-        file.sync_all().await?;
+        storage::persist_bytes_atomically(&transformed_path, &bytes).await?;
     }
 
     stream_file(&transformed_path, "image/jpeg").await
