@@ -1,20 +1,37 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export const useDebounce = <T>(value: T, delay: number): [T, boolean] => {
+
+export const useDebounce = <T>(
+	value: T,
+	delay: number,
+	maxDelay?: number
+): [T, boolean] => {
 	const [debouncedValue, setDebouncedValue] = useState(value);
 	const [isDebouncing, setIsDebouncing] = useState(false);
+	const maxHandlerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
 		setIsDebouncing(true);
-		const handler = setTimeout(() => {
+
+		const commit = () => {
 			setDebouncedValue(value);
 			setIsDebouncing(false);
-		}, delay);
+			if (maxHandlerRef.current !== null) {
+				clearTimeout(maxHandlerRef.current);
+				maxHandlerRef.current = null;
+			}
+		};
+
+		const handler = setTimeout(commit, delay);
+
+		if (maxDelay !== undefined && maxHandlerRef.current === null) {
+			maxHandlerRef.current = setTimeout(commit, maxDelay);
+		}
 
 		return () => {
 			clearTimeout(handler);
 		};
-	}, [value, delay]);
+	}, [value, delay, maxDelay]);
 
 	return [debouncedValue, isDebouncing];
 };

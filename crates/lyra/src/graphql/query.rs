@@ -16,8 +16,9 @@ use async_graphql::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait, prelude::Expr,
+    ColumnTrait, Condition, DatabaseConnection, DbBackend, EntityTrait, JoinType, Order,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement,
+    prelude::Expr,
 };
 use tokio::task::spawn_blocking;
 
@@ -123,6 +124,45 @@ pub struct Activity {
     pub current: i64,
     pub total: i64,
     pub progress_percent: f64,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct SearchResults {
+    pub roots: Vec<roots::Model>,
+    pub items: Vec<items::Model>,
+}
+
+fn build_fts_query(raw_query: &str) -> Option<String> {
+    let mut terms = Vec::new();
+    let mut current = String::new();
+
+    for ch in raw_query.chars() {
+        if ch.is_alphanumeric() {
+            current.push(ch);
+            continue;
+        }
+
+        if !current.is_empty() {
+            terms.push(std::mem::take(&mut current));
+        }
+    }
+
+    if !current.is_empty() {
+        terms.push(current);
+    }
+
+    if terms.is_empty() {
+        return None;
+    }
+
+    Some(
+        terms
+            .into_iter()
+            .take(8)
+            .map(|term| format!("{term}*"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }
 
 pub struct Query;
@@ -417,6 +457,55 @@ impl Query {
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?
             .ok_or_else(|| async_graphql::Error::new("Item not found".to_string()))
+    }
+
+    async fn search(
+        &self,
+        ctx: &Context<'_>,
+        query: String,
+        limit: Option<i32>,
+    ) -> Result<SearchResults, async_graphql::Error> {
+        let Some(fts_query) = build_fts_query(&query) else {
+            return Ok(SearchResults {
+                roots: Vec::new(),
+                items: Vec::new(),
+            });
+        };
+
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let limit = limit.unwrap_or(6).clamp(1, 20) as u64;
+        let root_statement = Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            r#"
+                SELECT DISTINCT roots.*
+                FROM roots
+                JOIN root_search_fts ON root_search_fts.root_id = roots.id
+                WHERE root_search_fts MATCH ?
+                ORDER BY bm25(root_search_fts, 8.0, 1.0) ASC, root_search_fts.rowid ASC
+                LIMIT ?
+            "#,
+            vec![fts_query.clone().into(), (limit as i64).into()],
+        );
+        let item_statement = Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            r#"
+                SELECT DISTINCT items.*
+                FROM items
+                JOIN item_search_fts ON item_search_fts.item_id = items.id
+                WHERE item_search_fts MATCH ?
+                ORDER BY bm25(item_search_fts, 8.0, 1.0) ASC, item_search_fts.rowid ASC
+                LIMIT ?
+            "#,
+            vec![fts_query.into(), (limit as i64).into()],
+        );
+
+        let (roots, items) = tokio::try_join!(
+            roots::Entity::find().from_raw_sql(root_statement).all(pool),
+            items::Entity::find().from_raw_sql(item_statement).all(pool),
+        )
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        Ok(SearchResults { roots, items })
     }
 
     /// Used during library setup to pick the library path

@@ -240,6 +240,7 @@ type Query {
 	root(rootId: String!): RootNode!
 	season(seasonId: String!): SeasonNode!
 	item(itemId: String!): ItemNode!
+	search(query: String!, limit: Int): SearchResults!
 	"""
 	Used during library setup to pick the library path
 	"""
@@ -322,6 +323,11 @@ type RootNodeProperties {
 	backgroundImage: Asset
 	posterImage: Asset
 	thumbnailImage: Asset
+}
+
+type SearchResults {
+	roots: [RootNode!]!
+	items: [ItemNode!]!
 }
 
 type SeasonNode {

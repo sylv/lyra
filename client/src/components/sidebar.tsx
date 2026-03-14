@@ -6,6 +6,7 @@ import { generateGradientIcon } from "../lib/generate-gradient-icon";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
 import { SuspenseBoundary } from "./fallback";
+import { SearchModal } from "./search-modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { graphql } from "../@generated/gql";
 import { Spinner } from "./ui/spinner";
@@ -62,6 +63,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 	const pathname = useLocation({
 		select: (location) => location.pathname,
 	});
+	const [isSearchOpen, setIsSearchOpen] = useState(false);
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
 	const { data } = useSuspenseQuery(LibrariesQuery);
@@ -132,8 +134,11 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 				<div className="mt-6 -mx-1.5">
 					<button
 						type="button"
-						className="w-full border border-zinc-700/50 text-zinc-400 rounded-full px-4 py-2 flex items-center justify-between text-xs hover:bg-zinc-400/10 transition-colors"
-						onClick={() => {}}
+						className={cn(
+							"w-full border border-zinc-700/50 text-zinc-400 rounded-full px-4 py-2 flex items-center justify-between text-xs hover:bg-zinc-400/10 transition-colors",
+							isSearchOpen && "bg-zinc-400/10",
+						)}
+						onClick={() => setIsSearchOpen(true)}
 					>
 						<span>Search</span>
 						<SearchIcon className="size-3" />
@@ -159,6 +164,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 			<main className="overflow-auto w-full z-10 pr-6">
 				<SuspenseBoundary>{children}</SuspenseBoundary>
 			</main>
+			<SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />
 		</div>
 	);
 };

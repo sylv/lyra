@@ -3,7 +3,7 @@ import { cn } from "../lib/utils";
 
 type IconTextProps = {
 	icon: ReactNode;
-	text: string;
+	text: ReactNode;
 	className?: string;
 };
 
