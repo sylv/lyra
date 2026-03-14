@@ -11,9 +11,9 @@ export interface DirectoryPickerProps {
 }
 
 const GetFiles = graphql(`
-    query GetFiles($path: String!) {
-        listFiles(path: $path)
-    }
+	query GetFiles($path: String!) {
+		listFiles(path: $path)
+	}
 `);
 
 export const DirectoryPicker: FC<DirectoryPickerProps> = ({ onPathChange, initialPath = "/" }) => {

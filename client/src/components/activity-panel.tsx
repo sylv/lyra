@@ -1,4 +1,3 @@
-import { useQuery } from "@apollo/client/react";
 import type { FC } from "react";
 import { graphql } from "../@generated/gql";
 import type { GetActivitiesQuery } from "../@generated/gql/graphql";
@@ -41,13 +40,15 @@ const CircularProgress: FC<{ progress: number }> = ({ progress }) => {
 	);
 };
 
-export const ActivityPanel: FC<{ data?: GetActivitiesQuery, open: boolean }> = ({ data, open }) => {
+export const ActivityPanel: FC<{ data?: GetActivitiesQuery; open: boolean }> = ({ data }) => {
 	// todo: animations when activities enter/leave so the modal doesn't jump around as much
 	return (
 		<div className="w-95 max-h-[70vh] overflow-y-auto bg-black p-3 shadow-lg shadow-black/30 min-h-[30vh]">
 			<h2 className="px-1 pt-1 text-xs font-semibold">Activity</h2>
 			{!data && <p className="text-sm text-zinc-400">Loading activity...</p>}
-			{data?.activities?.length === 0 && <p className="text-xs text-zinc-400 px-1 mt-2">No activity is currently running.</p>}
+			{data?.activities?.length === 0 && (
+				<p className="text-xs text-zinc-400 px-1 mt-2">No activity is currently running.</p>
+			)}
 			<div className="mt-1 space-y-2">
 				{data?.activities?.map((task) => {
 					return (
@@ -56,7 +57,8 @@ export const ActivityPanel: FC<{ data?: GetActivitiesQuery, open: boolean }> = (
 							<div className="flex-1">
 								<p className="text-sm font-semibold text-zinc-100">{task.title}</p>
 								<p className="text-[0.67rem] text-zinc-400">
-									{task.current < task.total ? "Processing" : "Processed"} {task.current.toLocaleString()} of {task.total.toLocaleString()}
+									{task.current < task.total ? "Processing" : "Processed"} {task.current.toLocaleString()} of{" "}
+									{task.total.toLocaleString()}
 								</p>
 							</div>
 						</div>

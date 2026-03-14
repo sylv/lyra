@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCheckIcon, CheckIcon, FileWarningIcon, PlayIcon } from "lucide-react";
+import { CheckCheckIcon, FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { openPlayerMedia } from "./player/player-state";

@@ -19,7 +19,6 @@ const ItemFragment = graphql(`
 	}
 `);
 
-
 export const getPathForRoot = (mediaRaw: FragmentType<typeof RootFragment>) => {
 	const media = unmask(RootFragment, mediaRaw);
 	return `/library/${media.libraryId}/${media.id}`;

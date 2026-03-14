@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/suspicious/noExplicitAny: its cringe */
 import { gql } from "@apollo/client";
 import { useMutation } from "@apollo/client/react";
 import { useState, type FC } from "react";

@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/suspicious/noArrayIndexKey: its cringe */
 import { OTPInput, REGEXP_ONLY_DIGITS, type SlotProps } from "input-otp";
 import { Fragment, type FC } from "react";
 import { cn } from "../lib/utils";

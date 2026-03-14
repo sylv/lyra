@@ -1,0 +1,9 @@
+{
+	"plugins": ["react", "jsx-a11y"],
+	"rules": {
+		"react/exhaustive-deps": "off",
+		"react/no-array-index-key": "off",
+		"typescript/no-non-null-assertion": "off"
+	},
+	"ignorePatterns": ["**/@generated/**"]
+}

@@ -72,9 +72,7 @@ export const INITIAL_PLEX_IMPORT_STATE: PlexImportState = {
 	skippedCount: 0,
 };
 
-export const getNextStepFromCompatibility = (
-	compatibility: PlexImportCompatibility,
-): PlexImportStep => {
+export const getNextStepFromCompatibility = (compatibility: PlexImportCompatibility): PlexImportStep => {
 	if (compatibility.conflictRows > 0) {
 		return "conflicts";
 	}

@@ -15,7 +15,7 @@ import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-
  */
 type Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": typeof types.GetActivitiesDocument,
-    "\n    query GetFiles($path: String!) {\n        listFiles(path: $path)\n    }\n": typeof types.GetFilesDocument,
+    "\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n": typeof types.GetFilesDocument,
     "\n\tfragment EpisodeCard on ItemNode {\n\t\tid\n\t\tname\n\t\tproperties {\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\treleasedAt\n\t\t\truntimeMinutes\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\t...GetPathForItem\n\t}\n": typeof types.EpisodeCardFragmentDoc,
     "\n\tfragment ImageAsset on Asset {\n\t\tid\n\t\tthumbhash\n\t}\n": typeof types.ImageAssetFragmentDoc,
     "\n\tmutation RunImportWatchStates($input: ImportWatchStatesInput!) {\n\t\timportWatchStates(input: $input) {\n\t\t\tdryRun\n\t\t\ttotalRows\n\t\t\tmatchedRows\n\t\t\tunmatchedRows\n\t\t\tconflictRows\n\t\t\twillInsert\n\t\t\twillOverwrite\n\t\t\timported\n\t\t\tskipped\n\t\t\tconflicts {\n\t\t\t\trowIndex\n\t\t\t\tsourceItemId\n\t\t\t\ttitle\n\t\t\t\titemId\n\t\t\t\texistingProgressPercent\n\t\t\t\timportedProgressPercent\n\t\t\t\treason\n\t\t\t}\n\t\t\tunmatched {\n\t\t\t\trowIndex\n\t\t\t\tsourceItemId\n\t\t\t\ttitle\n\t\t\t\treason\n\t\t\t\tambiguous\n\t\t\t}\n\t\t}\n\t}\n": typeof types.RunImportWatchStatesDocument,
@@ -30,7 +30,7 @@ type Documents = {
     "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": typeof types.SignupDocument,
     "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": typeof types.GetLibrariesDocument,
     "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": typeof types.CreateLibraryDocument,
-    "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\t\n": typeof types.LibrariesDocument,
+    "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": typeof types.LibrariesDocument,
     "\n\tfragment GetPathForRoot on RootNode {\n\t\tid\n\t\tlibraryId\n\t}\n": typeof types.GetPathForRootFragmentDoc,
     "\n\tfragment GetPathForItem on ItemNode {\n\t\tkind\n\t\trootId\n\t\tseasonId\n\t\tparent {\n\t\t\tlibraryId\n\t\t}\n\t}\n": typeof types.GetPathForItemFragmentDoc,
     "\n\tquery GetAllMedia($filter: RootNodeFilter!, $after: String) {\n\t\trootList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\t...MediaList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": typeof types.GetAllMediaDocument,
@@ -41,7 +41,7 @@ type Documents = {
 };
 const documents: Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": types.GetActivitiesDocument,
-    "\n    query GetFiles($path: String!) {\n        listFiles(path: $path)\n    }\n": types.GetFilesDocument,
+    "\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n": types.GetFilesDocument,
     "\n\tfragment EpisodeCard on ItemNode {\n\t\tid\n\t\tname\n\t\tproperties {\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\treleasedAt\n\t\t\truntimeMinutes\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\t...GetPathForItem\n\t}\n": types.EpisodeCardFragmentDoc,
     "\n\tfragment ImageAsset on Asset {\n\t\tid\n\t\tthumbhash\n\t}\n": types.ImageAssetFragmentDoc,
     "\n\tmutation RunImportWatchStates($input: ImportWatchStatesInput!) {\n\t\timportWatchStates(input: $input) {\n\t\t\tdryRun\n\t\t\ttotalRows\n\t\t\tmatchedRows\n\t\t\tunmatchedRows\n\t\t\tconflictRows\n\t\t\twillInsert\n\t\t\twillOverwrite\n\t\t\timported\n\t\t\tskipped\n\t\t\tconflicts {\n\t\t\t\trowIndex\n\t\t\t\tsourceItemId\n\t\t\t\ttitle\n\t\t\t\titemId\n\t\t\t\texistingProgressPercent\n\t\t\t\timportedProgressPercent\n\t\t\t\treason\n\t\t\t}\n\t\t\tunmatched {\n\t\t\t\trowIndex\n\t\t\t\tsourceItemId\n\t\t\t\ttitle\n\t\t\t\treason\n\t\t\t\tambiguous\n\t\t\t}\n\t\t}\n\t}\n": types.RunImportWatchStatesDocument,
@@ -56,7 +56,7 @@ const documents: Documents = {
     "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": types.SignupDocument,
     "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": types.GetLibrariesDocument,
     "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": types.CreateLibraryDocument,
-    "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\t\n": types.LibrariesDocument,
+    "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": types.LibrariesDocument,
     "\n\tfragment GetPathForRoot on RootNode {\n\t\tid\n\t\tlibraryId\n\t}\n": types.GetPathForRootFragmentDoc,
     "\n\tfragment GetPathForItem on ItemNode {\n\t\tkind\n\t\trootId\n\t\tseasonId\n\t\tparent {\n\t\t\tlibraryId\n\t\t}\n\t}\n": types.GetPathForItemFragmentDoc,
     "\n\tquery GetAllMedia($filter: RootNodeFilter!, $after: String) {\n\t\trootList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\t...MediaList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": types.GetAllMediaDocument,
@@ -87,7 +87,7 @@ export function graphql(source: "\n\tquery GetActivities {\n\t\tactivities {\n\t
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n    query GetFiles($path: String!) {\n        listFiles(path: $path)\n    }\n"): (typeof documents)["\n    query GetFiles($path: String!) {\n        listFiles(path: $path)\n    }\n"];
+export function graphql(source: "\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n"): (typeof documents)["\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -147,7 +147,7 @@ export function graphql(source: "\n\tmutation CreateLibrary($name: String!, $pat
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\t\n"): (typeof documents)["\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\t\n"];
+export function graphql(source: "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

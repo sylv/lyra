@@ -1,8 +1,9 @@
 import { XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties, FC, ReactNode } from "react";
-import React, { createContext, useEffect } from "react";
+import React, { createContext } from "react";
 import { createPortal } from "react-dom";
+import { useOnClickOutside } from "../hooks/use-on-click-outside";
 import { cn } from "../lib/utils";
 
 export interface ModalProps {
@@ -11,7 +12,6 @@ export interface ModalProps {
 	onOpenChange: (open: boolean) => void;
 	size?: string;
 	rotation?: ModalRotation;
-	container?: Element | null;
 	className?: string;
 	style?: CSSProperties;
 }
@@ -29,45 +29,23 @@ export const Modal: FC<ModalProps> = ({
 	onOpenChange,
 	size,
 	rotation = ModalRotation.Horizontal,
-	container,
 	className,
 	style,
 }) => {
-	const portalTarget = container ?? (typeof document !== "undefined" ? document.body : null);
+	const ref = React.useRef<HTMLDivElement>(null);
+	useOnClickOutside(ref, () => onOpenChange(false));
 
-	useEffect(() => {
-		if (!open || typeof document === "undefined") {
-			return;
-		}
-
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				onOpenChange(false);
-			}
-		};
-
-		document.addEventListener("keydown", onKeyDown);
-		return () => {
-			document.removeEventListener("keydown", onKeyDown);
-		};
-	}, [open, onOpenChange]);
-
-	if (portalTarget == null) {
-		return null;
-	}
-
-	const aspectRatio = rotation === ModalRotation.Horizontal ? "4 / 2.5" : "2.5 / 4";
 	const contentStyle: CSSProperties = {
 		maxHeight: "calc(100vh - 2rem)",
 		maxWidth: "calc(100vw - 2rem)",
-		...(size
-			? {
-				height: size,
-				aspectRatio,
-			}
-			: {}),
 		...style,
 	};
+
+	if (size) {
+		const aspectRatio = rotation === ModalRotation.Horizontal ? "4 / 2.5" : "2.5 / 4";
+		contentStyle.height = size;
+		contentStyle.aspectRatio = aspectRatio;
+	}
 
 	return createPortal(
 		<AnimatePresence>
@@ -89,16 +67,14 @@ export const Modal: FC<ModalProps> = ({
 						animate={{ opacity: 1, scale: 1 }}
 						exit={{ opacity: 0, scale: 0.95 }}
 						style={contentStyle}
+						ref={ref}
 					>
-						<ModalContext.Provider value={{ onOpenChange }}>
-							{children}
-						</ModalContext.Provider>
+						<ModalContext.Provider value={{ onOpenChange }}>{children}</ModalContext.Provider>
 					</motion.div>
 				</motion.div>
-			)
-			}
-		</AnimatePresence >,
-		portalTarget,
+			)}
+		</AnimatePresence>,
+		document.body,
 	);
 };
 
@@ -109,12 +85,7 @@ interface ModalHeaderProps {
 	closeLabel?: string;
 }
 
-export const ModalHeader: FC<ModalHeaderProps> = ({
-	children,
-	className,
-	contentClassName,
-	closeLabel = "Close",
-}) => {
+export const ModalHeader: FC<ModalHeaderProps> = ({ children, className, contentClassName, closeLabel = "Close" }) => {
 	const context = React.useContext(ModalContext);
 	if (!context) {
 		throw new Error("ModalHeader must be used within a Modal");
@@ -148,9 +119,9 @@ export const ModalBody: FC<ModalBodyProps> = ({ children, className, patterned =
 			style={
 				patterned
 					? {
-						backgroundImage: `linear-gradient(${backgroundColour} .05em, transparent .05em), linear-gradient(90deg, ${backgroundColour} .05em, transparent .05em)`,
-						backgroundSize: "2em 2em",
-					}
+							backgroundImage: `linear-gradient(${backgroundColour} .05em, transparent .05em), linear-gradient(90deg, ${backgroundColour} .05em, transparent .05em)`,
+							backgroundSize: "2em 2em",
+						}
 					: undefined
 			}
 		>

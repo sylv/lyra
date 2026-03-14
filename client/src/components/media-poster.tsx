@@ -16,8 +16,7 @@ interface MediaPosterProps {
 	style?: React.CSSProperties;
 }
 
-const Fragment = graphql(
-	`
+const Fragment = graphql(`
 	fragment MediaPoster on RootNode {
 		id
 		name
@@ -42,8 +41,7 @@ const Fragment = graphql(
 		episodeCount
 		...GetPathForRoot
 	}
-`,
-);
+`);
 
 export const MediaPoster: FC<MediaPosterProps> = ({ media: mediaRaw, className, style }) => {
 	const media = unmask(Fragment, mediaRaw);

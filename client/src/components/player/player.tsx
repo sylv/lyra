@@ -1,7 +1,4 @@
-/** biome-ignore-all lint/a11y/useMediaCaption: hls will add captions when available */
-/** biome-ignore-all lint/a11y/useSemanticElements: <explanation> */
-/** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
-/** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
+/* oxlint-disable jsx_a11y/media-has-caption, jsx_a11y/prefer-tag-over-role */
 import { useMutation, useQuery } from "@apollo/client/react";
 import { useNavigate } from "@tanstack/react-router";
 import Hls from "hls.js";
@@ -815,6 +812,14 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 				role="button"
 				tabIndex={0}
 				onClick={handleContainerClick}
+				onKeyDown={(event) => {
+					if (event.key !== "Enter" && event.key !== " ") {
+						return;
+					}
+
+					event.preventDefault();
+					handleContainerClick();
+				}}
 				aria-label="Toggle play/pause"
 			>
 				{/* Vignette overlay */}
@@ -902,16 +907,9 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 				</div>
 
 				{introSegment && isInsideIntroSegment && isFullscreen && (
-					<div
-						className={cn(
-							"absolute right-0 flex justify-end px-4 pointer-events-none bottom-36"
-						)}
-					>
+					<div className={cn("absolute right-0 flex justify-end px-4 pointer-events-none bottom-36")}>
 						<div className="pointer-events-auto">
-							<SkipIntroButton
-								progressPercent={introProgressPercent}
-								onSkip={onSkipIntro}
-							/>
+							<SkipIntroButton progressPercent={introProgressPercent} onSkip={onSkipIntro} />
 						</div>
 					</div>
 				)}

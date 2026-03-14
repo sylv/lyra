@@ -8,8 +8,7 @@ import { OrderBy, type RootNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
 import { useTitle } from "../hooks/use-title";
 
-const Query = graphql(
-	`
+const Query = graphql(`
 	query GetLibraryMedia($libraryId: Int!, $filter: RootNodeFilter!, $after: String) {
 		rootList(filter: $filter, first: 45, after: $after) {
 			edges {
@@ -28,8 +27,7 @@ const Query = graphql(
 			name
 		}
 	}
-`,
-);
+`);
 
 export const Route = createFileRoute("/library/$libraryId")({
 	component: LibraryRoute,
@@ -72,7 +70,7 @@ function LibraryRoute() {
 					.map((edge) => edge?.node)
 					.filter((node): node is NonNullable<typeof node> => node != null) ?? []);
 
-	useTitle(data?.library.name)
+	useTitle(data?.library.name);
 
 	return (
 		<Fragment>

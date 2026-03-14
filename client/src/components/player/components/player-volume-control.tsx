@@ -1,9 +1,8 @@
-/** biome-ignore-all lint/a11y/noStaticElementInteractions: we need to use static elements to show the slider */
 import { Volume1Icon, Volume2Icon, VolumeIcon, VolumeXIcon } from "lucide-react";
 import { useState, type FC } from "react";
-import { PlayerButton } from "./player-button";
 import * as Slider from "@radix-ui/react-slider";
 import { cn } from "../../../lib/utils";
+import { PlayerButton } from "./player-button";
 
 interface PlayerVolumeControlProps {
 	volume: number;

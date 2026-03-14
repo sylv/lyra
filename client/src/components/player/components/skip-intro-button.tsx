@@ -14,7 +14,7 @@ export const SkipIntroButton = ({ progressPercent, onSkip }: SkipIntroButtonProp
 			onClick={(event) => {
 				// or else the click will pause the player by propogating up and being considered
 				// a click on the video.
-				event.stopPropagation()
+				event.stopPropagation();
 				onSkip();
 			}}
 			className={cn(

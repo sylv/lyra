@@ -8,8 +8,7 @@ import { MediaFilterList } from "../components/media-filter-list";
 import { MediaList } from "../components/media-list";
 import { useTitle } from "../hooks/use-title";
 
-const Query = graphql(
-	`
+const Query = graphql(`
 	query GetAllMedia($filter: RootNodeFilter!, $after: String) {
 		rootList(filter: $filter, first: 45, after: $after) {
 			edges {
@@ -23,8 +22,7 @@ const Query = graphql(
 			}
 		}
 	}
-`,
-);
+`);
 
 export const Route = createFileRoute("/")({
 	component: HomeRoute,
@@ -51,7 +49,7 @@ function HomeRoute() {
 		},
 	});
 
-	useTitle('Home')
+	useTitle("Home");
 
 	return (
 		<div>

@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-
-export const useDebounce = <T>(
-	value: T,
-	delay: number,
-	maxDelay?: number
-): [T, boolean] => {
+export const useDebounce = <T>(value: T, delay: number, maxDelay?: number): [T, boolean] => {
 	const [debouncedValue, setDebouncedValue] = useState(value);
 	const [isDebouncing, setIsDebouncing] = useState(false);
 	const maxHandlerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

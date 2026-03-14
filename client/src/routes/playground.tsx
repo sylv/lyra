@@ -10,7 +10,7 @@ export const Route = createFileRoute("/playground")({
 function PlaygroundRoute() {
 	const [, setPath] = useState<string | null>("/");
 
-	useTitle("Playground")
+	useTitle("Playground");
 
 	return (
 		<div className="p-6">

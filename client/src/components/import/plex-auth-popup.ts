@@ -125,11 +125,7 @@ export const authenticateWithPlexPopup = async (): Promise<string> => {
 		throw new Error("Plex PIN response was incomplete");
 	}
 
-	const popup = window.open(
-		buildPlexAuthUrl(pin.code),
-		"lyra-plex-auth",
-		"popup=yes,width=680,height=760",
-	);
+	const popup = window.open(buildPlexAuthUrl(pin.code), "lyra-plex-auth", "popup=yes,width=680,height=760");
 	if (!popup) {
 		throw new Error("Plex popup was blocked by the browser");
 	}
@@ -174,10 +170,7 @@ const parsePlexResources = (payload: unknown): PlexResource[] => {
 	return [];
 };
 
-export const discoverPlexServers = async (
-	accountToken: string,
-	pageProtocol: string,
-): Promise<PlexServerOption[]> => {
+export const discoverPlexServers = async (accountToken: string, pageProtocol: string): Promise<PlexServerOption[]> => {
 	const response = await fetch(`${PLEX_RESOURCES_ENDPOINT}?includeHttps=1&includeRelay=1`, {
 		headers: getPlexHeaders(accountToken),
 	});
@@ -358,9 +351,7 @@ const readFirstPart = (
 			continue;
 		}
 
-		const partEntries = Array.isArray((media as { Part?: unknown[] }).Part)
-			? (media as { Part: unknown[] }).Part
-			: [];
+		const partEntries = Array.isArray((media as { Part?: unknown[] }).Part) ? (media as { Part: unknown[] }).Part : [];
 		for (const part of partEntries) {
 			if (!part || typeof part !== "object") {
 				continue;
@@ -463,9 +454,7 @@ const fetchPlexSections = async (server: PlexServerOption): Promise<Record<strin
 	);
 };
 
-export const fetchPlexWatchStateRows = async (
-	server: PlexServerOption,
-): Promise<PlexImportWatchStateRow[]> => {
+export const fetchPlexWatchStateRows = async (server: PlexServerOption): Promise<PlexImportWatchStateRow[]> => {
 	const sections = await fetchPlexSections(server);
 	const rows: PlexImportWatchStateRow[] = [];
 

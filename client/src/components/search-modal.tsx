@@ -1,12 +1,10 @@
 import { useQuery } from "@apollo/client/react";
 import { Link } from "@tanstack/react-router";
 import { SearchAlertIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
-import { useState, type FC } from "react";
+import { useEffect, useRef, useState, type FC } from "react";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
-import type {
-	SearchItemResultFragment as SearchItemResultData,
-	SearchRootResultFragment as SearchRootResultData,
-} from "../@generated/gql/graphql";
+import type { SearchRootResultFragment as SearchRootResultData } from "../@generated/gql/graphql";
+import { useDebounce } from "../hooks/use-debounce";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForItem, getPathForRoot } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
@@ -16,7 +14,6 @@ import { Modal, ModalBody, ModalHeader, ModalRotation } from "./modal";
 import { Empty, EmptyDescription, EmptyMedia } from "./ui/empty";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
-import { useDebounce } from "../hooks/use-debounce";
 
 const SearchRootResultFragment = graphql(`
 	fragment SearchRootResult on RootNode {
@@ -82,7 +79,6 @@ const formatRuntime = (minutes: number | null) => {
 	return `${mins}m`;
 };
 
-
 const getRootDetail = (root: SearchRootResultData) => {
 	if (root.kind === "SERIES") {
 		if (root.seasonCount > 0) {
@@ -106,11 +102,7 @@ const SearchRootCard: FC<{
 	const detail = getRootDetail(root);
 
 	return (
-		<Link
-			to={path as never}
-			onClick={onSelect}
-			className="group block rounded-md p-2 transition hover:bg-zinc-900"
-		>
+		<Link to={path as never} onClick={onSelect} className="group block rounded-md p-2 transition hover:bg-zinc-900">
 			<div className="overflow-hidden rounded-sm">
 				<Image type={ImageType.Poster} asset={root.properties.posterImage} alt={root.name} className="w-full" />
 			</div>
@@ -130,7 +122,10 @@ const SearchItemRow: FC<{
 	const path = getPathForItem(item);
 	const parent = item.parent?.name ?? null;
 	const runtime = formatRuntime(item.properties.runtimeMinutes);
-	const index = item.properties.seasonNumber && item.properties.episodeNumber ? `S${item.properties.seasonNumber}E${item.properties.episodeNumber}` : null;
+	const index =
+		item.properties.seasonNumber && item.properties.episodeNumber
+			? `S${item.properties.seasonNumber}E${item.properties.episodeNumber}`
+			: null;
 
 	return (
 		<Link
@@ -139,16 +134,13 @@ const SearchItemRow: FC<{
 			className="group flex items-start gap-3 rounded-md p-2 transition hover:bg-zinc-900"
 		>
 			<div className="overflow-hidden rounded-sm">
-				<Image
-					type={ImageType.Thumbnail}
-					asset={item.properties.thumbnailImage}
-					alt={item.name}
-					className="h-20"
-				/>
+				<Image type={ImageType.Thumbnail} asset={item.properties.thumbnailImage} alt={item.name} className="h-20" />
 			</div>
 			<div className="min-w-0 flex-1">
 				<p className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">{item.name}</p>
-				<p className="mt-0.5 text-xs text-zinc-500">{parent} {index} {runtime}</p>
+				<p className="mt-0.5 text-xs text-zinc-500">
+					{parent} {index} {runtime}
+				</p>
 				<p className="mt-2 line-clamp-2 text-xs text-zinc-300">
 					{item.properties.description || "No description available"}
 				</p>
@@ -162,6 +154,7 @@ export const SearchModal: FC<{
 	onOpenChange: (open: boolean) => void;
 }> = ({ open, onOpenChange }) => {
 	const [query, setQuery] = useState("");
+	const inputRef = useRef<HTMLInputElement>(null);
 	const handleOpenChange = (nextOpen: boolean) => {
 		if (!nextOpen) {
 			setQuery("");
@@ -170,7 +163,12 @@ export const SearchModal: FC<{
 	};
 	const [deferredQuery] = useDebounce(query.trim(), 200, 1000);
 	const shouldSearch = open && deferredQuery.length > 0;
-	const { data: rawData, previousData: previousRawData, loading, error } = useQuery(SearchMediaQuery, {
+	const {
+		data: rawData,
+		previousData: previousRawData,
+		loading,
+		error,
+	} = useQuery(SearchMediaQuery, {
 		skip: !shouldSearch,
 		variables: {
 			query: deferredQuery,
@@ -178,23 +176,26 @@ export const SearchModal: FC<{
 		},
 	});
 
-	const displayData = deferredQuery && !error ? (rawData || previousRawData) : rawData;
+	const displayData = deferredQuery && !error ? rawData || previousRawData : rawData;
 	const roots = displayData?.search.roots ?? [];
 	const items = displayData?.search.items ?? [];
 	const hasResults = roots.length > 0 || items.length > 0;
 
+	useEffect(() => {
+		if (!open) {
+			return;
+		}
+
+		inputRef.current?.focus();
+	}, [open]);
+
 	return (
-		<Modal
-			open={open}
-			onOpenChange={handleOpenChange}
-			rotation={ModalRotation.Vertical}
-			size="80vh"
-		>
+		<Modal open={open} onOpenChange={handleOpenChange} rotation={ModalRotation.Vertical} size="80vh">
 			<ModalHeader contentClassName="px-5">
 				<div className="relative flex w-full items-center">
 					<SearchIcon className="absolute left-0 size-4 text-zinc-500" />
 					<Input
-						autoFocus
+						ref={inputRef}
 						value={query}
 						placeholder="Search"
 						className="h-8 border-0 bg-transparent pl-8 text-sm text-zinc-100 shadow-none focus-visible:ring-0"
@@ -208,9 +209,7 @@ export const SearchModal: FC<{
 						<EmptyMedia variant="icon">
 							<SearchIcon />
 						</EmptyMedia>
-						<EmptyDescription>
-							Whatcha' after?
-						</EmptyDescription>
+						<EmptyDescription>Whatcha' after?</EmptyDescription>
 					</Empty>
 				)}
 				{shouldSearch && loading && !displayData && (
@@ -228,9 +227,7 @@ export const SearchModal: FC<{
 						<EmptyMedia variant="icon">
 							<TriangleAlertIcon />
 						</EmptyMedia>
-						<EmptyDescription>
-							{error.message || "Something went wrong"}
-						</EmptyDescription>
+						<EmptyDescription>{error.message || "Something went wrong"}</EmptyDescription>
 					</Empty>
 				)}
 				{shouldSearch && !loading && !hasResults && (
@@ -238,9 +235,7 @@ export const SearchModal: FC<{
 						<EmptyMedia variant="icon">
 							<SearchAlertIcon />
 						</EmptyMedia>
-						<EmptyDescription>
-							I got nothin'.
-						</EmptyDescription>
+						<EmptyDescription>I got nothin'.</EmptyDescription>
 					</Empty>
 				)}
 				{hasResults && (
@@ -248,12 +243,8 @@ export const SearchModal: FC<{
 						{roots.length > 0 && (
 							<section>
 								<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3">
-									{roots.map((root, index) => (
-										<SearchRootCard
-											key={index}
-											root={root}
-											onSelect={() => handleOpenChange(false)}
-										/>
+									{roots.map((root) => (
+										<SearchRootCard key={root.id} root={root} onSelect={() => handleOpenChange(false)} />
 									))}
 								</div>
 							</section>
@@ -261,12 +252,8 @@ export const SearchModal: FC<{
 						{items.length > 0 && (
 							<section>
 								<div className={cn("mt-2", items.length > 0 && "space-y-1")}>
-									{items.map((item, index) => (
-										<SearchItemRow
-											key={index}
-											item={item}
-											onSelect={() => handleOpenChange(false)}
-										/>
+									{items.map((item) => (
+										<SearchItemRow key={item.id} item={item} onSelect={() => handleOpenChange(false)} />
 									))}
 								</div>
 							</section>

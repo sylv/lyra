@@ -1,5 +1,4 @@
-/** biome-ignore-all lint/a11y/useKeyWithClickEvents: <explanation> */
-/** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
+/* oxlint-disable jsx_a11y/click-events-have-key-events, jsx_a11y/no-static-element-interactions */
 import {
 	MaximizeIcon,
 	MinimizeIcon,

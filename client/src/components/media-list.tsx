@@ -4,14 +4,12 @@ import { MediaPoster } from "./media-poster";
 import { Spinner } from "./ui/spinner";
 import { ViewLoader } from "./view-loader";
 
-const Fragment = graphql(
-	`
+const Fragment = graphql(`
 	fragment MediaList on RootNode {
 		id
 		...MediaPoster
 	}
-`,
-);
+`);
 
 interface MediaListProps {
 	media?: FragmentType<typeof Fragment>[];

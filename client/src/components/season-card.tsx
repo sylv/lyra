@@ -12,8 +12,7 @@ interface SeasonCardProps {
 	path: string;
 }
 
-const Fragment = graphql(
-	`
+const Fragment = graphql(`
 	fragment SeasonCard on SeasonNode {
 		id
 		name
@@ -40,8 +39,7 @@ const Fragment = graphql(
 		unplayedItems
 		episodeCount
 	}
-`,
-);
+`);
 
 export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw, path }) => {
 	const season = unmask(Fragment, seasonRaw);

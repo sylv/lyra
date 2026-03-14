@@ -13,7 +13,7 @@ function RouteComponent() {
 	const buildDate = new Date(__BUILD_TIME__).toLocaleString();
 	const [isPlexImportOpen, setIsPlexImportOpen] = useState(false);
 
-	useTitle('Settings')
+	useTitle("Settings");
 
 	return (
 		<div className="pt-6">
@@ -32,14 +32,9 @@ function RouteComponent() {
 						<div className="flex flex-col gap-3 p-4 md:flex-row md:items-center">
 							<div className="flex-1">
 								<h3 className="text-sm font-semibold">Plex</h3>
-								<p className="text-xs text-zinc-400">
-									Import watch progress from Plex
-								</p>
+								<p className="text-xs text-zinc-400">Import watch progress from Plex</p>
 							</div>
-							<Button
-								className="bg-[#e5a00d] text-black hover:bg-[#e5a00d]"
-								onClick={() => setIsPlexImportOpen(true)}
-							>
+							<Button className="bg-[#e5a00d] text-black hover:bg-[#e5a00d]" onClick={() => setIsPlexImportOpen(true)}>
 								Import from Plex
 							</Button>
 						</div>

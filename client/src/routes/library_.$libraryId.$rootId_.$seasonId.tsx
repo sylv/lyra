@@ -13,8 +13,7 @@ import { OrderBy, type ItemNodeFilter } from "../@generated/gql/graphql";
 import { client } from "../client";
 import { useTitle } from "../hooks/use-title";
 
-const RootAndSeasonQuery = graphql(
-	`
+const RootAndSeasonQuery = graphql(`
 	query GetRootAndSeason($rootId: String!, $seasonId: String!) {
 		root(rootId: $rootId) {
 			id
@@ -59,11 +58,9 @@ const RootAndSeasonQuery = graphql(
 			unplayedItems
 		}
 	}
-`,
-);
+`);
 
-const EpisodesQuery = graphql(
-	`
+const EpisodesQuery = graphql(`
 	query GetSeasonEpisodes($filter: ItemNodeFilter!, $after: String) {
 		itemList(filter: $filter, after: $after) {
 			edges {
@@ -78,8 +75,7 @@ const EpisodesQuery = graphql(
 			}
 		}
 	}
-`,
-);
+`);
 
 export const Route = createFileRoute("/library_/$libraryId/$rootId_/$seasonId")({
 	component: SeasonRoute,
@@ -134,7 +130,7 @@ function SeasonRoute() {
 
 	const dynamicAsset = root.properties.backgroundImage || root.properties.posterImage;
 	useDynamicBackground(dynamicAsset);
-	useTitle(`${root.name}: ${seasonTitle}`)
+	useTitle(`${root.name}: ${seasonTitle}`);
 
 	return (
 		<div className="pt-6">

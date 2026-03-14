@@ -20,8 +20,7 @@ const formatRuntime = (minutes: number | null) => {
 	return `${mins}m`;
 };
 
-const Fragment = graphql(
-	`
+const Fragment = graphql(`
 	fragment EpisodeCard on ItemNode {
 		id
 		name
@@ -42,8 +41,7 @@ const Fragment = graphql(
 		}
 		...GetPathForItem
 	}
-`,
-);
+`);
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = unmask(Fragment, episodeRef);

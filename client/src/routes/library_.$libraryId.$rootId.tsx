@@ -10,8 +10,7 @@ import { graphql } from "../@generated/gql";
 import { client } from "../client";
 import { useTitle } from "../hooks/use-title";
 
-const Query = graphql(
-	`
+const Query = graphql(`
 	query GetRootById($rootId: String!) {
 		root(rootId: $rootId) {
 			id
@@ -46,8 +45,7 @@ const Query = graphql(
 			unplayedItems
 		}
 	}
-`,
-);
+`);
 
 export const Route = createFileRoute("/library_/$libraryId/$rootId")({
 	component: RootRoute,
@@ -74,7 +72,7 @@ function RootRoute() {
 
 	const dynamicAsset = root.properties.backgroundImage || root.properties.posterImage;
 	useDynamicBackground(dynamicAsset);
-	useTitle(root.name)
+	useTitle(root.name);
 
 	const header = (
 		<div className="flex gap-6 container mx-auto">

@@ -12,11 +12,7 @@ import {
 	getNextStepFromCompatibility,
 	FETCHING_METADATA_TEXT,
 } from "./plex-import-state";
-import {
-	authenticateWithPlexPopup,
-	discoverPlexServers,
-	fetchPlexWatchStateRows,
-} from "./plex-auth-popup";
+import { authenticateWithPlexPopup, discoverPlexServers, fetchPlexWatchStateRows } from "./plex-auth-popup";
 import { Modal, ModalBody, ModalHeader } from "../modal";
 
 const RunImportWatchStates = graphql(`
@@ -56,9 +52,7 @@ interface PlexImportModalProps {
 	onOpenChange: (open: boolean) => void;
 }
 
-const toCompatibility = (
-	result: RunImportWatchStatesMutation["importWatchStates"],
-): PlexImportCompatibility => ({
+const toCompatibility = (result: RunImportWatchStatesMutation["importWatchStates"]): PlexImportCompatibility => ({
 	matchedRows: result.matchedRows,
 	unmatchedRows: result.unmatchedRows,
 	conflictRows: result.conflictRows,
@@ -69,12 +63,8 @@ const toCompatibility = (
 export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }) => {
 	const apolloClient = useApolloClient();
 	const [state, setState] = useState<PlexImportState>(INITIAL_PLEX_IMPORT_STATE);
-	const [dryRunResult, setDryRunResult] = useState<RunImportWatchStatesMutation["importWatchStates"] | null>(
-		null,
-	);
-	const [finalResult, setFinalResult] = useState<RunImportWatchStatesMutation["importWatchStates"] | null>(
-		null,
-	);
+	const [dryRunResult, setDryRunResult] = useState<RunImportWatchStatesMutation["importWatchStates"] | null>(null);
+	const [finalResult, setFinalResult] = useState<RunImportWatchStatesMutation["importWatchStates"] | null>(null);
 	const [runImportWatchStates] = useMutation(RunImportWatchStates);
 
 	const resetState = useCallback(() => {
@@ -193,9 +183,7 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 			setError("Select a Plex server first");
 			return;
 		}
-		const server = state.servers.find(
-			(candidate) => candidate.id === state.selectedServerId,
-		);
+		const server = state.servers.find((candidate) => candidate.id === state.selectedServerId);
 		if (!server) {
 			setError("Selected Plex server was not found");
 			return;
@@ -273,16 +261,11 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 
 	return (
 		<Modal open={open} onOpenChange={handleOpenChange} size="50vh">
-			<ModalHeader>
-				Import from Plex
-			</ModalHeader>
+			<ModalHeader>Import from Plex</ModalHeader>
 			<ModalBody>
-
 				{state.step === "connect" && (
 					<div className="space-y-3">
-						<p className="text-sm text-zinc-300">
-							Connect your Plex account to begin importing your watch progress
-						</p>
+						<p className="text-sm text-zinc-300">Connect your Plex account to begin importing your watch progress</p>
 						<Button onClick={handleConnect} icon={["arrow-right", ArrowRight]}>
 							Connect to Plex
 						</Button>
@@ -343,12 +326,8 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 						<div className="flex items-start gap-3 rounded border border-yellow-500/40 bg-yellow-500/10 p-3">
 							<TriangleAlert className="mt-0.5 size-4 text-yellow-300" />
 							<div className="text-sm">
-								<p className="font-semibold text-yellow-100">
-									{dryRunResult.conflictRows} conflicts detected
-								</p>
-								<p className="text-yellow-100/80">
-									Existing Lyra watch progress differs for these items.
-								</p>
+								<p className="font-semibold text-yellow-100">{dryRunResult.conflictRows} conflicts detected</p>
+								<p className="text-yellow-100/80">Existing Lyra watch progress differs for these items.</p>
 							</div>
 						</div>
 
@@ -398,7 +377,9 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 						<div className="text-sm text-zinc-200">
 							Import {estimatedImportCount} items?
 							<div className="mt-2 text-xs text-zinc-400">
-								{state.compatibility.unmatchedRows} unmatched items{state.compatibility.conflictRows > 0 ? ` and ${state.compatibility.conflictRows} conflicts` : ""} will be skipped.
+								{state.compatibility.unmatchedRows} unmatched items
+								{state.compatibility.conflictRows > 0 ? ` and ${state.compatibility.conflictRows} conflicts` : ""} will
+								be skipped.
 							</div>
 						</div>
 						<div className="flex items-center gap-2">

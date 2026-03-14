@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/suspicious/noExplicitAny: its cringe */
 import { useState, type FC } from "react";
 import { Input } from "../../input";
 import { SetupModalStep } from "../setup-modal-step";

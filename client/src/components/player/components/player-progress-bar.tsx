@@ -1,8 +1,6 @@
-/** biome-ignore-all lint/a11y/useMediaCaption: hls will add captions when available */
-/** biome-ignore-all lint/a11y/useKeyWithClickEvents: keyboard users would use arrow keys and 0-9 to seek */
 import { useMemo, useState, type FC } from "react";
-import { formatPlayerTime } from "../utils";
 import { cn } from "../../../lib/utils";
+import { formatPlayerTime } from "../utils";
 
 const TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX = 380;
 const TIMELINE_TIME_TOOLTIP_WIDTH_PX = 56;
@@ -194,6 +192,33 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 		setHoverState(null);
 	};
 
+	const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+		if (!duration) {
+			return;
+		}
+
+		const step = Math.max(duration / 20, 5);
+		if (event.key === "ArrowLeft") {
+			event.preventDefault();
+			onChange(Math.max(0, currentTime - step));
+			return;
+		}
+		if (event.key === "ArrowRight") {
+			event.preventDefault();
+			onChange(Math.min(duration, currentTime + step));
+			return;
+		}
+		if (event.key === "Home") {
+			event.preventDefault();
+			onChange(0);
+			return;
+		}
+		if (event.key === "End") {
+			event.preventDefault();
+			onChange(duration);
+		}
+	};
+
 	const progressPercent = duration ? (currentTime / duration) * 100 : 0;
 
 	return (
@@ -202,6 +227,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 			onClick={handleProgressClick}
 			onMouseMove={handleProgressMouseMove}
 			onMouseLeave={onMouseLeave}
+			onKeyDown={handleKeyDown}
 			role="slider"
 			tabIndex={0}
 			aria-label="Seek video"

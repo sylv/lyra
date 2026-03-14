@@ -37,12 +37,7 @@ export const DialogOverlay: FC<ComponentProps<typeof DialogPrimitive.Overlay>> =
 	);
 };
 
-export const DialogContent: FC<DialogContentProps> = ({
-	className,
-	portalContainer,
-	children,
-	...props
-}) => {
+export const DialogContent: FC<DialogContentProps> = ({ className, portalContainer, children, ...props }) => {
 	return (
 		<DialogPortal data-slot="dialog-portal" container={portalContainer}>
 			<DialogOverlay />

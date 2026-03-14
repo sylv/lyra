@@ -55,12 +55,7 @@ export const DropdownMenuGroup: FC<ComponentProps<typeof DropdownMenuPrimitive.G
 	return <DropdownMenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
 };
 
-export const DropdownMenuItem: FC<DropdownMenuItemProps> = ({
-	className,
-	inset,
-	variant = "default",
-	...props
-}) => {
+export const DropdownMenuItem: FC<DropdownMenuItemProps> = ({ className, inset, variant = "default", ...props }) => {
 	return (
 		<DropdownMenuPrimitive.Item
 			data-slot="dropdown-menu-item"
@@ -140,7 +135,10 @@ export const DropdownMenuLabel: FC<DropdownMenuLabelProps> = ({ className, inset
 	);
 };
 
-export const DropdownMenuSeparator: FC<ComponentProps<typeof DropdownMenuPrimitive.Separator>> = ({ className, ...props }) => {
+export const DropdownMenuSeparator: FC<ComponentProps<typeof DropdownMenuPrimitive.Separator>> = ({
+	className,
+	...props
+}) => {
 	return (
 		<DropdownMenuPrimitive.Separator
 			data-slot="dropdown-menu-separator"
@@ -164,12 +162,7 @@ export const DropdownMenuSub: FC<ComponentProps<typeof DropdownMenuPrimitive.Sub
 	return <DropdownMenuPrimitive.Sub data-slot="dropdown-menu-sub" {...props} />;
 };
 
-export const DropdownMenuSubTrigger: FC<DropdownMenuSubTriggerProps> = ({
-	className,
-	inset,
-	children,
-	...props
-}) => {
+export const DropdownMenuSubTrigger: FC<DropdownMenuSubTriggerProps> = ({ className, inset, children, ...props }) => {
 	return (
 		<DropdownMenuPrimitive.SubTrigger
 			data-slot="dropdown-menu-sub-trigger"
@@ -186,7 +179,10 @@ export const DropdownMenuSubTrigger: FC<DropdownMenuSubTriggerProps> = ({
 	);
 };
 
-export const DropdownMenuSubContent: FC<ComponentProps<typeof DropdownMenuPrimitive.SubContent>> = ({ className, ...props }) => {
+export const DropdownMenuSubContent: FC<ComponentProps<typeof DropdownMenuPrimitive.SubContent>> = ({
+	className,
+	...props
+}) => {
 	return (
 		<DropdownMenuPrimitive.SubContent
 			data-slot="dropdown-menu-sub-content"

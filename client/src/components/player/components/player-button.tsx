@@ -1,11 +1,7 @@
 import type { ButtonHTMLAttributes, FC } from "react";
 import { cn } from "../../../lib/utils";
 
-export const PlayerButton: FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({
-	children,
-	className,
-	...props
-}) => {
+export const PlayerButton: FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({ children, className, ...props }) => {
 	return (
 		<button
 			type="button"

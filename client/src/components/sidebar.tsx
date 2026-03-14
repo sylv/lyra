@@ -1,16 +1,16 @@
 import { useQuery, useSuspenseQuery } from "@apollo/client/react";
 import { Link, useLocation } from "@tanstack/react-router";
-import { Activity, AudioLines, HomeIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
+import { Activity, HomeIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type FC, type ReactNode } from "react";
+import BrandLogo from "../assets/logo.svg";
+import { graphql } from "../@generated/gql";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
 import { SuspenseBoundary } from "./fallback";
 import { SearchModal } from "./search-modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
-import { graphql } from "../@generated/gql";
 import { Spinner } from "./ui/spinner";
-import BrandLogo from '../assets/logo.svg'
 
 const SidebarLink: FC<{
 	to: string;
@@ -56,7 +56,7 @@ const LibrariesQuery = graphql(`
 			name
 			createdAt
 		}
-	}	
+	}
 `);
 
 export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
@@ -74,18 +74,21 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 	});
 
 	useEffect(() => {
-		if (!activityData) return
-		const hasRunning = activityData.activities.some(a => a.current < a.total)
-		setActivitiesRunning(hasRunning)
-		setPollInterval(hasRunning ? 1000 : 10000)
-	}, [activityData])
+		if (!activityData) {
+			return;
+		}
+
+		const hasRunning = activityData.activities.some((activity) => activity.current < activity.total);
+		setActivitiesRunning(hasRunning);
+		setPollInterval(hasRunning ? 1000 : 10000);
+	}, [activityData]);
 
 	return (
 		<div className="flex w-dvw h-dvh overflow-hidden">
 			<div className="w-96 z-10 p-6">
 				<div className="flex items-center justify-between gap-1">
 					<div className="flex items-center gap-3">
-						<img src={BrandLogo} />
+						<img src={BrandLogo} alt="" />
 						<div className="flex flex-col">
 							<div className="text-zinc-100 font-semibold text-lg -mt-2">Lyra</div>
 							<div className="text-zinc-400 font-semibold text-xs leading-1">preview</div>

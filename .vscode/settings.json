@@ -1,9 +1,25 @@
 {
-    "biome.lsp.bin": "client/node_modules/.bin/biome",
-    "biome.requireConfiguration": true,
-    "typescript.tsdk": "node_modules/typescript/lib",
-    "typescript.enablePromptUseWorkspaceTsdk": true,
-    "files.readonlyInclude": {
-        "**/@generated/**": true
-    }
+	"oxc.path.oxfmt": "node_modules/.bin/oxfmt",
+	"oxc.path.oxlint": "node_modules/.bin/oxlint",
+	"oxc.requireConfig": true,
+	"oxc.configPath": "client/.oxlintrc.json",
+	"oxc.fmt.configPath": "client/.oxfmtrc.json",
+	"oxc.lint.run": "onSave",
+	"[javascript]": {
+		"editor.defaultFormatter": "oxc.oxc-vscode"
+	},
+	"[javascriptreact]": {
+		"editor.defaultFormatter": "oxc.oxc-vscode"
+	},
+	"[typescript]": {
+		"editor.defaultFormatter": "oxc.oxc-vscode"
+	},
+	"[typescriptreact]": {
+		"editor.defaultFormatter": "oxc.oxc-vscode"
+	},
+	"typescript.tsdk": "node_modules/typescript/lib",
+	"typescript.enablePromptUseWorkspaceTsdk": true,
+	"files.readonlyInclude": {
+		"**/@generated/**": true
+	}
 }
