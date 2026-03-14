@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCheckIcon, CircleIcon, FileWarningIcon, PlayIcon } from "lucide-react";
+import { CheckCheckIcon, FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { openPlayerMedia } from "./player/player-state";
@@ -25,10 +25,8 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 				<button
 					type="button"
 					className={cn(
-						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/20 opacity-0 cursor-pointer z-10",
-						// important or else the border gets cut off by the overflow-hidden of the parent
-						"rounded-sm",
-						"group-hover/play:opacity-100 group-hover/play:border border-white/50",
+						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 opacity-0 cursor-pointer z-10 transition-opacity duration-75",
+						"group-hover/play:opacity-100",
 					)}
 					onClick={() => {
 						if (!itemId) return;
