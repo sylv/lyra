@@ -139,3 +139,11 @@ img,
 svg {
 	user-select: none;
 }
+
+h1, h2, h3, h4, h5 {
+	@apply font-semibold
+}
+
+p {
+	@apply text-sm text-zinc-400
+}
