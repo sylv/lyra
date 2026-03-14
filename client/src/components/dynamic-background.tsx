@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState, type FC } from "react";
 import { useStore } from "zustand/react";
-import defaultDynamicBackground from "../assets/default-dynamic-background.svg";
+// import defaultDynamicBackground from "../assets/default-dynamic-background.svg";
 import { backgroundStore } from "../hooks/use-background";
 import { getAssetImageUrl } from "./image";
+import { generateGradientIcon } from "../lib/generate-gradient-icon";
 
 const DURATION = 2000;
+const generateDefault = () => generateGradientIcon(Date.now().toString(), { size: 512 });
 
 // todo: once images are stored in the db, we should extract primary colours and use those instead.
 // loading full images for this is kinda crazy.
 export const DynamicBackground: FC = () => {
 	const backgroundAsset = useStore(backgroundStore);
 	const backgroundUrl = backgroundAsset ? getAssetImageUrl(backgroundAsset, 200) : null;
+	const [defaultBackground, setDefaultBackground] = useState<string>(generateDefault);
 	const [current, setCurrent] = useState<string | null>(null);
 	const [showCurrent, setShowCurrent] = useState(false);
 	const isInitial = useRef(true);
@@ -36,9 +39,13 @@ export const DynamicBackground: FC = () => {
 		}, DURATION);
 	}, [backgroundUrl]);
 
+	const generateNewDefault = () => {
+		setDefaultBackground(generateDefault());
+	};
+
 	return (
 		<div className="h-full w-full opacity-10 blur-3xl scale-[1.25] pointer-events-none select-none -z-10" aria-hidden>
-			<img src={defaultDynamicBackground} alt="" aria-hidden className="fixed object-fill h-full w-full" />
+			<img src={defaultBackground} alt="" aria-hidden className="fixed object-fill h-full w-full" />
 			{current && (
 				<img
 					src={current}
@@ -54,6 +61,7 @@ export const DynamicBackground: FC = () => {
 						const image = event.target as HTMLImageElement;
 						image.decode().then(() => {
 							setShowCurrent(true);
+							setTimeout(generateNewDefault, DURATION);
 						});
 					}}
 				/>
