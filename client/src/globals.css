@@ -131,3 +131,7 @@
 .no-scrollbar {
 	scrollbar-width: none;
 }
+
+button, img, svg {
+	user-select: none;
+}

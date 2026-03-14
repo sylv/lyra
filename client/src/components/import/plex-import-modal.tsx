@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState, type FC } from "react";
 import { graphql } from "../../@generated/gql";
 import type { RunImportWatchStatesMutation } from "../../@generated/gql/graphql";
 import { Button, ButtonStyle } from "../button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Spinner } from "../ui/spinner";
 import {
 	INITIAL_PLEX_IMPORT_STATE,
@@ -18,6 +17,7 @@ import {
 	discoverPlexServers,
 	fetchPlexWatchStateRows,
 } from "./plex-auth-popup";
+import { Modal, ModalBody, ModalHeader } from "../modal";
 
 const RunImportWatchStates = graphql(`
 	mutation RunImportWatchStates($input: ImportWatchStatesInput!) {
@@ -272,195 +272,194 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 	);
 
 	return (
-		<Dialog open={open} onOpenChange={handleOpenChange}>
-			<DialogContent className="sm:max-w-2xl">
-				<DialogHeader>
-					<DialogTitle>Import Watch States from Plex</DialogTitle>
-				</DialogHeader>
+		<Modal open={open} onOpenChange={handleOpenChange} size="50vh">
+			<ModalHeader>
+				Import from Plex
+			</ModalHeader>
+			<ModalBody>
 
-					{state.step === "connect" && (
-						<div className="space-y-3">
-							<p className="text-sm text-zinc-300">
-								Connect your Plex account, fetch watch history, run a compatibility dry run, and
-								then import.
-							</p>
-							<Button onClick={handleConnect} icon={["arrow-right", ArrowRight]}>
-								Connect to Plex
-							</Button>
+				{state.step === "connect" && (
+					<div className="space-y-3">
+						<p className="text-sm text-zinc-300">
+							Connect your Plex account to begin importing your watch progress
+						</p>
+						<Button onClick={handleConnect} icon={["arrow-right", ArrowRight]}>
+							Connect to Plex
+						</Button>
+					</div>
+				)}
+
+				{state.step === "authenticating" && (
+					<div className="flex items-center gap-3 text-sm">
+						<Spinner className="size-5" />
+						<span>Waiting for Plex auth...</span>
+					</div>
+				)}
+
+				{state.step === "selectServer" && (
+					<div className="space-y-4">
+						<div className="text-sm text-zinc-300">
+							Multiple Plex Media Servers were found. Choose one to import from.
 						</div>
-					)}
+						<select
+							className="w-full rounded border border-zinc-400/30 bg-transparent px-3 py-2 text-sm"
+							value={state.selectedServerId ?? ""}
+							onChange={(event) =>
+								setState((previous) => ({
+									...previous,
+									selectedServerId: event.target.value,
+								}))
+							}
+						>
+							{state.servers.map((server) => (
+								<option key={server.id} value={server.id} className="text-black">
+									{server.name} ({server.protocol.toUpperCase()}) {server.isRelay ? "relay" : "direct"} -{" "}
+									{server.baseUrl}
+								</option>
+							))}
+						</select>
+						<Button onClick={handleLoadServer} icon={["server", Server]}>
+							Fetch Watch States
+						</Button>
+					</div>
+				)}
 
-					{state.step === "authenticating" && (
-						<div className="flex items-center gap-3 text-sm">
-							<Spinner className="size-5" />
-							<span>Waiting for Plex auth...</span>
-						</div>
-					)}
+				{state.step === "fetching" && (
+					<div className="flex items-center gap-3 text-sm">
+						<Spinner className="size-5" />
+						<span>{FETCHING_METADATA_TEXT}</span>
+					</div>
+				)}
 
-					{state.step === "selectServer" && (
-						<div className="space-y-4">
-							<div className="text-sm text-zinc-300">
-								Multiple Plex Media Servers were found. Choose one to import from.
+				{state.step === "checking" && (
+					<div className="flex items-center gap-3 text-sm">
+						<Spinner className="size-5" />
+						<span>Checking compatibility...</span>
+					</div>
+				)}
+
+				{state.step === "conflicts" && dryRunResult && (
+					<div className="space-y-4">
+						<div className="flex items-start gap-3 rounded border border-yellow-500/40 bg-yellow-500/10 p-3">
+							<TriangleAlert className="mt-0.5 size-4 text-yellow-300" />
+							<div className="text-sm">
+								<p className="font-semibold text-yellow-100">
+									{dryRunResult.conflictRows} conflicts detected
+								</p>
+								<p className="text-yellow-100/80">
+									Existing Lyra watch progress differs for these items.
+								</p>
 							</div>
-							<select
-								className="w-full rounded border border-zinc-400/30 bg-transparent px-3 py-2 text-sm"
-								value={state.selectedServerId ?? ""}
+						</div>
+
+						{dryRunResult.conflicts.length > 0 && (
+							<div className="max-h-36 space-y-1 overflow-auto rounded border border-zinc-400/20 p-2 text-xs">
+								{dryRunResult.conflicts.slice(0, 10).map((conflict) => (
+									<div key={`${conflict.rowIndex}-${conflict.itemId}`} className="text-zinc-300">
+										#{conflict.rowIndex + 1} {conflict.title ?? conflict.sourceItemId ?? conflict.itemId}:{" "}
+										{Math.round(conflict.existingProgressPercent * 100)}
+										{" -> "}
+										{Math.round(conflict.importedProgressPercent * 100)}%
+									</div>
+								))}
+							</div>
+						)}
+
+						<label className="flex items-center gap-2 text-sm text-zinc-200">
+							<input
+								type="checkbox"
+								checked={state.overwriteConflicts}
 								onChange={(event) =>
 									setState((previous) => ({
 										...previous,
-										selectedServerId: event.target.value,
+										overwriteConflicts: event.target.checked,
 									}))
 								}
-							>
-								{state.servers.map((server) => (
-									<option key={server.id} value={server.id} className="text-black">
-										{server.name} ({server.protocol.toUpperCase()}) {server.isRelay ? "relay" : "direct"} -{" "}
-										{server.baseUrl}
-									</option>
-								))}
-							</select>
-							<Button onClick={handleLoadServer} icon={["server", Server]}>
-								Fetch Watch States
-							</Button>
-						</div>
-					)}
+							/>
+							Overwrite conflicting watch states
+						</label>
 
-					{state.step === "fetching" && (
-						<div className="flex items-center gap-3 text-sm">
-							<Spinner className="size-5" />
-							<span>{FETCHING_METADATA_TEXT}</span>
-						</div>
-					)}
+						<Button
+							onClick={() =>
+								setState((previous) => ({
+									...previous,
+									step: "confirm",
+								}))
+							}
+							icon={["arrow-right", ArrowRight]}
+						>
+							Continue
+						</Button>
+					</div>
+				)}
 
-					{state.step === "checking" && (
-						<div className="flex items-center gap-3 text-sm">
-							<Spinner className="size-5" />
-							<span>Checking compatibility...</span>
-						</div>
-					)}
-
-					{state.step === "conflicts" && dryRunResult && (
-						<div className="space-y-4">
-							<div className="flex items-start gap-3 rounded border border-yellow-500/40 bg-yellow-500/10 p-3">
-								<TriangleAlert className="mt-0.5 size-4 text-yellow-300" />
-								<div className="text-sm">
-									<p className="font-semibold text-yellow-100">
-										{dryRunResult.conflictRows} conflicts detected
-									</p>
-									<p className="text-yellow-100/80">
-										Existing Lyra watch progress differs for these items.
-									</p>
-								</div>
+				{state.step === "confirm" && state.compatibility && (
+					<div className="space-y-4">
+						<div className="text-sm text-zinc-200">
+							Import {estimatedImportCount} items?
+							<div className="mt-2 text-xs text-zinc-400">
+								{state.compatibility.unmatchedRows} unmatched items{state.compatibility.conflictRows > 0 ? ` and ${state.compatibility.conflictRows} conflicts` : ""} will be skipped.
 							</div>
-
-							{dryRunResult.conflicts.length > 0 && (
-								<div className="max-h-36 space-y-1 overflow-auto rounded border border-zinc-400/20 p-2 text-xs">
-									{dryRunResult.conflicts.slice(0, 10).map((conflict) => (
-											<div key={`${conflict.rowIndex}-${conflict.itemId}`} className="text-zinc-300">
-												#{conflict.rowIndex + 1} {conflict.title ?? conflict.sourceItemId ?? conflict.itemId}:{" "}
-												{Math.round(conflict.existingProgressPercent * 100)}
-												{" -> "}
-												{Math.round(conflict.importedProgressPercent * 100)}%
-											</div>
-										))}
-									</div>
-							)}
-
-							<label className="flex items-center gap-2 text-sm text-zinc-200">
-								<input
-									type="checkbox"
-									checked={state.overwriteConflicts}
-									onChange={(event) =>
-										setState((previous) => ({
-											...previous,
-											overwriteConflicts: event.target.checked,
-										}))
-									}
-								/>
-								Overwrite conflicting watch states
-							</label>
-
+						</div>
+						<div className="flex items-center gap-2">
+							<Button onClick={handleImport} icon={["arrow-right", ArrowRight]}>
+								Import Now
+							</Button>
 							<Button
+								style={ButtonStyle.Transparent}
 								onClick={() =>
 									setState((previous) => ({
 										...previous,
-										step: "confirm",
+										step: previous.compatibility?.conflictRows ? "conflicts" : "connect",
 									}))
 								}
-								icon={["arrow-right", ArrowRight]}
 							>
-								Continue
+								Back
 							</Button>
 						</div>
-					)}
+					</div>
+				)}
 
-					{state.step === "confirm" && state.compatibility && (
-						<div className="space-y-4">
-							<div className="text-sm text-zinc-200">
-								Import {estimatedImportCount} items?
-								<div className="mt-2 text-xs text-zinc-400">
-									{state.compatibility.unmatchedRows} unmatched items{state.compatibility.conflictRows > 0 ? ` and ${state.compatibility.conflictRows} conflicts` : ""} will be skipped.
-								</div>
-							</div>
-							<div className="flex items-center gap-2">
-								<Button onClick={handleImport} icon={["arrow-right", ArrowRight]}>
-									Import Now
-								</Button>
-								<Button
-									style={ButtonStyle.Transparent}
-									onClick={() =>
-										setState((previous) => ({
-											...previous,
-											step: previous.compatibility?.conflictRows ? "conflicts" : "connect",
-										}))
-									}
-								>
-									Back
-								</Button>
-							</div>
-						</div>
-					)}
+				{state.step === "importing" && (
+					<div className="flex items-center gap-3 text-sm">
+						<Spinner className="size-5" />
+						<span>Importing watch states...</span>
+					</div>
+				)}
 
-					{state.step === "importing" && (
-						<div className="flex items-center gap-3 text-sm">
-							<Spinner className="size-5" />
-							<span>Importing watch states...</span>
+				{state.step === "complete" && finalResult && (
+					<div className="space-y-3">
+						<div className="flex items-center gap-2 text-emerald-300">
+							<CheckCircle2 className="size-4" />
+							<span className="text-sm font-semibold">Import complete</span>
 						</div>
-					)}
+						<div className="text-sm text-zinc-200">
+							Imported {state.importedCount} rows and skipped {state.skippedCount}.
+						</div>
+						<div className="text-xs text-zinc-400">
+							Unmatched: {finalResult.unmatchedRows} | Conflicts: {finalResult.conflictRows}
+						</div>
+						<Button
+							onClick={() => {
+								resetState();
+								onOpenChange(false);
+							}}
+						>
+							Close
+						</Button>
+					</div>
+				)}
 
-					{state.step === "complete" && finalResult && (
-						<div className="space-y-3">
-							<div className="flex items-center gap-2 text-emerald-300">
-								<CheckCircle2 className="size-4" />
-								<span className="text-sm font-semibold">Import complete</span>
-							</div>
-							<div className="text-sm text-zinc-200">
-								Imported {state.importedCount} rows and skipped {state.skippedCount}.
-							</div>
-							<div className="text-xs text-zinc-400">
-								Unmatched: {finalResult.unmatchedRows} | Conflicts: {finalResult.conflictRows}
-							</div>
-							<Button
-								onClick={() => {
-									resetState();
-									onOpenChange(false);
-								}}
-							>
-								Close
-							</Button>
+				{state.step === "error" && (
+					<div className="space-y-3">
+						<div className="flex items-start gap-2 rounded border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
+							<AlertCircle className="mt-0.5 size-4" />
+							<span>{state.errorMessage ?? "An unknown error occurred"}</span>
 						</div>
-					)}
-
-					{state.step === "error" && (
-						<div className="space-y-3">
-							<div className="flex items-start gap-2 rounded border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-								<AlertCircle className="mt-0.5 size-4" />
-								<span>{state.errorMessage ?? "An unknown error occurred"}</span>
-							</div>
-							<Button onClick={resetState}>Start Over</Button>
-						</div>
-					)}
-			</DialogContent>
-		</Dialog>
+						<Button onClick={resetState}>Start Over</Button>
+					</div>
+				)}
+			</ModalBody>
+		</Modal>
 	);
 };

@@ -1,7 +1,7 @@
 import { useQuery } from "@apollo/client/react";
 import { Link } from "@tanstack/react-router";
 import { SearchAlertIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
-import { useDeferredValue, useState, type FC } from "react";
+import { useState, type FC } from "react";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import type {
 	SearchItemResultFragment as SearchItemResultData,
@@ -12,7 +12,7 @@ import { getPathForItem, getPathForRoot } from "../lib/getPathForMedia";
 import { cn } from "../lib/utils";
 import { Image, ImageType } from "./image";
 import { LoadingText } from "./loading-text";
-import { Dialog, DialogContent } from "./ui/dialog";
+import { Modal, ModalBody, ModalHeader, ModalRotation } from "./modal";
 import { Empty, EmptyDescription, EmptyMedia } from "./ui/empty";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
@@ -162,6 +162,12 @@ export const SearchModal: FC<{
 	onOpenChange: (open: boolean) => void;
 }> = ({ open, onOpenChange }) => {
 	const [query, setQuery] = useState("");
+	const handleOpenChange = (nextOpen: boolean) => {
+		if (!nextOpen) {
+			setQuery("");
+		}
+		onOpenChange(nextOpen);
+	};
 	const [deferredQuery] = useDebounce(query.trim(), 200, 1000);
 	const shouldSearch = open && deferredQuery.length > 0;
 	const { data: rawData, previousData: previousRawData, loading, error } = useQuery(SearchMediaQuery, {
@@ -178,101 +184,96 @@ export const SearchModal: FC<{
 	const hasResults = roots.length > 0 || items.length > 0;
 
 	return (
-		<Dialog
+		<Modal
 			open={open}
-			onOpenChange={(nextOpen) => {
-				if (!nextOpen) {
-					setQuery("");
-				}
-				onOpenChange(nextOpen);
-			}}
+			onOpenChange={handleOpenChange}
+			rotation={ModalRotation.Vertical}
+			size="80vh"
 		>
-			<DialogContent className="w-[min(64rem,calc(100vw-2rem))] h-[min(70vh,calc(100vh-2rem))] overflow-hidden border border-zinc-900 bg-black p-0 text-zinc-100 shadow-2xl shadow-black/50 flex flex-col">
-				<div className="border-b border-zinc-900 px-5 py-4 h-min">
-					<div className="flex items-center relative w-full">
-						<SearchIcon className="size-4 text-zinc-500 absolute left-0" />
-						<Input
-							autoFocus
-							value={query}
-							placeholder="Search"
-							className="h-8 pl-8 border-0 bg-transparent text-sm text-zinc-100 shadow-none focus-visible:ring-0"
-							onChange={(event) => setQuery(event.target.value)}
-						/>
+			<ModalHeader contentClassName="px-5">
+				<div className="relative flex w-full items-center">
+					<SearchIcon className="absolute left-0 size-4 text-zinc-500" />
+					<Input
+						autoFocus
+						value={query}
+						placeholder="Search"
+						className="h-8 border-0 bg-transparent pl-8 text-sm text-zinc-100 shadow-none focus-visible:ring-0"
+						onChange={(event) => setQuery(event.target.value)}
+					/>
+				</div>
+			</ModalHeader>
+			<ModalBody patterned={false} className="overflow-y-auto px-6">
+				{!shouldSearch && (
+					<Empty className="h-[30em] w-full">
+						<EmptyMedia variant="icon">
+							<SearchIcon />
+						</EmptyMedia>
+						<EmptyDescription>
+							Whatcha' after?
+						</EmptyDescription>
+					</Empty>
+				)}
+				{shouldSearch && loading && !displayData && (
+					<Empty className="h-[30em] w-full">
+						<EmptyMedia variant="icon">
+							<Spinner />
+						</EmptyMedia>
+						<EmptyDescription>
+							<LoadingText />
+						</EmptyDescription>
+					</Empty>
+				)}
+				{shouldSearch && error && (
+					<Empty className="h-[30em] w-full">
+						<EmptyMedia variant="icon">
+							<TriangleAlertIcon />
+						</EmptyMedia>
+						<EmptyDescription>
+							{error.message || "Something went wrong"}
+						</EmptyDescription>
+					</Empty>
+				)}
+				{shouldSearch && !loading && !hasResults && (
+					<Empty className="h-[30em] w-full">
+						<EmptyMedia variant="icon">
+							<SearchAlertIcon />
+						</EmptyMedia>
+						<EmptyDescription>
+							I got nothin'.
+						</EmptyDescription>
+					</Empty>
+				)}
+				{hasResults && (
+					<div className="space-y-6">
+						{roots.length > 0 && (
+							<section>
+								<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3">
+									{roots.map((root, index) => (
+										<SearchRootCard
+											key={index}
+											root={root}
+											onSelect={() => handleOpenChange(false)}
+										/>
+									))}
+								</div>
+							</section>
+						)}
+						{items.length > 0 && (
+							<section>
+								<div className={cn("mt-2", items.length > 0 && "space-y-1")}>
+									{items.map((item, index) => (
+										<SearchItemRow
+											key={index}
+											item={item}
+											onSelect={() => handleOpenChange(false)}
+										/>
+									))}
+								</div>
+							</section>
+						)}
 					</div>
-				</div>
-				<div className="overflow-y-auto px-6">
-					{!shouldSearch && (
-						<Empty className="h-[30em] w-full">
-							<EmptyMedia variant="icon">
-								<SearchIcon />
-							</EmptyMedia>
-							<EmptyDescription>
-								Whatcha' after?
-							</EmptyDescription>
-						</Empty>
-					)}
-					{shouldSearch && loading && !displayData && (
-						<Empty className="h-[30em] w-full">
-							<EmptyMedia variant="icon">
-								<Spinner />
-							</EmptyMedia>
-							<EmptyDescription>
-								<LoadingText />
-							</EmptyDescription>
-						</Empty>
-					)}
-					{shouldSearch && error && (
-						<Empty className="h-[30em] w-full">
-							<EmptyMedia variant="icon">
-								<TriangleAlertIcon />
-							</EmptyMedia>
-							<EmptyDescription>
-								{error.message || "Something went wrong"}
-							</EmptyDescription>
-						</Empty>
-					)}
-					{shouldSearch && !loading && !hasResults && (
-						<Empty className="h-[30em] w-full">
-							<EmptyMedia variant="icon">
-								<SearchAlertIcon />
-							</EmptyMedia>
-							<EmptyDescription>
-								I got nothin'.
-							</EmptyDescription>
-						</Empty>
-					)}
-					{hasResults && (
-						<div className="space-y-6">
-							{roots.length > 0 && (
-								<section>
-									<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3">
-										{roots.map((root) => (
-											<SearchRootCard
-												key={root.id}
-												root={root}
-												onSelect={() => onOpenChange(false)}
-											/>
-										))}
-									</div>
-								</section>
-							)}
-							{items.length > 0 && (
-								<section>
-									<div className={cn("mt-2", items.length > 0 && "space-y-1")}>
-										{items.map((item) => (
-											<SearchItemRow
-												key={item.id}
-												item={item}
-												onSelect={() => onOpenChange(false)}
-											/>
-										))}
-									</div>
-								</section>
-							)}
-						</div>
-					)}
-				</div>
-			</DialogContent>
-		</Dialog>
+				)}
+			</ModalBody>
+		</Modal>
 	);
 };
