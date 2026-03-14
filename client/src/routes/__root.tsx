@@ -44,9 +44,7 @@ function RootComponent() {
 					</SetupWrapper>
 				</AppErrorBoundary>
 				<Toaster />
-				<div className="fixed inset-0 h-dvw w-dvw pointer-events-none">
-					<DynamicBackground />
-				</div>
+				<DynamicBackground />
 			</ApolloProvider>
 		</TooltipProvider>
 	);

@@ -8,8 +8,7 @@ import { generateGradientIcon } from "../lib/generate-gradient-icon";
 const DURATION = 2000;
 const generateDefault = () => generateGradientIcon(Date.now().toString(), { size: 512 });
 
-// todo: once images are stored in the db, we should extract primary colours and use those instead.
-// loading full images for this is kinda crazy.
+// todo: we should extract primary colours and use those instead. loading full images for this is kinda crazy.
 export const DynamicBackground: FC = () => {
 	const backgroundAsset = useStore(backgroundStore);
 	const backgroundUrl = backgroundAsset ? getAssetImageUrl(backgroundAsset, 200) : null;
@@ -44,15 +43,18 @@ export const DynamicBackground: FC = () => {
 	};
 
 	return (
-		<div className="h-full w-full opacity-10 blur-3xl scale-[1.25] pointer-events-none select-none -z-10" aria-hidden>
-			<img src={defaultBackground} alt="" aria-hidden className="fixed object-fill h-full w-full" />
+		<div
+			id="dynamic-background"
+			className="opacity-10 blur-3xl scale-[1.1] fixed inset-0 pointer-events-none select-none -z-10"
+			aria-hidden
+		>
+			<img src={defaultBackground} alt="" className="absolute w-full h-full inset-0 object-fill" />
 			{current && (
 				<img
 					src={current}
 					alt=""
-					aria-hidden
 					decoding="async"
-					className="fixed object-fill h-full w-full transition-opacity ease-in-out"
+					className="absolute h-full w-full transition-opacity ease-in-out object-fill"
 					style={{
 						transitionDuration: `${DURATION}ms`,
 						opacity: showCurrent ? 1 : 0,

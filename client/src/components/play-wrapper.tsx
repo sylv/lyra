@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CircleIcon, FileWarningIcon, PlayIcon } from "lucide-react";
+import { CheckCheckIcon, CircleIcon, FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { openPlayerMedia } from "./player/player-state";
@@ -52,7 +52,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 			)}
 			{watchProgress && watchProgress.completed && (
 				<UnplayedItemsTab>
-					<CircleIcon className="size-3.5" />
+					<CheckCheckIcon className="size-4" strokeWidth={2.5} />
 				</UnplayedItemsTab>
 			)}
 			{!itemId && (
