@@ -35,7 +35,6 @@ export const Modal: FC<ModalProps> = ({
 	const ref = React.useRef<HTMLDivElement>(null);
 	useOnClickOutside(ref, () => onOpenChange(false));
 
-	const gridColour = "rgba(255, 255, 255, 0.02)";
 	const contentStyle: CSSProperties = {
 		maxHeight: "calc(100vh - 2rem)",
 		maxWidth: "calc(100vw - 2rem)",
@@ -68,11 +67,6 @@ export const Modal: FC<ModalProps> = ({
 						animate={{ opacity: 1, scale: 1 }}
 						exit={{ opacity: 0, scale: 0.95 }}
 						ref={ref}
-						style={{
-							...contentStyle,
-							backgroundImage: `linear-gradient(${gridColour} .05em, transparent .05em), linear-gradient(90deg, ${gridColour} .05em, transparent .05em)`,
-							backgroundSize: "2em 2em",
-						}}
 					>
 						<ModalContext.Provider value={{ onOpenChange }}>{children}</ModalContext.Provider>
 					</motion.div>
@@ -97,7 +91,7 @@ export const ModalHeader: FC<ModalHeaderProps> = ({ children, className, content
 	}
 
 	return (
-		<div className={cn("flex h-14 w-full items-center justify-between border-b border-zinc-900", className)}>
+		<div className={cn("flex h-14 w-full items-center justify-between", className)}>
 			<div className={cn("min-w-0 grow px-6 font-semibold", contentClassName)}>{children}</div>
 			<button
 				type="button"
