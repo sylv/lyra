@@ -70,13 +70,15 @@ impl roots::Model {
         ctx: &Context<'_>,
     ) -> Result<Option<items::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let mut query = items::Entity::find()
+        let fallback_query = items::Entity::find()
             .filter(items::Column::RootId.eq(self.id.clone()))
             .order_by_asc(items::Column::Order)
             .order_by_asc(items::Column::Id);
 
         if let Some(user_id) = current_user_id(ctx) {
-            query = query.filter(
+            let next_item = fallback_query
+                .clone()
+                .filter(
                 Expr::col((items::Entity, items::Column::Id)).not_in_subquery(
                     Query::select()
                         .column(watch_progress::Column::ItemId)
@@ -94,10 +96,16 @@ impl roots::Model {
                         )
                         .to_owned(),
                 ),
-            );
+                )
+                .one(pool)
+                .await?;
+
+            if next_item.is_some() {
+                return Ok(next_item);
+            }
         }
 
-        query.one(pool).await
+        fallback_query.one(pool).await
     }
 
     pub async fn unplayed_items(&self, ctx: &Context<'_>) -> Result<i32, async_graphql::Error> {
