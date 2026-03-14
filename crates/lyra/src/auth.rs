@@ -73,11 +73,13 @@ where
             let now = Utc::now().timestamp();
             let last_attempt = state.last_setup_code_attempt.load(Ordering::Relaxed);
             if now - last_attempt < 2 {
+                tracing::warn!("setup code attempted too soon after last attempt");
                 return Err(AuthError::TooManyAttempts);
             }
 
             if setup_code != state.setup_code {
                 tracing::warn!("setup code incorrect");
+                state.last_setup_code_attempt.store(now, Ordering::Relaxed);
                 return Err(AuthError::Unauthenticated);
             }
 
