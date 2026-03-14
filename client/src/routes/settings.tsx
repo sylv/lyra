@@ -22,7 +22,7 @@ function RouteComponent() {
 					<TabsTrigger value="about">About</TabsTrigger>
 					<TabsTrigger value="import">Import</TabsTrigger>
 				</TabsList>
-				<div className="rounded bg-zinc-400/10 p-3">
+				<div className="rounded bg-zinc-400/10 p-3 min-h-[70vh]">
 					<TabsContent value="about">
 						<p className="text-sm text-zinc-400">
 							Based on {__BRANCH__} {__REVISION__}, built on {buildDate}.
