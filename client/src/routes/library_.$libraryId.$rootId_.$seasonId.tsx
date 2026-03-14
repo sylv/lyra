@@ -10,7 +10,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { graphql } from "../@generated/gql";
 import { OrderBy, type ItemNodeFilter } from "../@generated/gql/graphql";
-import { client } from "../client";
+import { getApolloClient } from "../client";
 import { useTitle } from "../hooks/use-title";
 
 const RootAndSeasonQuery = graphql(`
@@ -80,7 +80,7 @@ const EpisodesQuery = graphql(`
 export const Route = createFileRoute("/library_/$libraryId/$rootId_/$seasonId")({
 	component: SeasonRoute,
 	loader: ({ params }) => {
-		client.query({
+		getApolloClient().query({
 			query: RootAndSeasonQuery,
 			variables: {
 				rootId: params.rootId,

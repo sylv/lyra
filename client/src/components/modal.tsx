@@ -35,6 +35,7 @@ export const Modal: FC<ModalProps> = ({
 	const ref = React.useRef<HTMLDivElement>(null);
 	useOnClickOutside(ref, () => onOpenChange(false));
 
+	const gridColour = "rgba(255, 255, 255, 0.02)";
 	const contentStyle: CSSProperties = {
 		maxHeight: "calc(100vh - 2rem)",
 		maxWidth: "calc(100vw - 2rem)",
@@ -66,8 +67,12 @@ export const Modal: FC<ModalProps> = ({
 						initial={{ opacity: 0, scale: 0.75 }}
 						animate={{ opacity: 1, scale: 1 }}
 						exit={{ opacity: 0, scale: 0.95 }}
-						style={contentStyle}
 						ref={ref}
+						style={{
+							...contentStyle,
+							backgroundImage: `linear-gradient(${gridColour} .05em, transparent .05em), linear-gradient(90deg, ${gridColour} .05em, transparent .05em)`,
+							backgroundSize: "2em 2em",
+						}}
 					>
 						<ModalContext.Provider value={{ onOpenChange }}>{children}</ModalContext.Provider>
 					</motion.div>
@@ -108,26 +113,10 @@ export const ModalHeader: FC<ModalHeaderProps> = ({ children, className, content
 interface ModalBodyProps {
 	children: ReactNode;
 	className?: string;
-	patterned?: boolean;
 }
 
-export const ModalBody: FC<ModalBodyProps> = ({ children, className, patterned = true }) => {
-	const backgroundColour = "rgba(255, 255, 255, 0.02)";
-	return (
-		<div
-			className={cn("grow px-6 py-4", className)}
-			style={
-				patterned
-					? {
-							backgroundImage: `linear-gradient(${backgroundColour} .05em, transparent .05em), linear-gradient(90deg, ${backgroundColour} .05em, transparent .05em)`,
-							backgroundSize: "2em 2em",
-						}
-					: undefined
-			}
-		>
-			{children}
-		</div>
-	);
+export const ModalBody: FC<ModalBodyProps> = ({ children, className }) => {
+	return <div className={cn("grow px-6 py-4", className)}>{children}</div>;
 };
 
 export const ModalFooter: FC<{ children: ReactNode; className?: string }> = ({ children, className }) => {

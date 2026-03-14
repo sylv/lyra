@@ -5,7 +5,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
 import { graphql } from "../@generated/gql";
 import { OrderBy, type RootNodeFilter } from "../@generated/gql/graphql";
-import { client } from "../client";
+import { getApolloClient } from "../client";
 import { useTitle } from "../hooks/use-title";
 
 const Query = graphql(`
@@ -32,7 +32,7 @@ const Query = graphql(`
 export const Route = createFileRoute("/library/$libraryId")({
 	component: LibraryRoute,
 	loader: ({ params }) => {
-		client.query({
+		getApolloClient().query({
 			query: Query,
 			variables: {
 				libraryId: Number(params.libraryId),

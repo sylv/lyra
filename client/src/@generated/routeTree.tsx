@@ -9,13 +9,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './../routes/__root'
+import { Route as SetupRouteImport } from './../routes/setup'
 import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as PlaygroundRouteImport } from './../routes/playground'
 import { Route as IndexRouteImport } from './../routes/index'
+import { Route as SetupLoginRouteImport } from './../routes/setup.login'
+import { Route as SetupCreateLibraryRouteImport } from './../routes/setup.create-library'
+import { Route as SetupCreateAccountRouteImport } from './../routes/setup.create-account'
 import { Route as LibraryLibraryIdRouteImport } from './../routes/library.$libraryId'
 import { Route as LibraryLibraryIdRootIdRouteImport } from './../routes/library_.$libraryId.$rootId'
 import { Route as LibraryLibraryIdRootIdSeasonIdRouteImport } from './../routes/library_.$libraryId.$rootId_.$seasonId'
 
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -30,6 +39,21 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SetupLoginRoute = SetupLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupCreateLibraryRoute = SetupCreateLibraryRouteImport.update({
+  id: '/create-library',
+  path: '/create-library',
+  getParentRoute: () => SetupRoute,
+} as any)
+const SetupCreateAccountRoute = SetupCreateAccountRouteImport.update({
+  id: '/create-account',
+  path: '/create-account',
+  getParentRoute: () => SetupRoute,
 } as any)
 const LibraryLibraryIdRoute = LibraryLibraryIdRouteImport.update({
   id: '/library/$libraryId',
@@ -52,7 +76,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRouteWithChildren
   '/library/$libraryId': typeof LibraryLibraryIdRoute
+  '/setup/create-account': typeof SetupCreateAccountRoute
+  '/setup/create-library': typeof SetupCreateLibraryRoute
+  '/setup/login': typeof SetupLoginRoute
   '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
 }
@@ -60,7 +88,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRouteWithChildren
   '/library/$libraryId': typeof LibraryLibraryIdRoute
+  '/setup/create-account': typeof SetupCreateAccountRoute
+  '/setup/create-library': typeof SetupCreateLibraryRoute
+  '/setup/login': typeof SetupLoginRoute
   '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
 }
@@ -69,7 +101,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRouteWithChildren
   '/library/$libraryId': typeof LibraryLibraryIdRoute
+  '/setup/create-account': typeof SetupCreateAccountRoute
+  '/setup/create-library': typeof SetupCreateLibraryRoute
+  '/setup/login': typeof SetupLoginRoute
   '/library_/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library_/$libraryId/$rootId_/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
 }
@@ -79,7 +115,11 @@ export interface FileRouteTypes {
     | '/'
     | '/playground'
     | '/settings'
+    | '/setup'
     | '/library/$libraryId'
+    | '/setup/create-account'
+    | '/setup/create-library'
+    | '/setup/login'
     | '/library/$libraryId/$rootId'
     | '/library/$libraryId/$rootId/$seasonId'
   fileRoutesByTo: FileRoutesByTo
@@ -87,7 +127,11 @@ export interface FileRouteTypes {
     | '/'
     | '/playground'
     | '/settings'
+    | '/setup'
     | '/library/$libraryId'
+    | '/setup/create-account'
+    | '/setup/create-library'
+    | '/setup/login'
     | '/library/$libraryId/$rootId'
     | '/library/$libraryId/$rootId/$seasonId'
   id:
@@ -95,7 +139,11 @@ export interface FileRouteTypes {
     | '/'
     | '/playground'
     | '/settings'
+    | '/setup'
     | '/library/$libraryId'
+    | '/setup/create-account'
+    | '/setup/create-library'
+    | '/setup/login'
     | '/library_/$libraryId/$rootId'
     | '/library_/$libraryId/$rootId_/$seasonId'
   fileRoutesById: FileRoutesById
@@ -104,6 +152,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PlaygroundRoute: typeof PlaygroundRoute
   SettingsRoute: typeof SettingsRoute
+  SetupRoute: typeof SetupRouteWithChildren
   LibraryLibraryIdRoute: typeof LibraryLibraryIdRoute
   LibraryLibraryIdRootIdRoute: typeof LibraryLibraryIdRootIdRoute
   LibraryLibraryIdRootIdSeasonIdRoute: typeof LibraryLibraryIdRootIdSeasonIdRoute
@@ -111,6 +160,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -131,6 +187,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/setup/login': {
+      id: '/setup/login'
+      path: '/login'
+      fullPath: '/setup/login'
+      preLoaderRoute: typeof SetupLoginRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/create-library': {
+      id: '/setup/create-library'
+      path: '/create-library'
+      fullPath: '/setup/create-library'
+      preLoaderRoute: typeof SetupCreateLibraryRouteImport
+      parentRoute: typeof SetupRoute
+    }
+    '/setup/create-account': {
+      id: '/setup/create-account'
+      path: '/create-account'
+      fullPath: '/setup/create-account'
+      preLoaderRoute: typeof SetupCreateAccountRouteImport
+      parentRoute: typeof SetupRoute
     }
     '/library/$libraryId': {
       id: '/library/$libraryId'
@@ -156,10 +233,25 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface SetupRouteChildren {
+  SetupCreateAccountRoute: typeof SetupCreateAccountRoute
+  SetupCreateLibraryRoute: typeof SetupCreateLibraryRoute
+  SetupLoginRoute: typeof SetupLoginRoute
+}
+
+const SetupRouteChildren: SetupRouteChildren = {
+  SetupCreateAccountRoute: SetupCreateAccountRoute,
+  SetupCreateLibraryRoute: SetupCreateLibraryRoute,
+  SetupLoginRoute: SetupLoginRoute,
+}
+
+const SetupRouteWithChildren = SetupRoute._addFileChildren(SetupRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PlaygroundRoute: PlaygroundRoute,
   SettingsRoute: SettingsRoute,
+  SetupRoute: SetupRouteWithChildren,
   LibraryLibraryIdRoute: LibraryLibraryIdRoute,
   LibraryLibraryIdRootIdRoute: LibraryLibraryIdRootIdRoute,
   LibraryLibraryIdRootIdSeasonIdRoute: LibraryLibraryIdRootIdSeasonIdRoute,

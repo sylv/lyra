@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { graphql } from "../@generated/gql";
 import { OrderBy, type RootNodeFilter } from "../@generated/gql/graphql";
-import { client } from "../client";
+import { getApolloClient } from "../client";
 import { MediaFilterList } from "../components/media-filter-list";
 import { MediaList } from "../components/media-list";
 import { useTitle } from "../hooks/use-title";
@@ -27,7 +27,7 @@ const Query = graphql(`
 export const Route = createFileRoute("/")({
 	component: HomeRoute,
 	loader: () => {
-		client.query({
+		getApolloClient().query({
 			query: Query,
 			variables: {
 				filter: {

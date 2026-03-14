@@ -8,7 +8,7 @@ export const Input: FC<InputProps> = ({ className, ...rest }) => (
 		className={cn(
 			"relative h-10 text-sm px-4 rounded-sm w-72",
 			"flex items-center justify-center placeholder:text-accent-foreground/40",
-			"border border-accent-foreground/20 hover:border-accent-foreground/30 focus:border-accent-foreground/30 outline-none",
+			"bg-zinc-950 outline-none focus:bg-zinc-900",
 			className,
 		)}
 		{...rest}

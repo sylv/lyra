@@ -203,7 +203,7 @@ export const SearchModal: FC<{
 					/>
 				</div>
 			</ModalHeader>
-			<ModalBody patterned={false} className="overflow-y-auto px-6">
+			<ModalBody className="overflow-y-auto px-6">
 				{!shouldSearch && (
 					<Empty className="h-[30em] w-full">
 						<EmptyMedia variant="icon">

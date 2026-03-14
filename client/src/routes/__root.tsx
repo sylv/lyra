@@ -1,7 +1,8 @@
 import { ApolloProvider } from "@apollo/client/react";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
-import { createRootRoute, Outlet } from "@tanstack/react-router";
-import { client } from "../client";
+import { createRootRoute, Outlet, useLocation } from "@tanstack/react-router";
+import { useStore } from "zustand";
+import { apolloClientStore } from "../client";
 import { DynamicBackground } from "../components/dynamic-background";
 import { AppErrorBoundary } from "../components/error-boundary";
 import { SuspenseBoundary } from "../components/fallback";
@@ -15,6 +16,12 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+	const client = useStore(apolloClientStore, (state) => state.client);
+	const pathname = useLocation({
+		select: (location) => location.pathname,
+	});
+	const isSetupRoute = pathname === "/setup" || pathname.startsWith("/setup/");
+
 	return (
 		<TooltipProvider>
 			<ApolloProvider client={client}>
@@ -22,16 +29,22 @@ function RootComponent() {
 					<SetupWrapper>
 						<AppErrorBoundary className="fixed inset-0">
 							<SuspenseBoundary className="fixed inset-0">
-								<Sidebar>
+								{isSetupRoute ? (
 									<Outlet />
-								</Sidebar>
-								<PlayerWrapper />
+								) : (
+									<>
+										<Sidebar>
+											<Outlet />
+										</Sidebar>
+										<PlayerWrapper />
+									</>
+								)}
 							</SuspenseBoundary>
 						</AppErrorBoundary>
 					</SetupWrapper>
 				</AppErrorBoundary>
 				<Toaster />
-				<div className="fixed inset-0 h-dvw w-dvw">
+				<div className="fixed inset-0 h-dvw w-dvw pointer-events-none">
 					<DynamicBackground />
 				</div>
 			</ApolloProvider>

@@ -3,11 +3,8 @@ import { Folder, Plus } from "lucide-react";
 import { useState, type FC } from "react";
 import { graphql } from "../../../@generated/gql";
 import { DirectoryPicker } from "../../directory-picker";
-import { SetupModalStep } from "../setup-modal-step";
-
-interface CreateLibraryStepProps {
-	refetch: () => Promise<void>;
-}
+import { SetupStep } from "../setup-step";
+import { useSetup } from "../setup-wrapper";
 
 const Query = graphql(`
 	query GetLibraries {
@@ -29,13 +26,14 @@ const Mutation = graphql(`
 	}
 `);
 
-export const CreateLibraryStep: FC<CreateLibraryStepProps> = ({ refetch }) => {
+export const CreateLibraryStep = () => {
+	const { refresh } = useSetup();
 	const [showAddForm, setShowAddForm] = useState(false);
 	const { data: librariesData } = useQuery(Query);
 	const libraries = librariesData?.libraries || [];
 
 	return (
-		<SetupModalStep loading={false} disabled={libraries.length === 0} onSubmit={() => refetch()} centered={false}>
+		<SetupStep loading={false} disabled={libraries.length === 0} onSubmit={() => refresh()} centered={false}>
 			{/* Add Library Button/Form */}
 			{!showAddForm ? (
 				<div className="grid grid-cols-4 gap-4 mb-6">
@@ -64,7 +62,7 @@ export const CreateLibraryStep: FC<CreateLibraryStepProps> = ({ refetch }) => {
 			) : (
 				<CreateLibraryForm onClose={() => setShowAddForm(false)} />
 			)}
-		</SetupModalStep>
+		</SetupStep>
 	);
 };
 

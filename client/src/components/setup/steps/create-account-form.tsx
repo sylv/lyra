@@ -1,10 +1,11 @@
 import { gql } from "@apollo/client";
 import { useMutation } from "@apollo/client/react";
-import { useState, type FC } from "react";
-import { SetupModalStep } from "../setup-modal-step";
+import { useState } from "react";
 import { InputOtp } from "../../input-otp";
 import { Input } from "../../input";
 import { Button, ButtonStyle } from "../../button";
+import { SetupStep } from "../setup-step";
+import { useSetup } from "../setup-wrapper";
 
 const SIGNUP_MUTATION = gql`
 	mutation Signup($username: String!, $password: String!) {
@@ -15,11 +16,8 @@ const SIGNUP_MUTATION = gql`
 	}
 `;
 
-interface CreateAccountFormProps {
-	refetch: () => Promise<void>;
-}
-
-export const CreateAccountForm: FC<CreateAccountFormProps> = ({ refetch }) => {
+export const CreateAccountForm = () => {
+	const { refresh } = useSetup();
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
@@ -73,7 +71,7 @@ export const CreateAccountForm: FC<CreateAccountFormProps> = ({ refetch }) => {
 				},
 			});
 
-			await refetch();
+			await refresh();
 			setLoading(false);
 		} catch (error: any) {
 			// todo: handle 401s
@@ -84,7 +82,7 @@ export const CreateAccountForm: FC<CreateAccountFormProps> = ({ refetch }) => {
 	};
 
 	return (
-		<SetupModalStep
+		<SetupStep
 			loading={loading}
 			disabled={loading}
 			onSubmit={handleSubmit}
@@ -129,6 +127,6 @@ export const CreateAccountForm: FC<CreateAccountFormProps> = ({ refetch }) => {
 					</fieldset>
 				</form>
 			)}
-		</SetupModalStep>
+		</SetupStep>
 	);
 };

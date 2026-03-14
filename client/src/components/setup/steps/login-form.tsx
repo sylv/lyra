@@ -1,12 +1,9 @@
-import { useState, type FC } from "react";
+import { useState } from "react";
 import { Input } from "../../input";
-import { SetupModalStep } from "../setup-modal-step";
-
-interface LoginFormProps {
-	refetch: () => Promise<void>;
-}
-
-export const LoginForm: FC<LoginFormProps> = ({ refetch }) => {
+import { SetupStep } from "../setup-step";
+import { useSetup } from "../setup-wrapper";
+export const LoginForm = () => {
+	const { refresh } = useSetup();
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -38,7 +35,7 @@ export const LoginForm: FC<LoginFormProps> = ({ refetch }) => {
 				}),
 			});
 
-			await refetch();
+			await refresh();
 			setLoading(false);
 		} catch (error: any) {
 			// todo: handle 401s
@@ -49,7 +46,7 @@ export const LoginForm: FC<LoginFormProps> = ({ refetch }) => {
 	};
 
 	return (
-		<SetupModalStep loading={loading} disabled={loading} onSubmit={handleSubmit} error={error}>
+		<SetupStep loading={loading} disabled={loading} onSubmit={handleSubmit} error={error}>
 			<form id="create-account-form" onSubmit={handleSubmit}>
 				<fieldset className="flex flex-col gap-2">
 					<Input
@@ -68,6 +65,6 @@ export const LoginForm: FC<LoginFormProps> = ({ refetch }) => {
 					/>
 				</fieldset>
 			</form>
-		</SetupModalStep>
+		</SetupStep>
 	);
 };

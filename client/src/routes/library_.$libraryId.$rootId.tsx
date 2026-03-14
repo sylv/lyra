@@ -7,7 +7,7 @@ import { formatReleaseYear } from "@/lib/format-release-year";
 import { useSuspenseQuery } from "@apollo/client/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { graphql } from "../@generated/gql";
-import { client } from "../client";
+import { getApolloClient } from "../client";
 import { useTitle } from "../hooks/use-title";
 
 const Query = graphql(`
@@ -50,7 +50,7 @@ const Query = graphql(`
 export const Route = createFileRoute("/library_/$libraryId/$rootId")({
 	component: RootRoute,
 	loader: ({ params }) => {
-		client.query({
+		getApolloClient().query({
 			query: Query,
 			variables: {
 				rootId: params.rootId,

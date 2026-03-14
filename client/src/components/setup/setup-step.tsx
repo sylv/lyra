@@ -1,9 +1,9 @@
 import { ArrowRight } from "lucide-react";
-import { Button } from "../button";
 import type { FC, ReactNode } from "react";
+import { Button } from "../button";
 import { cn } from "@/lib/utils";
 
-interface SetupModalStepProps {
+interface SetupStepProps {
 	children: ReactNode;
 	footer?: ReactNode;
 	loading: boolean;
@@ -13,7 +13,7 @@ interface SetupModalStepProps {
 	onSubmit: () => void;
 }
 
-export const SetupModalStep: FC<SetupModalStepProps> = ({
+export const SetupStep: FC<SetupStepProps> = ({
 	children,
 	footer,
 	loading,
@@ -23,16 +23,12 @@ export const SetupModalStep: FC<SetupModalStepProps> = ({
 	onSubmit,
 }) => (
 	<>
-		<div
-			className={cn("flex flex-col bg-zinc-950/40 p-6 rounded-md flex-grow", centered && "items-center justify-center")}
-		>
-			{children}
-		</div>
-		<div className="flex justify-between gap-2 items-center mt-6">
-			<div className="h-full flex-grow flex items-center">
-				{error && <p className="text-red-400 font-mono bg-red-900/20 px-3 py-1 rounded">{error}</p>}
+		<div className={cn("flex flex-col p-6 flex-grow", centered && "items-center justify-center")}>{children}</div>
+		<div className="mt-6 flex items-center justify-between gap-2">
+			<div className="flex h-full flex-grow items-center">
+				{error && <p className="rounded bg-red-900/20 px-3 py-1 font-mono text-red-400">{error}</p>}
 			</div>
-			<div className="flex gap-3 items-center">
+			<div className="flex items-center gap-3">
 				{footer}
 				<Button icon={["arrow-right", ArrowRight]} loading={loading} disabled={disabled} onClick={onSubmit}>
 					Continue
