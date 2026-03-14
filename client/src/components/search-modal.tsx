@@ -107,7 +107,7 @@ const SearchRootCard: FC<{
 				<Image type={ImageType.Poster} asset={root.properties.posterImage} alt={root.name} className="w-full" />
 			</div>
 			<div className="mt-2">
-				<p className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">{root.name}</p>
+				<h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">{root.name}</h3>
 				{detail && <p className="text-xs text-zinc-500">{detail}</p>}
 			</div>
 		</Link>
@@ -137,7 +137,7 @@ const SearchItemRow: FC<{
 				<Image type={ImageType.Thumbnail} asset={item.properties.thumbnailImage} alt={item.name} className="h-20" />
 			</div>
 			<div className="min-w-0 flex-1">
-				<p className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">{item.name}</p>
+				<h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">{item.name}</h3>
 				<p className="mt-0.5 text-xs text-zinc-500">
 					{parent} {index} {runtime}
 				</p>
@@ -203,7 +203,7 @@ export const SearchModal: FC<{
 					/>
 				</div>
 			</ModalHeader>
-			<ModalBody className="overflow-y-auto px-6">
+			<ModalBody className="overflow-y-auto px-6 text-white">
 				{!shouldSearch && (
 					<Empty className="h-[30em] w-full">
 						<EmptyMedia variant="icon">

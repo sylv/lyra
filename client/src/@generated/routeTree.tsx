@@ -13,9 +13,12 @@ import { Route as SetupRouteImport } from './../routes/setup'
 import { Route as SettingsRouteImport } from './../routes/settings'
 import { Route as PlaygroundRouteImport } from './../routes/playground'
 import { Route as IndexRouteImport } from './../routes/index'
+import { Route as SettingsIndexRouteImport } from './../routes/settings.index'
 import { Route as SetupLoginRouteImport } from './../routes/setup.login'
 import { Route as SetupCreateLibraryRouteImport } from './../routes/setup.create-library'
 import { Route as SetupCreateAccountRouteImport } from './../routes/setup.create-account'
+import { Route as SettingsImportRouteImport } from './../routes/settings.import'
+import { Route as SettingsAboutRouteImport } from './../routes/settings.about'
 import { Route as LibraryLibraryIdRouteImport } from './../routes/library.$libraryId'
 import { Route as LibraryLibraryIdRootIdRouteImport } from './../routes/library_.$libraryId.$rootId'
 import { Route as LibraryLibraryIdRootIdSeasonIdRouteImport } from './../routes/library_.$libraryId.$rootId_.$seasonId'
@@ -40,6 +43,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SetupLoginRoute = SetupLoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -54,6 +62,16 @@ const SetupCreateAccountRoute = SetupCreateAccountRouteImport.update({
   id: '/create-account',
   path: '/create-account',
   getParentRoute: () => SetupRoute,
+} as any)
+const SettingsImportRoute = SettingsImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAboutRoute = SettingsAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const LibraryLibraryIdRoute = LibraryLibraryIdRouteImport.update({
   id: '/library/$libraryId',
@@ -75,24 +93,29 @@ const LibraryLibraryIdRootIdSeasonIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/setup': typeof SetupRouteWithChildren
   '/library/$libraryId': typeof LibraryLibraryIdRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/import': typeof SettingsImportRoute
   '/setup/create-account': typeof SetupCreateAccountRoute
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
+  '/settings/': typeof SettingsIndexRoute
   '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
-  '/settings': typeof SettingsRoute
   '/setup': typeof SetupRouteWithChildren
   '/library/$libraryId': typeof LibraryLibraryIdRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/import': typeof SettingsImportRoute
   '/setup/create-account': typeof SetupCreateAccountRoute
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
+  '/settings': typeof SettingsIndexRoute
   '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
 }
@@ -100,12 +123,15 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/playground': typeof PlaygroundRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/setup': typeof SetupRouteWithChildren
   '/library/$libraryId': typeof LibraryLibraryIdRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/import': typeof SettingsImportRoute
   '/setup/create-account': typeof SetupCreateAccountRoute
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
+  '/settings/': typeof SettingsIndexRoute
   '/library_/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
   '/library_/$libraryId/$rootId_/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
 }
@@ -117,21 +143,26 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/library/$libraryId'
+    | '/settings/about'
+    | '/settings/import'
     | '/setup/create-account'
     | '/setup/create-library'
     | '/setup/login'
+    | '/settings/'
     | '/library/$libraryId/$rootId'
     | '/library/$libraryId/$rootId/$seasonId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/playground'
-    | '/settings'
     | '/setup'
     | '/library/$libraryId'
+    | '/settings/about'
+    | '/settings/import'
     | '/setup/create-account'
     | '/setup/create-library'
     | '/setup/login'
+    | '/settings'
     | '/library/$libraryId/$rootId'
     | '/library/$libraryId/$rootId/$seasonId'
   id:
@@ -141,9 +172,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/library/$libraryId'
+    | '/settings/about'
+    | '/settings/import'
     | '/setup/create-account'
     | '/setup/create-library'
     | '/setup/login'
+    | '/settings/'
     | '/library_/$libraryId/$rootId'
     | '/library_/$libraryId/$rootId_/$seasonId'
   fileRoutesById: FileRoutesById
@@ -151,7 +185,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PlaygroundRoute: typeof PlaygroundRoute
-  SettingsRoute: typeof SettingsRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   SetupRoute: typeof SetupRouteWithChildren
   LibraryLibraryIdRoute: typeof LibraryLibraryIdRoute
   LibraryLibraryIdRootIdRoute: typeof LibraryLibraryIdRootIdRoute
@@ -188,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/setup/login': {
       id: '/setup/login'
       path: '/login'
@@ -208,6 +249,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/setup/create-account'
       preLoaderRoute: typeof SetupCreateAccountRouteImport
       parentRoute: typeof SetupRoute
+    }
+    '/settings/import': {
+      id: '/settings/import'
+      path: '/import'
+      fullPath: '/settings/import'
+      preLoaderRoute: typeof SettingsImportRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/about': {
+      id: '/settings/about'
+      path: '/about'
+      fullPath: '/settings/about'
+      preLoaderRoute: typeof SettingsAboutRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/library/$libraryId': {
       id: '/library/$libraryId'
@@ -233,6 +288,22 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface SettingsRouteChildren {
+  SettingsAboutRoute: typeof SettingsAboutRoute
+  SettingsImportRoute: typeof SettingsImportRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAboutRoute: SettingsAboutRoute,
+  SettingsImportRoute: SettingsImportRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 interface SetupRouteChildren {
   SetupCreateAccountRoute: typeof SetupCreateAccountRoute
   SetupCreateLibraryRoute: typeof SetupCreateLibraryRoute
@@ -250,7 +321,7 @@ const SetupRouteWithChildren = SetupRoute._addFileChildren(SetupRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PlaygroundRoute: PlaygroundRoute,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   SetupRoute: SetupRouteWithChildren,
   LibraryLibraryIdRoute: LibraryLibraryIdRoute,
   LibraryLibraryIdRootIdRoute: LibraryLibraryIdRootIdRoute,

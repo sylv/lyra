@@ -124,7 +124,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 							</DropdownMenuContent>
 						</DropdownMenu>
 						<Link
-							href="/settings"
+							to="/settings/about"
 							className={cn(
 								"flex items-center p-2 rounded transition hover:bg-zinc-200/10",
 								isSettingsPage && "bg-zinc-200/10",

@@ -67,6 +67,7 @@ export const Modal: FC<ModalProps> = ({
 						animate={{ opacity: 1, scale: 1 }}
 						exit={{ opacity: 0, scale: 0.95 }}
 						ref={ref}
+						style={contentStyle}
 					>
 						<ModalContext.Provider value={{ onOpenChange }}>{children}</ModalContext.Provider>
 					</motion.div>
@@ -110,7 +111,7 @@ interface ModalBodyProps {
 }
 
 export const ModalBody: FC<ModalBodyProps> = ({ children, className }) => {
-	return <div className={cn("grow px-6 py-4", className)}>{children}</div>;
+	return <div className={cn("grow px-6 pt-2 pb-6", className)}>{children}</div>;
 };
 
 export const ModalFooter: FC<{ children: ReactNode; className?: string }> = ({ children, className }) => {
