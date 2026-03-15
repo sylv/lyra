@@ -115,33 +115,6 @@ function NodeRoute() {
 	useDynamicBackground(node.properties.backgroundImage ?? poster);
 	useTitle(node.root.name);
 
-	const header = (
-		<div className="container mx-auto flex gap-6">
-			<div className="shrink-0">
-				<PlayWrapper itemId={node.nextPlayable?.id} path={nodePath} watchProgress={node.nextPlayable?.watchProgress}>
-					<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
-					<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
-				</PlayWrapper>
-			</div>
-			<div className="flex w-full flex-col gap-2 justify-between">
-				<div className="mt-3 flex flex-col gap-2">
-					{parentPath ? (
-						<Link to={parentPath as never} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
-							{node.parent?.name}
-						</Link>
-					) : releaseYear ? (
-						<span className="-mb-2 text-sm text-zinc-400">{releaseYear}</span>
-					) : null}
-					<h1 className="text-2xl font-bold">{node.name}</h1>
-					{node.properties.runtimeMinutes && (
-						<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
-					)}
-					<p className="text-sm text-zinc-400">{node.properties.description || "No description available"}</p>
-				</div>
-			</div>
-		</div>
-	);
-
 	if (node.kind === "SEASON") {
 		const episodes = sortedChildren.filter((child) => child.kind === "EPISODE");
 
@@ -172,7 +145,7 @@ function NodeRoute() {
 							{node.properties.runtimeMinutes && (
 								<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
 							)}
-							<p className="text-sm text-zinc-400">{node.properties.description || "No description available"}</p>
+							<p className="text-sm text-zinc-400">{node.properties.description}</p>
 						</div>
 						<div className="pb-16">
 							{episodes.length > 0 ? (
@@ -193,7 +166,33 @@ function NodeRoute() {
 
 	return (
 		<div className="pt-6">
-			{header}
+			<div className="container mx-auto flex gap-6">
+				<div className="shrink-0">
+					<PlayWrapper itemId={node.nextPlayable?.id} path={nodePath} watchProgress={node.nextPlayable?.watchProgress}>
+						<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
+						<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
+					</PlayWrapper>
+				</div>
+				<div className="flex w-full flex-col gap-2 justify-between">
+					<div className="mt-3 flex flex-col gap-2">
+						{parentPath ? (
+							<Link
+								to={parentPath as never}
+								className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline"
+							>
+								{node.parent?.name}
+							</Link>
+						) : releaseYear ? (
+							<span className="-mb-2 text-sm text-zinc-400">{releaseYear}</span>
+						) : null}
+						<h1 className="text-2xl font-bold">{node.name}</h1>
+						{node.properties.runtimeMinutes && (
+							<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
+						)}
+						<p className="text-sm text-zinc-400">{node.properties.description || "No description available"}</p>
+					</div>
+				</div>
+			</div>
 			{sortedChildren.length > 0 && (
 				<div className="container mx-auto py-6">
 					<div className="flex flex-wrap gap-4">

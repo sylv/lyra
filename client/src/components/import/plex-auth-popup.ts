@@ -45,7 +45,8 @@ const getPlexClientId = (): string => {
 		return fromStorage;
 	}
 
-	const generated = `lyra-${crypto.randomUUID()}`;
+	// crypto.randomUUID is not supported in some contexts (e.g, http)
+	const generated = `lyra-${Math.random().toString(16).slice(2)}`;
 	window.localStorage.setItem(PLEX_IMPORT_CLIENT_ID_KEY, generated);
 	return generated;
 };
