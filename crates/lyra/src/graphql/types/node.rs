@@ -1,0 +1,252 @@
+use crate::entities::{node_closure, node_files, node_metadata, nodes, watch_progress};
+use crate::graphql::properties::NodeProperties;
+use async_graphql::{ComplexObject, Context};
+use sea_orm::{
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait,
+};
+
+use super::{current_user_id, saturating_i32_from_u64};
+
+async fn preferred_node_metadata(
+    pool: &DatabaseConnection,
+    node_id: &str,
+) -> Result<Option<node_metadata::Model>, sea_orm::DbErr> {
+    node_metadata::Entity::find()
+        .filter(node_metadata::Column::NodeId.eq(node_id))
+        .order_by_desc(node_metadata::Column::Source)
+        .order_by_desc(node_metadata::Column::UpdatedAt)
+        .one(pool)
+        .await
+}
+
+async fn previous_or_next_playable(
+    pool: &DatabaseConnection,
+    current: &nodes::Model,
+    forward: bool,
+) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+    let mut query = nodes::Entity::find()
+        .filter(nodes::Column::RootId.eq(current.root_id.clone()))
+        .filter(
+            Condition::any()
+                .add(nodes::Column::Kind.eq(nodes::NodeKind::Movie))
+                .add(nodes::Column::Kind.eq(nodes::NodeKind::Episode)),
+        )
+        .filter(
+            if forward {
+                Condition::any()
+                    .add(nodes::Column::Order.gt(current.order))
+                    .add(
+                        Condition::all()
+                            .add(nodes::Column::Order.eq(current.order))
+                            .add(nodes::Column::Id.gt(current.id.clone())),
+                    )
+            } else {
+                Condition::any()
+                    .add(nodes::Column::Order.lt(current.order))
+                    .add(
+                        Condition::all()
+                            .add(nodes::Column::Order.eq(current.order))
+                            .add(nodes::Column::Id.lt(current.id.clone())),
+                    )
+            },
+        )
+        .order_by_asc(nodes::Column::Order)
+        .order_by_asc(nodes::Column::Id);
+
+    if !forward {
+        query = query
+            .order_by_desc(nodes::Column::Order)
+            .order_by_desc(nodes::Column::Id);
+    }
+
+    let candidates = query.all(pool).await?;
+    let current_file_ids = node_files::Entity::find()
+        .filter(node_files::Column::NodeId.eq(current.id.clone()))
+        .order_by_asc(node_files::Column::Order)
+        .order_by_asc(node_files::Column::FileId)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(|link| link.file_id)
+        .collect::<Vec<_>>();
+
+    for candidate in candidates {
+        let candidate_file_ids = node_files::Entity::find()
+            .filter(node_files::Column::NodeId.eq(candidate.id.clone()))
+            .order_by_asc(node_files::Column::Order)
+            .order_by_asc(node_files::Column::FileId)
+            .all(pool)
+            .await?
+            .into_iter()
+            .map(|link| link.file_id)
+            .collect::<Vec<_>>();
+
+        if candidate_file_ids != current_file_ids {
+            return Ok(Some(candidate));
+        }
+    }
+
+    Ok(None)
+}
+
+#[ComplexObject]
+impl nodes::Model {
+    pub async fn root(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        nodes::Entity::find_by_id(self.root_id.clone()).one(pool).await
+    }
+
+    pub async fn parent(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let Some(parent_id) = &self.parent_id else {
+            return Ok(None);
+        };
+
+        nodes::Entity::find_by_id(parent_id.clone()).one(pool).await
+    }
+
+    pub async fn children(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<nodes::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        nodes::Entity::find()
+            .filter(nodes::Column::ParentId.eq(self.id.clone()))
+            .order_by_asc(nodes::Column::Order)
+            .order_by_asc(nodes::Column::Id)
+            .all(pool)
+            .await
+    }
+
+    pub async fn properties(&self, ctx: &Context<'_>) -> Result<NodeProperties, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let metadata = preferred_node_metadata(pool, &self.id).await?;
+        NodeProperties::from_node(pool, self, metadata).await
+    }
+
+    pub async fn file(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<crate::entities::files::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        NodeProperties::primary_file_for_node(pool, &self.id).await
+    }
+
+    pub async fn watch_progress(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<watch_progress::Model>, async_graphql::Error> {
+        let Some(user_id) = current_user_id(ctx) else {
+            return Ok(None);
+        };
+
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let progress = watch_progress::Entity::find()
+            .filter(watch_progress::Column::UserId.eq(user_id))
+            .filter(watch_progress::Column::NodeId.eq(self.id.clone()))
+            .one(pool)
+            .await?;
+        Ok(progress)
+    }
+
+    pub async fn next_playable(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        previous_or_next_playable(pool, self, true).await
+    }
+
+    pub async fn previous_playable(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        previous_or_next_playable(pool, self, false).await
+    }
+
+    pub async fn unplayed_count(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<i32, async_graphql::Error> {
+        let Some(user_id) = current_user_id(ctx) else {
+            return Ok(0);
+        };
+
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let descendant_ids: Vec<String> = node_closure::Entity::find()
+            .filter(node_closure::Column::AncestorId.eq(self.id.clone()))
+            .select_only()
+            .column(node_closure::Column::DescendantId)
+            .into_tuple::<String>()
+            .all(pool)
+            .await?;
+
+        if descendant_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let playable_ids: Vec<String> = nodes::Entity::find()
+            .filter(nodes::Column::Id.is_in(descendant_ids))
+            .filter(
+                Condition::any()
+                    .add(nodes::Column::Kind.eq(nodes::NodeKind::Movie))
+                    .add(nodes::Column::Kind.eq(nodes::NodeKind::Episode)),
+            )
+            .select_only()
+            .column(nodes::Column::Id)
+            .into_tuple::<String>()
+            .all(pool)
+            .await?;
+
+        if playable_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let watched_ids: Vec<String> = watch_progress::Entity::find()
+            .filter(watch_progress::Column::UserId.eq(user_id))
+            .filter(watch_progress::Column::NodeId.is_in(playable_ids.clone()))
+            .filter(
+                watch_progress::Column::ProgressPercent
+                    .gt(watch_progress::completed_progress_threshold()),
+            )
+            .select_only()
+            .column(watch_progress::Column::NodeId)
+            .into_tuple::<String>()
+            .all(pool)
+            .await?;
+
+        Ok(saturating_i32_from_u64(
+            playable_ids.len().saturating_sub(watched_ids.len()) as u64,
+        ))
+    }
+
+    pub async fn season_count(&self, ctx: &Context<'_>) -> Result<i32, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let count = node_closure::Entity::find()
+            .join(sea_orm::JoinType::InnerJoin, node_closure::Relation::Descendant.def())
+            .filter(node_closure::Column::AncestorId.eq(self.id.clone()))
+            .filter(nodes::Column::Kind.eq(nodes::NodeKind::Season))
+            .count(pool)
+            .await?;
+        Ok(saturating_i32_from_u64(count))
+    }
+
+    pub async fn episode_count(&self, ctx: &Context<'_>) -> Result<i32, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let count = node_closure::Entity::find()
+            .join(sea_orm::JoinType::InnerJoin, node_closure::Relation::Descendant.def())
+            .filter(node_closure::Column::AncestorId.eq(self.id.clone()))
+            .filter(nodes::Column::Kind.eq(nodes::NodeKind::Episode))
+            .count(pool)
+            .await?;
+        Ok(saturating_i32_from_u64(count))
+    }
+}

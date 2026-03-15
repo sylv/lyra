@@ -3,24 +3,44 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Debug, Enum, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum,
+    Debug,
+    Enum,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    DeriveActiveEnum,
 )]
 #[sea_orm(rs_type = "i64", db_type = "Integer")]
-pub enum RootKind {
+pub enum NodeKind {
     Movie = 0,
     Series = 1,
+    Season = 2,
+    Episode = 3,
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
-#[sea_orm(table_name = "roots")]
-#[graphql(name = "RootNode", complex)]
+#[sea_orm(table_name = "nodes")]
+#[graphql(name = "Node", complex)]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
     pub library_id: i64,
-    pub kind: RootKind,
+    #[sea_orm(column_type = "Text")]
+    pub root_id: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub parent_id: Option<String>,
+    pub kind: NodeKind,
     #[sea_orm(column_type = "Text")]
     pub name: String,
+    pub order: i64,
+    pub season_number: Option<i64>,
+    pub episode_number: Option<i64>,
     #[graphql(skip)]
     #[sea_orm(column_type = "Blob", nullable)]
     pub match_candidates_json: Option<Vec<u8>>,
@@ -39,12 +59,20 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Libraries,
-    #[sea_orm(has_many = "super::seasons::Entity")]
-    Seasons,
-    #[sea_orm(has_many = "super::items::Entity")]
-    Items,
-    #[sea_orm(has_many = "super::root_metadata::Entity")]
-    RootMetadata,
+    #[sea_orm(
+        belongs_to = "Entity",
+        from = "Column::ParentId",
+        to = "Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Parent,
+    #[sea_orm(has_many = "super::node_files::Entity")]
+    NodeFiles,
+    #[sea_orm(has_many = "super::node_metadata::Entity")]
+    NodeMetadata,
+    #[sea_orm(has_many = "super::watch_progress::Entity")]
+    WatchProgress,
 }
 
 impl Related<super::libraries::Entity> for Entity {
@@ -53,21 +81,21 @@ impl Related<super::libraries::Entity> for Entity {
     }
 }
 
-impl Related<super::seasons::Entity> for Entity {
+impl Related<super::node_files::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Seasons.def()
+        Relation::NodeFiles.def()
     }
 }
 
-impl Related<super::items::Entity> for Entity {
+impl Related<super::node_metadata::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Items.def()
+        Relation::NodeMetadata.def()
     }
 }
 
-impl Related<super::root_metadata::Entity> for Entity {
+impl Related<super::watch_progress::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::RootMetadata.def()
+        Relation::WatchProgress.def()
     }
 }
 

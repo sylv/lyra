@@ -24,7 +24,7 @@ export const SetupStep: FC<SetupStepProps> = ({
 	onSubmit,
 }) => (
 	<>
-		<ModalBody className={cn(centered && "items-center justify-center")}>{children}</ModalBody>
+		<ModalBody className={cn(centered && "flex items-center justify-center")}>{children}</ModalBody>
 		<ModalFooter className="justify-between gap-4 pt-2">
 			<div className="flex h-full flex-grow items-center">
 				{error && <p className="rounded bg-red-900/20 px-3 py-1 font-mono text-red-400">{error}</p>}

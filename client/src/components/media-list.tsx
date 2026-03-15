@@ -5,7 +5,7 @@ import { Spinner } from "./ui/spinner";
 import { ViewLoader } from "./view-loader";
 
 const Fragment = graphql(`
-	fragment MediaList on RootNode {
+	fragment MediaList on Node {
 		id
 		...MediaPoster
 	}
@@ -28,8 +28,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoad
 	const calculateLayout = useCallback(() => {
 		const containerWidth = containerRef.current?.clientWidth || 0;
 		if (containerWidth === 0) return 1;
-		const cols = Math.max(1, Math.ceil(containerWidth / (POSTER_WIDTH + GAP_SIZE)));
-		setColumns(cols);
+		setColumns(Math.max(1, Math.ceil(containerWidth / (POSTER_WIDTH + GAP_SIZE))));
 	}, []);
 
 	useEffect(() => {

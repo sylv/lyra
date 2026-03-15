@@ -1,7 +1,7 @@
 use crate::entities::{
     assets,
     file_assets::{self, FileAssetRole},
-    file_probe, files, item_files, item_metadata, root_metadata, season_metadata,
+    file_probe, files, node_files, node_metadata, nodes,
 };
 use crate::segment_markers::StoredFileSegmentKind;
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
@@ -47,44 +47,7 @@ pub struct FileSegment {
 
 #[derive(Clone, Debug, SimpleObject)]
 #[graphql(complex)]
-pub struct RootNodeProperties {
-    pub description: Option<String>,
-    pub rating: Option<f64>,
-    pub runtime_minutes: Option<i64>,
-    pub released_at: Option<i64>,
-    pub ended_at: Option<i64>,
-    pub created_at: Option<i64>,
-    pub updated_at: Option<i64>,
-    #[graphql(skip)]
-    pub background_asset_id: Option<i64>,
-    #[graphql(skip)]
-    pub poster_asset_id: Option<i64>,
-    #[graphql(skip)]
-    pub thumbnail_asset_id: Option<i64>,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-#[graphql(complex)]
-pub struct SeasonNodeProperties {
-    pub description: Option<String>,
-    pub rating: Option<f64>,
-    pub season_number: Option<i64>,
-    pub runtime_minutes: Option<i64>,
-    pub released_at: Option<i64>,
-    pub ended_at: Option<i64>,
-    pub created_at: Option<i64>,
-    pub updated_at: Option<i64>,
-    #[graphql(skip)]
-    pub background_asset_id: Option<i64>,
-    #[graphql(skip)]
-    pub poster_asset_id: Option<i64>,
-    #[graphql(skip)]
-    pub thumbnail_asset_id: Option<i64>,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-#[graphql(complex)]
-pub struct ItemNodeProperties {
+pub struct NodeProperties {
     pub description: Option<String>,
     pub rating: Option<f64>,
     pub season_number: Option<i64>,
@@ -112,59 +75,11 @@ pub struct ItemNodeProperties {
     #[graphql(skip)]
     pub thumbnail_asset_id: Option<i64>,
     #[graphql(skip)]
-    pub item_id: String,
+    pub node_id: String,
 }
 
 #[ComplexObject]
-impl RootNodeProperties {
-    pub async fn background_image(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Asset>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.background_asset_id).await
-    }
-
-    pub async fn poster_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.poster_asset_id.or(self.thumbnail_asset_id)).await
-    }
-
-    pub async fn thumbnail_image(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Asset>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.thumbnail_asset_id).await
-    }
-}
-
-#[ComplexObject]
-impl SeasonNodeProperties {
-    pub async fn background_image(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Asset>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.background_asset_id).await
-    }
-
-    pub async fn poster_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.poster_asset_id.or(self.thumbnail_asset_id)).await
-    }
-
-    pub async fn thumbnail_image(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<Asset>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.thumbnail_asset_id).await
-    }
-}
-
-#[ComplexObject]
-impl ItemNodeProperties {
+impl NodeProperties {
     pub async fn background_image(
         &self,
         ctx: &Context<'_>,
@@ -269,11 +184,7 @@ impl files::Model {
         let decoded = match self.decode_segments() {
             Ok(segments) => segments,
             Err(error) => {
-                tracing::warn!(
-                    file_id = self.id,
-                    error = ?error,
-                    "failed to decode file segments"
-                );
+                tracing::warn!(file_id = self.id, error = ?error, "failed to decode file segments");
                 return Ok(Vec::new());
             }
         };
@@ -299,98 +210,33 @@ impl files::Model {
     }
 }
 
-impl RootNodeProperties {
-    pub(crate) fn from_metadata(metadata: Option<root_metadata::Model>) -> Self {
-        let Some(metadata) = metadata else {
-            return Self {
-                description: None,
-                rating: None,
-                runtime_minutes: None,
-                released_at: None,
-                ended_at: None,
-                created_at: None,
-                updated_at: None,
-                background_asset_id: None,
-                poster_asset_id: None,
-                thumbnail_asset_id: None,
-            };
+impl NodeProperties {
+    pub async fn from_node(
+        pool: &DatabaseConnection,
+        node: &nodes::Model,
+        metadata: Option<node_metadata::Model>,
+    ) -> Result<Self, sea_orm::DbErr> {
+        let default_file = Self::primary_file_for_node(pool, &node.id).await?;
+        let probe = if let Some(file) = &default_file {
+            file_probe::Entity::find_by_id(file.id).one(pool).await?
+        } else {
+            None
         };
 
-        Self {
-            description: metadata.description,
-            rating: metadata.score_normalized.map(|score| score as f64 / 10.0),
-            runtime_minutes: None,
-            released_at: metadata.released_at,
-            ended_at: metadata.ended_at,
-            created_at: Some(metadata.created_at),
-            updated_at: Some(metadata.updated_at),
-            background_asset_id: metadata.background_asset_id,
-            poster_asset_id: metadata.poster_asset_id,
-            thumbnail_asset_id: metadata.thumbnail_asset_id,
-        }
-    }
-}
-
-impl SeasonNodeProperties {
-    pub(crate) fn from_metadata(
-        metadata: Option<season_metadata::Model>,
-        season_number: Option<i64>,
-    ) -> Self {
-        let Some(metadata) = metadata else {
-            return Self {
-                description: None,
-                rating: None,
-                season_number,
-                runtime_minutes: None,
-                released_at: None,
-                ended_at: None,
-                created_at: None,
-                updated_at: None,
-                background_asset_id: None,
-                poster_asset_id: None,
-                thumbnail_asset_id: None,
-            };
-        };
-
-        Self {
-            description: metadata.description,
-            rating: metadata.score_normalized.map(|score| score as f64 / 10.0),
-            season_number,
-            runtime_minutes: None,
-            released_at: metadata.released_at,
-            ended_at: metadata.ended_at,
-            created_at: Some(metadata.created_at),
-            updated_at: Some(metadata.updated_at),
-            background_asset_id: metadata.background_asset_id,
-            poster_asset_id: metadata.poster_asset_id,
-            thumbnail_asset_id: metadata.thumbnail_asset_id,
-        }
-    }
-}
-
-impl ItemNodeProperties {
-    pub(crate) fn from_metadata(
-        metadata: Option<item_metadata::Model>,
-        item_id: String,
-        season_number: Option<i64>,
-        episode_number: Option<i64>,
-        default_file: Option<files::Model>,
-        probe: Option<file_probe::Model>,
-    ) -> Self {
         let duration_seconds = probe
             .as_ref()
             .and_then(|probe| probe.duration_s)
             .filter(|seconds| *seconds > 0);
-        let runtime_from_probe = duration_seconds.map(minutes_from_seconds_ceil);
-        let runtime_from_metadata: Option<i64> = None;
 
-        match metadata {
+        let runtime_minutes = duration_seconds.map(minutes_from_seconds_ceil);
+
+        Ok(match metadata {
             Some(metadata) => Self {
                 description: metadata.description,
                 rating: metadata.score_normalized.map(|score| score as f64 / 10.0),
-                season_number,
-                episode_number,
-                runtime_minutes: runtime_from_probe.or(runtime_from_metadata),
+                season_number: node.season_number,
+                episode_number: node.episode_number,
+                runtime_minutes,
                 duration_seconds,
                 width: probe
                     .as_ref()
@@ -415,14 +261,14 @@ impl ItemNodeProperties {
                 background_asset_id: metadata.background_asset_id,
                 poster_asset_id: metadata.poster_asset_id,
                 thumbnail_asset_id: metadata.thumbnail_asset_id,
-                item_id,
+                node_id: node.id.clone(),
             },
             None => Self {
                 description: None,
                 rating: None,
-                season_number,
-                episode_number,
-                runtime_minutes: runtime_from_probe.or(runtime_from_metadata),
+                season_number: node.season_number,
+                episode_number: node.episode_number,
+                runtime_minutes,
                 duration_seconds,
                 width: probe
                     .as_ref()
@@ -447,24 +293,42 @@ impl ItemNodeProperties {
                 background_asset_id: None,
                 poster_asset_id: None,
                 thumbnail_asset_id: None,
-                item_id,
+                node_id: node.id.clone(),
             },
-        }
+        })
+    }
+
+    pub async fn primary_file_for_node(
+        pool: &DatabaseConnection,
+        node_id: &str,
+    ) -> Result<Option<files::Model>, sea_orm::DbErr> {
+        let link = node_files::Entity::find()
+            .filter(node_files::Column::NodeId.eq(node_id))
+            .order_by_asc(node_files::Column::Order)
+            .order_by_asc(node_files::Column::FileId)
+            .one(pool)
+            .await?;
+
+        let Some(link) = link else {
+            return Ok(None);
+        };
+
+        files::Entity::find_by_id(link.file_id)
+            .filter(files::Column::UnavailableAt.is_null())
+            .one(pool)
+            .await
     }
 
     async fn file_thumbnail_asset_id(
         &self,
         pool: &DatabaseConnection,
     ) -> Result<Option<i64>, sea_orm::DbErr> {
-        let links = item_files::Entity::find()
-            .join(
-                sea_orm::JoinType::InnerJoin,
-                item_files::Relation::Files.def(),
-            )
-            .filter(item_files::Column::ItemId.eq(self.item_id.clone()))
+        let links = node_files::Entity::find()
+            .join(sea_orm::JoinType::InnerJoin, node_files::Relation::Files.def())
+            .filter(node_files::Column::NodeId.eq(self.node_id.clone()))
             .filter(files::Column::UnavailableAt.is_null())
-            .order_by_asc(item_files::Column::Order)
-            .order_by_asc(item_files::Column::FileId)
+            .order_by_asc(node_files::Column::Order)
+            .order_by_asc(node_files::Column::FileId)
             .all(pool)
             .await?;
 

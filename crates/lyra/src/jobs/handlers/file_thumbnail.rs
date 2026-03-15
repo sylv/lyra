@@ -3,7 +3,7 @@ use crate::{
     entities::{
         assets as assets_entity,
         file_assets::{self, FileAssetRole},
-        files, item_files, item_metadata, jobs as jobs_entity,
+        files, jobs as jobs_entity, node_files, node_metadata,
         metadata_source::MetadataSource,
     },
     jobs::handlers::shared,
@@ -44,24 +44,24 @@ impl JobHandler for FileThumbnailJob {
         query.and_where(
             Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
                 Query::select()
-                    .column(item_files::Column::FileId)
-                    .from(item_files::Entity)
+                    .column(node_files::Column::FileId)
+                    .from(node_files::Entity)
                     .and_where(
-                        Expr::col((item_files::Entity, item_files::Column::ItemId)).in_subquery(
+                        Expr::col((node_files::Entity, node_files::Column::NodeId)).in_subquery(
                             Query::select()
-                                .column(item_metadata::Column::ItemId)
-                                .from(item_metadata::Entity)
+                                .column(node_metadata::Column::NodeId)
+                                .from(node_metadata::Entity)
                                 .and_where(
                                     Expr::col((
-                                        item_metadata::Entity,
-                                        item_metadata::Column::Source,
+                                        node_metadata::Entity,
+                                        node_metadata::Column::Source,
                                     ))
                                     .eq(MetadataSource::Remote),
                                 )
                                 .and_where(
                                     Expr::col((
-                                        item_metadata::Entity,
-                                        item_metadata::Column::ThumbnailAssetId,
+                                        node_metadata::Entity,
+                                        node_metadata::Column::ThumbnailAssetId,
                                     ))
                                     .is_not_null(),
                                 )

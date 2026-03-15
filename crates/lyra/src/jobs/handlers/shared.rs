@@ -1,5 +1,5 @@
 use crate::entities::{files, jobs as jobs_entity, libraries};
-use crate::jobs::FILE_ID_COLUMN;
+use crate::jobs::{FILE_ID_COLUMN, NODE_ID_COLUMN};
 use anyhow::Context;
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
@@ -18,19 +18,14 @@ pub fn expect_job_file_id(job: &jobs_entity::Model) -> anyhow::Result<i64> {
 }
 
 pub fn expect_job_asset_id(job: &jobs_entity::Model) -> anyhow::Result<i64> {
-    let raw = job
-        .asset_id
-        .as_deref()
-        .with_context(|| format!("job {} is missing asset_id", job.id))?;
-
-    raw.parse::<i64>()
-        .with_context(|| format!("job {} has non-integer asset_id '{raw}'", job.id))
+    job.asset_id
+        .with_context(|| format!("job {} is missing asset_id", job.id))
 }
 
-pub fn expect_job_root_id<'a>(job: &'a jobs_entity::Model) -> anyhow::Result<&'a str> {
-    job.root_id
+pub fn expect_job_node_id<'a>(job: &'a jobs_entity::Model) -> anyhow::Result<&'a str> {
+    job.node_id
         .as_deref()
-        .with_context(|| format!("job {} is missing root_id", job.id))
+        .with_context(|| format!("job {} is missing node_id", job.id))
 }
 
 pub fn base_file_targets_query() -> SelectStatement {
@@ -40,6 +35,10 @@ pub fn base_file_targets_query() -> SelectStatement {
         .filter(files::Column::UnavailableAt.is_null())
         .order_by_asc(files::Column::Id);
     QuerySelect::query(&mut query).to_owned()
+}
+
+pub fn base_node_id_alias() -> &'static str {
+    NODE_ID_COLUMN
 }
 
 pub async fn load_job_file_context(

@@ -1,10 +1,9 @@
 use crate::{
     entities::{
-        files, item_files, items, jobs as jobs_entity, libraries,
-        roots::{self, RootKind},
-        seasons,
+        files, jobs as jobs_entity, libraries, node_files, nodes,
+        nodes::NodeKind,
     },
-    jobs::{JobHandler, JobTarget, ROOT_ID_COLUMN, VERSION_KEY_COLUMN, handlers::shared},
+    jobs::{JobHandler, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN, handlers::shared},
     json_encoding,
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
 };
@@ -31,7 +30,6 @@ struct RootFile {
     file_path: PathBuf,
     audio_fingerprint: Vec<u8>,
     season_id: Option<String>,
-    season_order: Option<i64>,
     item_order: i64,
     has_intro_marker: bool,
     pending_segments: bool,
@@ -43,7 +41,6 @@ struct RootFileQueryRow {
     relative_path: String,
     library_path: String,
     season_id: Option<String>,
-    season_order: Option<i64>,
     item_order: i64,
     audio_fingerprint: Vec<u8>,
     segments_json: Vec<u8>,
@@ -52,23 +49,22 @@ struct RootFileQueryRow {
 #[async_trait::async_trait]
 impl JobHandler for RootIntroSegmentsJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::RootGenerateIntroSegments
+        jobs_entity::JobKind::NodeGenerateIntroSegments
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = item_files::Entity::find()
-            .join(JoinType::InnerJoin, item_files::Relation::Items.def())
-            .join(JoinType::InnerJoin, items::Relation::Roots.def())
-            .join(JoinType::InnerJoin, item_files::Relation::Files.def())
-            .filter(roots::Column::Kind.eq(RootKind::Series))
+        let mut query = node_files::Entity::find()
+            .join(JoinType::InnerJoin, node_files::Relation::Nodes.def())
+            .join(JoinType::InnerJoin, node_files::Relation::Files.def())
+            .filter(nodes::Column::Kind.eq(NodeKind::Episode))
             .filter(files::Column::UnavailableAt.is_null())
             .filter(files::Column::SegmentsJson.eq(Vec::<u8>::new()))
             .select_only()
-            .column_as(items::Column::RootId, ROOT_ID_COLUMN)
-            .column_as(roots::Column::LastAddedAt, VERSION_KEY_COLUMN)
+            .column_as(nodes::Column::RootId, NODE_ID_COLUMN)
+            .column_as(nodes::Column::LastAddedAt, VERSION_KEY_COLUMN)
             .distinct()
-            .order_by_asc(items::Column::RootId);
-        (JobTarget::Root, QuerySelect::query(&mut query).to_owned())
+            .order_by_asc(nodes::Column::RootId);
+        (JobTarget::Node, QuerySelect::query(&mut query).to_owned())
     }
 
     async fn execute(
@@ -76,7 +72,7 @@ impl JobHandler for RootIntroSegmentsJob {
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let root_id = shared::expect_job_root_id(job)?;
+        let root_id = shared::expect_job_node_id(job)?;
 
         let mut root_files = load_root_files(pool, root_id).await?;
         if root_files.len() < INTRO_DETECTION_BATCH_MIN_FILES {
@@ -211,24 +207,22 @@ async fn load_root_files(
     pool: &DatabaseConnection,
     root_id: &str,
 ) -> anyhow::Result<Vec<RootFile>> {
-    let rows = item_files::Entity::find()
-        .join(JoinType::InnerJoin, item_files::Relation::Items.def())
-        .join(JoinType::InnerJoin, item_files::Relation::Files.def())
+    let rows = node_files::Entity::find()
+        .join(JoinType::InnerJoin, node_files::Relation::Nodes.def())
+        .join(JoinType::InnerJoin, node_files::Relation::Files.def())
         .join(JoinType::InnerJoin, files::Relation::Libraries.def())
-        .join(JoinType::LeftJoin, items::Relation::Seasons.def())
-        .filter(items::Column::RootId.eq(root_id.to_string()))
+        .filter(nodes::Column::RootId.eq(root_id.to_string()))
+        .filter(nodes::Column::Kind.eq(NodeKind::Episode))
         .filter(files::Column::UnavailableAt.is_null())
         .select_only()
         .column_as(files::Column::Id, "file_id")
         .column_as(files::Column::RelativePath, "relative_path")
         .column_as(libraries::Column::Path, "library_path")
-        .column_as(items::Column::SeasonId, "season_id")
-        .column_as(seasons::Column::Order, "season_order")
-        .column_as(items::Column::Order, "item_order")
+        .column_as(nodes::Column::ParentId, "season_id")
+        .column_as(nodes::Column::Order, "item_order")
         .column_as(files::Column::AudioFingerprint, "audio_fingerprint")
         .column_as(files::Column::SegmentsJson, "segments_json")
-        .order_by_asc(seasons::Column::Order)
-        .order_by_asc(items::Column::Order)
+        .order_by_asc(nodes::Column::Order)
         .order_by_asc(files::Column::Id)
         .into_model::<RootFileQueryRow>()
         .all(pool)
@@ -257,7 +251,6 @@ async fn load_root_files(
             file_path,
             audio_fingerprint: row.audio_fingerprint,
             season_id: row.season_id,
-            season_order: row.season_order,
             item_order: row.item_order,
             has_intro_marker,
             pending_segments: row.segments_json.is_empty() || segments.is_none(),
@@ -265,9 +258,8 @@ async fn load_root_files(
     }
 
     output.sort_by(|left, right| {
-        left.season_order
-            .unwrap_or(i64::MAX)
-            .cmp(&right.season_order.unwrap_or(i64::MAX))
+        left.season_id
+            .cmp(&right.season_id)
             .then_with(|| left.item_order.cmp(&right.item_order))
             .then_with(|| left.file_id.cmp(&right.file_id))
     });

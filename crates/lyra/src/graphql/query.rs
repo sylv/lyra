@@ -1,11 +1,8 @@
 use crate::{
     auth::RequestAuth,
     entities::{
-        item_metadata, items, jobs as jobs_entity, libraries,
-        metadata_source::MetadataSource,
-        root_metadata,
-        roots::{self, RootKind},
-        seasons, watch_progress,
+        jobs as jobs_entity, libraries, metadata_source::MetadataSource, node_metadata, nodes,
+        watch_progress,
     },
     jobs,
 };
@@ -16,27 +13,15 @@ use async_graphql::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, DbBackend, EntityTrait, JoinType, Order,
+    ActiveEnum, ColumnTrait, Condition, DatabaseConnection, DbBackend, EntityTrait, JoinType, Order,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement,
-    prelude::Expr,
+    Value, prelude::Expr,
 };
 use tokio::task::spawn_blocking;
 
 const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
-    "mnt",
-    "media",
-    "series",
-    "tv",
-    "movies",
-    "movie",
-    "shows",
-    "show",
-    "pool",
-    "array",
-    "video",
-    "videos",
-    "library",
-    "libraries",
+    "mnt", "media", "series", "tv", "movies", "movie", "shows", "show", "pool", "array",
+    "video", "videos", "library", "libraries",
 ];
 
 fn directory_sort_key(name: &str) -> (u8, usize, String) {
@@ -47,13 +32,11 @@ fn directory_sort_key(name: &str) -> (u8, usize, String) {
             return (0, index, lower);
         }
     }
-
     for (index, hint) in DIRECTORY_PRIORITY_HINTS.iter().enumerate() {
         if lower.starts_with(hint) {
             return (1, index, lower);
         }
     }
-
     for (index, hint) in DIRECTORY_PRIORITY_HINTS.iter().enumerate() {
         if lower.contains(hint) {
             return (2, index, lower);
@@ -65,19 +48,11 @@ fn directory_sort_key(name: &str) -> (u8, usize, String) {
 
 #[derive(Debug, InputObject, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RootNodeFilter {
+pub struct NodeFilter {
     pub library_id: Option<i64>,
-    pub kinds: Option<Vec<RootKind>>,
-    pub order_by: Option<OrderBy>,
-    pub order_direction: Option<OrderDirection>,
-    pub watched: Option<bool>,
-}
-
-#[derive(Debug, InputObject, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ItemNodeFilter {
-    pub root_id: String,
-    pub season_numbers: Option<Vec<i64>>,
+    pub root_id: Option<String>,
+    pub parent_id: Option<String>,
+    pub kinds: Option<Vec<nodes::NodeKind>>,
     pub order_by: Option<OrderBy>,
     pub order_direction: Option<OrderDirection>,
     pub watched: Option<bool>,
@@ -105,14 +80,14 @@ pub enum OrderBy {
     ReleasedAt,
     Alphabetical,
     Rating,
-    SeasonEpisode,
+    Order,
 }
 
 impl OrderBy {
     pub fn default_direction(self) -> OrderDirection {
         match self {
             OrderBy::AddedAt | OrderBy::ReleasedAt | OrderBy::Rating => OrderDirection::Desc,
-            OrderBy::Alphabetical | OrderBy::SeasonEpisode => OrderDirection::Asc,
+            OrderBy::Alphabetical | OrderBy::Order => OrderDirection::Asc,
         }
     }
 }
@@ -128,8 +103,8 @@ pub struct Activity {
 
 #[derive(Debug, Clone, SimpleObject)]
 pub struct SearchResults {
-    pub roots: Vec<roots::Model>,
-    pub items: Vec<items::Model>,
+    pub roots: Vec<nodes::Model>,
+    pub episodes: Vec<nodes::Model>,
 }
 
 fn build_fts_query(raw_query: &str) -> Option<String> {
@@ -141,7 +116,6 @@ fn build_fts_query(raw_query: &str) -> Option<String> {
             current.push(ch);
             continue;
         }
-
         if !current.is_empty() {
             terms.push(std::mem::take(&mut current));
         }
@@ -165,298 +139,166 @@ fn build_fts_query(raw_query: &str) -> Option<String> {
     )
 }
 
+// keep the search buckets explicit so the client can render posters first
+// without having to reconstruct root-vs-episode ordering from a flat list.
+async fn search_nodes_by_kinds(
+    pool: &DatabaseConnection,
+    fts_query: &str,
+    limit: i64,
+    kinds: &[nodes::NodeKind],
+) -> Result<Vec<nodes::Model>, sea_orm::DbErr> {
+    if kinds.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let kind_placeholders = std::iter::repeat_n("?", kinds.len()).collect::<Vec<_>>().join(", ");
+    let sql = format!(
+        r#"
+            SELECT DISTINCT nodes.*
+            FROM nodes
+            JOIN node_search_fts ON node_search_fts.node_id = nodes.id
+            WHERE node_search_fts MATCH ?
+              AND nodes.kind IN ({kind_placeholders})
+            ORDER BY bm25(node_search_fts, 8.0, 1.0) ASC, node_search_fts.rowid ASC
+            LIMIT ?
+        "#
+    );
+
+    let mut values: Vec<Value> = Vec::with_capacity(kinds.len() + 2);
+    values.push(fts_query.to_owned().into());
+    values.extend(kinds.iter().map(|kind| Value::from(kind.to_value())));
+    values.push(limit.into());
+
+    let statement = Statement::from_sql_and_values(DbBackend::Sqlite, sql, values);
+    nodes::Entity::find().from_raw_sql(statement).all(pool).await
+}
+
 pub struct Query;
 
 #[Object]
 impl Query {
-    async fn root_list(
+    async fn node_list(
         &self,
         ctx: &Context<'_>,
-        filter: RootNodeFilter,
+        filter: NodeFilter,
         after: Option<String>,
         first: Option<i32>,
     ) -> Result<
-        connection::Connection<u64, roots::Model, EmptyFields, EmptyFields>,
+        connection::Connection<u64, nodes::Model, EmptyFields, EmptyFields>,
         async_graphql::Error,
     > {
-        connection::query(
-            after,
-            None,
-            first,
-            None,
-            |after, _before, first, _last| async move {
-                let pool = ctx.data::<DatabaseConnection>()?;
-                let mut qb = roots::Entity::find()
-                    .join(JoinType::LeftJoin, roots::Relation::RootMetadata.def())
+        connection::query(after, None, first, None, |after, _before, first, _last| async move {
+            let pool = ctx.data::<DatabaseConnection>()?;
+            let mut qb = nodes::Entity::find()
+                .join(JoinType::LeftJoin, nodes::Relation::NodeMetadata.def())
+                .filter(
+                    Condition::any()
+                        .add(node_metadata::Column::Id.is_null())
+                        .add(node_metadata::Column::Source.eq(MetadataSource::Remote))
+                        .add(
+                            Condition::all()
+                                .add(node_metadata::Column::Source.eq(MetadataSource::Local))
+                                .add(Expr::cust(
+                                    "NOT EXISTS (
+                                        SELECT 1
+                                        FROM node_metadata nm2
+                                        WHERE nm2.node_id = node_metadata.node_id
+                                          AND nm2.source = 1
+                                    )",
+                                )),
+                        ),
+                );
+
+            if let Some(library_id) = filter.library_id {
+                qb = qb.filter(nodes::Column::LibraryId.eq(library_id));
+            }
+            if let Some(root_id) = &filter.root_id {
+                qb = qb.filter(nodes::Column::RootId.eq(root_id.clone()));
+            }
+            if let Some(parent_id) = &filter.parent_id {
+                qb = qb.filter(nodes::Column::ParentId.eq(parent_id.clone()));
+            }
+            if let Some(kinds) = &filter.kinds {
+                qb = qb.filter(nodes::Column::Kind.is_in(kinds.clone()));
+            }
+
+            if let Some(watched) = filter.watched {
+                let auth = ctx.data::<RequestAuth>()?;
+                let user = auth.get_user_or_err()?;
+                let watched_node_ids = watch_progress::Entity::find()
+                    .filter(watch_progress::Column::UserId.eq(user.id.clone()))
                     .filter(
-                        Condition::any()
-                            .add(root_metadata::Column::Id.is_null())
-                            .add(root_metadata::Column::Source.eq(MetadataSource::Remote))
-                            .add(
-                                Condition::all()
-                                    .add(root_metadata::Column::Source.eq(MetadataSource::Local))
-                                    .add(Expr::cust(
-                                        "NOT EXISTS (
-                                            SELECT 1
-                                            FROM root_metadata rm2
-                                            WHERE rm2.root_id = root_metadata.root_id
-                                              AND rm2.source = 1
-                                        )",
-                                    )),
-                            ),
-                    );
-
-                if let Some(kinds) = &filter.kinds {
-                    qb = qb.filter(roots::Column::Kind.is_in(kinds.clone()));
-                }
-
-                if let Some(library_id) = filter.library_id {
-                    qb = qb.filter(roots::Column::LibraryId.eq(library_id));
-                }
-
-                if let Some(watched) = filter.watched {
-                    let auth = ctx.data::<RequestAuth>()?;
-                    let user = auth.get_user_or_err()?;
-
-                    let watched_root_ids: Vec<String> = items::Entity::find()
-                        .join(JoinType::InnerJoin, items::Relation::WatchProgress.def())
-                        .filter(watch_progress::Column::UserId.eq(user.id.clone()))
-                        .filter(
-                            watch_progress::Column::ProgressPercent
-                                .gt(watch_progress::completed_progress_threshold()),
-                        )
-                        .select_only()
-                        .column(items::Column::RootId)
-                        .distinct()
-                        .into_tuple()
-                        .all(pool)
-                        .await?;
-
-                    if watched {
-                        if watched_root_ids.is_empty() {
-                            qb = qb.filter(roots::Column::Id.eq("__never__"));
-                        } else {
-                            qb = qb.filter(roots::Column::Id.is_in(watched_root_ids));
-                        }
-                    } else if !watched_root_ids.is_empty() {
-                        qb = qb.filter(roots::Column::Id.is_not_in(watched_root_ids));
-                    }
-                }
-
-                let order_by = filter.order_by.unwrap_or(OrderBy::Alphabetical);
-                let order_direction = filter
-                    .order_direction
-                    .unwrap_or_else(|| order_by.default_direction())
-                    .to_sea_orm();
-
-                match order_by {
-                    OrderBy::AddedAt => {
-                        qb = qb.order_by(roots::Column::LastAddedAt, order_direction);
-                    }
-                    OrderBy::ReleasedAt => {
-                        qb = qb.order_by(root_metadata::Column::ReleasedAt, order_direction);
-                    }
-                    OrderBy::Alphabetical => {
-                        qb = qb.order_by(root_metadata::Column::Name, order_direction);
-                    }
-                    OrderBy::Rating => {
-                        qb = qb.order_by(root_metadata::Column::ScoreNormalized, order_direction);
-                    }
-                    OrderBy::SeasonEpisode => {
-                        qb = qb.order_by(roots::Column::LastAddedAt, order_direction);
-                    }
-                }
-
-                qb = qb.order_by_asc(roots::Column::Id);
-
-                let count = qb.clone().count(pool).await?;
-                let limit: u64 = first.unwrap_or(25) as u64;
-                let offset: u64 = after.map(|a| a + 1).unwrap_or(0);
-
-                let nodes = qb
-                    .limit(Some(limit))
-                    .offset(Some(offset))
+                        watch_progress::Column::ProgressPercent
+                            .gt(watch_progress::completed_progress_threshold()),
+                    )
+                    .select_only()
+                    .column(watch_progress::Column::NodeId)
+                    .into_tuple::<String>()
                     .all(pool)
-                    .await
-                    .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+                    .await?;
 
-                let has_previous_page = offset > 0;
-                let has_next_page = offset + limit < count;
+                if watched {
+                    if watched_node_ids.is_empty() {
+                        qb = qb.filter(nodes::Column::Id.eq("__never__"));
+                    } else {
+                        qb = qb.filter(nodes::Column::Id.is_in(watched_node_ids));
+                    }
+                } else if !watched_node_ids.is_empty() {
+                    qb = qb.filter(nodes::Column::Id.is_not_in(watched_node_ids));
+                }
+            }
 
-                let mut connection = connection::Connection::new(has_previous_page, has_next_page);
-                connection
-                    .edges
-                    .extend(nodes.into_iter().enumerate().map(|(index, node)| {
-                        let cursor = (offset + index as u64) as u64;
-                        connection::Edge::new(cursor, node)
-                    }));
+            let order_by = filter.order_by.unwrap_or(OrderBy::Order);
+            let order_direction = filter
+                .order_direction
+                .unwrap_or_else(|| order_by.default_direction())
+                .to_sea_orm();
 
-                Ok::<_, async_graphql::Error>(connection)
-            },
-        )
+            match order_by {
+                OrderBy::AddedAt => qb = qb.order_by(nodes::Column::LastAddedAt, order_direction),
+                OrderBy::ReleasedAt => {
+                    qb = qb.order_by(node_metadata::Column::ReleasedAt, order_direction)
+                }
+                OrderBy::Alphabetical => {
+                    qb = qb.order_by(node_metadata::Column::Name, order_direction)
+                }
+                OrderBy::Rating => {
+                    qb = qb.order_by(node_metadata::Column::ScoreNormalized, order_direction)
+                }
+                OrderBy::Order => qb = qb.order_by(nodes::Column::Order, order_direction),
+            }
+
+            qb = qb.order_by_asc(nodes::Column::Id);
+
+            let count = qb.clone().count(pool).await?;
+            let limit = first.unwrap_or(50) as u64;
+            let offset = after.map(|cursor| cursor + 1).unwrap_or(0);
+            let records = qb.limit(Some(limit)).offset(Some(offset)).all(pool).await?;
+
+            let has_previous_page = offset > 0;
+            let has_next_page = offset + limit < count;
+            let mut connection = connection::Connection::new(has_previous_page, has_next_page);
+            connection
+                .edges
+                .extend(records.into_iter().enumerate().map(|(index, node)| {
+                    connection::Edge::new(offset + index as u64, node)
+                }));
+
+            Ok::<_, async_graphql::Error>(connection)
+        })
         .await
     }
 
-    async fn item_list(
+    async fn node(
         &self,
         ctx: &Context<'_>,
-        filter: ItemNodeFilter,
-        after: Option<String>,
-        first: Option<i32>,
-    ) -> Result<
-        connection::Connection<u64, items::Model, EmptyFields, EmptyFields>,
-        async_graphql::Error,
-    > {
-        connection::query(
-            after,
-            None,
-            first,
-            None,
-            |after, _before, first, _last| async move {
-                let pool = ctx.data::<DatabaseConnection>()?;
-                let mut qb = items::Entity::find()
-                    .filter(items::Column::RootId.eq(filter.root_id.clone()))
-                    .join(JoinType::LeftJoin, items::Relation::ItemMetadata.def())
-                    .join(JoinType::LeftJoin, items::Relation::Seasons.def())
-                    .filter(
-                        Condition::any()
-                            .add(item_metadata::Column::Id.is_null())
-                            .add(item_metadata::Column::Source.eq(MetadataSource::Remote))
-                            .add(
-                                Condition::all()
-                                    .add(item_metadata::Column::Source.eq(MetadataSource::Local))
-                                    .add(Expr::cust(
-                                        "NOT EXISTS (
-                                            SELECT 1
-                                            FROM item_metadata im2
-                                            WHERE im2.item_id = item_metadata.item_id
-                                              AND im2.source = 1
-                                        )",
-                                    )),
-                            ),
-                    );
-
-                if let Some(season_numbers) = &filter.season_numbers {
-                    qb = qb.filter(seasons::Column::SeasonNumber.is_in(season_numbers.clone()));
-                }
-
-                if let Some(watched) = filter.watched {
-                    let auth = ctx.data::<RequestAuth>()?;
-                    let user = auth.get_user_or_err()?;
-                    let watched_item_ids: Vec<String> = watch_progress::Entity::find()
-                        .filter(watch_progress::Column::UserId.eq(user.id.clone()))
-                        .filter(
-                            watch_progress::Column::ProgressPercent
-                                .gt(watch_progress::completed_progress_threshold()),
-                        )
-                        .select_only()
-                        .column(watch_progress::Column::ItemId)
-                        .into_tuple()
-                        .all(pool)
-                        .await?;
-
-                    if watched {
-                        if watched_item_ids.is_empty() {
-                            qb = qb.filter(items::Column::Id.eq("__never__"));
-                        } else {
-                            qb = qb.filter(items::Column::Id.is_in(watched_item_ids));
-                        }
-                    } else if !watched_item_ids.is_empty() {
-                        qb = qb.filter(items::Column::Id.is_not_in(watched_item_ids));
-                    }
-                }
-
-                let order_by = filter.order_by.unwrap_or(OrderBy::SeasonEpisode);
-                let order_direction = filter
-                    .order_direction
-                    .unwrap_or_else(|| order_by.default_direction())
-                    .to_sea_orm();
-
-                match order_by {
-                    OrderBy::AddedAt => {
-                        qb = qb.order_by(items::Column::LastAddedAt, order_direction);
-                    }
-                    OrderBy::ReleasedAt => {
-                        qb = qb.order_by(item_metadata::Column::ReleasedAt, order_direction);
-                    }
-                    OrderBy::Alphabetical => {
-                        qb = qb.order_by(item_metadata::Column::Name, order_direction);
-                    }
-                    OrderBy::Rating => {
-                        qb = qb.order_by(item_metadata::Column::ScoreNormalized, order_direction);
-                    }
-                    OrderBy::SeasonEpisode => {
-                        qb = qb.order_by(items::Column::Order, order_direction);
-                    }
-                }
-
-                qb = qb.order_by_asc(items::Column::Id);
-
-                let count = qb.clone().count(pool).await?;
-                let limit: u64 = first.unwrap_or(50) as u64;
-                let offset: u64 = after.map(|a| a + 1).unwrap_or(0);
-
-                let nodes = qb
-                    .limit(Some(limit))
-                    .offset(Some(offset))
-                    .all(pool)
-                    .await
-                    .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-
-                let has_previous_page = offset > 0;
-                let has_next_page = offset + limit < count;
-
-                let mut connection = connection::Connection::new(has_previous_page, has_next_page);
-                connection
-                    .edges
-                    .extend(nodes.into_iter().enumerate().map(|(index, node)| {
-                        let cursor = (offset + index as u64) as u64;
-                        connection::Edge::new(cursor, node)
-                    }));
-
-                Ok::<_, async_graphql::Error>(connection)
-            },
-        )
-        .await
-    }
-
-    async fn root(
-        &self,
-        ctx: &Context<'_>,
-        root_id: String,
-    ) -> Result<roots::Model, async_graphql::Error> {
+        node_id: String,
+    ) -> Result<nodes::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        roots::Entity::find_by_id(root_id)
+        nodes::Entity::find_by_id(node_id)
             .one(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("Root not found".to_string()))
-    }
-
-    async fn season(
-        &self,
-        ctx: &Context<'_>,
-        season_id: String,
-    ) -> Result<seasons::Model, async_graphql::Error> {
-        let pool = ctx.data::<DatabaseConnection>()?;
-        seasons::Entity::find_by_id(season_id)
-            .one(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("Season not found".to_string()))
-    }
-
-    async fn item(
-        &self,
-        ctx: &Context<'_>,
-        item_id: String,
-    ) -> Result<items::Model, async_graphql::Error> {
-        let pool = ctx.data::<DatabaseConnection>()?;
-        items::Entity::find_by_id(item_id)
-            .one(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("Item not found".to_string()))
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Node not found"))
     }
 
     async fn search(
@@ -468,50 +310,29 @@ impl Query {
         let Some(fts_query) = build_fts_query(&query) else {
             return Ok(SearchResults {
                 roots: Vec::new(),
-                items: Vec::new(),
+                episodes: Vec::new(),
             });
         };
 
         let pool = ctx.data::<DatabaseConnection>()?;
-        let limit = limit.unwrap_or(6).clamp(1, 20) as u64;
-        let root_statement = Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            r#"
-                SELECT DISTINCT roots.*
-                FROM roots
-                JOIN root_search_fts ON root_search_fts.root_id = roots.id
-                WHERE root_search_fts MATCH ?
-                ORDER BY bm25(root_search_fts, 8.0, 1.0) ASC, root_search_fts.rowid ASC
-                LIMIT ?
-            "#,
-            vec![fts_query.clone().into(), (limit as i64).into()],
-        );
-        let item_statement = Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            r#"
-                SELECT DISTINCT items.*
-                FROM items
-                JOIN item_search_fts ON item_search_fts.item_id = items.id
-                WHERE item_search_fts MATCH ?
-                ORDER BY bm25(item_search_fts, 8.0, 1.0) ASC, item_search_fts.rowid ASC
-                LIMIT ?
-            "#,
-            vec![fts_query.into(), (limit as i64).into()],
-        );
+        let limit = limit.unwrap_or(10).clamp(1, 20) as i64;
 
-        let (roots, items) = tokio::try_join!(
-            roots::Entity::find().from_raw_sql(root_statement).all(pool),
-            items::Entity::find().from_raw_sql(item_statement).all(pool),
+        let roots = search_nodes_by_kinds(
+            pool,
+            &fts_query,
+            limit,
+            &[nodes::NodeKind::Movie, nodes::NodeKind::Series],
         )
-        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        .await?;
+        let episodes =
+            search_nodes_by_kinds(pool, &fts_query, limit, &[nodes::NodeKind::Episode]).await?;
 
-        Ok(SearchResults { roots, items })
+        Ok(SearchResults { roots, episodes })
     }
 
-    /// Used during library setup to pick the library path
     async fn list_files(&self, path: String) -> Result<Vec<String>, async_graphql::Error> {
         if !path.starts_with('/') || path.contains("..") || path.contains("/.") {
-            return Err(async_graphql::Error::new("Invalid path".to_string()));
+            return Err(async_graphql::Error::new("Invalid path"));
         }
 
         spawn_blocking(|| {
@@ -553,9 +374,8 @@ impl Query {
         let pool = ctx.data::<DatabaseConnection>()?;
         libraries::Entity::find_by_id(library_id)
             .one(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("Library not found".to_string()))
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Library not found"))
     }
 
     async fn libraries(
@@ -563,12 +383,7 @@ impl Query {
         ctx: &Context<'_>,
     ) -> Result<Vec<libraries::Model>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        let libraries = libraries::Entity::find()
-            .all(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-
-        Ok(libraries)
+        Ok(libraries::Entity::find().all(pool).await?)
     }
 
     async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
@@ -587,25 +402,19 @@ impl Query {
                 .filter(jobs_entity::Column::RunAfter.is_null())
                 .filter(jobs_entity::Column::UpdatedAt.gte(snapshot.idle_at))
                 .count(pool)
-                .await
-                .map_err(|e| async_graphql::Error::new(e.to_string()))?
-                as i64;
+                .await? as i64;
 
             let pending = jobs_entity::Entity::find()
                 .filter(jobs_entity::Column::JobKind.eq(job_kind))
                 .filter(jobs_entity::Column::RunAfter.is_not_null())
                 .filter(jobs_entity::Column::RunAfter.lte(now))
                 .count(pool)
-                .await
-                .map_err(|e| async_graphql::Error::new(e.to_string()))?
-                as i64;
+                .await? as i64;
 
             let total = completed + pending;
-
             if total == 0 {
                 continue;
             }
-
             if pending == 0 && now - snapshot.last_activity_at > jobs::ACTIVITY_STALE_AFTER_SECONDS
             {
                 continue;
@@ -620,7 +429,6 @@ impl Query {
             });
         }
 
-        activities.sort_by(|a, b| a.title.cmp(&b.title));
         Ok(activities)
     }
 }

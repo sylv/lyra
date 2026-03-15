@@ -18,11 +18,11 @@ pub enum JobKind {
     #[sea_orm(num_value = 5)]
     AssetGenerateThumbhash,
     #[sea_orm(num_value = 6)]
-    RootGenerateIntroSegments,
+    NodeGenerateIntroSegments,
     #[sea_orm(num_value = 7)]
-    RootMatchMetadataRoot,
+    NodeMatchMetadataRoot,
     #[sea_orm(num_value = 8)]
-    RootMatchMetadataGroups,
+    NodeMatchMetadataGroups,
 }
 
 impl JobKind {
@@ -34,9 +34,9 @@ impl JobKind {
             JobKind::FileExtractKeyframes => 3,
             JobKind::AssetDownload => 4,
             JobKind::AssetGenerateThumbhash => 5,
-            JobKind::RootGenerateIntroSegments => 6,
-            JobKind::RootMatchMetadataRoot => 7,
-            JobKind::RootMatchMetadataGroups => 8,
+            JobKind::NodeGenerateIntroSegments => 6,
+            JobKind::NodeMatchMetadataRoot => 7,
+            JobKind::NodeMatchMetadataGroups => 8,
         }
     }
 
@@ -48,9 +48,9 @@ impl JobKind {
             JobKind::FileExtractKeyframes => "Keyframe Extraction",
             JobKind::AssetDownload => "Asset Download",
             JobKind::AssetGenerateThumbhash => "Asset Preview Generation",
-            JobKind::RootGenerateIntroSegments => "Intro Detection",
-            JobKind::RootMatchMetadataRoot => "Match Root Metadata",
-            JobKind::RootMatchMetadataGroups => "Match Grouped Item Metadata",
+            JobKind::NodeGenerateIntroSegments => "Intro Detection",
+            JobKind::NodeMatchMetadataRoot => "Match Root Metadata",
+            JobKind::NodeMatchMetadataGroups => "Match Grouped Node Metadata",
         }
     }
 
@@ -62,9 +62,9 @@ impl JobKind {
             JobKind::FileExtractKeyframes => "keyframes",
             JobKind::AssetDownload => "download",
             JobKind::AssetGenerateThumbhash => "thumbhash",
-            JobKind::RootGenerateIntroSegments => "intro_segments",
-            JobKind::RootMatchMetadataRoot => "metadata_match_root",
-            JobKind::RootMatchMetadataGroups => "metadata_match_groups",
+            JobKind::NodeGenerateIntroSegments => "intro_segments",
+            JobKind::NodeMatchMetadataRoot => "metadata_match_root",
+            JobKind::NodeMatchMetadataGroups => "metadata_match_groups",
         }
     }
 }
@@ -79,14 +79,9 @@ pub struct Model {
     pub subject_key: String,
     pub version_key: Option<i64>,
     pub file_id: Option<i64>,
+    pub asset_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub asset_id: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub root_id: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub season_id: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub item_id: Option<String>,
+    pub node_id: Option<String>,
     pub run_after: Option<i64>,
     pub last_run_at: i64,
     #[sea_orm(column_type = "Text", nullable)]

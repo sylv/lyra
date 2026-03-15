@@ -27,7 +27,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub user_id: String,
     #[sea_orm(column_type = "Text")]
-    pub item_id: String,
+    pub node_id: String,
     pub file_id: i64,
     #[graphql(skip)]
     pub progress_percent: f32,
@@ -57,13 +57,13 @@ pub enum Relation {
     )]
     Files,
     #[sea_orm(
-        belongs_to = "super::items::Entity",
-        from = "Column::ItemId",
-        to = "super::items::Column::Id",
+        belongs_to = "super::nodes::Entity",
+        from = "Column::NodeId",
+        to = "super::nodes::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Items,
+    Nodes,
     #[sea_orm(
         belongs_to = "super::users::Entity",
         from = "Column::UserId",
@@ -80,9 +80,9 @@ impl Related<super::files::Entity> for Entity {
     }
 }
 
-impl Related<super::items::Entity> for Entity {
+impl Related<super::nodes::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Items.def()
+        Relation::Nodes.def()
     }
 }
 

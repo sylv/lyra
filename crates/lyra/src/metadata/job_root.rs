@@ -1,36 +1,31 @@
-use crate::entities::{
-    files, item_files, items, jobs as jobs_entity,
-    roots::{self, RootKind},
-};
-use crate::jobs::{JobExecutionPolicy, JobHandler, JobTarget, ROOT_ID_COLUMN, VERSION_KEY_COLUMN};
+use crate::entities::{jobs as jobs_entity, node_metadata, nodes, nodes::NodeKind};
+use crate::jobs::{JobExecutionPolicy, JobHandler, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN};
 use crate::json_encoding;
 use crate::metadata::METADATA_RETRY_BACKOFF_SECONDS;
 use crate::metadata::store::{
-    upsert_remote_root_metadata_from_movie, upsert_remote_root_metadata_from_series,
+    upsert_remote_node_metadata_from_movie, upsert_remote_node_metadata_from_series,
 };
 use anyhow::Context;
+use chrono::Datelike;
 use lyra_metadata::{
     MetadataProvider, MovieCandidate, MovieMetadata, MovieRootMatchRequest, RootMatchHint,
     SeriesCandidate, SeriesMetadata, SeriesRootMatchRequest,
 };
-use lyra_parser::parse_files;
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait, sea_query::SelectStatement,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, sea_query::SelectStatement,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const MAX_HINT_FILES: u64 = 150;
-
 pub(crate) type RootCandidatesByProvider = HashMap<String, StoredRootMatchCandidate>;
 
-pub struct RootMetadataMatchRootJob {
+pub struct NodeMetadataMatchRootJob {
     providers: Vec<Arc<dyn MetadataProvider>>,
 }
 
-impl RootMetadataMatchRootJob {
+impl NodeMetadataMatchRootJob {
     pub fn new(providers: Vec<Arc<dyn MetadataProvider>>) -> Self {
         Self { providers }
     }
@@ -55,9 +50,9 @@ pub(crate) enum StoredRootMatchCandidate {
 }
 
 #[async_trait::async_trait]
-impl JobHandler for RootMetadataMatchRootJob {
+impl JobHandler for NodeMetadataMatchRootJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::RootMatchMetadataRoot
+        jobs_entity::JobKind::NodeMatchMetadataRoot
     }
 
     fn execution_policy(&self) -> JobExecutionPolicy {
@@ -65,14 +60,16 @@ impl JobHandler for RootMetadataMatchRootJob {
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = roots::Entity::find()
+        let mut query = nodes::Entity::find()
             .select_only()
-            .column_as(roots::Column::Id, ROOT_ID_COLUMN)
-            .column_as(roots::Column::LastAddedAt, VERSION_KEY_COLUMN)
-            .order_by_asc(roots::Column::LastAddedAt)
-            .order_by_asc(roots::Column::Id);
+            .column_as(nodes::Column::Id, NODE_ID_COLUMN)
+            .column_as(nodes::Column::LastAddedAt, VERSION_KEY_COLUMN)
+            .filter(nodes::Column::ParentId.is_null())
+            .filter(nodes::Column::Kind.is_in([NodeKind::Movie, NodeKind::Series]))
+            .order_by_asc(nodes::Column::LastAddedAt)
+            .order_by_asc(nodes::Column::Id);
 
-        (JobTarget::Root, QuerySelect::query(&mut query).to_owned())
+        (JobTarget::Node, QuerySelect::query(&mut query).to_owned())
     }
 
     async fn execute(
@@ -80,29 +77,26 @@ impl JobHandler for RootMetadataMatchRootJob {
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let root_id = job
-            .root_id
+        let node_id = job
+            .node_id
             .as_deref()
-            .with_context(|| format!("job {} missing root_id", job.id))?;
+            .with_context(|| format!("job {} missing node_id", job.id))?;
 
-        let Some(root) = roots::Entity::find_by_id(root_id.to_string())
-            .one(pool)
-            .await?
-        else {
+        let Some(node) = nodes::Entity::find_by_id(node_id.to_string()).one(pool).await? else {
             return Ok(());
         };
 
-        let mut candidates = decode_root_candidates(root.match_candidates_json.as_deref())?;
+        let mut candidates = decode_root_candidates(node.match_candidates_json.as_deref())?;
         let mut failures = Vec::new();
         for provider in &self.providers {
-            match match_root(pool, provider.as_ref(), &root).await {
+            match match_root(pool, provider.as_ref(), &node).await {
                 Ok(Some(matched_root)) => {
                     if let Err(error) =
-                        upsert_root_metadata_for_match(pool, provider.id(), &root.id, &matched_root)
+                        upsert_node_metadata_for_match(pool, provider.id(), &node.id, &matched_root)
                             .await
                     {
                         failures.push(format!(
-                            "provider {} failed to upsert root metadata: {error:#}",
+                            "provider {} failed to upsert node metadata: {error:#}",
                             provider.id()
                         ));
                         continue;
@@ -116,23 +110,23 @@ impl JobHandler for RootMetadataMatchRootJob {
                 Ok(None) => {
                     candidates.remove(provider.id());
                     failures.push(format!(
-                        "provider {} did not match root {}",
+                        "provider {} did not match node {}",
                         provider.id(),
-                        root.id
+                        node.id
                     ));
                 }
                 Err(error) => failures.push(format!(
-                    "provider {} failed to match root {}: {error:#}",
+                    "provider {} failed to match node {}: {error:#}",
                     provider.id(),
-                    root.id
+                    node.id
                 )),
             }
         }
 
         let payload = encode_root_candidates(&candidates)?;
-        if payload != root.match_candidates_json {
-            roots::Entity::update(roots::ActiveModel {
-                id: Set(root.id),
+        if payload != node.match_candidates_json {
+            nodes::Entity::update(nodes::ActiveModel {
+                id: Set(node.id),
                 match_candidates_json: Set(payload),
                 updated_at: Set(chrono::Utc::now().timestamp()),
                 ..Default::default()
@@ -154,9 +148,7 @@ impl JobHandler for RootMetadataMatchRootJob {
 
 fn stored_root_candidate_for_match(matched_root: &MatchedRoot) -> StoredRootMatchCandidate {
     match matched_root {
-        MatchedRoot::Series { candidate, .. } => {
-            StoredRootMatchCandidate::Series(candidate.clone())
-        }
+        MatchedRoot::Series { candidate, .. } => StoredRootMatchCandidate::Series(candidate.clone()),
         MatchedRoot::Movie { candidate, .. } => StoredRootMatchCandidate::Movie(candidate.clone()),
     }
 }
@@ -184,19 +176,19 @@ fn encode_root_candidates(
     Ok(Some(payload))
 }
 
-async fn upsert_root_metadata_for_match(
+async fn upsert_node_metadata_for_match(
     pool: &DatabaseConnection,
     provider_id: &str,
-    root_id: &str,
+    node_id: &str,
     matched_root: &MatchedRoot,
 ) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp();
     match matched_root {
         MatchedRoot::Series { metadata, .. } => {
-            upsert_remote_root_metadata_from_series(pool, root_id, provider_id, metadata, now).await
+            upsert_remote_node_metadata_from_series(pool, node_id, provider_id, metadata, now).await
         }
         MatchedRoot::Movie { metadata, .. } => {
-            upsert_remote_root_metadata_from_movie(pool, root_id, provider_id, metadata, now).await
+            upsert_remote_node_metadata_from_movie(pool, node_id, provider_id, metadata, now).await
         }
     }
 }
@@ -204,12 +196,12 @@ async fn upsert_root_metadata_for_match(
 async fn match_root(
     pool: &DatabaseConnection,
     provider: &dyn MetadataProvider,
-    root: &roots::Model,
+    node: &nodes::Model,
 ) -> anyhow::Result<Option<MatchedRoot>> {
-    let hint = load_root_match_hint(pool, root).await?;
+    let hint = load_root_match_hint(pool, node).await?;
 
-    match root.kind {
-        RootKind::Series => {
+    match node.kind {
+        NodeKind::Series => {
             let candidates = provider
                 .match_series_root(SeriesRootMatchRequest { hint })
                 .await?;
@@ -223,7 +215,7 @@ async fn match_root(
                 metadata,
             }))
         }
-        RootKind::Movie => {
+        NodeKind::Movie => {
             let candidates = provider
                 .match_movie_root(MovieRootMatchRequest { hint })
                 .await?;
@@ -237,62 +229,35 @@ async fn match_root(
                 metadata,
             }))
         }
+        _ => Ok(None),
     }
 }
 
 async fn load_root_match_hint(
     pool: &DatabaseConnection,
-    root: &roots::Model,
+    node: &nodes::Model,
 ) -> anyhow::Result<RootMatchHint> {
-    let file_paths = item_files::Entity::find()
-        .join(JoinType::InnerJoin, item_files::Relation::Items.def())
-        .join(JoinType::InnerJoin, item_files::Relation::Files.def())
-        .filter(items::Column::RootId.eq(root.id.clone()))
-        .select_only()
-        .column(files::Column::RelativePath)
-        .distinct()
-        .limit(MAX_HINT_FILES)
-        .into_tuple::<String>()
-        .all(pool)
+    let metadata = node_metadata::Entity::find()
+        .filter(node_metadata::Column::NodeId.eq(node.id.clone()))
+        .order_by_desc(node_metadata::Column::Source)
+        .one(pool)
         .await?;
 
-    if file_paths.is_empty() {
-        return Ok(RootMatchHint {
-            title: root.name.clone(),
-            start_year: None,
-            end_year: None,
-            imdb_id: None,
-            tmdb_id: None,
-        });
-    }
-
-    let parsed_files = parse_files(file_paths).await;
-    let mut years = HashMap::<i32, usize>::new();
-    for parsed in &parsed_files {
-        if let Some(year) = parsed
-            .start_year
-            .and_then(|value| i32::try_from(value).ok())
-        {
-            years
-                .entry(year)
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-        }
-    }
+    let years = if node.kind == NodeKind::Movie {
+        metadata
+            .as_ref()
+            .and_then(|row| row.released_at)
+            .map(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0).map(|dt| dt.year()))
+            .flatten()
+    } else {
+        None
+    };
 
     Ok(RootMatchHint {
-        title: root.name.clone(),
-        start_year: years
-            .into_iter()
-            .max_by_key(|(_, count)| *count)
-            .map(|(year, _)| year),
-        end_year: parsed_files
-            .iter()
-            .filter_map(|parsed| parsed.end_year.and_then(|value| i32::try_from(value).ok()))
-            .max(),
-        imdb_id: parsed_files
-            .iter()
-            .find_map(|parsed| parsed.imdb_id.clone()),
-        tmdb_id: parsed_files.iter().find_map(|parsed| parsed.tmdb_id),
+        title: metadata.map(|row| row.name).unwrap_or_else(|| node.name.clone()),
+        start_year: years,
+        end_year: None,
+        imdb_id: None,
+        tmdb_id: None,
     })
 }

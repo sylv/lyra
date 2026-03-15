@@ -1,6 +1,4 @@
-mod item;
-mod root;
-mod season;
+mod node;
 
 use crate::auth::RequestAuth;
 use async_graphql::Context;

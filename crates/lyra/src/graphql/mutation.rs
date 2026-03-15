@@ -1,7 +1,7 @@
 use crate::RequestAuth;
 use crate::auth::{PermissionGuard, create_session_for_user};
 use crate::entities::users::UserPerms;
-use crate::entities::{files, item_files, libraries, users, watch_progress};
+use crate::entities::{files, libraries, node_files, users, watch_progress};
 use crate::import::watch_state_import;
 use argon2::{
     Argon2,
@@ -124,7 +124,7 @@ impl From<watch_state_import::ImportWatchStatesResultData> for ImportWatchStates
 #[Object]
 impl Mutation {
     #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
-    async fn signup(
+    pub async fn signup(
         &self,
         ctx: &Context<'_>,
         username: String,
@@ -204,7 +204,7 @@ impl Mutation {
         }
     }
 
-    async fn update_watch_progress(
+    pub async fn update_watch_progress(
         &self,
         ctx: &Context<'_>,
         file_id: i64,
@@ -237,31 +237,31 @@ impl Mutation {
             .map_err(|e| async_graphql::Error::new(e.to_string()))?
             .ok_or_else(|| async_graphql::Error::new("File not found".to_string()))?;
 
-        let linked_item_ids: Vec<String> = item_files::Entity::find()
-            .filter(item_files::Column::FileId.eq(file.id))
+        let linked_node_ids: Vec<String> = node_files::Entity::find()
+            .filter(node_files::Column::FileId.eq(file.id))
             .select_only()
-            .column(item_files::Column::ItemId)
+            .column(node_files::Column::NodeId)
             .distinct()
             .into_tuple()
             .all(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        if linked_item_ids.is_empty() {
+        if linked_node_ids.is_empty() {
             return Err(async_graphql::Error::new(
-                "No linked items found for file".to_string(),
+                "No linked nodes found for file".to_string(),
             ));
         }
 
         let normalized_progress_percent =
             watch_progress::normalize_progress_percent(progress_percent);
         let now = Utc::now().timestamp();
-        let mut updated_rows = Vec::with_capacity(linked_item_ids.len());
+        let mut updated_rows = Vec::with_capacity(linked_node_ids.len());
 
-        for item_id in linked_item_ids {
+        for node_id in linked_node_ids {
             let row = watch_progress::Entity::insert(watch_progress::ActiveModel {
                 user_id: Set(user_id.clone()),
-                item_id: Set(item_id),
+                node_id: Set(node_id),
                 file_id: Set(file.id),
                 progress_percent: Set(normalized_progress_percent),
                 updated_at: Set(now),
@@ -270,7 +270,7 @@ impl Mutation {
             .on_conflict(
                 OnConflict::columns([
                     watch_progress::Column::UserId,
-                    watch_progress::Column::ItemId,
+                    watch_progress::Column::NodeId,
                 ])
                 .update_columns([
                     watch_progress::Column::FileId,
@@ -289,7 +289,7 @@ impl Mutation {
         Ok(updated_rows)
     }
 
-    async fn import_watch_states(
+    pub async fn import_watch_states(
         &self,
         ctx: &Context<'_>,
         input: ImportWatchStatesInput,
@@ -332,7 +332,7 @@ impl Mutation {
         Ok(result.into())
     }
 
-    async fn create_library(
+    pub async fn create_library(
         &self,
         ctx: &Context<'_>,
         name: String,

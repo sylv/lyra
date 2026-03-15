@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, type FC } from "react";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
-import { getPathForItem } from "../lib/getPathForMedia";
+import { getPathForNode } from "../lib/getPathForMedia";
 import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { openPlayerMedia } from "./player/player-state";
@@ -14,14 +14,11 @@ const formatRuntime = (minutes: number | null) => {
 	if (!minutes) return null;
 	const hours = Math.floor(minutes / 60);
 	const mins = minutes % 60;
-	if (hours > 0) {
-		return `${hours}h ${mins}m`;
-	}
-	return `${mins}m`;
+	return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 };
 
 const Fragment = graphql(`
-	fragment EpisodeCard on ItemNode {
+	fragment EpisodeCard on Node {
 		id
 		name
 		properties {
@@ -39,14 +36,14 @@ const Fragment = graphql(`
 			completed
 			updatedAt
 		}
-		...GetPathForItem
+		...GetPathForNode
 	}
 `);
 
 export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const episode = unmask(Fragment, episodeRef);
 	const navigate = useNavigate();
-	const path = getPathForItem(episode);
+	const path = getPathForNode(episode);
 	const releaseDate = useMemo(() => {
 		if (!episode.properties.releasedAt) return null;
 		return new Date(episode.properties.releasedAt * 1000).toLocaleDateString(undefined, {
@@ -62,19 +59,13 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 			className="group flex gap-4 group/play w-full text-left"
 			aria-label={`Play ${episode.name}`}
 			onClick={() => {
-				if (!episode.id) return;
 				openPlayerMedia(episode.id, true);
 				navigate({ to: path as never });
 			}}
 		>
 			<div className="relative overflow-hidden h-min rounded-sm shrink-0">
 				<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>
-					<Image
-						type={ImageType.Thumbnail}
-						asset={episode.properties.thumbnailImage}
-						alt={episode.name}
-						className="h-36"
-					/>
+					<Image type={ImageType.Thumbnail} asset={episode.properties.thumbnailImage} alt={episode.name} className="h-36" />
 				</PlayWrapper>
 			</div>
 			<div>
@@ -88,9 +79,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					{releaseDate && <div>{releaseDate}</div>}
 					{episode.properties.runtimeMinutes && <div>{formatRuntime(episode.properties.runtimeMinutes)}</div>}
 				</div>
-				<p className="text-xs text-zinc-300 line-clamp-3">
-					{episode.properties.description || "No description available"}
-				</p>
+				<p className="text-xs text-zinc-300 line-clamp-3">{episode.properties.description || "No description available"}</p>
 			</div>
 		</button>
 	);

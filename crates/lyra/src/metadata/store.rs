@@ -1,8 +1,8 @@
 use crate::entities::{
     assets::{self},
-    item_metadata, items,
     metadata_source::MetadataSource,
-    root_metadata, season_metadata, seasons,
+    node_metadata, nodes,
+    nodes::NodeKind,
 };
 use lyra_metadata::{EpisodeMetadata, ImageSet, MovieMetadata, SeasonMetadata, SeriesMetadata};
 use sea_orm::sea_query::OnConflict;
@@ -10,18 +10,17 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
     QueryOrder,
 };
-use std::collections::HashMap;
 
-pub async fn upsert_remote_root_metadata_from_series(
+pub async fn upsert_remote_node_metadata_from_series(
     pool: &DatabaseConnection,
-    root_id: &str,
+    node_id: &str,
     provider_id: &str,
     metadata: &SeriesMetadata,
     now: i64,
 ) -> anyhow::Result<()> {
-    upsert_remote_root_metadata(
+    upsert_remote_node_metadata(
         pool,
-        root_id,
+        node_id,
         provider_id,
         metadata_fields_from_series(metadata),
         now,
@@ -29,16 +28,16 @@ pub async fn upsert_remote_root_metadata_from_series(
     .await
 }
 
-pub async fn upsert_remote_root_metadata_from_movie(
+pub async fn upsert_remote_node_metadata_from_movie(
     pool: &DatabaseConnection,
-    root_id: &str,
+    node_id: &str,
     provider_id: &str,
     metadata: &MovieMetadata,
     now: i64,
 ) -> anyhow::Result<()> {
-    upsert_remote_root_metadata(
+    upsert_remote_node_metadata(
         pool,
-        root_id,
+        node_id,
         provider_id,
         metadata_fields_from_movie(metadata),
         now,
@@ -46,25 +45,24 @@ pub async fn upsert_remote_root_metadata_from_movie(
     .await
 }
 
-pub async fn overwrite_remote_item_metadata_for_batch(
+pub async fn overwrite_remote_episode_metadata_for_batch(
     pool: &DatabaseConnection,
     provider_id: &str,
-    batch: &[items::Model],
+    batch: &[nodes::Model],
     episodes: &[EpisodeMetadata],
     now: i64,
 ) -> anyhow::Result<()> {
-    let item_ids = batch.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
-    clear_remote_item_metadata_for_batch(pool, &item_ids).await?;
+    let node_ids = batch.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+    clear_remote_node_metadata_for_batch(pool, &node_ids).await?;
 
     for episode in episodes {
-        let Some(item) = batch.iter().find(|item| item.id == episode.item_id) else {
+        let Some(node) = batch.iter().find(|node| node.id == episode.item_id) else {
             continue;
         };
 
-        upsert_remote_item_metadata(
+        upsert_remote_node_metadata(
             pool,
-            &item.root_id,
-            &item.id,
+            &node.id,
             provider_id,
             MetadataFields {
                 imdb_id: None,
@@ -88,18 +86,17 @@ pub async fn overwrite_remote_item_metadata_for_batch(
 pub async fn overwrite_remote_movie_metadata_for_batch(
     pool: &DatabaseConnection,
     provider_id: &str,
-    batch: &[items::Model],
+    batch: &[nodes::Model],
     metadata: &MovieMetadata,
     now: i64,
 ) -> anyhow::Result<()> {
-    let item_ids = batch.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
-    clear_remote_item_metadata_for_batch(pool, &item_ids).await?;
+    let node_ids = batch.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+    clear_remote_node_metadata_for_batch(pool, &node_ids).await?;
 
-    for item in batch {
-        upsert_remote_item_metadata(
+    for node in batch {
+        upsert_remote_node_metadata(
             pool,
-            &item.root_id,
-            &item.id,
+            &node.id,
             provider_id,
             metadata_fields_from_movie(metadata),
             now,
@@ -112,43 +109,43 @@ pub async fn overwrite_remote_movie_metadata_for_batch(
 
 pub async fn overwrite_remote_season_metadata_for_batch(
     pool: &DatabaseConnection,
-    root_id: &str,
     provider_id: &str,
-    batch: &[items::Model],
+    batch: &[nodes::Model],
     seasons_result: &[SeasonMetadata],
     now: i64,
 ) -> anyhow::Result<()> {
-    let batch_season_ids = batch
+    let season_ids = batch
         .iter()
-        .filter_map(|item| item.season_id.clone())
+        .filter_map(|node| node.parent_id.clone())
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    if batch_season_ids.is_empty() {
+    if season_ids.is_empty() {
         return Ok(());
     }
 
-    season_metadata::Entity::delete_many()
-        .filter(season_metadata::Column::SeasonId.is_in(batch_season_ids.clone()))
-        .filter(season_metadata::Column::Source.eq(MetadataSource::Remote))
+    node_metadata::Entity::delete_many()
+        .filter(node_metadata::Column::NodeId.is_in(season_ids.clone()))
+        .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
         .exec(pool)
         .await?;
 
-    let season_number_map = seasons::Entity::find()
-        .filter(seasons::Column::Id.is_in(batch_season_ids))
+    let season_number_map = nodes::Entity::find()
+        .filter(nodes::Column::Id.is_in(season_ids))
+        .filter(nodes::Column::Kind.eq(NodeKind::Season))
         .all(pool)
         .await?
         .into_iter()
-        .map(|season| (season.season_number, season.id))
-        .collect::<HashMap<_, _>>();
+        .filter_map(|node| node.season_number.map(|season_number| (season_number, node.id)))
+        .collect::<std::collections::HashMap<_, _>>();
 
     for season in seasons_result {
         let Some(season_id) = season_number_map.get(&(season.season_number as i64)) else {
             continue;
         };
-        upsert_remote_season_metadata(
+
+        upsert_remote_node_metadata(
             pool,
-            root_id,
             season_id,
             provider_id,
             MetadataFields {
@@ -166,19 +163,21 @@ pub async fn overwrite_remote_season_metadata_for_batch(
         )
         .await?;
     }
+
     Ok(())
 }
 
-pub async fn clear_remote_item_metadata_for_batch(
+pub async fn clear_remote_node_metadata_for_batch(
     pool: &DatabaseConnection,
-    item_ids: &[String],
+    node_ids: &[String],
 ) -> anyhow::Result<()> {
-    if item_ids.is_empty() {
+    if node_ids.is_empty() {
         return Ok(());
     }
-    item_metadata::Entity::delete_many()
-        .filter(item_metadata::Column::ItemId.is_in(item_ids.to_vec()))
-        .filter(item_metadata::Column::Source.eq(MetadataSource::Remote))
+
+    node_metadata::Entity::delete_many()
+        .filter(node_metadata::Column::NodeId.is_in(node_ids.to_vec()))
+        .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
         .exec(pool)
         .await?;
 
@@ -226,9 +225,9 @@ fn metadata_fields_from_movie(metadata: &MovieMetadata) -> MetadataFields {
     }
 }
 
-async fn upsert_remote_root_metadata(
+async fn upsert_remote_node_metadata(
     pool: &DatabaseConnection,
-    root_id: &str,
+    node_id: &str,
     provider_id: &str,
     metadata: MetadataFields,
     now: i64,
@@ -240,8 +239,8 @@ async fn upsert_remote_root_metadata(
     let background_asset_id =
         ensure_remote_asset(pool, metadata.images.background_url.as_deref(), now).await?;
 
-    root_metadata::Entity::insert(root_metadata::ActiveModel {
-        root_id: Set(root_id.to_string()),
+    node_metadata::Entity::insert(node_metadata::ActiveModel {
+        node_id: Set(node_id.to_string()),
         source: Set(MetadataSource::Remote),
         provider_id: Set(provider_id.to_string()),
         imdb_id: Set(metadata.imdb_id),
@@ -260,141 +259,23 @@ async fn upsert_remote_root_metadata(
         ..Default::default()
     })
     .on_conflict(
-        OnConflict::columns([root_metadata::Column::RootId, root_metadata::Column::Source])
+        OnConflict::columns([node_metadata::Column::NodeId, node_metadata::Column::Source])
             .update_columns([
-                root_metadata::Column::ProviderId,
-                root_metadata::Column::ImdbId,
-                root_metadata::Column::TmdbId,
-                root_metadata::Column::Name,
-                root_metadata::Column::Description,
-                root_metadata::Column::ScoreDisplay,
-                root_metadata::Column::ScoreNormalized,
-                root_metadata::Column::ReleasedAt,
-                root_metadata::Column::EndedAt,
-                root_metadata::Column::PosterAssetId,
-                root_metadata::Column::ThumbnailAssetId,
-                root_metadata::Column::BackgroundAssetId,
-                root_metadata::Column::UpdatedAt,
+                node_metadata::Column::ProviderId,
+                node_metadata::Column::ImdbId,
+                node_metadata::Column::TmdbId,
+                node_metadata::Column::Name,
+                node_metadata::Column::Description,
+                node_metadata::Column::ScoreDisplay,
+                node_metadata::Column::ScoreNormalized,
+                node_metadata::Column::ReleasedAt,
+                node_metadata::Column::EndedAt,
+                node_metadata::Column::PosterAssetId,
+                node_metadata::Column::ThumbnailAssetId,
+                node_metadata::Column::BackgroundAssetId,
+                node_metadata::Column::UpdatedAt,
             ])
             .to_owned(),
-    )
-    .exec(pool)
-    .await?;
-    Ok(())
-}
-
-async fn upsert_remote_season_metadata(
-    pool: &DatabaseConnection,
-    root_id: &str,
-    season_id: &str,
-    provider_id: &str,
-    metadata: MetadataFields,
-    now: i64,
-) -> anyhow::Result<()> {
-    let poster_asset_id =
-        ensure_remote_asset(pool, metadata.images.poster_url.as_deref(), now).await?;
-    let thumbnail_asset_id =
-        ensure_remote_asset(pool, metadata.images.thumbnail_url.as_deref(), now).await?;
-    let background_asset_id =
-        ensure_remote_asset(pool, metadata.images.background_url.as_deref(), now).await?;
-
-    season_metadata::Entity::insert(season_metadata::ActiveModel {
-        root_id: Set(root_id.to_string()),
-        season_id: Set(season_id.to_string()),
-        source: Set(MetadataSource::Remote),
-        provider_id: Set(provider_id.to_string()),
-        name: Set(metadata.name),
-        description: Set(metadata.description),
-        score_display: Set(metadata.score_display),
-        score_normalized: Set(metadata.score_normalized),
-        released_at: Set(metadata.released_at),
-        ended_at: Set(metadata.ended_at),
-        poster_asset_id: Set(poster_asset_id),
-        thumbnail_asset_id: Set(thumbnail_asset_id),
-        background_asset_id: Set(background_asset_id),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    })
-    .on_conflict(
-        OnConflict::columns([
-            season_metadata::Column::RootId,
-            season_metadata::Column::SeasonId,
-            season_metadata::Column::Source,
-        ])
-        .update_columns([
-            season_metadata::Column::ProviderId,
-            season_metadata::Column::Name,
-            season_metadata::Column::Description,
-            season_metadata::Column::ScoreDisplay,
-            season_metadata::Column::ScoreNormalized,
-            season_metadata::Column::ReleasedAt,
-            season_metadata::Column::EndedAt,
-            season_metadata::Column::PosterAssetId,
-            season_metadata::Column::ThumbnailAssetId,
-            season_metadata::Column::BackgroundAssetId,
-            season_metadata::Column::UpdatedAt,
-        ])
-        .to_owned(),
-    )
-    .exec(pool)
-    .await?;
-    Ok(())
-}
-
-async fn upsert_remote_item_metadata(
-    pool: &DatabaseConnection,
-    root_id: &str,
-    item_id: &str,
-    provider_id: &str,
-    metadata: MetadataFields,
-    now: i64,
-) -> anyhow::Result<()> {
-    let poster_asset_id =
-        ensure_remote_asset(pool, metadata.images.poster_url.as_deref(), now).await?;
-    let thumbnail_asset_id =
-        ensure_remote_asset(pool, metadata.images.thumbnail_url.as_deref(), now).await?;
-    let background_asset_id =
-        ensure_remote_asset(pool, metadata.images.background_url.as_deref(), now).await?;
-
-    item_metadata::Entity::insert(item_metadata::ActiveModel {
-        root_id: Set(root_id.to_string()),
-        item_id: Set(item_id.to_string()),
-        source: Set(MetadataSource::Remote),
-        provider_id: Set(provider_id.to_string()),
-        name: Set(metadata.name),
-        description: Set(metadata.description),
-        score_display: Set(metadata.score_display),
-        score_normalized: Set(metadata.score_normalized),
-        released_at: Set(metadata.released_at),
-        ended_at: Set(metadata.ended_at),
-        poster_asset_id: Set(poster_asset_id),
-        thumbnail_asset_id: Set(thumbnail_asset_id),
-        background_asset_id: Set(background_asset_id),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    })
-    .on_conflict(
-        OnConflict::columns([
-            item_metadata::Column::RootId,
-            item_metadata::Column::ItemId,
-            item_metadata::Column::Source,
-        ])
-        .update_columns([
-            item_metadata::Column::ProviderId,
-            item_metadata::Column::Name,
-            item_metadata::Column::Description,
-            item_metadata::Column::ScoreDisplay,
-            item_metadata::Column::ScoreNormalized,
-            item_metadata::Column::ReleasedAt,
-            item_metadata::Column::EndedAt,
-            item_metadata::Column::PosterAssetId,
-            item_metadata::Column::ThumbnailAssetId,
-            item_metadata::Column::BackgroundAssetId,
-            item_metadata::Column::UpdatedAt,
-        ])
-        .to_owned(),
     )
     .exec(pool)
     .await?;
@@ -422,12 +303,13 @@ async fn ensure_remote_asset(
         return Ok(Some(existing.id));
     }
 
-    let inserted = assets::ActiveModel {
+    let asset = assets::ActiveModel {
         source_url: Set(Some(source_url.to_string())),
         created_at: Set(now),
         ..Default::default()
     }
     .insert(pool)
     .await?;
-    Ok(Some(inserted.id))
+
+    Ok(Some(asset.id))
 }

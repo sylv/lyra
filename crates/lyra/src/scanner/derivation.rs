@@ -1,65 +1,40 @@
-use crate::entities::{files, items::ItemKind, roots::RootKind};
+use crate::entities::{files, node_closure, node_files, nodes};
 use lyra_parser::ParsedFile;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Component, Path as StdPath};
 
 #[derive(Clone)]
-pub struct DerivedRoot {
+pub struct DerivedNode {
     pub id: String,
-    pub kind: RootKind,
+    pub root_id: String,
+    pub parent_id: Option<String>,
+    pub kind: nodes::NodeKind,
     pub name: String,
+    pub order: i64,
+    pub season_number: Option<i64>,
+    pub episode_number: Option<i64>,
     pub imdb_id: Option<String>,
     pub tmdb_id: Option<i64>,
     pub last_added_at: i64,
 }
 
 #[derive(Clone)]
-pub struct DerivedSeason {
-    pub id: String,
-    pub root_id: String,
-    pub season_number: i64,
-    pub order: i64,
-    pub name: String,
-    pub last_added_at: i64,
-}
-
-#[derive(Clone)]
-pub struct DerivedItem {
-    pub id: String,
-    pub root_id: String,
-    pub season_id: Option<String>,
-    pub kind: ItemKind,
-    pub episode_number: Option<i64>,
-    pub order: i64,
-    pub name: String,
-    pub last_added_at: i64,
-}
-
-#[derive(Clone)]
-pub struct DerivedItemFile {
-    pub item_id: String,
-    pub file_id: i64,
-    pub order: i64,
-}
-
 pub struct DerivedLibraryMedia {
-    pub roots: Vec<DerivedRoot>,
-    pub seasons: Vec<DerivedSeason>,
-    pub items: Vec<DerivedItem>,
-    pub item_files: Vec<DerivedItemFile>,
+    pub nodes: Vec<DerivedNode>,
+    pub node_files: Vec<node_files::Model>,
+    pub closure: Vec<node_closure::Model>,
 }
 
 #[derive(Clone)]
 struct Link {
     file_id: i64,
     size_bytes: i64,
-    discovered_at: i64,
 }
 
 struct RootAcc {
     id: String,
-    kind: RootKind,
+    kind: nodes::NodeKind,
     name: String,
     imdb_id: Option<String>,
     tmdb_id: Option<i64>,
@@ -74,38 +49,46 @@ struct SeasonAcc {
     last_added_at: i64,
 }
 
-struct ItemAcc {
+struct EpisodeAcc {
     id: String,
     root_id: String,
-    season_id: Option<String>,
-    kind: ItemKind,
-    episode_number: Option<i64>,
+    parent_id: Option<String>,
+    episode_number: i64,
     name: String,
+    last_added_at: i64,
+    links: Vec<Link>,
+}
+
+struct MovieAcc {
+    id: String,
+    name: String,
+    imdb_id: Option<String>,
+    tmdb_id: Option<i64>,
     last_added_at: i64,
     links: Vec<Link>,
 }
 
 struct FileRecommendation {
     root_id: String,
-    root_kind: RootKind,
+    root_kind: nodes::NodeKind,
     root_name: String,
     root_imdb_id: Option<String>,
     root_tmdb_id: Option<i64>,
     season: Option<(String, i64, String)>,
-    items: Vec<(String, ItemKind, Option<i64>, String)>,
+    episodes: Vec<(String, i64, String)>,
 }
 
 pub fn derive_library_media(
     library_root: &StdPath,
     input: &[(files::Model, ParsedFile)],
-) -> DerivedLibraryMedia {
+) -> anyhow::Result<DerivedLibraryMedia> {
     let mut roots: HashMap<String, RootAcc> = HashMap::new();
     let mut seasons: HashMap<String, SeasonAcc> = HashMap::new();
-    let mut items: HashMap<String, ItemAcc> = HashMap::new();
+    let mut movies: HashMap<String, MovieAcc> = HashMap::new();
+    let mut episodes: HashMap<String, EpisodeAcc> = HashMap::new();
 
     for (file, parsed) in input {
-        let Some(rec) = derive_file_recommendation(library_root, &file.relative_path, parsed)
-        else {
+        let Some(rec) = derive_file_recommendation(library_root, &file.relative_path, parsed) else {
             continue;
         };
 
@@ -117,201 +100,388 @@ pub fn derive_library_media(
             tmdb_id: rec.root_tmdb_id,
             last_added_at: file.discovered_at,
         });
+        root_entry.last_added_at = root_entry.last_added_at.max(file.discovered_at);
         if root_entry.imdb_id.is_none() {
             root_entry.imdb_id = rec.root_imdb_id.clone();
         }
         if root_entry.tmdb_id.is_none() {
             root_entry.tmdb_id = rec.root_tmdb_id;
         }
-        root_entry.last_added_at = root_entry.last_added_at.max(file.discovered_at);
 
-        if let Some((season_id, season_number, season_name)) = &rec.season {
-            let season_entry = seasons
-                .entry(season_id.clone())
-                .or_insert_with(|| SeasonAcc {
-                    id: season_id.clone(),
-                    root_id: rec.root_id.clone(),
-                    season_number: *season_number,
-                    name: season_name.clone(),
-                    last_added_at: file.discovered_at,
-                });
-            season_entry.last_added_at = season_entry.last_added_at.max(file.discovered_at);
+        if rec.root_kind == nodes::NodeKind::Movie {
+            let movie = movies.entry(rec.root_id.clone()).or_insert_with(|| MovieAcc {
+                id: rec.root_id.clone(),
+                name: rec.root_name.clone(),
+                imdb_id: rec.root_imdb_id.clone(),
+                tmdb_id: rec.root_tmdb_id,
+                last_added_at: file.discovered_at,
+                links: Vec::new(),
+            });
+            movie.last_added_at = movie.last_added_at.max(file.discovered_at);
+            upsert_link(&mut movie.links, file);
+            continue;
         }
 
-        for (item_id, kind, episode_number, name) in rec.items {
-            let season_id = rec.season.as_ref().map(|(id, _, _)| id.clone());
-            let item_entry = items.entry(item_id.clone()).or_insert_with(|| ItemAcc {
-                id: item_id.clone(),
+        if let Some((season_id, season_number, season_name)) = &rec.season {
+            let season = seasons.entry(season_id.clone()).or_insert_with(|| SeasonAcc {
+                id: season_id.clone(),
                 root_id: rec.root_id.clone(),
-                season_id,
-                kind,
+                season_number: *season_number,
+                name: season_name.clone(),
+                last_added_at: file.discovered_at,
+            });
+            season.last_added_at = season.last_added_at.max(file.discovered_at);
+        }
+
+        for (episode_id, episode_number, name) in rec.episodes {
+            let episode = episodes.entry(episode_id.clone()).or_insert_with(|| EpisodeAcc {
+                id: episode_id.clone(),
+                root_id: rec.root_id.clone(),
+                parent_id: rec.season.as_ref().map(|(id, _, _)| id.clone()),
                 episode_number,
                 name,
                 last_added_at: file.discovered_at,
                 links: Vec::new(),
             });
+            episode.last_added_at = episode.last_added_at.max(file.discovered_at);
+            upsert_link(&mut episode.links, file);
+        }
+    }
 
-            item_entry.last_added_at = item_entry.last_added_at.max(file.discovered_at);
-            if let Some(existing_link) = item_entry
-                .links
-                .iter_mut()
-                .find(|link| link.file_id == file.id)
-            {
-                existing_link.size_bytes = file.size_bytes;
-                existing_link.discovered_at = file.discovered_at;
-            } else {
-                item_entry.links.push(Link {
-                    file_id: file.id,
-                    size_bytes: file.size_bytes,
-                    discovered_at: file.discovered_at,
+    movies.retain(|_, movie| !movie.links.is_empty());
+    episodes.retain(|_, episode| !episode.links.is_empty());
+
+    let mut nodes = Vec::new();
+    let mut node_file_rows = Vec::new();
+
+    let mut root_ids = roots.keys().cloned().collect::<BTreeSet<_>>();
+    root_ids.extend(movies.keys().cloned());
+
+    for root_id in root_ids {
+        let Some(root) = roots.get(&root_id) else {
+            continue;
+        };
+
+        nodes.push(DerivedNode {
+            id: root.id.clone(),
+            root_id: root.id.clone(),
+            parent_id: None,
+            kind: root.kind,
+            name: root.name.clone(),
+            order: 0,
+            season_number: None,
+            episode_number: None,
+            imdb_id: root.imdb_id.clone(),
+            tmdb_id: root.tmdb_id,
+            last_added_at: root.last_added_at,
+        });
+
+        if root.kind == nodes::NodeKind::Movie {
+            let Some(movie) = movies.get(&root.id) else {
+                continue;
+            };
+            for (order, link) in sorted_links(&movie.links).into_iter().enumerate() {
+                node_file_rows.push(node_files::Model {
+                    node_id: movie.id.clone(),
+                    file_id: link.file_id,
+                    order: order as i64,
+                    created_at: 0,
+                    updated_at: 0,
                 });
             }
+            continue;
         }
-    }
 
-    // Remove malformed accumulated items (items without file links).
-    items.retain(|_, item| !item.links.is_empty());
-
-    // Recompute root and season rollups from item links.
-    let mut root_last_added: HashMap<String, i64> = HashMap::new();
-    let mut season_last_added: HashMap<String, i64> = HashMap::new();
-    for item in items.values() {
-        root_last_added
-            .entry(item.root_id.clone())
-            .and_modify(|value| *value = (*value).max(item.last_added_at))
-            .or_insert(item.last_added_at);
-
-        if let Some(season_id) = &item.season_id {
-            season_last_added
-                .entry(season_id.clone())
-                .and_modify(|value| *value = (*value).max(item.last_added_at))
-                .or_insert(item.last_added_at);
-        }
-    }
-
-    roots.retain(|id, root| {
-        if let Some(last_added) = root_last_added.get(id) {
-            root.last_added_at = *last_added;
-            true
-        } else {
-            false
-        }
-    });
-
-    seasons.retain(|id, season| {
-        if let Some(last_added) = season_last_added.get(id) {
-            season.last_added_at = *last_added;
-            true
-        } else {
-            false
-        }
-    });
-
-    let mut season_order_lookup: HashMap<String, i64> = HashMap::new();
-    let mut seasons_by_root: BTreeMap<String, Vec<&SeasonAcc>> = BTreeMap::new();
-    for season in seasons.values() {
-        seasons_by_root
-            .entry(season.root_id.clone())
-            .or_default()
-            .push(season);
-    }
-
-    let mut derived_seasons = Vec::new();
-    for root_seasons in seasons_by_root.values_mut() {
+        let mut order = 1_i64;
+        let mut root_seasons = seasons
+            .values()
+            .filter(|season| season.root_id == root.id)
+            .collect::<Vec<_>>();
         root_seasons.sort_by(|a, b| {
             a.season_number
                 .cmp(&b.season_number)
                 .then_with(|| a.id.cmp(&b.id))
         });
 
-        for (index, season) in root_seasons.iter().enumerate() {
-            let order = index as i64;
-            season_order_lookup.insert(season.id.clone(), order);
-            derived_seasons.push(DerivedSeason {
-                id: season.id.clone(),
-                root_id: season.root_id.clone(),
-                season_number: season.season_number,
-                order,
-                name: season.name.clone(),
-                last_added_at: season.last_added_at,
-            });
-        }
-    }
-
-    let mut items_by_root: BTreeMap<String, Vec<&ItemAcc>> = BTreeMap::new();
-    for item in items.values() {
-        items_by_root
-            .entry(item.root_id.clone())
-            .or_default()
-            .push(item);
-    }
-
-    let mut derived_items = Vec::new();
-    let mut derived_item_files = Vec::new();
-
-    for root_items in items_by_root.values_mut() {
-        root_items.sort_by(|a, b| {
-            item_sort_key(a, &season_order_lookup)
-                .cmp(&item_sort_key(b, &season_order_lookup))
+        let mut root_episodes = episodes
+            .values()
+            .filter(|episode| episode.root_id == root.id)
+            .collect::<Vec<_>>();
+        root_episodes.sort_by(|a, b| {
+            a.episode_number
+                .cmp(&b.episode_number)
                 .then_with(|| a.id.cmp(&b.id))
         });
 
-        for (index, item) in root_items.iter().enumerate() {
-            let mut links = item.links.clone();
-            links.sort_by(|a, b| {
-                item_file_order_for_size(b.size_bytes)
-                    .cmp(&item_file_order_for_size(a.size_bytes))
-                    .then_with(|| a.file_id.cmp(&b.file_id))
-            });
-
-            for link in &links {
-                derived_item_files.push(DerivedItemFile {
-                    item_id: item.id.clone(),
-                    file_id: link.file_id,
-                    order: item_file_order_for_size(link.size_bytes),
+        if !root_seasons.is_empty() {
+            for season in root_seasons {
+                nodes.push(DerivedNode {
+                    id: season.id.clone(),
+                    root_id: root.id.clone(),
+                    parent_id: Some(root.id.clone()),
+                    kind: nodes::NodeKind::Season,
+                    name: season.name.clone(),
+                    order,
+                    season_number: Some(season.season_number),
+                    episode_number: None,
+                    imdb_id: None,
+                    tmdb_id: None,
+                    last_added_at: season.last_added_at,
                 });
-            }
+                order += 1;
 
-            derived_items.push(DerivedItem {
-                id: item.id.clone(),
-                root_id: item.root_id.clone(),
-                season_id: item.season_id.clone(),
-                kind: item.kind,
-                episode_number: item.episode_number,
-                order: index as i64,
-                name: item.name.clone(),
-                last_added_at: item.last_added_at,
-            });
+                let mut season_episodes = episodes
+                    .values()
+                    .filter(|episode| episode.parent_id.as_deref() == Some(season.id.as_str()))
+                    .collect::<Vec<_>>();
+                season_episodes.sort_by(|a, b| {
+                    a.episode_number
+                        .cmp(&b.episode_number)
+                        .then_with(|| a.id.cmp(&b.id))
+                });
+
+                for episode in season_episodes {
+                    nodes.push(DerivedNode {
+                        id: episode.id.clone(),
+                        root_id: root.id.clone(),
+                        parent_id: Some(season.id.clone()),
+                        kind: nodes::NodeKind::Episode,
+                        name: episode.name.clone(),
+                        order,
+                        season_number: Some(season.season_number),
+                        episode_number: Some(episode.episode_number),
+                        imdb_id: None,
+                        tmdb_id: None,
+                        last_added_at: episode.last_added_at,
+                    });
+                    order += 1;
+
+                    for (file_order, link) in sorted_links(&episode.links).into_iter().enumerate() {
+                        node_file_rows.push(node_files::Model {
+                            node_id: episode.id.clone(),
+                            file_id: link.file_id,
+                            order: file_order as i64,
+                            created_at: 0,
+                            updated_at: 0,
+                        });
+                    }
+                }
+            }
+        } else {
+            for episode in root_episodes {
+                nodes.push(DerivedNode {
+                    id: episode.id.clone(),
+                    root_id: root.id.clone(),
+                    parent_id: Some(root.id.clone()),
+                    kind: nodes::NodeKind::Episode,
+                    name: episode.name.clone(),
+                    order,
+                    season_number: None,
+                    episode_number: Some(episode.episode_number),
+                    imdb_id: None,
+                    tmdb_id: None,
+                    last_added_at: episode.last_added_at,
+                });
+                order += 1;
+
+                for (file_order, link) in sorted_links(&episode.links).into_iter().enumerate() {
+                    node_file_rows.push(node_files::Model {
+                        node_id: episode.id.clone(),
+                        file_id: link.file_id,
+                        order: file_order as i64,
+                        created_at: 0,
+                        updated_at: 0,
+                    });
+                }
+            }
         }
     }
 
-    let mut derived_roots = roots
-        .into_values()
-        .map(|root| DerivedRoot {
-            id: root.id,
-            kind: root.kind,
-            name: root.name,
-            imdb_id: root.imdb_id,
-            tmdb_id: root.tmdb_id,
-            last_added_at: root.last_added_at,
-        })
-        .collect::<Vec<_>>();
-
-    derived_roots.sort_by(|a, b| a.id.cmp(&b.id));
-    derived_seasons.sort_by(|a, b| a.id.cmp(&b.id));
-    derived_items.sort_by(|a, b| a.id.cmp(&b.id));
-    derived_item_files.sort_by(|a, b| {
-        a.item_id
-            .cmp(&b.item_id)
-            .then_with(|| a.file_id.cmp(&b.file_id))
+    // keep inserts topological so sqlite's immediate node/root foreign keys always see parents first
+    nodes.sort_by(|a, b| {
+        a.root_id
+            .cmp(&b.root_id)
+            .then_with(|| a.order.cmp(&b.order))
+            .then_with(|| a.id.cmp(&b.id))
     });
+    node_file_rows.sort_by(|a, b| a.node_id.cmp(&b.node_id).then_with(|| a.file_id.cmp(&b.file_id)));
 
-    DerivedLibraryMedia {
-        roots: derived_roots,
-        seasons: derived_seasons,
-        items: derived_items,
-        item_files: derived_item_files,
+    let closure = build_closure_rows(&nodes)?;
+    verify_nodes(&nodes, &node_file_rows, &closure)?;
+
+    Ok(DerivedLibraryMedia {
+        nodes,
+        node_files: node_file_rows,
+        closure,
+    })
+}
+
+fn upsert_link(links: &mut Vec<Link>, file: &files::Model) {
+    if let Some(link) = links.iter_mut().find(|link| link.file_id == file.id) {
+        link.size_bytes = file.size_bytes;
+    } else {
+        links.push(Link {
+            file_id: file.id,
+            size_bytes: file.size_bytes,
+        });
     }
+}
+
+fn sorted_links(links: &[Link]) -> Vec<Link> {
+    let mut links = links.to_vec();
+    links.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes).then_with(|| a.file_id.cmp(&b.file_id)));
+    links
+}
+
+fn build_closure_rows(nodes: &[DerivedNode]) -> anyhow::Result<Vec<node_closure::Model>> {
+    let by_id = nodes
+        .iter()
+        .map(|node| (node.id.clone(), node))
+        .collect::<HashMap<_, _>>();
+    let mut rows = Vec::new();
+
+    for node in nodes {
+        let mut current = Some(node.id.clone());
+        let mut depth = 0_i64;
+        while let Some(descendant_id) = current {
+            let Some(cursor) = by_id.get(&descendant_id) else {
+                anyhow::bail!("closure build missing node {descendant_id}");
+            };
+
+            rows.push(node_closure::Model {
+                ancestor_id: descendant_id.clone(),
+                descendant_id: node.id.clone(),
+                depth,
+            });
+            current = cursor.parent_id.clone();
+            depth += 1;
+        }
+    }
+
+    rows.sort_by(|a, b| {
+        a.ancestor_id
+            .cmp(&b.ancestor_id)
+            .then_with(|| a.descendant_id.cmp(&b.descendant_id))
+    });
+    Ok(rows)
+}
+
+pub fn verify_nodes(
+    nodes: &[DerivedNode],
+    node_files: &[node_files::Model],
+    closure: &[node_closure::Model],
+) -> anyhow::Result<()> {
+    let by_id = nodes
+        .iter()
+        .map(|node| (node.id.clone(), node))
+        .collect::<HashMap<_, _>>();
+    let mut seen_root_order = BTreeSet::new();
+    let mut season_keys = BTreeSet::new();
+    let mut episode_keys = BTreeSet::new();
+    let mut child_kinds: HashMap<String, BTreeSet<nodes::NodeKind>> = HashMap::new();
+
+    for node in nodes {
+        if !seen_root_order.insert((node.root_id.clone(), node.order)) {
+            anyhow::bail!("duplicate root/order for node {}", node.id);
+        }
+
+        match node.kind {
+            nodes::NodeKind::Movie | nodes::NodeKind::Series => {
+                if node.parent_id.is_some() || node.root_id != node.id {
+                    anyhow::bail!("root node {} has invalid parent/root_id", node.id);
+                }
+            }
+            nodes::NodeKind::Season => {
+                if node.season_number.is_none() || node.episode_number.is_some() {
+                    anyhow::bail!("season node {} has invalid numbers", node.id);
+                }
+                let parent_id = node.parent_id.as_ref().ok_or_else(|| anyhow::anyhow!("season {} missing parent", node.id))?;
+                let parent = by_id.get(parent_id).ok_or_else(|| anyhow::anyhow!("season {} missing parent node", node.id))?;
+                if parent.kind != nodes::NodeKind::Series {
+                    anyhow::bail!("season {} parent must be series", node.id);
+                }
+                if !season_keys.insert((parent_id.clone(), node.season_number.unwrap())) {
+                    anyhow::bail!("duplicate season number under {}", parent_id);
+                }
+            }
+            nodes::NodeKind::Episode => {
+                // episodes under seasons carry both season and episode numbers, while episodes
+                // directly under a series only carry an episode number.
+                if node.episode_number.is_none() {
+                    anyhow::bail!("episode node {} has invalid numbers", node.id);
+                }
+                let parent_id = node.parent_id.as_ref().ok_or_else(|| anyhow::anyhow!("episode {} missing parent", node.id))?;
+                let parent = by_id.get(parent_id).ok_or_else(|| anyhow::anyhow!("episode {} missing parent node", node.id))?;
+                if !matches!(parent.kind, nodes::NodeKind::Series | nodes::NodeKind::Season) {
+                    anyhow::bail!("episode {} parent must be series or season", node.id);
+                }
+                match parent.kind {
+                    nodes::NodeKind::Season => {
+                        if node.season_number != parent.season_number {
+                            anyhow::bail!("episode {} season number does not match parent", node.id);
+                        }
+                    }
+                    nodes::NodeKind::Series => {
+                        if node.season_number.is_some() {
+                            anyhow::bail!("episode {} under series cannot have season number", node.id);
+                        }
+                    }
+                    _ => {}
+                }
+                if !episode_keys.insert((parent_id.clone(), node.episode_number.unwrap())) {
+                    anyhow::bail!("duplicate episode number under {}", parent_id);
+                }
+            }
+        }
+
+        if let Some(parent_id) = &node.parent_id {
+            child_kinds.entry(parent_id.clone()).or_default().insert(node.kind);
+        }
+
+        if let Some(parent_id) = &node.parent_id {
+            let mut cursor = by_id.get(parent_id).ok_or_else(|| anyhow::anyhow!("missing parent {}", parent_id))?;
+            while let Some(next_parent_id) = &cursor.parent_id {
+                cursor = by_id.get(next_parent_id).ok_or_else(|| anyhow::anyhow!("missing ancestor {}", next_parent_id))?;
+            }
+            if cursor.id != node.root_id {
+                anyhow::bail!("node {} root_id does not match top ancestor", node.id);
+            }
+        }
+    }
+
+    for node in nodes {
+        let kinds = child_kinds.get(&node.id).cloned().unwrap_or_default();
+        if matches!(node.kind, nodes::NodeKind::Movie | nodes::NodeKind::Episode) && !kinds.is_empty() {
+            anyhow::bail!("playable node {} has children", node.id);
+        }
+        if node.kind == nodes::NodeKind::Series
+            && kinds.contains(&nodes::NodeKind::Season)
+            && kinds.contains(&nodes::NodeKind::Episode)
+        {
+            anyhow::bail!("series {} mixes season and episode children", node.id);
+        }
+    }
+
+    for link in node_files {
+        let Some(node) = by_id.get(&link.node_id) else {
+            anyhow::bail!("node_files references missing node {}", link.node_id);
+        };
+        if !matches!(node.kind, nodes::NodeKind::Movie | nodes::NodeKind::Episode) {
+            anyhow::bail!("node_files references non-playable node {}", node.id);
+        }
+    }
+
+    let closure_set = closure
+        .iter()
+        .map(|row| (row.ancestor_id.clone(), row.descendant_id.clone(), row.depth))
+        .collect::<BTreeSet<_>>();
+    for node in nodes {
+        if !closure_set.contains(&(node.id.clone(), node.id.clone(), 0)) {
+            anyhow::bail!("node {} missing self closure row", node.id);
+        }
+    }
+
+    Ok(())
 }
 
 fn derive_file_recommendation(
@@ -338,29 +508,21 @@ fn derive_file_recommendation(
     let season_number = parsed_season_number(parsed);
     let episode_numbers = parsed_episode_numbers(parsed);
     let root_kind = if season_number.is_some() || !episode_numbers.is_empty() {
-        RootKind::Series
+        nodes::NodeKind::Series
     } else if parsed.start_year.is_some() {
-        RootKind::Movie
+        nodes::NodeKind::Movie
     } else {
-        tracing::warn!(
-            relative_path,
-            root = %library_root.display(),
-            "could not determine whether file is a movie or series, skipping"
-        );
+        tracing::warn!(relative_path, root = %library_root.display(), "could not determine media kind");
         return None;
     };
 
     let Some(title) = parsed_title(parsed) else {
-        tracing::warn!(relative_path, "file is missing a parsed title, skipping");
+        tracing::warn!(relative_path, "file is missing a parsed title");
         return None;
     };
 
-    let lower_title = title.to_lowercase();
-    let kind_str = format!("{:?}", root_kind);
-    let root_id = hash_id("r", &[&first_dir_past_root_dir, &kind_str, &lower_title]);
-
-    if root_kind == RootKind::Movie {
-        let item_id = hash_id("i", &[&root_id, "movie"]);
+    let root_id = hash_id("n", &[&first_dir_past_root_dir, &format!("{root_kind:?}"), &title.to_lowercase()]);
+    if root_kind == nodes::NodeKind::Movie {
         return Some(FileRecommendation {
             root_id,
             root_kind,
@@ -368,20 +530,12 @@ fn derive_file_recommendation(
             root_imdb_id: parsed.imdb_id.clone(),
             root_tmdb_id: parsed.tmdb_id.and_then(|value| i64::try_from(value).ok()),
             season: None,
-            items: vec![(item_id, ItemKind::Movie, None, title.to_string())],
+            episodes: Vec::new(),
         });
     }
 
-    if episode_numbers.is_empty() {
-        tracing::warn!(
-            relative_path,
-            "file was detected as a series entry but has no parsed episode numbers"
-        );
-        return None;
-    }
-
     let season = season_number.map(|num| {
-        let season_id = hash_id("s", &[&root_id, &format!("season {num}")]);
+        let season_id = hash_id("n", &[&root_id, &format!("season {num}")]);
         (season_id, i64::from(num), format!("Season {num}"))
     });
 
@@ -390,19 +544,6 @@ fn derive_file_recommendation(
         .map(|(id, _, _)| id.clone())
         .unwrap_or_else(|| root_id.clone());
 
-    let items = episode_numbers
-        .into_iter()
-        .map(|episode_number| {
-            let item_id = hash_id("i", &[&lineage_id, &format!("episode {episode_number}")]);
-            (
-                item_id,
-                ItemKind::Episode,
-                Some(i64::from(episode_number)),
-                parsed_episode_name(parsed, episode_number),
-            )
-        })
-        .collect::<Vec<_>>();
-
     Some(FileRecommendation {
         root_id,
         root_kind,
@@ -410,34 +551,17 @@ fn derive_file_recommendation(
         root_imdb_id: parsed.imdb_id.clone(),
         root_tmdb_id: parsed.tmdb_id.and_then(|value| i64::try_from(value).ok()),
         season,
-        items,
+        episodes: episode_numbers
+            .into_iter()
+            .map(|episode_number| {
+                (
+                    hash_id("n", &[&lineage_id, &format!("episode {episode_number}")]),
+                    i64::from(episode_number),
+                    parsed_episode_name(parsed, episode_number),
+                )
+            })
+            .collect(),
     })
-}
-
-fn item_sort_key(
-    item: &ItemAcc,
-    season_order_lookup: &HashMap<String, i64>,
-) -> (i64, i64, i64, String) {
-    match item.kind {
-        ItemKind::Movie => (0, -1, -1, item.id.clone()),
-        ItemKind::Episode => {
-            let season_order = item
-                .season_id
-                .as_ref()
-                .and_then(|season_id| season_order_lookup.get(season_id).copied())
-                .unwrap_or(-1);
-            (
-                1,
-                season_order,
-                item.episode_number.unwrap_or(i64::MAX),
-                item.id.clone(),
-            )
-        }
-    }
-}
-
-fn item_file_order_for_size(size_bytes: i64) -> i64 {
-    -size_bytes
 }
 
 fn parsed_title(parsed: &ParsedFile) -> Option<&str> {
@@ -483,5 +607,5 @@ fn hash_id(prefix: &str, parts: &[&str]) -> String {
     }
     let result = hasher.finalize();
     let hex = hex::encode(result);
-    format!("{}_{}", prefix, &hex[..16])
+    format!("{prefix}_{}", &hex[..16])
 }

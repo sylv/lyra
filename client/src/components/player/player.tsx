@@ -6,7 +6,7 @@ import { ChevronDown, Loader2, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FC } from "react";
 import { useStore } from "zustand/react";
 import { graphql } from "../../@generated/gql";
-import { getPathForItemData } from "../../lib/getPathForMedia";
+import { getPathForNodeData } from "../../lib/getPathForMedia";
 import { cn } from "../../lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { PlayerButton } from "./components/player-button";
@@ -111,18 +111,17 @@ const UpdateWatchState = graphql(`
 
 const ItemPlaybackQuery = graphql(`
 	query ItemPlayback($itemId: String!) {
-		item(itemId: $itemId) {
+		node(nodeId: $itemId) {
 			id
+			libraryId
 			kind
 			name
-			rootId
-			seasonId
 			properties {
 				seasonNumber
 				episodeNumber
 				runtimeMinutes
 			}
-			parent {
+			root {
 				name
 				libraryId
 			}
@@ -150,10 +149,10 @@ const ItemPlaybackQuery = graphql(`
 					}
 				}
 			}
-			previousItem {
+			previousPlayable {
 				id
 			}
-			nextItem {
+			nextPlayable {
 				id
 			}
 		}
@@ -200,7 +199,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		},
 	});
 	// Keep the previous item mounted while loading the next/previous item so browser fullscreen is preserved.
-	const currentMedia = data?.item ?? (isItemLoading ? previousData?.item : null) ?? null;
+	const currentMedia = data?.node ?? (isItemLoading ? previousData?.node : null) ?? null;
 	const introSegment = useMemo(() => {
 		const segments = currentMedia?.file?.segments;
 		if (!Array.isArray(segments)) {
@@ -748,7 +747,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	};
 
 	const onPreviousItem = () => {
-		const previousItemId = (currentMedia?.previousItem as { id: string } | null)?.id;
+		const previousItemId = (currentMedia?.previousPlayable as { id: string } | null)?.id;
 		if (!previousItemId) {
 			return;
 		}
@@ -757,7 +756,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	};
 
 	const onNextItem = () => {
-		const nextItemId = (currentMedia?.nextItem as { id: string } | null)?.id;
+		const nextItemId = (currentMedia?.nextPlayable as { id: string } | null)?.id;
 		if (!nextItemId) {
 			return;
 		}
@@ -770,7 +769,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	}
 
 	const miniPlayerAspectRatio = Math.max(videoAspectRatio, 16 / 9);
-	const detailsPath = currentMedia.parent?.libraryId ? getPathForItemData(currentMedia) : null;
+	const detailsPath = currentMedia?.libraryId ? getPathForNodeData(currentMedia) : null;
 	const timelinePreviewSheets = Array.isArray(currentMedia.file?.timelinePreview)
 		? currentMedia.file.timelinePreview
 		: [];
@@ -850,7 +849,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 								<ChevronDown className="size-6" />
 							</PlayerButton>
 						)}
-						{currentMedia.parent?.name &&
+						{currentMedia.root?.name &&
 						currentMedia.properties.seasonNumber &&
 						currentMedia.properties.episodeNumber ? (
 							<button
@@ -868,7 +867,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 								}}
 							>
 								<h2 className="text-xl font-semibold group-hover:underline">
-									{currentMedia.parent.name}: Season {currentMedia.properties.seasonNumber}
+									{currentMedia.root.name}: Season {currentMedia.properties.seasonNumber}
 								</h2>
 								<p className="text-sm text-gray-300">
 									Episode {currentMedia.properties.episodeNumber}: {currentMedia.name}
@@ -927,8 +926,8 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 					isMuted={isMuted}
 					onSeek={onSeek}
 					onTogglePlaying={onTogglePlaying}
-					hasPreviousItem={!!currentMedia.previousItem}
-					hasNextItem={!!currentMedia.nextItem}
+					hasPreviousItem={!!currentMedia.previousPlayable}
+					hasNextItem={!!currentMedia.nextPlayable}
 					onPreviousItem={onPreviousItem}
 					onNextItem={onNextItem}
 					onToggleMute={onToggleMute}

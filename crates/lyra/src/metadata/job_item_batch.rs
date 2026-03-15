@@ -1,41 +1,34 @@
-use crate::entities::{
-    items, jobs as jobs_entity,
-    roots::{self, RootKind},
-    seasons,
-};
-use crate::jobs::{
-    JobExecutionPolicy, JobHandler, JobTarget, ROOT_ID_COLUMN, SEASON_ID_COLUMN, VERSION_KEY_COLUMN,
-};
+use crate::entities::{jobs as jobs_entity, nodes, nodes::NodeKind};
+use crate::jobs::{JobExecutionPolicy, JobHandler, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN};
 use crate::metadata::METADATA_RETRY_BACKOFF_SECONDS;
 use crate::metadata::job_root::{StoredRootMatchCandidate, decode_root_candidates};
 use crate::metadata::store::{
-    clear_remote_item_metadata_for_batch, overwrite_remote_item_metadata_for_batch,
+    clear_remote_node_metadata_for_batch, overwrite_remote_episode_metadata_for_batch,
     overwrite_remote_movie_metadata_for_batch, overwrite_remote_season_metadata_for_batch,
 };
 use anyhow::Context;
 use lyra_metadata::{MetadataProvider, SeriesCandidate, SeriesItem, SeriesItemsRequest};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, JoinType, QueryFilter, QueryOrder, QuerySelect,
-    RelationTrait,
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     sea_query::{Expr, SelectStatement},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-pub struct RootMetadataMatchGroupsJob {
+pub struct NodeMetadataMatchGroupsJob {
     providers: Vec<Arc<dyn MetadataProvider>>,
 }
 
-impl RootMetadataMatchGroupsJob {
+impl NodeMetadataMatchGroupsJob {
     pub fn new(providers: Vec<Arc<dyn MetadataProvider>>) -> Self {
         Self { providers }
     }
 }
 
 #[async_trait::async_trait]
-impl JobHandler for RootMetadataMatchGroupsJob {
+impl JobHandler for NodeMetadataMatchGroupsJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::RootMatchMetadataGroups
+        jobs_entity::JobKind::NodeMatchMetadataGroups
     }
 
     fn execution_policy(&self) -> JobExecutionPolicy {
@@ -43,23 +36,26 @@ impl JobHandler for RootMetadataMatchGroupsJob {
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = items::Entity::find()
-            .join(JoinType::InnerJoin, items::Relation::Roots.def())
+        let mut query = nodes::Entity::find()
             .select_only()
-            .column_as(items::Column::RootId, ROOT_ID_COLUMN)
-            .column_as(items::Column::SeasonId, SEASON_ID_COLUMN)
+            .column_as(nodes::Column::Id, NODE_ID_COLUMN)
             .column_as(
-                Expr::expr(Expr::col((items::Entity, items::Column::LastAddedAt)).max())
-                    .add(Expr::col((roots::Entity, roots::Column::UpdatedAt))),
+                Expr::col(nodes::Column::LastAddedAt).add(Expr::col(nodes::Column::UpdatedAt)),
                 VERSION_KEY_COLUMN,
             )
-            .filter(roots::Column::MatchCandidatesJson.is_not_null())
-            .group_by(items::Column::RootId)
-            .group_by(items::Column::SeasonId)
-            .order_by_asc(items::Column::RootId)
-            .order_by_asc(items::Column::SeasonId);
+            .filter(nodes::Column::MatchCandidatesJson.is_not_null())
+            .filter(
+                nodes::Column::Kind
+                    .eq(NodeKind::Season)
+                    .or(nodes::Column::Kind
+                        .eq(NodeKind::Series)
+                        .and(nodes::Column::ParentId.is_null())),
+            )
+            .order_by_asc(nodes::Column::RootId)
+            .order_by_asc(nodes::Column::Order)
+            .order_by_asc(nodes::Column::Id);
 
-        (JobTarget::Root, QuerySelect::query(&mut query).to_owned())
+        (JobTarget::Node, QuerySelect::query(&mut query).to_owned())
     }
 
     async fn execute(
@@ -67,23 +63,28 @@ impl JobHandler for RootMetadataMatchGroupsJob {
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
-        let root_id = job
-            .root_id
+        let node_id = job
+            .node_id
             .as_deref()
-            .with_context(|| format!("job {} missing root_id", job.id))?
+            .with_context(|| format!("job {} missing node_id", job.id))?
             .to_string();
-        let season_id = job.season_id.clone();
 
-        let Some(root) = roots::Entity::find_by_id(root_id.clone()).one(pool).await? else {
+        let Some(group_node) = nodes::Entity::find_by_id(node_id.clone()).one(pool).await? else {
+            return Ok(());
+        };
+        let Some(root_node) = nodes::Entity::find_by_id(group_node.root_id.clone())
+            .one(pool)
+            .await?
+        else {
             return Ok(());
         };
 
-        let group_items = load_group_items(pool, &root_id, season_id.as_deref()).await?;
+        let group_items = load_group_items(pool, &group_node).await?;
         if group_items.is_empty() {
             return Ok(());
         }
 
-        let candidates = decode_root_candidates(root.match_candidates_json.as_deref())?;
+        let candidates = decode_root_candidates(root_node.match_candidates_json.as_deref())?;
         if candidates.is_empty() {
             return Ok(());
         }
@@ -94,8 +95,8 @@ impl JobHandler for RootMetadataMatchGroupsJob {
                 continue;
             };
 
-            match (root.kind, candidate) {
-                (RootKind::Movie, StoredRootMatchCandidate::Movie(candidate)) => {
+            match (root_node.kind, candidate) {
+                (NodeKind::Movie, StoredRootMatchCandidate::Movie(candidate)) => {
                     match provider.lookup_movie_metadata(candidate).await {
                         Ok(metadata) => {
                             if let Err(error) = overwrite_remote_movie_metadata_for_batch(
@@ -108,99 +109,60 @@ impl JobHandler for RootMetadataMatchGroupsJob {
                             .await
                             {
                                 failures.push(format!(
-                                    "provider {} failed to write movie batch for root {}: {error:#}",
+                                    "provider {} failed to write movie batch for node {}: {error:#}",
                                     provider.id(),
-                                    root.id
+                                    root_node.id
                                 ));
                             }
                         }
                         Err(error) => failures.push(format!(
-                            "provider {} failed to lookup movie metadata for root {}: {error:#}",
+                            "provider {} failed to lookup movie metadata for node {}: {error:#}",
                             provider.id(),
-                            root.id
+                            root_node.id
                         )),
                     }
                 }
-                (RootKind::Series, StoredRootMatchCandidate::Series(candidate)) => {
+                (NodeKind::Series, StoredRootMatchCandidate::Series(candidate)) => {
                     match match_series_group(
                         pool,
                         provider.as_ref(),
                         provider.id(),
-                        &root.id,
+                        &group_node,
                         candidate,
                         &group_items,
                     )
                     .await
                     {
                         Ok(summary) => {
-                            if !summary.unmatched_item_ids.is_empty() {
+                            if !summary.unmatched_node_ids.is_empty() {
                                 failures.push(format!(
-                                    "provider {} left {} unmatched items in root {}{}",
+                                    "provider {} left {} unmatched playable nodes under {}",
                                     provider.id(),
-                                    summary.unmatched_item_ids.len(),
-                                    root.id,
-                                    summary
-                                        .season_id
-                                        .as_deref()
-                                        .map(|season_id| format!(", season {}", season_id))
-                                        .unwrap_or_default()
+                                    summary.unmatched_node_ids.len(),
+                                    group_node.id
                                 ));
                             }
                         }
                         Err(error) => failures.push(format!(
-                            "provider {} failed to match series group for root {}{}: {error:#}",
+                            "provider {} failed to match node group {}: {error:#}",
                             provider.id(),
-                            root.id,
-                            season_id
-                                .as_deref()
-                                .map(|season_id| format!(", season {}", season_id))
-                                .unwrap_or_default()
+                            group_node.id,
                         )),
                     }
                 }
-                (root_kind, match_candidate) => {
-                    tracing::warn!(
-                        root_id = %root.id,
-                        provider_id = provider.id(),
-                        season_id,
-                        root_kind = ?root_kind,
-                        match_candidate = ?match_candidate,
-                        "root kind and stored root candidate mismatch"
-                    );
-
-                    let item_ids = group_items
+                _ => {
+                    let node_ids = group_items
                         .iter()
-                        .map(|item| item.id.clone())
+                        .map(|node| node.id.clone())
                         .collect::<Vec<_>>();
-                    if let Err(error) = clear_remote_item_metadata_for_batch(pool, &item_ids).await
+                    if let Err(error) = clear_remote_node_metadata_for_batch(pool, &node_ids).await
                     {
                         failures.push(format!(
-                            "provider {} failed to clear mismatched item metadata for root {}: {error:#}",
+                            "provider {} failed to clear mismatched node metadata for {}: {error:#}",
                             provider.id(),
-                            root.id
+                            group_node.id
                         ));
                     }
-                    if let Err(error) = overwrite_remote_season_metadata_for_batch(
-                        pool,
-                        &root.id,
-                        provider.id(),
-                        &group_items,
-                        &[],
-                        chrono::Utc::now().timestamp(),
-                    )
-                    .await
-                    {
-                        failures.push(format!(
-                            "provider {} failed to clear mismatched season metadata for root {}: {error:#}",
-                            provider.id(),
-                            root.id
-                        ));
-                    }
-                    failures.push(format!(
-                        "provider {} has root/candidate kind mismatch for root {}",
-                        provider.id(),
-                        root.id
-                    ));
                 }
             }
         }
@@ -218,18 +180,25 @@ impl JobHandler for RootMetadataMatchGroupsJob {
 
 async fn load_group_items(
     pool: &DatabaseConnection,
-    root_id: &str,
-    season_id: Option<&str>,
-) -> anyhow::Result<Vec<items::Model>> {
-    let mut query = items::Entity::find()
-        .filter(items::Column::RootId.eq(root_id.to_string()))
-        .order_by_asc(items::Column::Order)
-        .order_by_asc(items::Column::Id);
+    group_node: &nodes::Model,
+) -> anyhow::Result<Vec<nodes::Model>> {
+    let mut query = nodes::Entity::find()
+        .filter(nodes::Column::RootId.eq(group_node.root_id.clone()))
+        .filter(
+            nodes::Column::Kind
+                .eq(NodeKind::Episode)
+                .or(nodes::Column::Kind.eq(NodeKind::Movie)),
+        )
+        .order_by_asc(nodes::Column::Order)
+        .order_by_asc(nodes::Column::Id);
 
-    query = if let Some(season_id) = season_id {
-        query.filter(items::Column::SeasonId.eq(season_id.to_string()))
-    } else {
-        query.filter(items::Column::SeasonId.is_null())
+    query = match group_node.kind {
+        NodeKind::Season => query.filter(nodes::Column::ParentId.eq(group_node.id.clone())),
+        // series metadata matching needs every playable node under the root, not just direct
+        // children, because episodes usually sit under season nodes.
+        NodeKind::Series => query,
+        NodeKind::Movie => query.filter(nodes::Column::Id.eq(group_node.id.clone())),
+        _ => query.filter(nodes::Column::Id.eq("__never__")),
     };
 
     Ok(query.all(pool).await?)
@@ -239,28 +208,25 @@ async fn match_series_group(
     pool: &DatabaseConnection,
     provider: &dyn MetadataProvider,
     provider_id: &str,
-    root_id: &str,
+    group_node: &nodes::Model,
     candidate: &SeriesCandidate,
-    group_items: &[items::Model],
+    group_items: &[nodes::Model],
 ) -> anyhow::Result<GroupMatchSummary> {
-    let season_id = group_items.first().and_then(|item| item.season_id.clone());
     let season_numbers = load_season_numbers(pool, group_items).await?;
     let req = SeriesItemsRequest {
-        root_id: root_id.to_string(),
+        root_id: group_node.root_id.clone(),
         candidate: candidate.clone(),
         items: group_items
             .iter()
-            .map(|item| SeriesItem {
-                item_id: item.id.clone(),
-                season_number: item
-                    .season_id
-                    .as_ref()
-                    .and_then(|season_id| season_numbers.get(season_id).copied())
-                    .and_then(|value| i32::try_from(value).ok()),
-                episode_number: item
+            .map(|node| SeriesItem {
+                item_id: node.id.clone(),
+                season_number: season_numbers
+                    .get(&node.id)
+                    .and_then(|value| i32::try_from(*value).ok()),
+                episode_number: node
                     .episode_number
                     .and_then(|value| i32::try_from(value).ok()),
-                name: item.name.clone(),
+                name: node.name.clone(),
             })
             .collect::<Vec<_>>(),
     };
@@ -270,14 +236,13 @@ async fn match_series_group(
 
     overwrite_remote_season_metadata_for_batch(
         pool,
-        root_id,
         provider_id,
         group_items,
         &results.seasons,
         now,
     )
     .await?;
-    overwrite_remote_item_metadata_for_batch(
+    overwrite_remote_episode_metadata_for_batch(
         pool,
         provider_id,
         group_items,
@@ -286,59 +251,56 @@ async fn match_series_group(
     )
     .await?;
 
-    tracing::debug!(
-        provider_id,
-        root_id,
-        item_count = group_items.len(),
-        season_count = results.seasons.len(),
-        episode_count = results.episodes.len(),
-        "matched metadata for series item group"
-    );
-
-    let matched_item_ids = results
+    let matched_node_ids = results
         .episodes
         .iter()
         .map(|episode| episode.item_id.as_str())
         .collect::<HashSet<_>>();
-    let unmatched_item_ids = group_items
+    let unmatched_node_ids = group_items
         .iter()
-        .filter(|item| !matched_item_ids.contains(item.id.as_str()))
-        .map(|item| item.id.clone())
+        .filter(|node| !matched_node_ids.contains(node.id.as_str()))
+        .map(|node| node.id.clone())
         .collect::<Vec<_>>();
 
-    Ok(GroupMatchSummary {
-        season_id,
-        unmatched_item_ids,
-    })
+    Ok(GroupMatchSummary { unmatched_node_ids })
 }
 
 async fn load_season_numbers(
     pool: &DatabaseConnection,
-    batch: &[items::Model],
+    batch: &[nodes::Model],
 ) -> anyhow::Result<HashMap<String, i64>> {
-    let season_ids = batch
+    let parent_ids = batch
         .iter()
-        .filter_map(|item| item.season_id.clone())
+        .filter_map(|node| node.parent_id.clone())
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
 
-    if season_ids.is_empty() {
+    if parent_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let rows = seasons::Entity::find()
-        .filter(seasons::Column::Id.is_in(season_ids))
+    let parents = nodes::Entity::find()
+        .filter(nodes::Column::Id.is_in(parent_ids))
         .all(pool)
-        .await?;
-
-    Ok(rows
+        .await?
         .into_iter()
-        .map(|season| (season.id, season.season_number))
-        .collect::<HashMap<_, _>>())
+        .map(|node| (node.id, node.season_number))
+        .collect::<HashMap<_, _>>();
+
+    Ok(batch
+        .iter()
+        .filter_map(|node| {
+            let season_number = node
+                .parent_id
+                .as_ref()
+                .and_then(|parent_id| parents.get(parent_id))
+                .and_then(|value| *value);
+            season_number.map(|season_number| (node.id.clone(), season_number))
+        })
+        .collect())
 }
 
 struct GroupMatchSummary {
-    season_id: Option<String>,
-    unmatched_item_ids: Vec<String>,
+    unmatched_node_ids: Vec<String>,
 }

@@ -31,9 +31,7 @@ pub const TARGET_ID_COLUMN: &str = "target_id";
 pub const VERSION_KEY_COLUMN: &str = "version_key";
 pub const FILE_ID_COLUMN: &str = "file_id";
 pub const ASSET_ID_COLUMN: &str = "asset_id";
-pub const ROOT_ID_COLUMN: &str = "root_id";
-pub const SEASON_ID_COLUMN: &str = "season_id";
-pub const ITEM_ID_COLUMN: &str = "item_id";
+pub const NODE_ID_COLUMN: &str = "node_id";
 
 pub struct JobExecutionPolicy {
     backoff_seconds: &'static [i64],
@@ -64,8 +62,7 @@ impl JobExecutionPolicy {
 pub enum JobTarget {
     File,
     Asset,
-    Root,
-    Item,
+    Node,
 }
 
 impl JobTarget {
@@ -91,7 +88,7 @@ impl JobTarget {
             }
             JobTarget::Asset => {
                 if target.asset_id.is_none() {
-                    target.asset_id = read_optional_string_or_i64(row, TARGET_ID_COLUMN)?;
+                    target.asset_id = row.try_get_by::<Option<i64>, _>(TARGET_ID_COLUMN).ok().flatten();
                 }
 
                 if target.asset_id.is_none() {
@@ -100,31 +97,17 @@ impl JobTarget {
                     );
                 }
             }
-            JobTarget::Root => {
-                if target.root_id.is_none() {
-                    target.root_id = row
+            JobTarget::Node => {
+                if target.node_id.is_none() {
+                    target.node_id = row
                         .try_get_by::<Option<String>, _>(TARGET_ID_COLUMN)
                         .ok()
                         .flatten();
                 }
 
-                if target.root_id.is_none() {
+                if target.node_id.is_none() {
                     anyhow::bail!(
-                        "missing root target id (expected `{ROOT_ID_COLUMN}` or `{TARGET_ID_COLUMN}`)"
-                    );
-                }
-            }
-            JobTarget::Item => {
-                if target.item_id.is_none() {
-                    target.item_id = row
-                        .try_get_by::<Option<String>, _>(TARGET_ID_COLUMN)
-                        .ok()
-                        .flatten();
-                }
-
-                if target.item_id.is_none() {
-                    anyhow::bail!(
-                        "missing item target id (expected `{ITEM_ID_COLUMN}` or `{TARGET_ID_COLUMN}`)"
+                        "missing node target id (expected `{NODE_ID_COLUMN}` or `{TARGET_ID_COLUMN}`)"
                     );
                 }
             }
@@ -151,27 +134,17 @@ impl JobTarget {
                 "asset:{segment}:{}",
                 target
                     .asset_id
+                    .map(|value| value.to_string())
                     .as_deref()
                     .with_context(|| "missing asset_id while building subject key")?
             )),
-            JobTarget::Item => Ok(format!(
-                "item:{segment}:{}",
+            JobTarget::Node => Ok(format!(
+                "node:{segment}:{}",
                 target
-                    .item_id
+                    .node_id
                     .as_deref()
-                    .with_context(|| "missing item_id while building subject key")?
+                    .with_context(|| "missing node_id while building subject key")?
             )),
-            JobTarget::Root => {
-                let root_id = target
-                    .root_id
-                    .as_deref()
-                    .with_context(|| "missing root_id while building subject key")?;
-                if let Some(season_id) = target.season_id.as_deref() {
-                    Ok(format!("root_season:{segment}:{root_id}:{season_id}"))
-                } else {
-                    Ok(format!("root:{segment}:{root_id}"))
-                }
-            }
         }
     }
 }
@@ -197,10 +170,8 @@ struct PendingTargetRecord {
     subject_key: String,
     version_key: Option<i64>,
     file_id: Option<i64>,
-    asset_id: Option<String>,
-    root_id: Option<String>,
-    season_id: Option<String>,
-    item_id: Option<String>,
+    asset_id: Option<i64>,
+    node_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -374,17 +345,9 @@ impl JobManager {
                 .try_get_by::<Option<i64>, _>(FILE_ID_COLUMN)
                 .ok()
                 .flatten();
-            let asset_id = read_optional_string_or_i64(&row, ASSET_ID_COLUMN)?;
-            let root_id = row
-                .try_get_by::<Option<String>, _>(ROOT_ID_COLUMN)
-                .ok()
-                .flatten();
-            let season_id = row
-                .try_get_by::<Option<String>, _>(SEASON_ID_COLUMN)
-                .ok()
-                .flatten();
-            let item_id = row
-                .try_get_by::<Option<String>, _>(ITEM_ID_COLUMN)
+            let asset_id = row.try_get_by::<Option<i64>, _>(ASSET_ID_COLUMN).ok().flatten();
+            let node_id = row
+                .try_get_by::<Option<String>, _>(NODE_ID_COLUMN)
                 .ok()
                 .flatten();
 
@@ -393,9 +356,7 @@ impl JobManager {
                 version_key,
                 file_id,
                 asset_id,
-                root_id,
-                season_id,
-                item_id,
+                node_id,
             };
 
             target_kind.populate_required_target_fields(&row, &mut target)?;
@@ -457,10 +418,8 @@ impl JobManager {
                 let mut updated: jobs_entity::ActiveModel = existing.clone().into();
                 updated.version_key = Set(target.version_key);
                 updated.file_id = Set(target.file_id);
-                updated.asset_id = Set(target.asset_id.clone());
-                updated.root_id = Set(target.root_id.clone());
-                updated.season_id = Set(target.season_id.clone());
-                updated.item_id = Set(target.item_id.clone());
+                updated.asset_id = Set(target.asset_id);
+                updated.node_id = Set(target.node_id.clone());
                 updated.run_after = Set(Some(now));
                 updated.last_error_message = Set(None);
                 updated.attempt_count = Set(0);
@@ -476,9 +435,7 @@ impl JobManager {
                 version_key: Set(target.version_key),
                 file_id: Set(target.file_id),
                 asset_id: Set(target.asset_id),
-                root_id: Set(target.root_id),
-                season_id: Set(target.season_id),
-                item_id: Set(target.item_id),
+                node_id: Set(target.node_id),
                 run_after: Set(Some(now)),
                 last_run_at: Set(0),
                 last_error_message: Set(None),
@@ -581,21 +538,6 @@ impl JobManager {
 
         Ok(())
     }
-}
-
-fn read_optional_string_or_i64(
-    row: &sea_orm::QueryResult,
-    column_name: &str,
-) -> anyhow::Result<Option<String>> {
-    if let Ok(value) = row.try_get_by::<Option<String>, _>(column_name) {
-        return Ok(value);
-    }
-
-    if let Ok(value) = row.try_get_by::<Option<i64>, _>(column_name) {
-        return Ok(value.map(|value| value.to_string()));
-    }
-
-    Ok(None)
 }
 
 struct JobOutcome {

@@ -20,8 +20,7 @@ import { Route as SetupCreateAccountRouteImport } from './../routes/setup.create
 import { Route as SettingsImportRouteImport } from './../routes/settings.import'
 import { Route as SettingsAboutRouteImport } from './../routes/settings.about'
 import { Route as LibraryLibraryIdRouteImport } from './../routes/library.$libraryId'
-import { Route as LibraryLibraryIdRootIdRouteImport } from './../routes/library_.$libraryId.$rootId'
-import { Route as LibraryLibraryIdRootIdSeasonIdRouteImport } from './../routes/library_.$libraryId.$rootId_.$seasonId'
+import { Route as LibraryLibraryIdNodeNodeIdRouteImport } from './../routes/library_.$libraryId.node_.$nodeId'
 
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
@@ -78,15 +77,10 @@ const LibraryLibraryIdRoute = LibraryLibraryIdRouteImport.update({
   path: '/library/$libraryId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LibraryLibraryIdRootIdRoute = LibraryLibraryIdRootIdRouteImport.update({
-  id: '/library_/$libraryId/$rootId',
-  path: '/library/$libraryId/$rootId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LibraryLibraryIdRootIdSeasonIdRoute =
-  LibraryLibraryIdRootIdSeasonIdRouteImport.update({
-    id: '/library_/$libraryId/$rootId_/$seasonId',
-    path: '/library/$libraryId/$rootId/$seasonId',
+const LibraryLibraryIdNodeNodeIdRoute =
+  LibraryLibraryIdNodeNodeIdRouteImport.update({
+    id: '/library_/$libraryId/node_/$nodeId',
+    path: '/library/$libraryId/node/$nodeId',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -102,8 +96,7 @@ export interface FileRoutesByFullPath {
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
   '/settings/': typeof SettingsIndexRoute
-  '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
-  '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
+  '/library/$libraryId/node/$nodeId': typeof LibraryLibraryIdNodeNodeIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -116,8 +109,7 @@ export interface FileRoutesByTo {
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
   '/settings': typeof SettingsIndexRoute
-  '/library/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
-  '/library/$libraryId/$rootId/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
+  '/library/$libraryId/node/$nodeId': typeof LibraryLibraryIdNodeNodeIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -132,8 +124,7 @@ export interface FileRoutesById {
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
   '/settings/': typeof SettingsIndexRoute
-  '/library_/$libraryId/$rootId': typeof LibraryLibraryIdRootIdRoute
-  '/library_/$libraryId/$rootId_/$seasonId': typeof LibraryLibraryIdRootIdSeasonIdRoute
+  '/library_/$libraryId/node_/$nodeId': typeof LibraryLibraryIdNodeNodeIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -149,8 +140,7 @@ export interface FileRouteTypes {
     | '/setup/create-library'
     | '/setup/login'
     | '/settings/'
-    | '/library/$libraryId/$rootId'
-    | '/library/$libraryId/$rootId/$seasonId'
+    | '/library/$libraryId/node/$nodeId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -163,8 +153,7 @@ export interface FileRouteTypes {
     | '/setup/create-library'
     | '/setup/login'
     | '/settings'
-    | '/library/$libraryId/$rootId'
-    | '/library/$libraryId/$rootId/$seasonId'
+    | '/library/$libraryId/node/$nodeId'
   id:
     | '__root__'
     | '/'
@@ -178,8 +167,7 @@ export interface FileRouteTypes {
     | '/setup/create-library'
     | '/setup/login'
     | '/settings/'
-    | '/library_/$libraryId/$rootId'
-    | '/library_/$libraryId/$rootId_/$seasonId'
+    | '/library_/$libraryId/node_/$nodeId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -188,8 +176,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren
   SetupRoute: typeof SetupRouteWithChildren
   LibraryLibraryIdRoute: typeof LibraryLibraryIdRoute
-  LibraryLibraryIdRootIdRoute: typeof LibraryLibraryIdRootIdRoute
-  LibraryLibraryIdRootIdSeasonIdRoute: typeof LibraryLibraryIdRootIdSeasonIdRoute
+  LibraryLibraryIdNodeNodeIdRoute: typeof LibraryLibraryIdNodeNodeIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -271,18 +258,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryLibraryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/library_/$libraryId/$rootId': {
-      id: '/library_/$libraryId/$rootId'
-      path: '/library/$libraryId/$rootId'
-      fullPath: '/library/$libraryId/$rootId'
-      preLoaderRoute: typeof LibraryLibraryIdRootIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/library_/$libraryId/$rootId_/$seasonId': {
-      id: '/library_/$libraryId/$rootId_/$seasonId'
-      path: '/library/$libraryId/$rootId/$seasonId'
-      fullPath: '/library/$libraryId/$rootId/$seasonId'
-      preLoaderRoute: typeof LibraryLibraryIdRootIdSeasonIdRouteImport
+    '/library_/$libraryId/node_/$nodeId': {
+      id: '/library_/$libraryId/node_/$nodeId'
+      path: '/library/$libraryId/node/$nodeId'
+      fullPath: '/library/$libraryId/node/$nodeId'
+      preLoaderRoute: typeof LibraryLibraryIdNodeNodeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -324,8 +304,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   SetupRoute: SetupRouteWithChildren,
   LibraryLibraryIdRoute: LibraryLibraryIdRoute,
-  LibraryLibraryIdRootIdRoute: LibraryLibraryIdRootIdRoute,
-  LibraryLibraryIdRootIdSeasonIdRoute: LibraryLibraryIdRootIdSeasonIdRoute,
+  LibraryLibraryIdNodeNodeIdRoute: LibraryLibraryIdNodeNodeIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

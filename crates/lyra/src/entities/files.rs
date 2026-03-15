@@ -38,8 +38,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Libraries,
-    #[sea_orm(has_many = "super::item_files::Entity")]
-    ItemFiles,
+    #[sea_orm(has_many = "super::node_files::Entity")]
+    NodeFiles,
     #[sea_orm(has_many = "super::jobs::Entity")]
     Jobs,
     #[sea_orm(has_one = "super::file_probe::Entity")]
@@ -54,9 +54,9 @@ impl Related<super::libraries::Entity> for Entity {
     }
 }
 
-impl Related<super::item_files::Entity> for Entity {
+impl Related<super::node_files::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ItemFiles.def()
+        Relation::NodeFiles.def()
     }
 }
 

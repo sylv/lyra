@@ -97,31 +97,48 @@ type ImportWatchStatesResult {
 	unmatched: [ImportWatchStateUnmatched!]!
 }
 
-enum ItemKind {
-	MOVIE
-	EPISODE
+type Library {
+	id: Int!
+	name: String!
+	path: String!
+	lastScannedAt: Int
+	createdAt: Int!
 }
 
-type ItemNode {
+type Mutation {
+	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
+	updateWatchProgress(fileId: Int!, progressPercent: Float!, userId: String): [WatchProgress!]!
+	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
+	createLibrary(name: String!, path: String!): Library!
+}
+
+type Node {
 	id: String!
+	libraryId: Int!
 	rootId: String!
-	seasonId: String
-	kind: ItemKind!
-	episodeNumber: Int
-	order: Int!
+	parentId: String
+	kind: NodeKind!
 	name: String!
+	order: Int!
+	seasonNumber: Int
+	episodeNumber: Int
 	lastAddedAt: Int!
 	createdAt: Int!
 	updatedAt: Int!
-	properties: ItemNodeProperties!
-	watchProgress: WatchProgress
+	root: Node
+	parent: Node
+	children: [Node!]!
+	properties: NodeProperties!
 	file: File
-	parent: RootNode
-	previousItem: ItemNode
-	nextItem: ItemNode
+	watchProgress: WatchProgress
+	nextPlayable: Node
+	previousPlayable: Node
+	unplayedCount: Int!
+	seasonCount: Int!
+	episodeCount: Int!
 }
 
-type ItemNodeConnection {
+type NodeConnection {
 	"""
 	Information to aid in pagination.
 	"""
@@ -129,36 +146,45 @@ type ItemNodeConnection {
 	"""
 	A list of edges.
 	"""
-	edges: [ItemNodeEdge!]!
+	edges: [NodeEdge!]!
 	"""
 	A list of nodes.
 	"""
-	nodes: [ItemNode!]!
+	nodes: [Node!]!
 }
 
 """
 An edge in a connection.
 """
-type ItemNodeEdge {
+type NodeEdge {
 	"""
 	The item at the end of the edge
 	"""
-	node: ItemNode!
+	node: Node!
 	"""
 	A cursor for use in pagination
 	"""
 	cursor: String!
 }
 
-input ItemNodeFilter {
-	rootId: String!
-	seasonNumbers: [Int!]
+input NodeFilter {
+	libraryId: Int
+	rootId: String
+	parentId: String
+	kinds: [NodeKind!]
 	orderBy: OrderBy
 	orderDirection: OrderDirection
 	watched: Boolean
 }
 
-type ItemNodeProperties {
+enum NodeKind {
+	MOVIE
+	SERIES
+	SEASON
+	EPISODE
+}
+
+type NodeProperties {
 	description: String
 	rating: Float
 	seasonNumber: Int
@@ -184,27 +210,12 @@ type ItemNodeProperties {
 	thumbnailImage: Asset
 }
 
-type Library {
-	id: Int!
-	name: String!
-	path: String!
-	lastScannedAt: Int
-	createdAt: Int!
-}
-
-type Mutation {
-	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
-	updateWatchProgress(fileId: Int!, progressPercent: Float!, userId: String): [WatchProgress!]!
-	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
-	createLibrary(name: String!, path: String!): Library!
-}
-
 enum OrderBy {
 	ADDED_AT
 	RELEASED_AT
 	ALPHABETICAL
 	RATING
-	SEASON_EPISODE
+	ORDER
 }
 
 enum OrderDirection {
@@ -235,129 +246,18 @@ type PageInfo {
 }
 
 type Query {
-	rootList(filter: RootNodeFilter!, after: String, first: Int): RootNodeConnection!
-	itemList(filter: ItemNodeFilter!, after: String, first: Int): ItemNodeConnection!
-	root(rootId: String!): RootNode!
-	season(seasonId: String!): SeasonNode!
-	item(itemId: String!): ItemNode!
+	nodeList(filter: NodeFilter!, after: String, first: Int): NodeConnection!
+	node(nodeId: String!): Node!
 	search(query: String!, limit: Int): SearchResults!
-	"""
-	Used during library setup to pick the library path
-	"""
 	listFiles(path: String!): [String!]!
 	library(libraryId: Int!): Library!
 	libraries: [Library!]!
 	activities: [Activity!]!
 }
 
-union RootChild = SeasonNode | ItemNode
-
-enum RootKind {
-	MOVIE
-	SERIES
-}
-
-type RootNode {
-	id: String!
-	libraryId: Int!
-	kind: RootKind!
-	name: String!
-	lastAddedAt: Int!
-	createdAt: Int!
-	updatedAt: Int!
-	properties: RootNodeProperties!
-	seasons: [SeasonNode!]!
-	files: [ItemNode!]!
-	children: [RootChild!]!
-	nextItem: ItemNode
-	unplayedItems: Int!
-	seasonCount: Int!
-	episodeCount: Int!
-}
-
-type RootNodeConnection {
-	"""
-	Information to aid in pagination.
-	"""
-	pageInfo: PageInfo!
-	"""
-	A list of edges.
-	"""
-	edges: [RootNodeEdge!]!
-	"""
-	A list of nodes.
-	"""
-	nodes: [RootNode!]!
-}
-
-"""
-An edge in a connection.
-"""
-type RootNodeEdge {
-	"""
-	The item at the end of the edge
-	"""
-	node: RootNode!
-	"""
-	A cursor for use in pagination
-	"""
-	cursor: String!
-}
-
-input RootNodeFilter {
-	libraryId: Int
-	kinds: [RootKind!]
-	orderBy: OrderBy
-	orderDirection: OrderDirection
-	watched: Boolean
-}
-
-type RootNodeProperties {
-	description: String
-	rating: Float
-	runtimeMinutes: Int
-	releasedAt: Int
-	endedAt: Int
-	createdAt: Int
-	updatedAt: Int
-	backgroundImage: Asset
-	posterImage: Asset
-	thumbnailImage: Asset
-}
-
 type SearchResults {
-	roots: [RootNode!]!
-	items: [ItemNode!]!
-}
-
-type SeasonNode {
-	id: String!
-	rootId: String!
-	seasonNumber: Int!
-	order: Int!
-	name: String!
-	lastAddedAt: Int!
-	createdAt: Int!
-	updatedAt: Int!
-	properties: SeasonNodeProperties!
-	files: [ItemNode!]!
-	nextItem: ItemNode
-	unplayedItems: Int!
-	episodeCount: Int!
-}
-
-type SeasonNodeProperties {
-	description: String
-	rating: Float
-	seasonNumber: Int
-	runtimeMinutes: Int
-	releasedAt: Int
-	endedAt: Int
-	createdAt: Int
-	updatedAt: Int
-	backgroundImage: Asset
-	posterImage: Asset
-	thumbnailImage: Asset
+	roots: [Node!]!
+	episodes: [Node!]!
 }
 
 type TimelinePreviewSheet {
@@ -381,7 +281,7 @@ type User {
 type WatchProgress {
 	id: Int!
 	userId: String!
-	itemId: String!
+	nodeId: String!
 	fileId: Int!
 	createdAt: Int!
 	updatedAt: Int!

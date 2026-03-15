@@ -1,18 +1,20 @@
-use super::metadata_source::MetadataSource;
 use sea_orm::entity::prelude::*;
 
+use super::metadata_source::MetadataSource;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "item_metadata")]
+#[sea_orm(table_name = "node_metadata")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     #[sea_orm(column_type = "Text")]
-    pub root_id: String,
-    #[sea_orm(column_type = "Text")]
-    pub item_id: String,
+    pub node_id: String,
     pub source: MetadataSource,
     #[sea_orm(column_type = "Text")]
     pub provider_id: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<i64>,
     #[sea_orm(column_type = "Text")]
     pub name: String,
     #[sea_orm(column_type = "Text", nullable)]
@@ -32,21 +34,13 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::roots::Entity",
-        from = "Column::RootId",
-        to = "super::roots::Column::Id",
+        belongs_to = "super::nodes::Entity",
+        from = "Column::NodeId",
+        to = "super::nodes::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Roots,
-    #[sea_orm(
-        belongs_to = "super::items::Entity",
-        from = "Column::ItemId",
-        to = "super::items::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Items,
+    Nodes,
     #[sea_orm(
         belongs_to = "super::assets::Entity",
         from = "Column::PosterAssetId",
@@ -73,15 +67,9 @@ pub enum Relation {
     BackgroundAsset,
 }
 
-impl Related<super::items::Entity> for Entity {
+impl Related<super::nodes::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Items.def()
-    }
-}
-
-impl Related<super::roots::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Roots.def()
+        Relation::Nodes.def()
     }
 }
 
