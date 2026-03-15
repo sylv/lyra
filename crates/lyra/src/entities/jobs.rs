@@ -42,15 +42,15 @@ impl JobKind {
 
     pub const fn title(self) -> &'static str {
         match self {
-            JobKind::FileGenerateTimelinePreview => "Timeline Preview",
-            JobKind::FileGenerateThumbnail => "Thumbnail",
-            JobKind::FileExtractFfprobe => "FFprobe",
-            JobKind::FileExtractKeyframes => "Keyframes",
+            JobKind::FileGenerateTimelinePreview => "Timeline Preview Generation",
+            JobKind::FileGenerateThumbnail => "Thumbnail Generation",
+            JobKind::FileExtractFfprobe => "Probe Files",
+            JobKind::FileExtractKeyframes => "Keyframe Extraction",
             JobKind::AssetDownload => "Asset Download",
-            JobKind::AssetGenerateThumbhash => "Asset Thumbhash",
-            JobKind::RootGenerateIntroSegments => "Intro Segments",
-            JobKind::RootMatchMetadataRoot => "Metadata Match Root",
-            JobKind::RootMatchMetadataGroups => "Metadata Match Groups",
+            JobKind::AssetGenerateThumbhash => "Asset Preview Generation",
+            JobKind::RootGenerateIntroSegments => "Intro Detection",
+            JobKind::RootMatchMetadataRoot => "Match Root Metadata",
+            JobKind::RootMatchMetadataGroups => "Match Grouped Item Metadata",
         }
     }
 

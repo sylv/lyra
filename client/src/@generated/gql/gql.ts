@@ -27,6 +27,8 @@ type Documents = {
     "\n\tfragment SearchItemResult on ItemNode {\n\t\tid\n\t\tname\n\t\tkind\n\t\tparent {\n\t\t\tname\n\t\t\tlibraryId\n\t\t}\n\t\tproperties {\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\treleasedAt\n\t\t\truntimeMinutes\n\t\t}\n\t\t...GetPathForItem\n\t}\n": typeof types.SearchItemResultFragmentDoc,
     "\n\tquery SearchMedia($query: String!, $limit: Int) {\n\t\tsearch(query: $query, limit: $limit) {\n\t\t\troots {\n\t\t\t\t...SearchRootResult\n\t\t\t}\n\t\t\titems {\n\t\t\t\t...SearchItemResult\n\t\t\t}\n\t\t}\n\t}\n": typeof types.SearchMediaDocument,
     "\n\tfragment SeasonCard on SeasonNode {\n\t\tid\n\t\tname\n\t\tseasonNumber\n\t\torder\n\t\tproperties {\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\treleasedAt\n\t\t\tendedAt\n\t\t}\n\t\tnextItem {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\tunplayedItems\n\t\tepisodeCount\n\t}\n": typeof types.SeasonCardFragmentDoc,
+    "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": typeof types.GetLibrariesDocument,
+    "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": typeof types.CreateLibraryDocument,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": typeof types.LibrariesDocument,
     "\n\tfragment GetPathForRoot on RootNode {\n\t\tid\n\t\tlibraryId\n\t}\n": typeof types.GetPathForRootFragmentDoc,
     "\n\tfragment GetPathForItem on ItemNode {\n\t\tkind\n\t\trootId\n\t\tseasonId\n\t\tparent {\n\t\t\tlibraryId\n\t\t}\n\t}\n": typeof types.GetPathForItemFragmentDoc,
@@ -36,8 +38,6 @@ type Documents = {
     "\n\tquery GetRootAndSeason($rootId: String!, $seasonId: String!) {\n\t\troot(rootId: $rootId) {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tname\n\t\t\tproperties {\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\tseason(seasonId: $seasonId) {\n\t\t\tid\n\t\t\tname\n\t\t\tseasonNumber\n\t\t\tproperties {\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\treleasedAt\n\t\t\t\tendedAt\n\t\t\t\truntimeMinutes\n\t\t\t\tdescription\n\t\t\t}\n\t\t\tnextItem {\n\t\t\t\tid\n\t\t\t\twatchProgress {\n\t\t\t\t\tprogressPercent\n\t\t\t\t\tcompleted\n\t\t\t\t\tupdatedAt\n\t\t\t\t}\n\t\t\t}\n\t\t\tunplayedItems\n\t\t}\n\t}\n": typeof types.GetRootAndSeasonDocument,
     "\n\tquery GetSeasonEpisodes($filter: ItemNodeFilter!, $after: String) {\n\t\titemList(filter: $filter, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\tid\n\t\t\t\t\t...EpisodeCard\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": typeof types.GetSeasonEpisodesDocument,
     "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": typeof types.SignupDocument,
-    "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": typeof types.GetLibrariesDocument,
-    "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": typeof types.CreateLibraryDocument,
 };
 const documents: Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": types.GetActivitiesDocument,
@@ -53,6 +53,8 @@ const documents: Documents = {
     "\n\tfragment SearchItemResult on ItemNode {\n\t\tid\n\t\tname\n\t\tkind\n\t\tparent {\n\t\t\tname\n\t\t\tlibraryId\n\t\t}\n\t\tproperties {\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\treleasedAt\n\t\t\truntimeMinutes\n\t\t}\n\t\t...GetPathForItem\n\t}\n": types.SearchItemResultFragmentDoc,
     "\n\tquery SearchMedia($query: String!, $limit: Int) {\n\t\tsearch(query: $query, limit: $limit) {\n\t\t\troots {\n\t\t\t\t...SearchRootResult\n\t\t\t}\n\t\t\titems {\n\t\t\t\t...SearchItemResult\n\t\t\t}\n\t\t}\n\t}\n": types.SearchMediaDocument,
     "\n\tfragment SeasonCard on SeasonNode {\n\t\tid\n\t\tname\n\t\tseasonNumber\n\t\torder\n\t\tproperties {\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\treleasedAt\n\t\t\tendedAt\n\t\t}\n\t\tnextItem {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\tunplayedItems\n\t\tepisodeCount\n\t}\n": types.SeasonCardFragmentDoc,
+    "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": types.GetLibrariesDocument,
+    "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": types.CreateLibraryDocument,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": types.LibrariesDocument,
     "\n\tfragment GetPathForRoot on RootNode {\n\t\tid\n\t\tlibraryId\n\t}\n": types.GetPathForRootFragmentDoc,
     "\n\tfragment GetPathForItem on ItemNode {\n\t\tkind\n\t\trootId\n\t\tseasonId\n\t\tparent {\n\t\t\tlibraryId\n\t\t}\n\t}\n": types.GetPathForItemFragmentDoc,
@@ -62,8 +64,6 @@ const documents: Documents = {
     "\n\tquery GetRootAndSeason($rootId: String!, $seasonId: String!) {\n\t\troot(rootId: $rootId) {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tname\n\t\t\tproperties {\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\tseason(seasonId: $seasonId) {\n\t\t\tid\n\t\t\tname\n\t\t\tseasonNumber\n\t\t\tproperties {\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\treleasedAt\n\t\t\t\tendedAt\n\t\t\t\truntimeMinutes\n\t\t\t\tdescription\n\t\t\t}\n\t\t\tnextItem {\n\t\t\t\tid\n\t\t\t\twatchProgress {\n\t\t\t\t\tprogressPercent\n\t\t\t\t\tcompleted\n\t\t\t\t\tupdatedAt\n\t\t\t\t}\n\t\t\t}\n\t\t\tunplayedItems\n\t\t}\n\t}\n": types.GetRootAndSeasonDocument,
     "\n\tquery GetSeasonEpisodes($filter: ItemNodeFilter!, $after: String) {\n\t\titemList(filter: $filter, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\tid\n\t\t\t\t\t...EpisodeCard\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": types.GetSeasonEpisodesDocument,
     "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": types.SignupDocument,
-    "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": types.GetLibrariesDocument,
-    "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n": types.CreateLibraryDocument,
 };
 
 /**
@@ -135,6 +135,14 @@ export function graphql(source: "\n\tfragment SeasonCard on SeasonNode {\n\t\tid
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function graphql(source: "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function graphql(source: "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -168,14 +176,6 @@ export function graphql(source: "\n\tquery GetSeasonEpisodes($filter: ItemNodeFi
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\tid\n\t\t\tname\n\t\t\tpath\n\t\t}\n\t}\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

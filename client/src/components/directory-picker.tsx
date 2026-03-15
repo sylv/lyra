@@ -4,6 +4,7 @@ import { useEffect, useState, type FC } from "react";
 import { IconText } from "./icon-text";
 import { Spinner } from "./ui/spinner";
 import { graphql } from "../@generated/gql";
+import { Input } from "./input";
 
 export interface DirectoryPickerProps {
 	onPathChange: (path: string | null) => void;
@@ -78,18 +79,16 @@ export const DirectoryPicker: FC<DirectoryPickerProps> = ({ onPathChange, initia
 	const directories = data?.listFiles ?? [];
 
 	return (
-		<div className="rounded bg-black">
-			<div className="bg-zinc-900 px-3 py-2 rounded-t-lg">
-				<input
-					type="text"
-					value={pathInput}
-					onChange={(event) => setPathInput(event.target.value)}
-					placeholder="/path/to/library"
-					className="w-full px-3 py-1.5 text-sm rounded-md outline-none"
-				/>
-			</div>
+		<div className="bg-black">
+			<Input
+				type="text"
+				value={pathInput}
+				onChange={(event) => setPathInput(event.target.value)}
+				placeholder="/path/to/library"
+				className="w-full rounded-b-none"
+			/>
 
-			<div className="h-56 space-y-2 overflow-y-auto">
+			<div className="h-56 space-y-2 overflow-y-auto border border-zinc-950 border-t-none rounded-b-sm">
 				{loading ? (
 					<div className="h-full w-full flex items-center justify-center p-3">
 						<Spinner />

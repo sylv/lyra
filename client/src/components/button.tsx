@@ -4,8 +4,8 @@ import type { FC, ReactNode } from "react";
 import { cn } from "../lib/utils";
 
 export enum ButtonStyle {
-	Primary = "bg-amethyst-600/50 hover:bg-amethyst-600/70",
-	Transparent = "bg-transparent hover:bg-zinc-500/20",
+	Primary = "bg-amethyst-600/50 not-disabled:hover:bg-amethyst-600/70",
+	Transparent = "bg-transparent not-disabled:hover:bg-zinc-500/20",
 }
 
 interface ButtonProps {
@@ -66,10 +66,11 @@ export const Button: FC<ButtonProps> = ({
 		<button
 			type="button"
 			onClick={onClick}
+			disabled={disabled || loading}
 			className={cn(
-				"px-6 py-2 rounded-sm flex items-center gap-3 font-semibold text-sm transition-colors group hover:underline",
+				"px-6 py-2 rounded-sm flex items-center gap-3 font-semibold text-sm transition-colors group not-disabled:hover:underline",
+				"disabled:opacity-80 disabled:cursor-not-allowed",
 				style,
-				disabled && "opacity-80 cursor-not-allowed",
 				className,
 			)}
 		>

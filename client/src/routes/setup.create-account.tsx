@@ -8,6 +8,7 @@ import { InputOtp } from "../components/input-otp";
 import { SetupPage } from "../components/setup/setup-page";
 import { SetupStep } from "../components/setup/setup-step";
 import { useSetup } from "../components/setup/setup-wrapper";
+import { useTitle } from "../hooks/use-title";
 
 const SIGNUP_MUTATION = gql`
 	mutation Signup($username: String!, $password: String!) {
@@ -48,6 +49,8 @@ function CreateAccountForm() {
 	const [setupCode, setSetupCode] = useState<number | null>(null);
 
 	const [signup] = useMutation(SIGNUP_MUTATION, {});
+
+	useTitle("Create your account");
 
 	const handleSubmit = async () => {
 		setError(null);
@@ -118,7 +121,7 @@ function CreateAccountForm() {
 			{waitingForCode ? (
 				<fieldset>
 					<InputOtp onChange={setSetupCode} />
-					<p className="text-zinc-500 text-xs mt-3 text-center">Enter the code logged to the console on startup.</p>
+					<p className="text-zinc-600 text-xs mt-3 text-center">Enter the code from Lyra's startup logs.</p>
 				</fieldset>
 			) : (
 				<form id="create-account-form" onSubmit={handleSubmit}>

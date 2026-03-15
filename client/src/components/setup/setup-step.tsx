@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import type { FC, ReactNode } from "react";
 import { Button } from "../button";
 import { cn } from "@/lib/utils";
+import { ModalBody, ModalFooter } from "../modal";
 
 interface SetupStepProps {
 	children: ReactNode;
@@ -23,8 +24,8 @@ export const SetupStep: FC<SetupStepProps> = ({
 	onSubmit,
 }) => (
 	<>
-		<div className={cn("flex flex-col p-6 flex-grow", centered && "items-center justify-center")}>{children}</div>
-		<div className="mt-6 flex items-center justify-between gap-2">
+		<ModalBody className={cn(centered && "items-center justify-center")}>{children}</ModalBody>
+		<ModalFooter className="justify-between gap-4 pt-2">
 			<div className="flex h-full flex-grow items-center">
 				{error && <p className="rounded bg-red-900/20 px-3 py-1 font-mono text-red-400">{error}</p>}
 			</div>
@@ -34,6 +35,6 @@ export const SetupStep: FC<SetupStepProps> = ({
 					Continue
 				</Button>
 			</div>
-		</div>
+		</ModalFooter>
 	</>
 );

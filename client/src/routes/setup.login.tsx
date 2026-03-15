@@ -4,6 +4,7 @@ import { Input } from "../components/input";
 import { SetupPage } from "../components/setup/setup-page";
 import { SetupStep } from "../components/setup/setup-step";
 import { useSetup } from "../components/setup/setup-wrapper";
+import { useTitle } from "../hooks/use-title";
 
 export const Route = createFileRoute("/setup/login")({
 	component: SetupLoginRoute,
@@ -29,6 +30,8 @@ function LoginForm() {
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
+
+	useTitle("Sign in");
 
 	const handleSubmit = async () => {
 		setError(null);
