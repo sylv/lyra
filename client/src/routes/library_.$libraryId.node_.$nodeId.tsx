@@ -26,6 +26,10 @@ const Query = graphql(`
 				name
 				libraryId
 			}
+			root {
+				id
+				name
+			}
 			children {
 				id
 				kind
@@ -109,7 +113,7 @@ function NodeRoute() {
 	});
 
 	useDynamicBackground(node.properties.backgroundImage ?? poster);
-	useTitle(node.name);
+	useTitle(node.root.name);
 
 	const header = (
 		<div className="container mx-auto flex gap-6">
