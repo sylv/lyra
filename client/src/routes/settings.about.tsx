@@ -27,7 +27,9 @@ function RouteComponent() {
 				</div>
 				<div>
 					<h3 className="group-hover:underline">Metadata sourced from TMDB</h3>
-					<p className="text-zinc-400">This product uses the TMDB API but is not endorsed or certified by TMDB</p>
+					<p className="text-zinc-400 text-sm">
+						This product uses the TMDB API but is not endorsed or certified by TMDB
+					</p>
 				</div>
 			</a>
 		</>
