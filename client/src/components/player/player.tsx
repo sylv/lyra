@@ -775,7 +775,9 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		: [];
 
 	const containerClasses = cn(
-		isFullscreen ? "z-50 fixed inset-0 bg-black" : "z-50 fixed bottom-4 right-4 rounded shadow-2xl bg-black",
+		isFullscreen
+			? "z-50 fixed inset-0 bg-black outline-none"
+			: "z-50 fixed bottom-4 right-4 rounded shadow-2xl bg-black outline-none",
 	);
 
 	return (
@@ -799,7 +801,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		>
 			<video
 				ref={videoRef}
-				className={cn("w-full h-full object-contain outline-none", !isFullscreen && "rounded")}
+				className={cn("block w-full h-full bg-black object-contain outline-none", !isFullscreen && "rounded")}
 				autoPlay={autoplay}
 				controls={false}
 				disablePictureInPicture
@@ -807,7 +809,10 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 
 			{/* Overlay controls */}
 			<div
-				className={cn("absolute inset-0 cursor-pointer select-none", !isFullscreen && "rounded")}
+				className={cn(
+					"absolute inset-0 cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
+					!isFullscreen && "rounded",
+				)}
 				role="button"
 				tabIndex={0}
 				onClick={handleContainerClick}
