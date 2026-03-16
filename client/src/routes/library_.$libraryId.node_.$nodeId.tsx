@@ -52,6 +52,11 @@ const Query = graphql(`
 				runtimeMinutes
 				description
 			}
+			watchProgress {
+				progressPercent
+				completed
+				updatedAt
+			}
 			nextPlayable {
 				id
 				watchProgress {
@@ -94,6 +99,8 @@ function NodeRoute() {
 	const { nodeId } = Route.useParams();
 	const { data } = useSuspenseQuery(Query, { variables: { nodeId } });
 	const node = data.node;
+	const playableItemId = node.nextPlayable?.id ?? (node.kind === "MOVIE" || node.kind === "EPISODE" ? node.id : null);
+	const playableWatchProgress = node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
 	const poster = node.properties.posterImage ?? node.properties.thumbnailImage;
 	const nodePath = getPathForNodeData({ id: node.id, libraryId: node.libraryId, __typename: "Node" });
 	const parentPath = node.parent
@@ -123,9 +130,9 @@ function NodeRoute() {
 				<div className="container mx-auto flex gap-6">
 					<div className="shrink-0">
 						<PlayWrapper
-							itemId={node.nextPlayable?.id}
+							itemId={playableItemId}
 							path={nodePath}
-							watchProgress={node.nextPlayable?.watchProgress}
+							watchProgress={playableWatchProgress}
 						>
 							<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
 							<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
@@ -168,7 +175,7 @@ function NodeRoute() {
 		<div className="pt-6">
 			<div className="container mx-auto flex gap-6">
 				<div className="shrink-0">
-					<PlayWrapper itemId={node.nextPlayable?.id} path={nodePath} watchProgress={node.nextPlayable?.watchProgress}>
+					<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
 						<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
 						<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 					</PlayWrapper>

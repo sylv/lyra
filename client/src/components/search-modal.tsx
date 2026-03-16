@@ -80,7 +80,7 @@ const SearchNodeCard: FC<{ node: FragmentType<typeof SearchNodeResultFragment>; 
 	const node = unmask(SearchNodeResultFragment, nodeRef);
 	const path = getPathForNode(node);
 
-	if (node.kind === "MOVIE" || node.kind === "EPISODE") {
+	if (node.kind === "EPISODE") {
 		const runtime = formatRuntime(node.properties.runtimeMinutes);
 		const index =
 			node.properties.seasonNumber && node.properties.episodeNumber
