@@ -1,4 +1,4 @@
-pub mod derivation;
+pub mod derive_nodes;
 pub mod local;
 
 use crate::config::get_config;
@@ -6,13 +6,13 @@ use crate::entities::{
     files, libraries, metadata_source::MetadataSource, node_closure, node_files, node_metadata,
     nodes,
 };
-use crate::scanner::derivation::derive_library_media;
+use crate::scanner::derive_nodes::derive_library_media;
 use crate::scanner::local::insert_local_node_metadata;
 use lyra_parser::{ParsedFile, parse_files};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter,
-    QueryOrder, QuerySelect, TransactionTrait,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,
+    QuerySelect, TransactionTrait,
 };
 use std::path::Path as StdPath;
 use std::path::PathBuf;
@@ -179,7 +179,13 @@ async fn rebuild_library_media(
             .map(|file| file.relative_path.clone())
             .collect::<Vec<_>>();
         let parsed_batch = parse_files(relative_paths).await;
-        parsed_files.extend(batch.iter().cloned().zip(parsed_batch.into_iter()).collect::<Vec<(files::Model, ParsedFile)>>());
+        parsed_files.extend(
+            batch
+                .iter()
+                .cloned()
+                .zip(parsed_batch.into_iter())
+                .collect::<Vec<(files::Model, ParsedFile)>>(),
+        );
     }
 
     let derived = derive_library_media(library_root, &parsed_files)?;
@@ -189,12 +195,16 @@ async fn rebuild_library_media(
 async fn upsert_derived_media(
     pool: &DatabaseConnection,
     library_id: i64,
-    derived: derivation::DerivedLibraryMedia,
+    derived: derive_nodes::DerivedLibraryMedia,
 ) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp();
     let txn = pool.begin().await?;
 
-    let node_ids = derived.nodes.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+    let node_ids = derived
+        .nodes
+        .iter()
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
     let playable_node_ids = derived
         .nodes
         .iter()

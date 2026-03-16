@@ -1,3 +1,4 @@
+use crate::auth::RequestAuth;
 use crate::entities::{node_closure, node_files, node_metadata, nodes, watch_progress};
 use crate::graphql::properties::NodeProperties;
 use async_graphql::{ComplexObject, Context};
@@ -5,8 +6,6 @@ use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, RelationTrait,
 };
-
-use super::{current_user_id, saturating_i32_from_u64};
 
 async fn preferred_node_metadata(
     pool: &DatabaseConnection,
@@ -32,25 +31,23 @@ async fn previous_or_next_playable(
                 .add(nodes::Column::Kind.eq(nodes::NodeKind::Movie))
                 .add(nodes::Column::Kind.eq(nodes::NodeKind::Episode)),
         )
-        .filter(
-            if forward {
-                Condition::any()
-                    .add(nodes::Column::Order.gt(current.order))
-                    .add(
-                        Condition::all()
-                            .add(nodes::Column::Order.eq(current.order))
-                            .add(nodes::Column::Id.gt(current.id.clone())),
-                    )
-            } else {
-                Condition::any()
-                    .add(nodes::Column::Order.lt(current.order))
-                    .add(
-                        Condition::all()
-                            .add(nodes::Column::Order.eq(current.order))
-                            .add(nodes::Column::Id.lt(current.id.clone())),
-                    )
-            },
-        )
+        .filter(if forward {
+            Condition::any()
+                .add(nodes::Column::Order.gt(current.order))
+                .add(
+                    Condition::all()
+                        .add(nodes::Column::Order.eq(current.order))
+                        .add(nodes::Column::Id.gt(current.id.clone())),
+                )
+        } else {
+            Condition::any()
+                .add(nodes::Column::Order.lt(current.order))
+                .add(
+                    Condition::all()
+                        .add(nodes::Column::Order.eq(current.order))
+                        .add(nodes::Column::Id.lt(current.id.clone())),
+                )
+        })
         .order_by_asc(nodes::Column::Order)
         .order_by_asc(nodes::Column::Id);
 
@@ -92,18 +89,14 @@ async fn previous_or_next_playable(
 
 #[ComplexObject]
 impl nodes::Model {
-    pub async fn root(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+    pub async fn root(&self, ctx: &Context<'_>) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        nodes::Entity::find_by_id(self.root_id.clone()).one(pool).await
+        nodes::Entity::find_by_id(self.root_id.clone())
+            .one(pool)
+            .await
     }
 
-    pub async fn parent(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+    pub async fn parent(&self, ctx: &Context<'_>) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let Some(parent_id) = &self.parent_id else {
             return Ok(None);
@@ -112,10 +105,7 @@ impl nodes::Model {
         nodes::Entity::find_by_id(parent_id.clone()).one(pool).await
     }
 
-    pub async fn children(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Vec<nodes::Model>, sea_orm::DbErr> {
+    pub async fn children(&self, ctx: &Context<'_>) -> Result<Vec<nodes::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         nodes::Entity::find()
             .filter(nodes::Column::ParentId.eq(self.id.clone()))
@@ -172,10 +162,7 @@ impl nodes::Model {
         previous_or_next_playable(pool, self, false).await
     }
 
-    pub async fn unplayed_count(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<i32, async_graphql::Error> {
+    pub async fn unplayed_count(&self, ctx: &Context<'_>) -> Result<i64, async_graphql::Error> {
         let Some(user_id) = current_user_id(ctx) else {
             return Ok(0);
         };
@@ -223,30 +210,40 @@ impl nodes::Model {
             .all(pool)
             .await?;
 
-        Ok(saturating_i32_from_u64(
-            playable_ids.len().saturating_sub(watched_ids.len()) as u64,
-        ))
+        Ok(playable_ids.len().saturating_sub(watched_ids.len()) as i64)
     }
 
-    pub async fn season_count(&self, ctx: &Context<'_>) -> Result<i32, sea_orm::DbErr> {
+    pub async fn season_count(&self, ctx: &Context<'_>) -> Result<i64, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let count = node_closure::Entity::find()
-            .join(sea_orm::JoinType::InnerJoin, node_closure::Relation::Descendant.def())
+            .join(
+                sea_orm::JoinType::InnerJoin,
+                node_closure::Relation::Descendant.def(),
+            )
             .filter(node_closure::Column::AncestorId.eq(self.id.clone()))
             .filter(nodes::Column::Kind.eq(nodes::NodeKind::Season))
             .count(pool)
             .await?;
-        Ok(saturating_i32_from_u64(count))
+        Ok(count as i64)
     }
 
-    pub async fn episode_count(&self, ctx: &Context<'_>) -> Result<i32, sea_orm::DbErr> {
+    pub async fn episode_count(&self, ctx: &Context<'_>) -> Result<i64, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let count = node_closure::Entity::find()
-            .join(sea_orm::JoinType::InnerJoin, node_closure::Relation::Descendant.def())
+            .join(
+                sea_orm::JoinType::InnerJoin,
+                node_closure::Relation::Descendant.def(),
+            )
             .filter(node_closure::Column::AncestorId.eq(self.id.clone()))
             .filter(nodes::Column::Kind.eq(nodes::NodeKind::Episode))
             .count(pool)
             .await?;
-        Ok(saturating_i32_from_u64(count))
+        Ok(count as i64)
     }
+}
+
+fn current_user_id(ctx: &Context<'_>) -> Option<String> {
+    let auth = ctx.data_opt::<RequestAuth>()?;
+    let user = auth.get_user_or_err().ok()?;
+    Some(user.id.clone())
 }
