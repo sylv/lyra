@@ -101,7 +101,7 @@ const formatResumeTimestamp = (seconds: number): string => {
 };
 
 const UpdateWatchState = graphql(`
-	mutation UpdateWatchState($fileId: Int!, $progressPercent: Float!) {
+	mutation UpdateWatchState($fileId: String!, $progressPercent: Float!) {
 		updateWatchProgress(fileId: $fileId, progressPercent: $progressPercent) {
 			progressPercent
 			updatedAt

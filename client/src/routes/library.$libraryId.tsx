@@ -9,7 +9,7 @@ import { getApolloClient } from "../client";
 import { useTitle } from "../hooks/use-title";
 
 const Query = graphql(`
-	query GetLibraryMedia($libraryId: Int!, $filter: NodeFilter!, $after: String) {
+	query GetLibraryMedia($libraryId: String!, $filter: NodeFilter!, $after: String) {
 		nodeList(filter: $filter, first: 45, after: $after) {
 			edges {
 				node {
@@ -35,9 +35,9 @@ export const Route = createFileRoute("/library/$libraryId")({
 		getApolloClient().query({
 			query: Query,
 			variables: {
-				libraryId: Number(params.libraryId),
+				libraryId: params.libraryId,
 				filter: {
-					libraryId: Number(params.libraryId),
+					libraryId: params.libraryId,
 					kinds: [NodeKind.Movie, NodeKind.Series],
 					orderBy: OrderBy.Alphabetical,
 				},
@@ -47,8 +47,7 @@ export const Route = createFileRoute("/library/$libraryId")({
 });
 
 function LibraryRoute() {
-	const { libraryId: rawLibraryId } = Route.useParams();
-	const libraryId = +rawLibraryId;
+	const { libraryId } = Route.useParams();
 	const [filter, setFilter] = useState<NodeFilter>({
 		kinds: [NodeKind.Movie, NodeKind.Series],
 		orderBy: OrderBy.Alphabetical,
