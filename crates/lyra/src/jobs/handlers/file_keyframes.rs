@@ -33,18 +33,19 @@ impl JobHandler for FileKeyframesJob {
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
         let file_id = shared::expect_job_file_id(job)?;
-        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
+        let Some(ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
+        else {
             return Ok(());
         };
 
-        extract_and_store_keyframes(pool, ctx.file.id, &ctx.file_path).await?;
+        extract_and_store_keyframes(pool, &ctx.file.id, &ctx.file_path).await?;
         Ok(())
     }
 }
 
 pub(crate) async fn extract_and_store_keyframes(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
     file_path: &Path,
 ) -> anyhow::Result<Vec<i64>> {
     let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
@@ -59,14 +60,14 @@ pub(crate) async fn extract_and_store_keyframes(
 
 async fn upsert_keyframes(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
     keyframes: &[i64],
 ) -> anyhow::Result<()> {
     let payload =
         json_encoding::encode_json_zstd(&keyframes).context("failed to encode keyframe payload")?;
 
     files::Entity::update(files::ActiveModel {
-        id: Set(file_id),
+        id: Set(file_id.to_string()),
         keyframes_json: Set(payload),
         ..Default::default()
     })

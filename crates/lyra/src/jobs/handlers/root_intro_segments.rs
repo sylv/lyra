@@ -1,8 +1,5 @@
 use crate::{
-    entities::{
-        files, jobs as jobs_entity, libraries, node_files, nodes,
-        nodes::NodeKind,
-    },
+    entities::{files, jobs as jobs_entity, libraries, node_files, nodes, nodes::NodeKind},
     jobs::{JobHandler, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN, handlers::shared},
     json_encoding,
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
@@ -26,7 +23,7 @@ pub struct RootIntroSegmentsJob;
 
 #[derive(Clone, Debug)]
 struct RootFile {
-    file_id: i64,
+    file_id: String,
     file_path: PathBuf,
     audio_fingerprint: Vec<u8>,
     season_id: Option<String>,
@@ -37,7 +34,7 @@ struct RootFile {
 
 #[derive(Debug, FromQueryResult)]
 struct RootFileQueryRow {
-    file_id: i64,
+    file_id: String,
     relative_path: String,
     library_path: String,
     season_id: Option<String>,
@@ -83,7 +80,7 @@ impl JobHandler for RootIntroSegmentsJob {
             .iter()
             .filter_map(|file| {
                 if file.pending_segments {
-                    Some(file.file_id)
+                    Some(file.file_id.clone())
                 } else {
                     None
                 }
@@ -109,7 +106,7 @@ impl JobHandler for RootIntroSegmentsJob {
                 .iter()
                 .filter_map(|file| {
                     if pending_file_ids.contains(&file.file_id) {
-                        Some(file.file_id)
+                        Some(file.file_id.clone())
                     } else {
                         None
                     }
@@ -121,7 +118,7 @@ impl JobHandler for RootIntroSegmentsJob {
                 continue;
             }
 
-            let target_file_id_set = target_file_ids.iter().copied().collect::<HashSet<_>>();
+            let target_file_id_set = target_file_ids.iter().cloned().collect::<HashSet<_>>();
 
             let detection_inputs = batch
                 .iter()
@@ -154,7 +151,7 @@ impl JobHandler for RootIntroSegmentsJob {
                         if batch_file.audio_fingerprint != detection.fingerprint_cache {
                             store_audio_fingerprint(
                                 pool,
-                                batch_file.file_id,
+                                &batch_file.file_id,
                                 &detection.fingerprint_cache,
                             )
                             .await?;
@@ -176,7 +173,7 @@ impl JobHandler for RootIntroSegmentsJob {
                             .into_iter()
                             .collect::<Vec<_>>();
 
-                        store_segments(pool, batch_file.file_id, &segments).await?;
+                        store_segments(pool, &batch_file.file_id, &segments).await?;
 
                         if let Some(file) = root_files
                             .iter_mut()
@@ -231,7 +228,7 @@ async fn load_root_files(
     let mut unique_rows = Vec::new();
     let mut seen_file_ids = HashSet::new();
     for row in rows {
-        if seen_file_ids.insert(row.file_id) {
+        if seen_file_ids.insert(row.file_id.clone()) {
             unique_rows.push(row);
         }
     }
@@ -239,7 +236,7 @@ async fn load_root_files(
     let mut output = Vec::with_capacity(unique_rows.len());
     for row in unique_rows {
         let file_path = PathBuf::from(row.library_path).join(row.relative_path);
-        let segments = decode_segments_payload(&row.segments_json, row.file_id);
+        let segments = decode_segments_payload(&row.segments_json, &row.file_id);
         let has_intro_marker = segments.as_ref().is_some_and(|segments| {
             segments
                 .iter()
@@ -276,7 +273,7 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
             continue;
         }
         if file.season_id == seed.season_id && !file.has_intro_marker {
-            selected.insert(file.file_id);
+            selected.insert(file.file_id.clone());
             batch.push(file.clone());
         }
         if batch.len() >= INTRO_DETECTION_BATCH_MAX_FILES {
@@ -289,7 +286,7 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
             continue;
         }
         if file.season_id == seed.season_id {
-            selected.insert(file.file_id);
+            selected.insert(file.file_id.clone());
             batch.push(file.clone());
         }
         if batch.len() >= INTRO_DETECTION_BATCH_MAX_FILES {
@@ -302,7 +299,7 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
             continue;
         }
         if !file.has_intro_marker {
-            selected.insert(file.file_id);
+            selected.insert(file.file_id.clone());
             batch.push(file.clone());
         }
         if batch.len() >= INTRO_DETECTION_BATCH_MAX_FILES {
@@ -314,7 +311,7 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
         if selected.contains(&file.file_id) {
             continue;
         }
-        selected.insert(file.file_id);
+        selected.insert(file.file_id.clone());
         batch.push(file.clone());
         if batch.len() >= INTRO_DETECTION_BATCH_MAX_FILES {
             return batch;
@@ -324,7 +321,7 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
     batch
 }
 
-fn decode_segments_payload(payload: &[u8], file_id: i64) -> Option<Vec<StoredFileSegment>> {
+fn decode_segments_payload(payload: &[u8], file_id: &str) -> Option<Vec<StoredFileSegment>> {
     if payload.is_empty() {
         return None;
     }
@@ -340,14 +337,14 @@ fn decode_segments_payload(payload: &[u8], file_id: i64) -> Option<Vec<StoredFil
 
 async fn store_segments(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
     segments: &[StoredFileSegment],
 ) -> anyhow::Result<()> {
     let payload = json_encoding::encode_json_zstd(&segments)
         .with_context(|| format!("failed to encode intro segments for file {file_id}"))?;
 
     files::Entity::update(files::ActiveModel {
-        id: Set(file_id),
+        id: Set(file_id.to_string()),
         segments_json: Set(payload),
         ..Default::default()
     })
@@ -359,11 +356,11 @@ async fn store_segments(
 
 async fn store_audio_fingerprint(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
     fingerprint: &[u8],
 ) -> anyhow::Result<()> {
     files::Entity::update(files::ActiveModel {
-        id: Set(file_id),
+        id: Set(file_id.to_string()),
         audio_fingerprint: Set(fingerprint.to_vec()),
         ..Default::default()
     })

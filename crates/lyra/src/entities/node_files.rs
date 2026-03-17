@@ -5,8 +5,8 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub node_id: String,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub file_id: i64,
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    pub file_id: String,
     pub order: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -15,14 +15,6 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::nodes::Entity",
-        from = "Column::NodeId",
-        to = "super::nodes::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Nodes,
-    #[sea_orm(
         belongs_to = "super::files::Entity",
         from = "Column::FileId",
         to = "super::files::Column::Id",
@@ -30,17 +22,25 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Files,
-}
-
-impl Related<super::nodes::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Nodes.def()
-    }
+    #[sea_orm(
+        belongs_to = "super::nodes::Entity",
+        from = "Column::NodeId",
+        to = "super::nodes::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Nodes,
 }
 
 impl Related<super::files::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Files.def()
+    }
+}
+
+impl Related<super::nodes::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Nodes.def()
     }
 }
 

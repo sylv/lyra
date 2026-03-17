@@ -1,4 +1,5 @@
 use crate::entities::{metadata_source::MetadataSource, node_metadata};
+use crate::ids;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait};
 
 pub async fn insert_local_node_metadata<C: ConnectionTrait>(
@@ -10,6 +11,7 @@ pub async fn insert_local_node_metadata<C: ConnectionTrait>(
     now: i64,
 ) -> Result<(), sea_orm::DbErr> {
     node_metadata::ActiveModel {
+        id: Set(ids::generate_ulid()),
         node_id: Set(node_id.to_string()),
         source: Set(MetadataSource::Local),
         provider_id: Set("local".to_string()),

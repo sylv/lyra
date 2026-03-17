@@ -6,27 +6,27 @@ CREATE VIRTUAL TABLE node_search_fts USING fts5(
     tokenize = 'unicode61 remove_diacritics 2'
 );
 
-INSERT INTO node_search_fts(rowid, node_id, node_metadata_id, title, description)
-SELECT id, node_id, id, name, COALESCE(description, '')
+INSERT INTO node_search_fts(node_id, node_metadata_id, title, description)
+SELECT node_id, id, name, COALESCE(description, '')
 FROM node_metadata;
 
 CREATE TRIGGER node_metadata_search_fts_after_insert
 AFTER INSERT ON node_metadata
 BEGIN
-    INSERT INTO node_search_fts(rowid, node_id, node_metadata_id, title, description)
-    VALUES (new.id, new.node_id, new.id, new.name, COALESCE(new.description, ''));
+    INSERT INTO node_search_fts(node_id, node_metadata_id, title, description)
+    VALUES (new.node_id, new.id, new.name, COALESCE(new.description, ''));
 END;
 
 CREATE TRIGGER node_metadata_search_fts_after_update
 AFTER UPDATE ON node_metadata
 BEGIN
-    DELETE FROM node_search_fts WHERE rowid = old.id;
-    INSERT INTO node_search_fts(rowid, node_id, node_metadata_id, title, description)
-    VALUES (new.id, new.node_id, new.id, new.name, COALESCE(new.description, ''));
+    DELETE FROM node_search_fts WHERE node_metadata_id = old.id;
+    INSERT INTO node_search_fts(node_id, node_metadata_id, title, description)
+    VALUES (new.node_id, new.id, new.name, COALESCE(new.description, ''));
 END;
 
 CREATE TRIGGER node_metadata_search_fts_after_delete
 AFTER DELETE ON node_metadata
 BEGIN
-    DELETE FROM node_search_fts WHERE rowid = old.id;
+    DELETE FROM node_search_fts WHERE node_metadata_id = old.id;
 END;

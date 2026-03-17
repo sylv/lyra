@@ -1,6 +1,6 @@
 -- assets represent things like episode thumbnails, posters, backgrounds, etc.
 CREATE TABLE assets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     -- when remote and not downloaded yet
     source_url TEXT,
     -- when stored locally
@@ -25,9 +25,6 @@ CREATE TABLE users (
     password_hash TEXT,
     invite_code TEXT,
     permissions INTEGER NOT NULL,
-    default_subtitle_iso639_1 TEXT,
-    default_audio_iso639_1 TEXT,
-    subtitles_enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
     CHECK (
@@ -37,7 +34,8 @@ CREATE TABLE users (
 ) STRICT;
 
 CREATE TABLE user_sessions (
-    token TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
+    token TEXT NOT NULL UNIQUE,
     user_id TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     expires_at INTEGER NOT NULL,
@@ -47,7 +45,7 @@ CREATE TABLE user_sessions (
 ) STRICT;
 
 CREATE TABLE libraries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     path TEXT NOT NULL UNIQUE,
     last_scanned_at INTEGER,
@@ -55,7 +53,7 @@ CREATE TABLE libraries (
 ) STRICT;
 
 CREATE TABLE library_users (
-    library_id INTEGER NOT NULL,
+    library_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
 
     PRIMARY KEY (library_id, user_id),
@@ -64,8 +62,8 @@ CREATE TABLE library_users (
 ) STRICT;
 
 CREATE TABLE files (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    library_id INTEGER NOT NULL,
+    id TEXT PRIMARY KEY,
+    library_id TEXT NOT NULL,
     relative_path TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     height INTEGER,
@@ -83,8 +81,8 @@ CREATE TABLE files (
 ) STRICT;
 
 CREATE TABLE file_assets (
-    file_id INTEGER NOT NULL,
-    asset_id INTEGER NOT NULL,
+    file_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
     role INTEGER NOT NULL,
     -- for chapter thumbnails
     chapter_number INTEGER,
@@ -102,7 +100,7 @@ CREATE TABLE file_assets (
 ) STRICT;
 
 CREATE TABLE file_probe (
-    file_id INTEGER PRIMARY KEY,
+    file_id TEXT PRIMARY KEY,
     duration_s INTEGER,
     height INTEGER,
     width INTEGER,
@@ -122,7 +120,7 @@ CREATE TABLE file_probe (
 
 CREATE TABLE nodes (
     id TEXT PRIMARY KEY,
-    library_id INTEGER NOT NULL,
+    library_id TEXT NOT NULL,
     root_id TEXT NOT NULL,
     parent_id TEXT,
     -- 0 movie, 1 series, 2 season, 3 episode
@@ -163,7 +161,7 @@ CREATE INDEX node_closure_descendant_depth_idx ON node_closure(descendant_id, de
 
 CREATE TABLE node_files (
     node_id TEXT NOT NULL,
-    file_id INTEGER NOT NULL,
+    file_id TEXT NOT NULL,
     "order" INTEGER NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -187,7 +185,7 @@ CREATE INDEX nodes_library_root_idx ON nodes(library_id, root_id);
 CREATE INDEX nodes_parent_order_idx ON nodes(parent_id, "order");
 
 CREATE TABLE node_metadata (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     node_id TEXT NOT NULL,
     -- 0 local, 1 remote
     source INTEGER NOT NULL,
@@ -200,9 +198,9 @@ CREATE TABLE node_metadata (
     score_normalized INTEGER,
     released_at INTEGER,
     ended_at INTEGER,
-    poster_asset_id INTEGER,
-    thumbnail_asset_id INTEGER,
-    background_asset_id INTEGER,
+    poster_asset_id TEXT,
+    thumbnail_asset_id TEXT,
+    background_asset_id TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
 
@@ -226,8 +224,8 @@ CREATE TABLE jobs (
     job_kind INTEGER NOT NULL,
     subject_key TEXT NOT NULL UNIQUE,
     version_key INTEGER,
-    file_id INTEGER,
-    asset_id INTEGER,
+    file_id TEXT,
+    asset_id TEXT,
     node_id TEXT,
     run_after INTEGER,
     last_run_at INTEGER NOT NULL,
@@ -242,10 +240,10 @@ CREATE TABLE jobs (
 ) STRICT;
 
 CREATE TABLE watch_progress (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     node_id TEXT NOT NULL,
-    file_id INTEGER NOT NULL,
+    file_id TEXT NOT NULL,
     progress_percent REAL NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),

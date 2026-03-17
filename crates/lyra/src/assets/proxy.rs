@@ -32,7 +32,7 @@ pub fn get_assets_router() -> Router<AppState> {
 async fn get_asset(
     _auth: RequestAuth,
     State(state): State<AppState>,
-    Path(asset_id): Path<i64>,
+    Path(asset_id): Path<String>,
     Query(params): Query<TranscodeParams>,
 ) -> Result<Response, AppError> {
     let mut asset = assets_entity::Entity::find_by_id(asset_id)

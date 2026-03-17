@@ -1,4 +1,5 @@
 use crate::entities::{files, node_files, node_metadata, nodes, nodes::NodeKind, watch_progress};
+use crate::ids;
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -90,20 +91,20 @@ struct MatchedRow {
     row_index: usize,
     row: NormalizedImportWatchStateRow,
     node_id: String,
-    file_id: i64,
+    file_id: String,
 }
 
 #[derive(Debug, Clone)]
 struct PendingWrite {
     node_id: String,
-    file_id: i64,
+    file_id: String,
     progress_percent: f32,
     viewed_at: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
 pub enum MatchOutcome {
-    Matched { node_id: String, file_id: i64 },
+    Matched { node_id: String, file_id: String },
     Unmatched { reason: String, ambiguous: bool },
 }
 
@@ -111,11 +112,11 @@ pub enum MatchOutcome {
 struct MatchLookups {
     root_ids_by_tmdb: HashMap<i64, Vec<String>>,
     root_ids_by_imdb: HashMap<String, Vec<String>>,
-    file_ids_by_signature: HashMap<(String, i64), Vec<i64>>,
-    node_ids_by_file_id: HashMap<i64, Vec<String>>,
+    file_ids_by_signature: HashMap<(String, i64), Vec<String>>,
+    node_ids_by_file_id: HashMap<String, Vec<String>>,
     movie_node_ids_by_root_id: HashMap<String, Vec<String>>,
     episode_node_ids_by_root_and_number: HashMap<(String, i64, i64), Vec<String>>,
-    fallback_file_id_by_node_id: HashMap<String, i64>,
+    fallback_file_id_by_node_id: HashMap<String, String>,
 }
 
 pub async fn dry_run(
@@ -282,7 +283,7 @@ fn match_row(row: &NormalizedImportWatchStateRow, lookups: &MatchLookups) -> Mat
 
     MatchOutcome::Matched {
         node_id: node_id.clone(),
-        file_id: *file_id,
+        file_id: file_id.clone(),
     }
 }
 
@@ -343,7 +344,7 @@ fn match_row_by_root(
 
     MatchOutcome::Matched {
         node_id: node_id.clone(),
-        file_id: *file_id,
+        file_id: file_id.clone(),
     }
 }
 
@@ -352,7 +353,11 @@ async fn run_import(
     request: ImportWatchStatesRequest,
     dry_run: bool,
 ) -> Result<ImportWatchStatesResultData, sea_orm::DbErr> {
-    let normalized_rows = request.rows.into_iter().map(normalize_row).collect::<Vec<_>>();
+    let normalized_rows = request
+        .rows
+        .into_iter()
+        .map(normalize_row)
+        .collect::<Vec<_>>();
     let lookups = load_match_lookups(pool, &normalized_rows).await?;
 
     let mut matched_rows = Vec::new();
@@ -405,7 +410,7 @@ async fn run_import(
             will_insert += 1;
             pending_writes.push(PendingWrite {
                 node_id: matched_row.node_id.clone(),
-                file_id: matched_row.file_id,
+                file_id: matched_row.file_id.clone(),
                 progress_percent: matched_row.row.progress_percent,
                 viewed_at: matched_row.row.viewed_at,
             });
@@ -429,7 +434,7 @@ async fn run_import(
                 will_overwrite += 1;
                 pending_writes.push(PendingWrite {
                     node_id: matched_row.node_id.clone(),
-                    file_id: matched_row.file_id,
+                    file_id: matched_row.file_id.clone(),
                     progress_percent: matched_row.row.progress_percent,
                     viewed_at: matched_row.row.viewed_at,
                 });
@@ -448,21 +453,26 @@ async fn run_import(
             for write in chunk {
                 let updated_at = write.viewed_at.unwrap_or_else(|| Utc::now().timestamp());
                 watch_progress::Entity::insert(watch_progress::ActiveModel {
+                    id: Set(ids::generate_ulid()),
                     user_id: Set(request.user_id.clone()),
                     node_id: Set(write.node_id.clone()),
-                    file_id: Set(write.file_id),
+                    file_id: Set(write.file_id.clone()),
                     progress_percent: Set(write.progress_percent),
+                    created_at: Set(updated_at),
                     updated_at: Set(updated_at),
                     ..Default::default()
                 })
                 .on_conflict(
-                    OnConflict::columns([watch_progress::Column::UserId, watch_progress::Column::NodeId])
-                        .update_columns([
-                            watch_progress::Column::FileId,
-                            watch_progress::Column::ProgressPercent,
-                            watch_progress::Column::UpdatedAt,
-                        ])
-                        .to_owned(),
+                    OnConflict::columns([
+                        watch_progress::Column::UserId,
+                        watch_progress::Column::NodeId,
+                    ])
+                    .update_columns([
+                        watch_progress::Column::FileId,
+                        watch_progress::Column::ProgressPercent,
+                        watch_progress::Column::UpdatedAt,
+                    ])
+                    .to_owned(),
                 )
                 .exec(&transaction)
                 .await?;
@@ -492,7 +502,10 @@ async fn load_match_lookups(
     pool: &DatabaseConnection,
     rows: &[NormalizedImportWatchStateRow],
 ) -> Result<MatchLookups, sea_orm::DbErr> {
-    let tmdb_ids = rows.iter().filter_map(|row| row.tmdb_id).collect::<HashSet<_>>();
+    let tmdb_ids = rows
+        .iter()
+        .filter_map(|row| row.tmdb_id)
+        .collect::<HashSet<_>>();
     let imdb_ids = rows
         .iter()
         .filter_map(|row| row.imdb_id.clone())
@@ -508,10 +521,12 @@ async fn load_match_lookups(
     if !tmdb_ids.is_empty() || !imdb_ids.is_empty() {
         let mut metadata_condition = Condition::any();
         if !tmdb_ids.is_empty() {
-            metadata_condition = metadata_condition.add(node_metadata::Column::TmdbId.is_in(tmdb_ids));
+            metadata_condition =
+                metadata_condition.add(node_metadata::Column::TmdbId.is_in(tmdb_ids));
         }
         if !imdb_ids.is_empty() {
-            metadata_condition = metadata_condition.add(node_metadata::Column::ImdbId.is_in(imdb_ids));
+            metadata_condition =
+                metadata_condition.add(node_metadata::Column::ImdbId.is_in(imdb_ids));
         }
 
         let metadata_rows = node_metadata::Entity::find()
@@ -554,12 +569,15 @@ async fn load_match_lookups(
     let signature_file_ids = lookups
         .file_ids_by_signature
         .values()
-        .flat_map(|ids| ids.iter().copied())
+        .flat_map(|ids| ids.iter().cloned())
         .collect::<HashSet<_>>();
 
     if !signature_file_ids.is_empty() {
         let signature_links = node_files::Entity::find()
-            .filter(node_files::Column::FileId.is_in(signature_file_ids.into_iter().collect::<Vec<_>>()))
+            .filter(
+                node_files::Column::FileId
+                    .is_in(signature_file_ids.into_iter().collect::<Vec<_>>()),
+            )
             .all(pool)
             .await?;
 
@@ -571,7 +589,10 @@ async fn load_match_lookups(
 
     if !matched_root_ids.is_empty() {
         let playable_nodes = nodes::Entity::find()
-            .filter(nodes::Column::RootId.is_in(matched_root_ids.clone().into_iter().collect::<Vec<_>>()))
+            .filter(
+                nodes::Column::RootId
+                    .is_in(matched_root_ids.clone().into_iter().collect::<Vec<_>>()),
+            )
             .filter(nodes::Column::Kind.is_in([NodeKind::Movie, NodeKind::Episode]))
             .all(pool)
             .await?;
@@ -588,7 +609,10 @@ async fn load_match_lookups(
         for node in &playable_nodes {
             match node.kind {
                 NodeKind::Movie => {
-                    let node_ids = lookups.movie_node_ids_by_root_id.entry(node.root_id.clone()).or_default();
+                    let node_ids = lookups
+                        .movie_node_ids_by_root_id
+                        .entry(node.root_id.clone())
+                        .or_default();
                     push_unique(node_ids, node.id.clone());
                 }
                 NodeKind::Episode => {
@@ -602,14 +626,20 @@ async fn load_match_lookups(
                         .and_then(|season| season.season_number)
                         .unwrap_or(0);
                     let key = (node.root_id.clone(), season_number, episode_number);
-                    let node_ids = lookups.episode_node_ids_by_root_and_number.entry(key).or_default();
+                    let node_ids = lookups
+                        .episode_node_ids_by_root_and_number
+                        .entry(key)
+                        .or_default();
                     push_unique(node_ids, node.id.clone());
                 }
                 _ => {}
             }
         }
 
-        let playable_ids = playable_nodes.into_iter().map(|node| node.id).collect::<Vec<_>>();
+        let playable_ids = playable_nodes
+            .into_iter()
+            .map(|node| node.id)
+            .collect::<Vec<_>>();
         let linked_files = node_files::Entity::find()
             .filter(node_files::Column::NodeId.is_in(playable_ids))
             .join(JoinType::InnerJoin, node_files::Relation::Files.def())

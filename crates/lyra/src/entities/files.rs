@@ -1,5 +1,5 @@
-use crate::{json_encoding, segment_markers::StoredFileSegment};
-use anyhow::Result;
+use crate::json_encoding;
+use crate::segment_markers::StoredFileSegment;
 use async_graphql::SimpleObject;
 use sea_orm::entity::prelude::*;
 
@@ -7,10 +7,9 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "files")]
 #[graphql(name = "File", complex)]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    pub library_id: i64,
-    #[sea_orm(column_type = "Text")]
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    pub id: String,
+    pub library_id: String,
     pub relative_path: String,
     pub size_bytes: i64,
     pub height: Option<i64>,
@@ -30,6 +29,10 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_one = "super::file_probe::Entity")]
+    FileProbe,
+    #[sea_orm(has_many = "super::jobs::Entity")]
+    Jobs,
     #[sea_orm(
         belongs_to = "super::libraries::Entity",
         from = "Column::LibraryId",
@@ -40,12 +43,20 @@ pub enum Relation {
     Libraries,
     #[sea_orm(has_many = "super::node_files::Entity")]
     NodeFiles,
-    #[sea_orm(has_many = "super::jobs::Entity")]
-    Jobs,
-    #[sea_orm(has_one = "super::file_probe::Entity")]
-    FileProbe,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
+}
+
+impl Related<super::file_probe::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileProbe.def()
+    }
+}
+
+impl Related<super::jobs::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Jobs.def()
+    }
 }
 
 impl Related<super::libraries::Entity> for Entity {
@@ -60,32 +71,29 @@ impl Related<super::node_files::Entity> for Entity {
     }
 }
 
-impl Related<super::jobs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Jobs.def()
-    }
-}
-
-impl Related<super::file_probe::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::FileProbe.def()
-    }
-}
-
 impl Related<super::watch_progress::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::WatchProgress.def()
     }
 }
 
-impl Model {
-    pub fn decode_segments(&self) -> Result<Vec<StoredFileSegment>> {
-        json_encoding::decode_json_zstd::<Vec<StoredFileSegment>>(&self.segments_json)
+impl Related<super::nodes::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::node_files::Relation::Nodes.def()
     }
-
-    pub fn decode_keyframes(&self) -> Result<Vec<i64>> {
-        json_encoding::decode_json_zstd::<Vec<i64>>(&self.keyframes_json)
+    fn via() -> Option<RelationDef> {
+        Some(super::node_files::Relation::Files.def().rev())
     }
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Model {
+    pub fn decode_keyframes(&self) -> anyhow::Result<Vec<i64>> {
+        json_encoding::decode_json_zstd(&self.keyframes_json)
+    }
+
+    pub fn decode_segments(&self) -> anyhow::Result<Vec<StoredFileSegment>> {
+        json_encoding::decode_json_zstd(&self.segments_json)
+    }
+}

@@ -8,20 +8,10 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
-    #[sea_orm(column_type = "Text", unique)]
     pub username: String,
-    #[sea_orm(column_type = "Text", nullable)]
-    #[graphql(skip)]
     pub password_hash: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    #[graphql(skip)]
     pub invite_code: Option<String>,
     pub permissions: i64,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub default_subtitle_iso639_1: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub default_audio_iso639_1: Option<String>,
-    pub subtitles_enabled: bool,
     pub created_at: i64,
 }
 
@@ -57,7 +47,6 @@ impl Related<super::libraries::Entity> for Entity {
     fn to() -> RelationDef {
         super::library_users::Relation::Libraries.def()
     }
-
     fn via() -> Option<RelationDef> {
         Some(super::library_users::Relation::Users.def().rev())
     }

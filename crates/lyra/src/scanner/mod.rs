@@ -6,6 +6,7 @@ use crate::entities::{
     files, libraries, metadata_source::MetadataSource, node_closure, node_files, node_metadata,
     nodes,
 };
+use crate::ids;
 use crate::scanner::derive_nodes::derive_library_media;
 use crate::scanner::local::insert_local_node_metadata;
 use lyra_parser::{ParsedFile, parse_files};
@@ -63,7 +64,7 @@ async fn scan_library(
             unavailable_at: Set(Some(scan_start_time)),
             ..Default::default()
         })
-        .filter(files::Column::LibraryId.eq(library.id))
+        .filter(files::Column::LibraryId.eq(library.id.clone()))
         .filter(files::Column::ScannedAt.lt(scan_start_time))
         .filter(files::Column::UnavailableAt.is_null())
         .exec(pool)
@@ -72,7 +73,7 @@ async fn scan_library(
     rebuild_library_media(pool, library, &library_path).await?;
 
     libraries::Entity::update(libraries::ActiveModel {
-        id: Set(library.id),
+        id: Set(library.id.clone()),
         last_scanned_at: Set(Some(chrono::Utc::now().timestamp())),
         ..Default::default()
     })
@@ -135,7 +136,11 @@ async fn scan_file(
         .to_string();
 
     files::Entity::insert(files::ActiveModel {
-        library_id: Set(library.id),
+        id: Set(ids::generate_hashid([
+            library.id.as_str(),
+            relative_path.as_str(),
+        ])),
+        library_id: Set(library.id.clone()),
         relative_path: Set(relative_path),
         size_bytes: Set(metadata.len() as i64),
         audio_fingerprint: Set(Vec::new()),
@@ -166,7 +171,7 @@ async fn rebuild_library_media(
     library_root: &StdPath,
 ) -> anyhow::Result<()> {
     let available_files = files::Entity::find()
-        .filter(files::Column::LibraryId.eq(library.id))
+        .filter(files::Column::LibraryId.eq(library.id.clone()))
         .filter(files::Column::UnavailableAt.is_null())
         .order_by(files::Column::Id, Order::Asc)
         .all(pool)
@@ -189,12 +194,12 @@ async fn rebuild_library_media(
     }
 
     let derived = derive_library_media(library_root, &parsed_files)?;
-    upsert_derived_media(pool, library.id, derived).await
+    upsert_derived_media(pool, library.id.clone(), derived).await
 }
 
 async fn upsert_derived_media(
     pool: &DatabaseConnection,
-    library_id: i64,
+    library_id: String,
     derived: derive_nodes::DerivedLibraryMedia,
 ) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp();
@@ -233,7 +238,7 @@ async fn upsert_derived_media(
 
         nodes::Entity::insert(nodes::ActiveModel {
             id: Set(node.id.clone()),
-            library_id: Set(library_id),
+            library_id: Set(library_id.clone()),
             root_id: Set(node.root_id.clone()),
             parent_id: Set(node.parent_id.clone()),
             kind: Set(node.kind),
@@ -267,13 +272,13 @@ async fn upsert_derived_media(
     }
 
     nodes::Entity::delete_many()
-        .filter(nodes::Column::LibraryId.eq(library_id))
+        .filter(nodes::Column::LibraryId.eq(&library_id))
         .filter(nodes::Column::Id.is_not_in(node_ids.clone()))
         .exec(&txn)
         .await?;
 
     let library_node_ids = nodes::Entity::find()
-        .filter(nodes::Column::LibraryId.eq(library_id))
+        .filter(nodes::Column::LibraryId.eq(&library_id))
         .select_only()
         .column(nodes::Column::Id)
         .into_tuple::<String>()
@@ -306,7 +311,7 @@ async fn upsert_derived_media(
         for row in &derived.node_files {
             node_files::Entity::insert(node_files::ActiveModel {
                 node_id: Set(row.node_id.clone()),
-                file_id: Set(row.file_id),
+                file_id: Set(row.file_id.clone()),
                 order: Set(row.order),
                 created_at: Set(now),
                 updated_at: Set(now),

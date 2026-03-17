@@ -1,23 +1,25 @@
 use crate::json_encoding;
-use anyhow::{Context, Result};
 use lyra_ffprobe::FfprobeOutput;
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "file_probe")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub file_id: i64,
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    pub file_id: String,
     pub duration_s: Option<i64>,
     pub height: Option<i64>,
     pub width: Option<i64>,
     pub fps: Option<f64>,
+    #[sea_orm(column_type = "Text", nullable)]
     pub video_codec: Option<String>,
     pub video_bitrate: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
     pub audio_codec: Option<String>,
     pub audio_bitrate: Option<i64>,
     pub audio_channels: Option<i64>,
-    pub has_subtitles: bool,
+    pub has_subtitles: i64,
+    #[sea_orm(column_type = "Blob", nullable)]
     pub streams: Option<Vec<u8>>,
     pub generated_at: i64,
 }
@@ -40,14 +42,14 @@ impl Related<super::files::Entity> for Entity {
     }
 }
 
+impl ActiveModelBehavior for ActiveModel {}
+
 impl Model {
-    pub fn decode_ffprobe_output(&self) -> Result<FfprobeOutput> {
-        let payload = self
+    pub fn decode_ffprobe_output(&self) -> anyhow::Result<FfprobeOutput> {
+        let streams = self
             .streams
             .as_deref()
-            .context("file_probe row missing streams payload")?;
-        json_encoding::decode_json_zstd::<FfprobeOutput>(payload)
+            .ok_or_else(|| anyhow::anyhow!("ffprobe payload missing"))?;
+        json_encoding::decode_json_zstd(streams)
     }
 }
-
-impl ActiveModelBehavior for ActiveModel {}

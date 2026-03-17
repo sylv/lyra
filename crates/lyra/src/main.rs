@@ -40,6 +40,7 @@ mod error;
 mod file_analysis;
 mod graphql;
 mod hls;
+mod ids;
 mod import;
 mod jobs;
 mod json_encoding;
@@ -52,7 +53,7 @@ type AppSchema =
 
 #[derive(Clone, FromRef)]
 struct AppState {
-    packager_states: Arc<Mutex<HashMap<i64, Arc<PackagerState>>>>,
+    packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
     pool: DatabaseConnection,
     schema: Arc<AppSchema>,
     setup_code: u32,

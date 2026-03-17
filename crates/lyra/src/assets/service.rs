@@ -1,6 +1,7 @@
 use crate::{
     assets::storage,
     entities::assets::{self},
+    ids,
 };
 use anyhow::Context;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait};
@@ -15,6 +16,7 @@ pub async fn create_local_asset_from_bytes<C: ConnectionTrait>(
     storage::persist_image_bytes(image_bytes, &prepared).await?;
 
     let inserted = assets::Entity::insert(assets::ActiveModel {
+        id: Set(ids::generate_ulid()),
         source_url: Set(None),
         hash_sha256: Set(Some(prepared.hash_sha256)),
         size_bytes: Set(Some(prepared.size_bytes)),

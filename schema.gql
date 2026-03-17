@@ -7,7 +7,7 @@ type Activity {
 }
 
 type Asset {
-	id: Int!
+	id: String!
 	sourceUrl: String
 	hashSha256: String
 	sizeBytes: Int
@@ -19,8 +19,8 @@ type Asset {
 }
 
 type File {
-	id: Int!
-	libraryId: Int!
+	id: String!
+	libraryId: String!
 	relativePath: String!
 	sizeBytes: Int!
 	height: Int
@@ -98,7 +98,7 @@ type ImportWatchStatesResult {
 }
 
 type Library {
-	id: Int!
+	id: String!
 	name: String!
 	path: String!
 	lastScannedAt: Int
@@ -107,14 +107,14 @@ type Library {
 
 type Mutation {
 	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
-	updateWatchProgress(fileId: Int!, progressPercent: Float!, userId: String): [WatchProgress!]!
+	updateWatchProgress(fileId: String!, progressPercent: Float!, userId: String): [WatchProgress!]!
 	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
 	createLibrary(name: String!, path: String!): Library!
 }
 
 type Node {
 	id: String!
-	libraryId: Int!
+	libraryId: String!
 	rootId: String!
 	parentId: String
 	kind: NodeKind!
@@ -168,7 +168,7 @@ type NodeEdge {
 }
 
 input NodeFilter {
-	libraryId: Int
+	libraryId: String
 	rootId: String
 	parentId: String
 	kinds: [NodeKind!]
@@ -250,7 +250,7 @@ type Query {
 	node(nodeId: String!): Node!
 	search(query: String!, limit: Int): SearchResults!
 	listFiles(path: String!): [String!]!
-	library(libraryId: Int!): Library!
+	library(libraryId: String!): Library!
 	libraries: [Library!]!
 	activities: [Activity!]!
 }
@@ -271,18 +271,17 @@ type TimelinePreviewSheet {
 type User {
 	id: String!
 	username: String!
+	passwordHash: String
+	inviteCode: String
 	permissions: Int!
-	defaultSubtitleIso6391: String
-	defaultAudioIso6391: String
-	subtitlesEnabled: Boolean!
 	createdAt: Int!
 }
 
 type WatchProgress {
-	id: Int!
+	id: String!
 	userId: String!
 	nodeId: String!
-	fileId: Int!
+	fileId: String!
 	createdAt: Int!
 	updatedAt: Int!
 	progressPercent: Float!

@@ -3,8 +3,8 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "library_users")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub library_id: i64,
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    pub library_id: String,
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub user_id: String,
 }

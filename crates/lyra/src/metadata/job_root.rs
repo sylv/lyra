@@ -82,7 +82,10 @@ impl JobHandler for NodeMetadataMatchRootJob {
             .as_deref()
             .with_context(|| format!("job {} missing node_id", job.id))?;
 
-        let Some(node) = nodes::Entity::find_by_id(node_id.to_string()).one(pool).await? else {
+        let Some(node) = nodes::Entity::find_by_id(node_id.to_string())
+            .one(pool)
+            .await?
+        else {
             return Ok(());
         };
 
@@ -148,7 +151,9 @@ impl JobHandler for NodeMetadataMatchRootJob {
 
 fn stored_root_candidate_for_match(matched_root: &MatchedRoot) -> StoredRootMatchCandidate {
     match matched_root {
-        MatchedRoot::Series { candidate, .. } => StoredRootMatchCandidate::Series(candidate.clone()),
+        MatchedRoot::Series { candidate, .. } => {
+            StoredRootMatchCandidate::Series(candidate.clone())
+        }
         MatchedRoot::Movie { candidate, .. } => StoredRootMatchCandidate::Movie(candidate.clone()),
     }
 }
@@ -254,7 +259,9 @@ async fn load_root_match_hint(
     };
 
     Ok(RootMatchHint {
-        title: metadata.map(|row| row.name).unwrap_or_else(|| node.name.clone()),
+        title: metadata
+            .map(|row| row.name)
+            .unwrap_or_else(|| node.name.clone()),
         start_year: years,
         end_year: None,
         imdb_id: None,

@@ -75,7 +75,7 @@ impl JobTarget {
             JobTarget::File => {
                 if target.file_id.is_none() {
                     target.file_id = row
-                        .try_get_by::<Option<i64>, _>(TARGET_ID_COLUMN)
+                        .try_get_by::<Option<String>, _>(TARGET_ID_COLUMN)
                         .ok()
                         .flatten();
                 }
@@ -88,7 +88,10 @@ impl JobTarget {
             }
             JobTarget::Asset => {
                 if target.asset_id.is_none() {
-                    target.asset_id = row.try_get_by::<Option<i64>, _>(TARGET_ID_COLUMN).ok().flatten();
+                    target.asset_id = row
+                        .try_get_by::<Option<String>, _>(TARGET_ID_COLUMN)
+                        .ok()
+                        .flatten();
                 }
 
                 if target.asset_id.is_none() {
@@ -128,13 +131,14 @@ impl JobTarget {
                 "file:{segment}:{}",
                 target
                     .file_id
+                    .clone()
                     .with_context(|| "missing file_id while building subject key")?
             )),
             JobTarget::Asset => Ok(format!(
                 "asset:{segment}:{}",
                 target
                     .asset_id
-                    .map(|value| value.to_string())
+                    .clone()
                     .as_deref()
                     .with_context(|| "missing asset_id while building subject key")?
             )),
@@ -169,8 +173,8 @@ pub trait JobHandler: Send + Sync {
 struct PendingTargetRecord {
     subject_key: String,
     version_key: Option<i64>,
-    file_id: Option<i64>,
-    asset_id: Option<i64>,
+    file_id: Option<String>,
+    asset_id: Option<String>,
     node_id: Option<String>,
 }
 
@@ -342,10 +346,13 @@ impl JobManager {
                 .ok()
                 .flatten();
             let file_id = row
-                .try_get_by::<Option<i64>, _>(FILE_ID_COLUMN)
+                .try_get_by::<Option<String>, _>(FILE_ID_COLUMN)
                 .ok()
                 .flatten();
-            let asset_id = row.try_get_by::<Option<i64>, _>(ASSET_ID_COLUMN).ok().flatten();
+            let asset_id = row
+                .try_get_by::<Option<String>, _>(ASSET_ID_COLUMN)
+                .ok()
+                .flatten();
             let node_id = row
                 .try_get_by::<Option<String>, _>(NODE_ID_COLUMN)
                 .ok()
@@ -402,7 +409,7 @@ impl JobManager {
             let existing = existing_by_subject.get(&target.subject_key);
 
             if let Some(existing) = existing {
-                if existing.job_kind != self.handler.job_kind() {
+                if existing.job_kind != self.handler.job_kind().code() {
                     anyhow::bail!(
                         "subject key '{}' is already used by {:?}, not {:?}",
                         target.subject_key,
@@ -430,7 +437,7 @@ impl JobManager {
             }
 
             let job = jobs_entity::ActiveModel {
-                job_kind: Set(self.handler.job_kind()),
+                job_kind: Set(self.handler.job_kind().code()),
                 subject_key: Set(target.subject_key),
                 version_key: Set(target.version_key),
                 file_id: Set(target.file_id),

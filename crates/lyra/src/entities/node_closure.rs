@@ -14,26 +14,20 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::nodes::Entity",
-        from = "Column::AncestorId",
-        to = "super::nodes::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    Ancestor,
-    #[sea_orm(
-        belongs_to = "super::nodes::Entity",
         from = "Column::DescendantId",
         to = "super::nodes::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
     Descendant,
-}
-
-impl Related<super::nodes::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Ancestor.def()
-    }
+    #[sea_orm(
+        belongs_to = "super::nodes::Entity",
+        from = "Column::AncestorId",
+        to = "super::nodes::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Ancestor,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -5,7 +5,7 @@ use crate::{
     json_encoding,
 };
 use anyhow::Context;
-use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_output};
+use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_output, probe_streams_from_output};
 use sea_orm::{
     ActiveValue::Set,
     DatabaseConnection, EntityTrait,
@@ -41,18 +41,19 @@ impl JobHandler for FileFfprobeJob {
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
         let file_id = shared::expect_job_file_id(job)?;
-        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
+        let Some(ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
+        else {
             return Ok(());
         };
 
-        extract_and_store_ffprobe(pool, ctx.file.id, &ctx.file_path).await?;
+        extract_and_store_ffprobe(pool, &ctx.file.id, &ctx.file_path).await?;
         Ok(())
     }
 }
 
 pub(crate) async fn extract_and_store_ffprobe(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
     file_path: &Path,
 ) -> anyhow::Result<FfprobeOutput> {
     let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
@@ -67,27 +68,26 @@ pub(crate) async fn extract_and_store_ffprobe(
 
 async fn upsert_ffprobe_output(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
     ffprobe_output: &FfprobeOutput,
 ) -> anyhow::Result<()> {
-    let primary_video = ffprobe_output
+    let probe = probe_streams_from_output(ffprobe_output)
+        .with_context(|| format!("failed to normalize ffprobe output for file {file_id}"))?;
+    let primary_video = probe
         .streams
         .iter()
-        .find(|stream| stream.codec_type.as_deref() == Some("video"));
-    let primary_audio = ffprobe_output
+        .find(|stream| matches!(stream.stream_type, lyra_ffprobe::StreamType::Video));
+    let primary_audio = probe
         .streams
         .iter()
-        .find(|stream| stream.codec_type.as_deref() == Some("audio"));
-    let has_subtitles = ffprobe_output
+        .find(|stream| matches!(stream.stream_type, lyra_ffprobe::StreamType::Audio));
+    let has_subtitles = probe
         .streams
         .iter()
-        .any(|stream| stream.codec_type.as_deref() == Some("subtitle"));
+        .any(|stream| matches!(stream.stream_type, lyra_ffprobe::StreamType::Subtitle));
 
-    let duration_s = ffprobe_output
-        .format
-        .as_ref()
-        .and_then(|format| format.duration.as_deref())
-        .and_then(|value| value.parse::<f64>().ok())
+    let duration_s = probe
+        .duration_seconds
         .map(|value| value.max(0.0).floor() as i64);
 
     let fps = primary_video
@@ -102,23 +102,28 @@ async fn upsert_ffprobe_output(
     let streams = json_encoding::encode_json_zstd(ffprobe_output)
         .context("failed to encode ffprobe payload")?;
     let now = chrono::Utc::now().timestamp();
+    let height = primary_video.and_then(|stream| stream.height.map(i64::from));
+    let width = primary_video.and_then(|stream| stream.width.map(i64::from));
+    let video_bitrate = primary_video
+        .and_then(|stream| stream.bit_rate)
+        .and_then(|value| i64::try_from(value).ok());
+    let audio_bitrate = primary_audio
+        .and_then(|stream| stream.bit_rate)
+        .and_then(|value| i64::try_from(value).ok());
+    let audio_channels = primary_audio.and_then(|stream| stream.channels.map(i64::from));
 
     file_probe::Entity::insert(file_probe::ActiveModel {
-        file_id: Set(file_id),
+        file_id: Set(file_id.to_string()),
         duration_s: Set(duration_s),
-        height: Set(primary_video.and_then(|stream| stream.height)),
-        width: Set(primary_video.and_then(|stream| stream.width)),
+        height: Set(height),
+        width: Set(width),
         fps: Set(fps),
         video_codec: Set(primary_video.and_then(|stream| stream.codec_name.clone())),
-        video_bitrate: Set(primary_video
-            .and_then(|stream| stream.bit_rate.as_deref())
-            .and_then(|value| value.parse::<i64>().ok())),
+        video_bitrate: Set(video_bitrate),
         audio_codec: Set(primary_audio.and_then(|stream| stream.codec_name.clone())),
-        audio_bitrate: Set(primary_audio
-            .and_then(|stream| stream.bit_rate.as_deref())
-            .and_then(|value| value.parse::<i64>().ok())),
-        audio_channels: Set(primary_audio.and_then(|stream| stream.channels)),
-        has_subtitles: Set(has_subtitles),
+        audio_bitrate: Set(audio_bitrate),
+        audio_channels: Set(audio_channels),
+        has_subtitles: Set(i64::from(has_subtitles)),
         streams: Set(Some(streams)),
         generated_at: Set(now),
     })
@@ -141,7 +146,12 @@ async fn upsert_ffprobe_output(
             .to_owned(),
     )
     .exec(pool)
-    .await?;
+    .await
+    .with_context(|| {
+        format!(
+            "failed storing ffprobe for file {file_id} (duration_s={duration_s:?}, width={width:?}, height={height:?}, fps={fps:?}, video_bitrate={video_bitrate:?}, audio_bitrate={audio_bitrate:?}, audio_channels={audio_channels:?}, has_subtitles={has_subtitles})"
+        )
+    })?;
 
     Ok(())
 }

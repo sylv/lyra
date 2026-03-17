@@ -4,6 +4,7 @@ use crate::{
         user_sessions,
         users::{self, UserPerms},
     },
+    ids,
 };
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use async_graphql::{Context, Guard};
@@ -16,7 +17,6 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use chrono::Utc;
 use cookie::{Cookie, SameSite};
-use rand::RngCore;
 use reqwest::{StatusCode, header::SET_COOKIE};
 use sea_orm::Set;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
@@ -100,11 +100,12 @@ where
         }
 
         let cookie_jar = CookieJar::from_headers(&parts.headers);
-        let Some(session_id) = cookie_jar.get("session").map(|c| c.value()) else {
+        let Some(session_token) = cookie_jar.get("session").map(|c| c.value()) else {
             return Err(AuthError::Unauthenticated);
         };
 
-        let Some((session, Some(user))) = user_sessions::Entity::find_by_id(session_id)
+        let Some((session, Some(user))) = user_sessions::Entity::find()
+            .filter(user_sessions::Column::Token.eq(session_token))
             .find_also_related(users::Entity)
             .one(&state.pool)
             .await
@@ -225,14 +226,12 @@ pub async fn create_session_for_user(
     user_id: &str,
 ) -> Result<String, AuthError> {
     let session_expiry = 2 * 7 * 24 * 60 * 60; // 2 weeks
-    let session_id = {
-        let mut bytes = [0u8; 16];
-        rand::rng().fill_bytes(&mut bytes);
-        hex::encode(bytes)
-    };
+    let session_id = ids::generate_ulid();
+    let session_token = ids::new_session_token();
 
     user_sessions::Entity::insert(user_sessions::ActiveModel {
-        token: Set(session_id.clone()),
+        id: Set(session_id),
+        token: Set(session_token.clone()),
         user_id: Set(user_id.to_string()),
         created_at: Set(Utc::now().timestamp()),
         expires_at: Set(Utc::now().timestamp() + session_expiry),
@@ -244,7 +243,7 @@ pub async fn create_session_for_user(
 
     // the session expiry is extended when its used, so we want the cookie
     // to last longer than the session expiry.
-    let cookie = Cookie::build(("session", session_id))
+    let cookie = Cookie::build(("session", session_token))
         .path("/api")
         .http_only(true)
         .same_site(SameSite::Strict)

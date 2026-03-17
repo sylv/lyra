@@ -40,7 +40,7 @@ impl JobHandler for AssetThumbhashJob {
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
         let asset_id = shared::expect_job_asset_id(job)?;
-        let Some(asset) = assets::Entity::find_by_id(asset_id).one(pool).await? else {
+        let Some(asset) = assets::Entity::find_by_id(&asset_id).one(pool).await? else {
             return Ok(());
         };
 

@@ -2,6 +2,7 @@ use crate::RequestAuth;
 use crate::auth::{PermissionGuard, create_session_for_user};
 use crate::entities::users::UserPerms;
 use crate::entities::{files, libraries, node_files, users, watch_progress};
+use crate::ids;
 use crate::import::watch_state_import;
 use argon2::{
     Argon2,
@@ -173,7 +174,7 @@ impl Mutation {
                 ));
             }
 
-            let id = ulid::Ulid::new().to_string();
+            let id = ids::generate_ulid();
             let permissions = permissions.unwrap_or_else(|| {
                 if auth.is_setup() {
                     UserPerms::ADMIN.bits()
@@ -207,7 +208,7 @@ impl Mutation {
     pub async fn update_watch_progress(
         &self,
         ctx: &Context<'_>,
-        file_id: i64,
+        file_id: String,
         progress_percent: f32,
         user_id: Option<String>,
     ) -> Result<Vec<watch_progress::Model>, async_graphql::Error> {
@@ -238,7 +239,7 @@ impl Mutation {
             .ok_or_else(|| async_graphql::Error::new("File not found".to_string()))?;
 
         let linked_node_ids: Vec<String> = node_files::Entity::find()
-            .filter(node_files::Column::FileId.eq(file.id))
+            .filter(node_files::Column::FileId.eq(file.id.clone()))
             .select_only()
             .column(node_files::Column::NodeId)
             .distinct()
@@ -260,10 +261,12 @@ impl Mutation {
 
         for node_id in linked_node_ids {
             let row = watch_progress::Entity::insert(watch_progress::ActiveModel {
+                id: Set(ids::generate_ulid()),
                 user_id: Set(user_id.clone()),
                 node_id: Set(node_id),
-                file_id: Set(file.id),
+                file_id: Set(file.id.clone()),
                 progress_percent: Set(normalized_progress_percent),
+                created_at: Set(now),
                 updated_at: Set(now),
                 ..Default::default()
             })
@@ -348,6 +351,7 @@ impl Mutation {
         }
 
         let library = libraries::Entity::insert(libraries::ActiveModel {
+            id: Set(ids::generate_ulid()),
             name: Set(name),
             path: Set(path),
             ..Default::default()

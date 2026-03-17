@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, SimpleObject)]
 pub struct Asset {
-    pub id: i64,
+    pub id: String,
     pub source_url: Option<String>,
     pub hash_sha256: Option<String>,
     pub size_bytes: Option<i64>,
@@ -69,11 +69,11 @@ pub struct NodeProperties {
     pub created_at: Option<i64>,
     pub updated_at: Option<i64>,
     #[graphql(skip)]
-    pub background_asset_id: Option<i64>,
+    pub background_asset_id: Option<String>,
     #[graphql(skip)]
-    pub poster_asset_id: Option<i64>,
+    pub poster_asset_id: Option<String>,
     #[graphql(skip)]
-    pub thumbnail_asset_id: Option<i64>,
+    pub thumbnail_asset_id: Option<String>,
     #[graphql(skip)]
     pub node_id: String,
 }
@@ -85,12 +85,16 @@ impl NodeProperties {
         ctx: &Context<'_>,
     ) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.background_asset_id).await
+        find_asset(pool, self.background_asset_id.clone()).await
     }
 
     pub async fn poster_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        if let Some(asset_id) = self.poster_asset_id.or(self.thumbnail_asset_id) {
+        if let Some(asset_id) = self
+            .poster_asset_id
+            .clone()
+            .or(self.thumbnail_asset_id.clone())
+        {
             return find_asset(pool, Some(asset_id)).await;
         }
 
@@ -103,7 +107,7 @@ impl NodeProperties {
         ctx: &Context<'_>,
     ) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        if let Some(asset_id) = self.thumbnail_asset_id {
+        if let Some(asset_id) = self.thumbnail_asset_id.clone() {
             return find_asset(pool, Some(asset_id)).await;
         }
 
@@ -121,7 +125,7 @@ impl files::Model {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
 
         let rows = file_assets::Entity::find()
-            .filter(file_assets::Column::FileId.eq(self.id))
+            .filter(file_assets::Column::FileId.eq(&self.id))
             .filter(file_assets::Column::Role.eq(FileAssetRole::TimelinePreviewSheet))
             .order_by_asc(file_assets::Column::PositionMs)
             .order_by_asc(file_assets::Column::AssetId)
@@ -132,14 +136,17 @@ impl files::Model {
             return Ok(Vec::new());
         }
 
-        let asset_ids = rows.iter().map(|row| row.asset_id).collect::<Vec<_>>();
+        let asset_ids = rows
+            .iter()
+            .map(|row| row.asset_id.clone())
+            .collect::<Vec<_>>();
         let asset_models = assets::Entity::find()
             .filter(assets::Column::Id.is_in(asset_ids))
             .all(pool)
             .await?;
         let assets_by_id = asset_models
             .into_iter()
-            .map(|asset| (asset.id, asset))
+            .map(|asset| (asset.id.clone(), asset))
             .collect::<HashMap<_, _>>();
 
         let mut sheets = Vec::new();
@@ -218,7 +225,9 @@ impl NodeProperties {
     ) -> Result<Self, sea_orm::DbErr> {
         let default_file = Self::primary_file_for_node(pool, &node.id).await?;
         let probe = if let Some(file) = &default_file {
-            file_probe::Entity::find_by_id(file.id).one(pool).await?
+            file_probe::Entity::find_by_id(file.id.clone())
+                .one(pool)
+                .await?
         } else {
             None
         };
@@ -252,7 +261,7 @@ impl NodeProperties {
                 video_bitrate: probe.as_ref().and_then(|probe| probe.video_bitrate),
                 audio_bitrate: probe.as_ref().and_then(|probe| probe.audio_bitrate),
                 audio_channels: probe.as_ref().and_then(|probe| probe.audio_channels),
-                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles),
+                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles != 0),
                 file_size_bytes: default_file.as_ref().map(|file| file.size_bytes),
                 released_at: metadata.released_at,
                 ended_at: metadata.ended_at,
@@ -284,7 +293,7 @@ impl NodeProperties {
                 video_bitrate: probe.as_ref().and_then(|probe| probe.video_bitrate),
                 audio_bitrate: probe.as_ref().and_then(|probe| probe.audio_bitrate),
                 audio_channels: probe.as_ref().and_then(|probe| probe.audio_channels),
-                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles),
+                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles != 0),
                 file_size_bytes: default_file.as_ref().map(|file| file.size_bytes),
                 released_at: None,
                 ended_at: None,
@@ -322,9 +331,12 @@ impl NodeProperties {
     async fn file_thumbnail_asset_id(
         &self,
         pool: &DatabaseConnection,
-    ) -> Result<Option<i64>, sea_orm::DbErr> {
+    ) -> Result<Option<String>, sea_orm::DbErr> {
         let links = node_files::Entity::find()
-            .join(sea_orm::JoinType::InnerJoin, node_files::Relation::Files.def())
+            .join(
+                sea_orm::JoinType::InnerJoin,
+                node_files::Relation::Files.def(),
+            )
             .filter(node_files::Column::NodeId.eq(self.node_id.clone()))
             .filter(files::Column::UnavailableAt.is_null())
             .order_by_asc(node_files::Column::Order)
@@ -371,7 +383,7 @@ impl Asset {
 
 async fn find_asset(
     pool: &DatabaseConnection,
-    asset_id: Option<i64>,
+    asset_id: Option<String>,
 ) -> Result<Option<Asset>, sea_orm::DbErr> {
     let Some(asset_id) = asset_id else {
         return Ok(None);

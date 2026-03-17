@@ -3,8 +3,9 @@ use crate::{
     entities::{
         assets as assets_entity,
         file_assets::{self, FileAssetRole},
-        files, jobs as jobs_entity, node_files, node_metadata,
+        files, jobs as jobs_entity,
         metadata_source::MetadataSource,
+        node_files, node_metadata,
     },
     jobs::handlers::shared,
     jobs::{JobHandler, JobTarget},
@@ -80,7 +81,8 @@ impl JobHandler for FileThumbnailJob {
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
         let file_id = shared::expect_job_file_id(job)?;
-        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
+        let Some(ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
+        else {
             return Ok(());
         };
 
@@ -89,11 +91,12 @@ impl JobHandler for FileThumbnailJob {
             ..ThumbnailOptions::default()
         };
         let thumbnail = generate_thumbnail(&ctx.file_path, &thumbnail_options).await?;
+        let file_id = ctx.file.id.clone();
 
         // todo: we could skip this with a smarter query
         let mut tx = pool.begin().await?;
         let stale_asset_ids = file_assets::Entity::find()
-            .filter(file_assets::Column::FileId.eq(ctx.file.id))
+            .filter(file_assets::Column::FileId.eq(file_id.clone()))
             .filter(file_assets::Column::Role.eq(FileAssetRole::Thumbnail))
             .all(&tx)
             .await?
@@ -102,7 +105,7 @@ impl JobHandler for FileThumbnailJob {
             .collect::<Vec<_>>();
 
         file_assets::Entity::delete_many()
-            .filter(file_assets::Column::FileId.eq(ctx.file.id))
+            .filter(file_assets::Column::FileId.eq(file_id.clone()))
             .filter(file_assets::Column::Role.eq(FileAssetRole::Thumbnail))
             .exec(&tx)
             .await?;
@@ -117,7 +120,7 @@ impl JobHandler for FileThumbnailJob {
         let asset = assets_api::create_local_asset_from_bytes(&tx, &thumbnail.image_bytes).await?;
 
         file_assets::Entity::insert(file_assets::ActiveModel {
-            file_id: Set(ctx.file.id),
+            file_id: Set(file_id),
             asset_id: Set(asset.id),
             role: Set(FileAssetRole::Thumbnail),
             chapter_number: Set(None),

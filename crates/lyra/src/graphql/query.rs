@@ -13,15 +13,27 @@ use async_graphql::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ActiveEnum, ColumnTrait, Condition, DatabaseConnection, DbBackend, EntityTrait, JoinType, Order,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement,
-    Value, prelude::Expr,
+    ActiveEnum, ColumnTrait, Condition, DatabaseConnection, DbBackend, EntityTrait, JoinType,
+    Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement, Value,
+    prelude::Expr,
 };
 use tokio::task::spawn_blocking;
 
 const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
-    "mnt", "media", "series", "tv", "movies", "movie", "shows", "show", "pool", "array",
-    "video", "videos", "library", "libraries",
+    "mnt",
+    "media",
+    "series",
+    "tv",
+    "movies",
+    "movie",
+    "shows",
+    "show",
+    "pool",
+    "array",
+    "video",
+    "videos",
+    "library",
+    "libraries",
 ];
 
 fn directory_sort_key(name: &str) -> (u8, usize, String) {
@@ -49,7 +61,7 @@ fn directory_sort_key(name: &str) -> (u8, usize, String) {
 #[derive(Debug, InputObject, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeFilter {
-    pub library_id: Option<i64>,
+    pub library_id: Option<String>,
     pub root_id: Option<String>,
     pub parent_id: Option<String>,
     pub kinds: Option<Vec<nodes::NodeKind>>,
@@ -151,7 +163,9 @@ async fn search_nodes_by_kinds(
         return Ok(Vec::new());
     }
 
-    let kind_placeholders = std::iter::repeat_n("?", kinds.len()).collect::<Vec<_>>().join(", ");
+    let kind_placeholders = std::iter::repeat_n("?", kinds.len())
+        .collect::<Vec<_>>()
+        .join(", ");
     let sql = format!(
         r#"
             SELECT DISTINCT nodes.*
@@ -170,7 +184,10 @@ async fn search_nodes_by_kinds(
     values.push(limit.into());
 
     let statement = Statement::from_sql_and_values(DbBackend::Sqlite, sql, values);
-    nodes::Entity::find().from_raw_sql(statement).all(pool).await
+    nodes::Entity::find()
+        .from_raw_sql(statement)
+        .all(pool)
+        .await
 }
 
 pub struct Query;
@@ -187,105 +204,114 @@ impl Query {
         connection::Connection<u64, nodes::Model, EmptyFields, EmptyFields>,
         async_graphql::Error,
     > {
-        connection::query(after, None, first, None, |after, _before, first, _last| async move {
-            let pool = ctx.data::<DatabaseConnection>()?;
-            let mut qb = nodes::Entity::find()
-                .join(JoinType::LeftJoin, nodes::Relation::NodeMetadata.def())
-                .filter(
-                    Condition::any()
-                        .add(node_metadata::Column::Id.is_null())
-                        .add(node_metadata::Column::Source.eq(MetadataSource::Remote))
-                        .add(
-                            Condition::all()
-                                .add(node_metadata::Column::Source.eq(MetadataSource::Local))
-                                .add(Expr::cust(
-                                    "NOT EXISTS (
+        connection::query(
+            after,
+            None,
+            first,
+            None,
+            |after, _before, first, _last| async move {
+                let pool = ctx.data::<DatabaseConnection>()?;
+                let mut qb = nodes::Entity::find()
+                    .join(JoinType::LeftJoin, nodes::Relation::NodeMetadata.def())
+                    .filter(
+                        Condition::any()
+                            .add(node_metadata::Column::Id.is_null())
+                            .add(node_metadata::Column::Source.eq(MetadataSource::Remote))
+                            .add(
+                                Condition::all()
+                                    .add(node_metadata::Column::Source.eq(MetadataSource::Local))
+                                    .add(Expr::cust(
+                                        "NOT EXISTS (
                                         SELECT 1
                                         FROM node_metadata nm2
                                         WHERE nm2.node_id = node_metadata.node_id
                                           AND nm2.source = 1
                                     )",
-                                )),
-                        ),
+                                    )),
+                            ),
+                    );
+
+                if let Some(library_id) = filter.library_id {
+                    qb = qb.filter(nodes::Column::LibraryId.eq(library_id));
+                }
+                if let Some(root_id) = &filter.root_id {
+                    qb = qb.filter(nodes::Column::RootId.eq(root_id.clone()));
+                }
+                if let Some(parent_id) = &filter.parent_id {
+                    qb = qb.filter(nodes::Column::ParentId.eq(parent_id.clone()));
+                }
+                if let Some(kinds) = &filter.kinds {
+                    qb = qb.filter(nodes::Column::Kind.is_in(kinds.clone()));
+                }
+
+                if let Some(watched) = filter.watched {
+                    let auth = ctx.data::<RequestAuth>()?;
+                    let user = auth.get_user_or_err()?;
+                    let watched_node_ids = watch_progress::Entity::find()
+                        .filter(watch_progress::Column::UserId.eq(user.id.clone()))
+                        .filter(
+                            watch_progress::Column::ProgressPercent
+                                .gt(watch_progress::completed_progress_threshold()),
+                        )
+                        .select_only()
+                        .column(watch_progress::Column::NodeId)
+                        .into_tuple::<String>()
+                        .all(pool)
+                        .await?;
+
+                    if watched {
+                        if watched_node_ids.is_empty() {
+                            qb = qb.filter(nodes::Column::Id.eq("__never__"));
+                        } else {
+                            qb = qb.filter(nodes::Column::Id.is_in(watched_node_ids));
+                        }
+                    } else if !watched_node_ids.is_empty() {
+                        qb = qb.filter(nodes::Column::Id.is_not_in(watched_node_ids));
+                    }
+                }
+
+                let order_by = filter.order_by.unwrap_or(OrderBy::Order);
+                let order_direction = filter
+                    .order_direction
+                    .unwrap_or_else(|| order_by.default_direction())
+                    .to_sea_orm();
+
+                match order_by {
+                    OrderBy::AddedAt => {
+                        qb = qb.order_by(nodes::Column::LastAddedAt, order_direction)
+                    }
+                    OrderBy::ReleasedAt => {
+                        qb = qb.order_by(node_metadata::Column::ReleasedAt, order_direction)
+                    }
+                    OrderBy::Alphabetical => {
+                        qb = qb.order_by(node_metadata::Column::Name, order_direction)
+                    }
+                    OrderBy::Rating => {
+                        qb = qb.order_by(node_metadata::Column::ScoreNormalized, order_direction)
+                    }
+                    OrderBy::Order => qb = qb.order_by(nodes::Column::Order, order_direction),
+                }
+
+                qb = qb.order_by_asc(nodes::Column::Id);
+
+                let count = qb.clone().count(pool).await?;
+                let limit = first.unwrap_or(50) as u64;
+                let offset = after.map(|cursor| cursor + 1).unwrap_or(0);
+                let records = qb.limit(Some(limit)).offset(Some(offset)).all(pool).await?;
+
+                let has_previous_page = offset > 0;
+                let has_next_page = offset + limit < count;
+                let mut connection = connection::Connection::new(has_previous_page, has_next_page);
+                connection.edges.extend(
+                    records
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, node)| connection::Edge::new(offset + index as u64, node)),
                 );
 
-            if let Some(library_id) = filter.library_id {
-                qb = qb.filter(nodes::Column::LibraryId.eq(library_id));
-            }
-            if let Some(root_id) = &filter.root_id {
-                qb = qb.filter(nodes::Column::RootId.eq(root_id.clone()));
-            }
-            if let Some(parent_id) = &filter.parent_id {
-                qb = qb.filter(nodes::Column::ParentId.eq(parent_id.clone()));
-            }
-            if let Some(kinds) = &filter.kinds {
-                qb = qb.filter(nodes::Column::Kind.is_in(kinds.clone()));
-            }
-
-            if let Some(watched) = filter.watched {
-                let auth = ctx.data::<RequestAuth>()?;
-                let user = auth.get_user_or_err()?;
-                let watched_node_ids = watch_progress::Entity::find()
-                    .filter(watch_progress::Column::UserId.eq(user.id.clone()))
-                    .filter(
-                        watch_progress::Column::ProgressPercent
-                            .gt(watch_progress::completed_progress_threshold()),
-                    )
-                    .select_only()
-                    .column(watch_progress::Column::NodeId)
-                    .into_tuple::<String>()
-                    .all(pool)
-                    .await?;
-
-                if watched {
-                    if watched_node_ids.is_empty() {
-                        qb = qb.filter(nodes::Column::Id.eq("__never__"));
-                    } else {
-                        qb = qb.filter(nodes::Column::Id.is_in(watched_node_ids));
-                    }
-                } else if !watched_node_ids.is_empty() {
-                    qb = qb.filter(nodes::Column::Id.is_not_in(watched_node_ids));
-                }
-            }
-
-            let order_by = filter.order_by.unwrap_or(OrderBy::Order);
-            let order_direction = filter
-                .order_direction
-                .unwrap_or_else(|| order_by.default_direction())
-                .to_sea_orm();
-
-            match order_by {
-                OrderBy::AddedAt => qb = qb.order_by(nodes::Column::LastAddedAt, order_direction),
-                OrderBy::ReleasedAt => {
-                    qb = qb.order_by(node_metadata::Column::ReleasedAt, order_direction)
-                }
-                OrderBy::Alphabetical => {
-                    qb = qb.order_by(node_metadata::Column::Name, order_direction)
-                }
-                OrderBy::Rating => {
-                    qb = qb.order_by(node_metadata::Column::ScoreNormalized, order_direction)
-                }
-                OrderBy::Order => qb = qb.order_by(nodes::Column::Order, order_direction),
-            }
-
-            qb = qb.order_by_asc(nodes::Column::Id);
-
-            let count = qb.clone().count(pool).await?;
-            let limit = first.unwrap_or(50) as u64;
-            let offset = after.map(|cursor| cursor + 1).unwrap_or(0);
-            let records = qb.limit(Some(limit)).offset(Some(offset)).all(pool).await?;
-
-            let has_previous_page = offset > 0;
-            let has_next_page = offset + limit < count;
-            let mut connection = connection::Connection::new(has_previous_page, has_next_page);
-            connection
-                .edges
-                .extend(records.into_iter().enumerate().map(|(index, node)| {
-                    connection::Edge::new(offset + index as u64, node)
-                }));
-
-            Ok::<_, async_graphql::Error>(connection)
-        })
+                Ok::<_, async_graphql::Error>(connection)
+            },
+        )
         .await
     }
 
@@ -369,7 +395,7 @@ impl Query {
     async fn library(
         &self,
         ctx: &Context<'_>,
-        library_id: i64,
+        library_id: String,
     ) -> Result<libraries::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         libraries::Entity::find_by_id(library_id)

@@ -4,6 +4,7 @@ use crate::entities::{
     node_metadata, nodes,
     nodes::NodeKind,
 };
+use crate::ids;
 use lyra_metadata::{EpisodeMetadata, ImageSet, MovieMetadata, SeasonMetadata, SeriesMetadata};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -136,7 +137,10 @@ pub async fn overwrite_remote_season_metadata_for_batch(
         .all(pool)
         .await?
         .into_iter()
-        .filter_map(|node| node.season_number.map(|season_number| (season_number, node.id)))
+        .filter_map(|node| {
+            node.season_number
+                .map(|season_number| (season_number, node.id))
+        })
         .collect::<std::collections::HashMap<_, _>>();
 
     for season in seasons_result {
@@ -240,6 +244,7 @@ async fn upsert_remote_node_metadata(
         ensure_remote_asset(pool, metadata.images.background_url.as_deref(), now).await?;
 
     node_metadata::Entity::insert(node_metadata::ActiveModel {
+        id: Set(ids::generate_ulid()),
         node_id: Set(node_id.to_string()),
         source: Set(MetadataSource::Remote),
         provider_id: Set(provider_id.to_string()),
@@ -286,7 +291,7 @@ async fn ensure_remote_asset(
     pool: &DatabaseConnection,
     source_url: Option<&str>,
     now: i64,
-) -> anyhow::Result<Option<i64>> {
+) -> anyhow::Result<Option<String>> {
     let Some(source_url) = source_url else {
         return Ok(None);
     };
@@ -304,6 +309,7 @@ async fn ensure_remote_asset(
     }
 
     let asset = assets::ActiveModel {
+        id: Set(ids::generate_ulid()),
         source_url: Set(Some(source_url.to_string())),
         created_at: Set(now),
         ..Default::default()

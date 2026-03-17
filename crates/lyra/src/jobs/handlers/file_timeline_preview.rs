@@ -51,7 +51,8 @@ impl JobHandler for FileTimelinePreviewJob {
         job: &jobs_entity::Model,
     ) -> anyhow::Result<()> {
         let file_id = shared::expect_job_file_id(job)?;
-        let Some(ctx) = shared::load_job_file_context(pool, file_id, self.job_kind()).await? else {
+        let Some(ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
+        else {
             return Ok(());
         };
 
@@ -66,12 +67,13 @@ impl JobHandler for FileTimelinePreviewJob {
         };
 
         let timeline_previews = generate_previews(&ctx.file_path, &preview_options).await?;
+        let file_id = ctx.file.id.clone();
 
         let mut tx = pool.begin().await?;
 
         // todo: we could skip this with a smarter query
         let stale_asset_ids = file_assets::Entity::find()
-            .filter(file_assets::Column::FileId.eq(ctx.file.id))
+            .filter(file_assets::Column::FileId.eq(file_id.clone()))
             .filter(file_assets::Column::Role.eq(FileAssetRole::TimelinePreviewSheet))
             .all(&tx)
             .await?
@@ -80,7 +82,7 @@ impl JobHandler for FileTimelinePreviewJob {
             .collect::<Vec<_>>();
 
         file_assets::Entity::delete_many()
-            .filter(file_assets::Column::FileId.eq(ctx.file.id))
+            .filter(file_assets::Column::FileId.eq(file_id.clone()))
             .filter(file_assets::Column::Role.eq(FileAssetRole::TimelinePreviewSheet))
             .exec(&tx)
             .await?;
@@ -103,7 +105,7 @@ impl JobHandler for FileTimelinePreviewJob {
                 .context("timeline preview asset missing height")?;
 
             file_assets::Entity::insert(file_assets::ActiveModel {
-                file_id: Set(ctx.file.id),
+                file_id: Set(file_id.clone()),
                 asset_id: Set(asset.id),
                 role: Set(FileAssetRole::TimelinePreviewSheet),
                 chapter_number: Set(None),

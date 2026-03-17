@@ -52,10 +52,10 @@ pub fn get_hls_router() -> Router<AppState> {
 async fn get_master_playlist(
     _user: RequestAuth,
     State(state): State<AppState>,
-    Path(file_id): Path<i64>,
+    Path(file_id): Path<String>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let packager_state = get_or_build_packager_state(&state, file_id).await?;
-    let playlist = rewrite_playlist_for_file(packager_state.master_playlist(), file_id);
+    let packager_state = get_or_build_packager_state(&state, file_id.clone()).await?;
+    let playlist = rewrite_playlist_for_file(packager_state.master_playlist(), &file_id);
 
     let mut response = Response::new(Body::from(playlist));
     response.headers_mut().insert(
@@ -68,14 +68,14 @@ async fn get_master_playlist(
 async fn get_stream_playlist(
     _user: RequestAuth,
     State(state): State<AppState>,
-    Path((file_id, stream_id, profile_id)): Path<(i64, u32, String)>,
+    Path((file_id, stream_id, profile_id)): Path<(String, u32, String)>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let packager_state = get_or_build_packager_state(&state, file_id).await?;
+    let packager_state = get_or_build_packager_state(&state, file_id.clone()).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
         .ok_or((StatusCode::NOT_FOUND, "stream profile not found"))?;
 
-    let playlist = rewrite_playlist_for_file(session.playlist(), file_id);
+    let playlist = rewrite_playlist_for_file(session.playlist(), &file_id);
     let mut response = Response::new(Body::from(playlist));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -87,7 +87,7 @@ async fn get_stream_playlist(
 async fn get_segment(
     _user: RequestAuth,
     State(state): State<AppState>,
-    Path((file_id, stream_id, profile_id, name)): Path<(i64, u32, String, String)>,
+    Path((file_id, stream_id, profile_id, name)): Path<(String, u32, String, String)>,
     Query(query): Query<SegmentQuery>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let packager_state = get_or_build_packager_state(&state, file_id).await?;
@@ -141,15 +141,21 @@ async fn get_segment(
 
 async fn get_or_build_packager_state(
     state: &AppState,
-    file_id: i64,
+    file_id: String,
 ) -> Result<Arc<Package>, (StatusCode, &'static str)> {
-    if let Some(existing) = state.packager_states.lock().await.get(&file_id).cloned() {
+    if let Some(existing) = state
+        .packager_states
+        .lock()
+        .await
+        .get(file_id.as_str())
+        .cloned()
+    {
         return Ok(existing);
     }
 
-    let file_path = resolve_file_path(state, file_id).await?;
+    let file_path = resolve_file_path(state, &file_id).await?;
     let mut generated_probe = false;
-    let ffprobe_output = match file_analysis::load_cached_ffprobe_output(&state.pool, file_id)
+    let ffprobe_output = match file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
         .await
         .map_err(|err| {
             tracing::error!(
@@ -165,7 +171,7 @@ async fn get_or_build_packager_state(
         Some(output) => output,
         None => {
             generated_probe = true;
-            file_ffprobe::extract_and_store_ffprobe(&state.pool, file_id, &file_path)
+            file_ffprobe::extract_and_store_ffprobe(&state.pool, &file_id, &file_path)
                 .await
                 .map_err(|err| {
                     tracing::error!(
@@ -182,7 +188,7 @@ async fn get_or_build_packager_state(
     };
 
     let mut generated_keyframes = false;
-    let keyframes_pts = match file_analysis::load_cached_keyframes(&state.pool, file_id)
+    let keyframes_pts = match file_analysis::load_cached_keyframes(&state.pool, &file_id)
         .await
         .map_err(|err| {
             tracing::error!(
@@ -198,7 +204,7 @@ async fn get_or_build_packager_state(
         Some(keyframes) => keyframes,
         None => {
             generated_keyframes = true;
-            file_keyframes::extract_and_store_keyframes(&state.pool, file_id, &file_path)
+            file_keyframes::extract_and_store_keyframes(&state.pool, &file_id, &file_path)
                 .await
                 .map_err(|err| {
                     tracing::error!(
@@ -224,9 +230,7 @@ async fn get_or_build_packager_state(
     }
 
     let profiles = get_profiles();
-    let segments_root = get_config()
-        .get_transcode_cache_dir()
-        .join(file_id.to_string());
+    let segments_root = get_config().get_transcode_cache_dir().join(file_id.clone());
 
     let packager_state = Arc::new(
         build_package(
@@ -254,7 +258,7 @@ async fn get_or_build_packager_state(
 
 async fn resolve_file_path(
     state: &AppState,
-    file_id: i64,
+    file_id: &str,
 ) -> Result<PathBuf, (StatusCode, &'static str)> {
     let (file, library) = files::Entity::find_by_id(file_id)
         .find_also_related(libraries::Entity)
@@ -274,6 +278,6 @@ async fn resolve_file_path(
     Ok(PathBuf::from(library.path).join(&file.relative_path))
 }
 
-fn rewrite_playlist_for_file(playlist: &str, file_id: i64) -> String {
+fn rewrite_playlist_for_file(playlist: &str, file_id: &str) -> String {
     playlist.replace("/stream/", &format!("/api/hls/stream/{file_id}/"))
 }

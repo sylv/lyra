@@ -5,7 +5,7 @@ use sea_orm::{DatabaseConnection, EntityTrait};
 
 pub async fn load_cached_ffprobe_output(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
 ) -> Result<Option<FfprobeOutput>> {
     let maybe_row = file_probe::Entity::find_by_id(file_id).one(pool).await?;
     let Some(row) = maybe_row else {
@@ -27,7 +27,7 @@ pub async fn load_cached_ffprobe_output(
 
 pub async fn load_cached_keyframes(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
 ) -> Result<Option<Vec<i64>>> {
     let maybe_row = files::Entity::find_by_id(file_id).one(pool).await?;
     let Some(row) = maybe_row else {

@@ -12,13 +12,15 @@ pub struct JobFileContext {
     pub file_path: PathBuf,
 }
 
-pub fn expect_job_file_id(job: &jobs_entity::Model) -> anyhow::Result<i64> {
+pub fn expect_job_file_id(job: &jobs_entity::Model) -> anyhow::Result<String> {
     job.file_id
+        .clone()
         .with_context(|| format!("job {} is missing file_id", job.id))
 }
 
-pub fn expect_job_asset_id(job: &jobs_entity::Model) -> anyhow::Result<i64> {
+pub fn expect_job_asset_id(job: &jobs_entity::Model) -> anyhow::Result<String> {
     job.asset_id
+        .clone()
         .with_context(|| format!("job {} is missing asset_id", job.id))
 }
 
@@ -43,7 +45,7 @@ pub fn base_node_id_alias() -> &'static str {
 
 pub async fn load_job_file_context(
     pool: &DatabaseConnection,
-    file_id: i64,
+    file_id: &str,
     job_kind: jobs_entity::JobKind,
 ) -> anyhow::Result<Option<JobFileContext>> {
     let maybe_file = files::Entity::find_by_id(file_id)
@@ -73,7 +75,7 @@ pub async fn load_job_file_context(
         );
 
         files::Entity::update(files::ActiveModel {
-            id: Set(file.id),
+            id: Set(file.id.clone()),
             unavailable_at: Set(Some(chrono::Utc::now().timestamp())),
             ..Default::default()
         })
