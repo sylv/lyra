@@ -5,7 +5,9 @@ use crate::{
     json_encoding,
 };
 use anyhow::Context;
-use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_output, probe_streams_from_output};
+use lyra_ffprobe::{
+    FfprobeOutput, paths::get_ffprobe_path, probe_output, probe_streams_from_output,
+};
 use sea_orm::{
     ActiveValue::Set,
     DatabaseConnection, EntityTrait,

@@ -7,7 +7,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use lyra_packager::{Package, Session, build_package_with_defaults, parse_single_input_path_arg};
+use lyra_packager::{
+    BuildOptions, Package, Session, build_package_with_defaults, parse_single_input_path_arg,
+};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::fs;
@@ -26,7 +28,10 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let input = parse_single_input_path_arg()?;
-    let package = Arc::new(build_package_with_defaults(&input)?);
+    let options = BuildOptions {
+        transcode_cache_dir: std::env::current_dir()?.join(".segments"),
+    };
+    let package = Arc::new(build_package_with_defaults(&input, &options)?);
     let app = build_router(package);
 
     let bind_addr = "0.0.0.0:4422";

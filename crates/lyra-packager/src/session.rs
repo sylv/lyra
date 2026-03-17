@@ -1,11 +1,12 @@
 use crate::{
+    config::BuildOptions,
     ffmpeg::{
         ensure_ffmpeg_for_init, ensure_ffmpeg_for_segment, parse_segment_index, wait_for_file,
     },
     profiles::{AudioAacProfile, Profile, VideoCopyProfile, VideoH264Profile},
     state::{
         build_master_playlist, build_stream_profiles, create_process_segment_dir,
-        prepare_segments_root, prepare_segments_root_at, streams_from_probe_output,
+        prepare_segments_root_at, streams_from_probe_output,
     },
 };
 use anyhow::{Context, Result, bail};
@@ -73,16 +74,13 @@ pub fn parse_single_input_path_arg() -> Result<PathBuf> {
 pub fn build_package(
     input: &FsPath,
     profiles: &[Arc<dyn Profile>],
-    segments_root: Option<&FsPath>,
+    options: &BuildOptions,
     ffprobe_output: &FfprobeOutput,
     keyframes_pts: &[i64],
 ) -> Result<Package> {
     let input = canonicalize_input_path(input)?;
 
-    let segments_root = match segments_root {
-        Some(root) => prepare_segments_root_at(root)?,
-        None => prepare_segments_root()?,
-    };
+    let segments_root = prepare_segments_root_at(&options.transcode_cache_dir)?;
     let process_dir = create_process_segment_dir(&segments_root)?;
 
     let (streams, primary_video_info, duration_seconds) =
@@ -127,13 +125,13 @@ pub fn build_package(
     })
 }
 
-pub fn build_package_with_defaults(input: &FsPath) -> Result<Package> {
+pub fn build_package_with_defaults(input: &FsPath, options: &BuildOptions) -> Result<Package> {
     let input = canonicalize_input_path(input)?;
     let profiles = get_profiles();
     let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
     let ffprobe_output = probe_output(&ffprobe_bin, &input)?;
     let keyframes = probe_keyframes_pts(&ffprobe_bin, &input)?;
-    build_package(&input, &profiles, None, &ffprobe_output, &keyframes)
+    build_package(&input, &profiles, options, &ffprobe_output, &keyframes)
 }
 
 impl Package {

@@ -98,11 +98,6 @@ struct SegmentTimeline {
     hls_cuts: Arc<String>,
 }
 
-pub fn prepare_segments_root() -> Result<PathBuf> {
-    let root = std::env::current_dir()?.join(".segments");
-    prepare_segments_root_at(&root)
-}
-
 pub fn prepare_segments_root_at(root: &Path) -> Result<PathBuf> {
     let root = root.to_path_buf();
     std::fs::create_dir_all(&root)

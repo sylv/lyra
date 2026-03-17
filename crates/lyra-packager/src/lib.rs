@@ -1,3 +1,4 @@
+pub use config::BuildOptions;
 pub mod config;
 mod ffmpeg;
 pub mod model;

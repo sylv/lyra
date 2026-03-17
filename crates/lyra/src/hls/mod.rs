@@ -14,7 +14,7 @@ use axum::{
     response::Response,
     routing::get,
 };
-use lyra_packager::{Package, Session, build_package, get_profiles};
+use lyra_packager::{BuildOptions, Package, Session, build_package, get_profiles};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -230,13 +230,15 @@ async fn get_or_build_packager_state(
     }
 
     let profiles = get_profiles();
-    let segments_root = get_config().get_transcode_cache_dir().join(file_id.clone());
+    let build_options = BuildOptions {
+        transcode_cache_dir: get_config().get_transcode_cache_dir().join(file_id.clone()),
+    };
 
     let packager_state = Arc::new(
         build_package(
             &file_path,
             &profiles,
-            Some(&segments_root),
+            &build_options,
             &ffprobe_output,
             &keyframes_pts,
         )
