@@ -1,5 +1,4 @@
 pub mod derive_nodes;
-pub mod local;
 
 use crate::config::get_config;
 use crate::entities::{
@@ -8,7 +7,6 @@ use crate::entities::{
 };
 use crate::ids;
 use crate::scanner::derive_nodes::derive_library_media;
-use crate::scanner::local::insert_local_node_metadata;
 use lyra_parser::{ParsedFile, parse_files};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
@@ -363,21 +361,49 @@ async fn upsert_derived_media(
         }
     }
 
-    node_metadata::Entity::delete_many()
-        .filter(node_metadata::Column::NodeId.is_in(node_ids.clone()))
-        .filter(node_metadata::Column::Source.eq(MetadataSource::Local))
-        .exec(&txn)
-        .await?;
-
-    for node in &derived.nodes {
-        insert_local_node_metadata(
-            &txn,
-            &node.id,
-            &node.name,
-            node.imdb_id.clone(),
-            node.tmdb_id,
-            now,
+    // keep local metadata in sync with the derived nodes, but avoid delete-then-reinsert churn.
+    // that pattern makes sqlite touch every row twice and fires the fts delete trigger for the
+    // whole batch inside the scan transaction.
+    for batch in derived.nodes.chunks(PARSE_BATCH_SIZE) {
+        node_metadata::Entity::insert_many(batch.iter().map(|node| node_metadata::ActiveModel {
+            id: Set(ids::generate_ulid()),
+            node_id: Set(node.id.clone()),
+            source: Set(MetadataSource::Local),
+            provider_id: Set("local".to_owned()),
+            imdb_id: Set(node.imdb_id.clone()),
+            tmdb_id: Set(node.tmdb_id),
+            name: Set(node.name.clone()),
+            description: Set(None),
+            score_display: Set(None),
+            score_normalized: Set(None),
+            released_at: Set(None),
+            ended_at: Set(None),
+            poster_asset_id: Set(None),
+            thumbnail_asset_id: Set(None),
+            background_asset_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }))
+        .on_conflict(
+            OnConflict::columns([node_metadata::Column::NodeId, node_metadata::Column::Source])
+                .update_columns([
+                    node_metadata::Column::ProviderId,
+                    node_metadata::Column::ImdbId,
+                    node_metadata::Column::TmdbId,
+                    node_metadata::Column::Name,
+                    node_metadata::Column::Description,
+                    node_metadata::Column::ScoreDisplay,
+                    node_metadata::Column::ScoreNormalized,
+                    node_metadata::Column::ReleasedAt,
+                    node_metadata::Column::EndedAt,
+                    node_metadata::Column::PosterAssetId,
+                    node_metadata::Column::ThumbnailAssetId,
+                    node_metadata::Column::BackgroundAssetId,
+                    node_metadata::Column::UpdatedAt,
+                ])
+                .to_owned(),
         )
+        .exec(&txn)
         .await?;
     }
 
@@ -409,8 +435,8 @@ async fn park_existing_root_orders(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{libraries, nodes};
-    use sea_orm::Database;
+    use crate::entities::{libraries, node_metadata, nodes};
+    use sea_orm::{Database, QueryFilter};
 
     async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {
         let pool = Database::connect("sqlite::memory:").await?;
@@ -564,6 +590,98 @@ mod tests {
         assert_eq!(rows[1].order, 1);
         assert_eq!(rows[2].id, episode_id);
         assert_eq!(rows[2].order, 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn upsert_derived_media_keeps_one_local_metadata_row_per_node() -> anyhow::Result<()> {
+        let pool = setup_test_db().await?;
+
+        libraries::Entity::insert(libraries::ActiveModel {
+            id: Set("lib".to_owned()),
+            path: Set("/library".to_owned()),
+            name: Set("Library".to_owned()),
+            last_scanned_at: Set(None),
+            created_at: Set(0),
+        })
+        .exec(&pool)
+        .await?;
+
+        let root_id = "root".to_owned();
+        let episode_id = "episode-1".to_owned();
+        let derived = derive_nodes::DerivedLibraryMedia {
+            nodes: vec![
+                derive_nodes::DerivedNode {
+                    id: root_id.clone(),
+                    root_id: root_id.clone(),
+                    parent_id: None,
+                    kind: nodes::NodeKind::Series,
+                    name: "Show".to_owned(),
+                    order: 0,
+                    season_number: None,
+                    episode_number: None,
+                    imdb_id: Some("tt1234567".to_owned()),
+                    tmdb_id: Some(42),
+                    last_added_at: 0,
+                },
+                derive_nodes::DerivedNode {
+                    id: episode_id.clone(),
+                    root_id: root_id.clone(),
+                    parent_id: Some(root_id.clone()),
+                    kind: nodes::NodeKind::Episode,
+                    name: "Episode 1".to_owned(),
+                    order: 1,
+                    season_number: Some(1),
+                    episode_number: Some(1),
+                    imdb_id: None,
+                    tmdb_id: None,
+                    last_added_at: 0,
+                },
+            ],
+            node_files: Vec::new(),
+            closure: vec![
+                node_closure::Model {
+                    ancestor_id: root_id.clone(),
+                    descendant_id: root_id.clone(),
+                    depth: 0,
+                },
+                node_closure::Model {
+                    ancestor_id: episode_id.clone(),
+                    descendant_id: episode_id.clone(),
+                    depth: 0,
+                },
+                node_closure::Model {
+                    ancestor_id: root_id.clone(),
+                    descendant_id: episode_id.clone(),
+                    depth: 1,
+                },
+            ],
+        };
+
+        upsert_derived_media(&pool, "lib".to_owned(), derived.clone()).await?;
+        upsert_derived_media(&pool, "lib".to_owned(), derived).await?;
+
+        let metadata_rows = node_metadata::Entity::find()
+            .filter(node_metadata::Column::Source.eq(MetadataSource::Local))
+            .all(&pool)
+            .await?;
+
+        assert_eq!(metadata_rows.len(), 2);
+        assert_eq!(
+            metadata_rows
+                .iter()
+                .filter(|row| row.node_id == root_id && row.name == "Show")
+                .count(),
+            1
+        );
+        assert_eq!(
+            metadata_rows
+                .iter()
+                .filter(|row| row.node_id == episode_id && row.name == "Episode 1")
+                .count(),
+            1
+        );
 
         Ok(())
     }

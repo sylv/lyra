@@ -128,7 +128,7 @@ async fn main() {
 
     let db_path = get_config().data_dir.join("data.db");
     let pool = SqlitePoolOptions::new()
-        .max_connections(1)
+        .max_connections(8)
         .acquire_timeout(Duration::from_secs(300))
         .connect_with(
             // https://briandouglas.ie/sqlite-defaults/
