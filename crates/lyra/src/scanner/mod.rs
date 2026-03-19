@@ -49,6 +49,23 @@ pub async fn start_scanner(
     }
 }
 
+pub async fn run_startup_scan(
+    pool: &DatabaseConnection,
+    wake_signal: &Arc<Notify>,
+) -> anyhow::Result<()> {
+    let libraries = libraries::Entity::find()
+        .order_by_asc(libraries::Column::CreatedAt)
+        .all(pool)
+        .await?;
+
+    for library in libraries {
+        tracing::info!(library_id = %library.id, path = %library.path, "running startup library scan");
+        scan_library(pool, &library, wake_signal).await?;
+    }
+
+    Ok(())
+}
+
 async fn scan_library(
     pool: &DatabaseConnection,
     library: &libraries::Model,
@@ -57,7 +74,17 @@ async fn scan_library(
     let scan_start_time = chrono::Utc::now().timestamp();
     let library_path = PathBuf::from(&library.path);
 
-    scan_directory(pool, library, &library_path, &library_path, scan_start_time).await?;
+    // if the library root can't be read, treat the whole library as unavailable for this pass
+    // instead of crashing startup or the scanner loop.
+    let scan_result = scan_directory(pool, library, &library_path, &library_path, scan_start_time).await;
+    if let Err(error) = scan_result {
+        tracing::warn!(
+            library_id = %library.id,
+            path = %library.path,
+            error = ?error,
+            "library scan could not read root; marking missing files unavailable"
+        );
+    }
 
     files::Entity::update_many()
         .set(files::ActiveModel {

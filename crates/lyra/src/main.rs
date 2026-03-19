@@ -150,8 +150,14 @@ async fn main() {
         .expect("Failed to run migrations");
 
     let pool = DatabaseConnection::from(pool);
-    let mut background_workers: JoinSet<anyhow::Result<()>> = JoinSet::new();
     let job_wake_signal = Arc::new(Notify::new());
+
+    tracing::info!("running startup library scan");
+    scanner::run_startup_scan(&pool, &job_wake_signal)
+        .await
+        .expect("Failed to complete startup library scan");
+
+    let mut background_workers: JoinSet<anyhow::Result<()>> = JoinSet::new();
 
     let scanner_pool = pool.clone();
     let scanner_wake_signal = job_wake_signal.clone();
