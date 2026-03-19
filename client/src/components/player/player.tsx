@@ -421,7 +421,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		} else {
 			setErrorMessage("Sorry, your browser does not support this video.");
 		}
-	}, [currentMedia, shouldPromptResume]);
+	}, [currentMedia?.id, shouldPromptResume]);
 
 	useEffect(() => {
 		if (autoplay) {
