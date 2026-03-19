@@ -8,7 +8,7 @@ use crate::{
         node_files, node_metadata,
     },
     jobs::handlers::shared,
-    jobs::{JobHandler, JobTarget},
+    jobs::{JobHandler, JobRunContext, JobRunResult, JobTarget},
 };
 use lyra_ffprobe::paths::get_ffmpeg_path;
 use lyra_thumbnail::{ThumbnailOptions, generate_thumbnail};
@@ -26,6 +26,10 @@ pub struct FileThumbnailJob;
 impl JobHandler for FileThumbnailJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
         jobs_entity::JobKind::FileGenerateThumbnail
+    }
+
+    fn is_heavy(&self) -> bool {
+        true
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
@@ -79,19 +83,28 @@ impl JobHandler for FileThumbnailJob {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+        ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult> {
         let file_id = shared::expect_job_file_id(job)?;
-        let Some(ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
+        let Some(file_ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
         else {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         };
 
         let thumbnail_options = ThumbnailOptions {
             ffmpeg_bin: PathBuf::from(get_ffmpeg_path()?),
             ..ThumbnailOptions::default()
         };
-        let thumbnail = generate_thumbnail(&ctx.file_path, &thumbnail_options).await?;
-        let file_id = ctx.file.id.clone();
+        let Some(thumbnail) = generate_thumbnail(
+            &file_ctx.file_path,
+            &thumbnail_options,
+            Some(ctx.cancellation_token()),
+        )
+        .await?
+        else {
+            return Ok(JobRunResult::Cancelled);
+        };
+        let file_id = file_ctx.file.id.clone();
 
         // todo: we could skip this with a smarter query
         let mut tx = pool.begin().await?;
@@ -135,6 +148,6 @@ impl JobHandler for FileThumbnailJob {
         .await?;
 
         tx.commit().await?;
-        Ok(())
+        Ok(JobRunResult::Complete)
     }
 }

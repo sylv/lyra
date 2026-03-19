@@ -1,6 +1,9 @@
 use crate::entities::metadata_source::MetadataSource;
 use crate::entities::{jobs as jobs_entity, node_metadata, nodes, nodes::NodeKind};
-use crate::jobs::{JobExecutionPolicy, JobHandler, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN};
+use crate::jobs::{
+    JobExecutionPolicy, JobHandler, JobRunContext, JobRunResult, JobTarget, NODE_ID_COLUMN,
+    VERSION_KEY_COLUMN,
+};
 use crate::json_encoding;
 use crate::metadata::METADATA_RETRY_BACKOFF_SECONDS;
 use crate::metadata::store::{
@@ -56,6 +59,10 @@ impl JobHandler for NodeMetadataMatchRootJob {
         jobs_entity::JobKind::NodeMatchMetadataRoot
     }
 
+    fn is_heavy(&self) -> bool {
+        false
+    }
+
     fn execution_policy(&self) -> JobExecutionPolicy {
         JobExecutionPolicy::with_backoff_seconds(METADATA_RETRY_BACKOFF_SECONDS)
     }
@@ -77,7 +84,8 @@ impl JobHandler for NodeMetadataMatchRootJob {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+        _ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult> {
         let node_id = job
             .node_id
             .as_deref()
@@ -87,7 +95,7 @@ impl JobHandler for NodeMetadataMatchRootJob {
             .one(pool)
             .await?
         else {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         };
 
         let mut candidates = decode_root_candidates(node.match_candidates_json.as_deref())?;
@@ -146,7 +154,7 @@ impl JobHandler for NodeMetadataMatchRootJob {
             );
         }
 
-        Ok(())
+        Ok(JobRunResult::Complete)
     }
 }
 

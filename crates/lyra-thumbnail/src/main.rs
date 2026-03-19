@@ -14,7 +14,9 @@ async fn main() -> Result<()> {
         bail!("Input file does not exist: {:?}", input_file);
     }
 
-    let thumbnail = generate_thumbnail(&input_file, &ThumbnailOptions::default()).await?;
+    let thumbnail = generate_thumbnail(&input_file, &ThumbnailOptions::default(), None)
+        .await?
+        .expect("thumbnail CLI should not cancel");
 
     let output_path = env::current_dir()?.join("generated_thumbnail.webp");
     tokio::fs::write(&output_path, &thumbnail.image_bytes).await?;

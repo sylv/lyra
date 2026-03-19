@@ -1,3 +1,4 @@
+use crate::job_block::JobLock;
 use crate::jobs::{
     JobActivityRegistry, JobHandler, JobManager,
     handlers::{
@@ -34,7 +35,11 @@ pub fn get_registered_job_handlers() -> Vec<Arc<dyn JobHandler>> {
     ]
 }
 
-pub fn get_registered_jobs(pool: &DatabaseConnection, wake_signal: Arc<Notify>) -> RegisteredJobs {
+pub fn get_registered_jobs(
+    pool: &DatabaseConnection,
+    wake_signal: Arc<Notify>,
+    job_lock: JobLock,
+) -> RegisteredJobs {
     let handlers = get_registered_job_handlers();
     let now = chrono::Utc::now().timestamp();
     let activity_registry =
@@ -47,7 +52,13 @@ pub fn get_registered_jobs(pool: &DatabaseConnection, wake_signal: Arc<Notify>) 
             let activity_state = activity_registry
                 .state(job_kind)
                 .expect("missing activity state for registered job kind");
-            JobManager::new(handler, pool.clone(), wake_signal.clone(), activity_state)
+            JobManager::new(
+                handler,
+                pool.clone(),
+                wake_signal.clone(),
+                activity_state,
+                job_lock.clone(),
+            )
         })
         .collect();
 

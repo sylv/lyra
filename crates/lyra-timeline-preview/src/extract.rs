@@ -8,14 +8,18 @@ use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::PreviewOptions;
 
 pub(crate) async fn extract_frame_paths(
     video_path: &PathBuf,
     options: &PreviewOptions,
-) -> anyhow::Result<Vec<(u32, PathBuf)>> {
-    let frames_dir = extract_frames(video_path, options).await?;
+    cancellation_token: &CancellationToken,
+) -> anyhow::Result<Option<Vec<(u32, PathBuf)>>> {
+    let Some(frames_dir) = extract_frames(video_path, options, cancellation_token).await? else {
+        return Ok(None);
+    };
     tracing::debug!("frame dir: {}", frames_dir.display());
 
     let mut handle = tokio::fs::read_dir(&frames_dir).await?;
@@ -43,10 +47,14 @@ pub(crate) async fn extract_frame_paths(
 
     frame_paths.sort_by_key(|(frame_num, _)| *frame_num);
     tracing::debug!("discovered {} extracted frames", frame_paths.len());
-    Ok(frame_paths)
+    Ok(Some(frame_paths))
 }
 
-async fn extract_frames(video_path: &PathBuf, options: &PreviewOptions) -> anyhow::Result<PathBuf> {
+async fn extract_frames(
+    video_path: &PathBuf,
+    options: &PreviewOptions,
+    cancellation_token: &CancellationToken,
+) -> anyhow::Result<Option<PathBuf>> {
     let start = Instant::now();
     if options.working_dir.exists() {
         std::fs::remove_dir_all(&options.working_dir)?;
@@ -76,6 +84,7 @@ async fn extract_frames(video_path: &PathBuf, options: &PreviewOptions) -> anyho
 
     tracing::info!("running ffmpeg with args: {}", args.join(" "));
     let mut child = Command::new(&options.ffmpeg_bin)
+        .kill_on_drop(true)
         .args(&args)
         .stdout(Stdio::piped())
         .spawn()?;
@@ -84,7 +93,7 @@ async fn extract_frames(video_path: &PathBuf, options: &PreviewOptions) -> anyho
         .stdout
         .take()
         .ok_or_else(|| anyhow::anyhow!("failed to get ffmpeg stdout"))?;
-    tokio::spawn(async move {
+    let progress_task = tokio::spawn(async move {
         let reader = BufReader::new(stdout);
         let mut last_log = Instant::now();
         let mut lines = reader.lines();
@@ -125,7 +134,16 @@ async fn extract_frames(video_path: &PathBuf, options: &PreviewOptions) -> anyho
         }
     });
 
-    let status = child.wait().await?;
+    let status = tokio::select! {
+        status = child.wait() => status?,
+        _ = cancellation_token.cancelled() => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            progress_task.abort();
+            return Ok(None);
+        }
+    };
+    progress_task.abort();
     if !status.success() {
         anyhow::bail!(
             "ffmpeg failed to extract timeline preview frames: {}",
@@ -137,5 +155,5 @@ async fn extract_frames(video_path: &PathBuf, options: &PreviewOptions) -> anyho
         options.working_dir.display(),
         start.elapsed()
     );
-    Ok(options.working_dir.clone())
+    Ok(Some(options.working_dir.clone()))
 }

@@ -6,6 +6,7 @@ use crate::{
         users::{self},
     },
     error::AppError,
+    job_block::JobLock,
 };
 use anyhow::Context;
 use async_graphql::{Schema, http::GraphiQLSource};
@@ -42,6 +43,7 @@ mod graphql;
 mod hls;
 mod ids;
 mod import;
+mod job_block;
 mod jobs;
 mod json_encoding;
 mod metadata;
@@ -56,6 +58,7 @@ struct AppState {
     packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
     pool: DatabaseConnection,
     schema: Arc<AppSchema>,
+    job_lock: JobLock,
     setup_code: u32,
     last_setup_code_attempt: Arc<AtomicI64>,
 }
@@ -151,6 +154,7 @@ async fn main() {
 
     let pool = DatabaseConnection::from(pool);
     let job_wake_signal = Arc::new(Notify::new());
+    let job_lock = JobLock::default();
 
     tracing::info!("running startup library scan");
     scanner::run_startup_scan(&pool, &job_wake_signal)
@@ -164,7 +168,8 @@ async fn main() {
     background_workers
         .spawn(async move { scanner::start_scanner(scanner_pool, scanner_wake_signal).await });
 
-    let registered_jobs = jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone());
+    let registered_jobs =
+        jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone(), job_lock.clone());
     let job_activity_registry = registered_jobs.activity_registry.clone();
     for job in registered_jobs.managers {
         let job_kind = job.job_kind();
@@ -217,6 +222,7 @@ async fn main() {
             packager_states: Arc::new(Mutex::new(HashMap::new())),
             pool: pool.clone(),
             schema: Arc::new(schema),
+            job_lock,
             setup_code,
             last_setup_code_attempt: Arc::new(AtomicI64::new(0)),
         });

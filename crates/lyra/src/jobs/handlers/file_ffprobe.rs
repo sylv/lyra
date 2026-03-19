@@ -1,7 +1,7 @@
 use crate::{
     entities::{file_probe, files, jobs as jobs_entity},
     jobs::handlers::shared,
-    jobs::{JobHandler, JobTarget},
+    jobs::{JobHandler, JobRunContext, JobRunResult, JobTarget},
     json_encoding,
 };
 use anyhow::Context;
@@ -13,7 +13,7 @@ use sea_orm::{
     DatabaseConnection, EntityTrait,
     sea_query::{Expr, OnConflict, Query, SelectStatement},
 };
-use std::{path::Path, path::PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct FileFfprobeJob;
@@ -22,6 +22,10 @@ pub struct FileFfprobeJob;
 impl JobHandler for FileFfprobeJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
         jobs_entity::JobKind::FileExtractFfprobe
+    }
+
+    fn is_heavy(&self) -> bool {
+        false
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
@@ -41,15 +45,20 @@ impl JobHandler for FileFfprobeJob {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+        ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult> {
         let file_id = shared::expect_job_file_id(job)?;
-        let Some(ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
+        let Some(file_ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
         else {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         };
 
-        extract_and_store_ffprobe(pool, &ctx.file.id, &ctx.file_path).await?;
-        Ok(())
+        let Some(_) =
+            extract_and_store_ffprobe(pool, &file_ctx.file.id, &file_ctx.file_path, ctx).await?
+        else {
+            return Ok(JobRunResult::Cancelled);
+        };
+        Ok(JobRunResult::Complete)
     }
 }
 
@@ -57,15 +66,20 @@ pub(crate) async fn extract_and_store_ffprobe(
     pool: &DatabaseConnection,
     file_id: &str,
     file_path: &Path,
-) -> anyhow::Result<FfprobeOutput> {
-    let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
-    let input = file_path.to_path_buf();
-    let ffprobe_output = tokio::task::spawn_blocking(move || probe_output(&ffprobe_bin, &input))
-        .await
-        .context("ffprobe probe task panicked")??;
+    ctx: &JobRunContext,
+) -> anyhow::Result<Option<FfprobeOutput>> {
+    let ffprobe_output = probe_output(
+        get_ffprobe_path()?,
+        file_path,
+        Some(ctx.cancellation_token()),
+    )
+    .await?;
+    let Some(ffprobe_output) = ffprobe_output else {
+        return Ok(None);
+    };
 
     upsert_ffprobe_output(pool, file_id, &ffprobe_output).await?;
-    Ok(ffprobe_output)
+    Ok(Some(ffprobe_output))
 }
 
 async fn upsert_ffprobe_output(

@@ -1,6 +1,9 @@
 use crate::{
     entities::{files, jobs as jobs_entity, libraries, node_files, nodes, nodes::NodeKind},
-    jobs::{JobHandler, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN, handlers::shared},
+    jobs::{
+        JobHandler, JobRunContext, JobRunResult, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN,
+        handlers::shared,
+    },
     json_encoding,
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
 };
@@ -49,6 +52,10 @@ impl JobHandler for RootIntroSegmentsJob {
         jobs_entity::JobKind::NodeGenerateIntroSegments
     }
 
+    fn is_heavy(&self) -> bool {
+        true
+    }
+
     fn targets(&self) -> (JobTarget, SelectStatement) {
         let mut query = node_files::Entity::find()
             .join(JoinType::InnerJoin, node_files::Relation::Nodes.def())
@@ -68,12 +75,13 @@ impl JobHandler for RootIntroSegmentsJob {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+        ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult> {
         let root_id = shared::expect_job_node_id(job)?;
 
         let mut root_files = load_root_files(pool, root_id).await?;
         if root_files.len() < INTRO_DETECTION_BATCH_MIN_FILES {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         }
 
         let mut pending_file_ids = root_files
@@ -88,6 +96,10 @@ impl JobHandler for RootIntroSegmentsJob {
             .collect::<HashSet<_>>();
 
         while !pending_file_ids.is_empty() {
+            if ctx.is_cancelled() {
+                return Ok(JobRunResult::Cancelled);
+            }
+
             let Some(seed) = root_files
                 .iter()
                 .find(|file| pending_file_ids.contains(&file.file_id))
@@ -132,62 +144,57 @@ impl JobHandler for RootIntroSegmentsJob {
                 })
                 .collect::<Vec<_>>();
 
-            let outcome = tokio::task::spawn_blocking(move || detect_intros(&detection_inputs))
-                .await
-                .context("intro detection task panicked")?;
+            let Some(detections) =
+                detect_intros(&detection_inputs, Some(ctx.cancellation_token())).await?
+            else {
+                return Ok(JobRunResult::Cancelled);
+            };
 
-            match outcome {
-                Ok(detections) => {
-                    let detections_by_path = detections
-                        .into_iter()
-                        .map(|detection| (detection.path.clone(), detection))
-                        .collect::<HashMap<_, _>>();
+            let detections_by_path = detections
+                .into_iter()
+                .map(|detection| (detection.path.clone(), detection))
+                .collect::<HashMap<_, _>>();
 
-                    for batch_file in &batch {
-                        let Some(detection) = detections_by_path.get(&batch_file.file_path) else {
-                            continue;
-                        };
+            for batch_file in &batch {
+                let Some(detection) = detections_by_path.get(&batch_file.file_path) else {
+                    continue;
+                };
 
-                        if batch_file.audio_fingerprint != detection.fingerprint_cache {
-                            store_audio_fingerprint(
-                                pool,
-                                &batch_file.file_id,
-                                &detection.fingerprint_cache,
-                            )
-                            .await?;
-                            if let Some(file) = root_files
-                                .iter_mut()
-                                .find(|file| file.file_id == batch_file.file_id)
-                            {
-                                file.audio_fingerprint = detection.fingerprint_cache.clone();
-                            }
-                        }
-
-                        if !target_file_id_set.contains(&batch_file.file_id) {
-                            continue;
-                        }
-
-                        let segments = detection
-                            .intro
-                            .and_then(intro_segment_from_range)
-                            .into_iter()
-                            .collect::<Vec<_>>();
-
-                        store_segments(pool, &batch_file.file_id, &segments).await?;
-
-                        if let Some(file) = root_files
-                            .iter_mut()
-                            .find(|file| file.file_id == batch_file.file_id)
-                        {
-                            file.has_intro_marker = segments
-                                .iter()
-                                .any(|segment| segment.kind == StoredFileSegmentKind::Intro);
-                            file.pending_segments = false;
-                        }
+                if batch_file.audio_fingerprint != detection.fingerprint_cache {
+                    store_audio_fingerprint(
+                        pool,
+                        &batch_file.file_id,
+                        &detection.fingerprint_cache,
+                    )
+                    .await?;
+                    if let Some(file) = root_files
+                        .iter_mut()
+                        .find(|file| file.file_id == batch_file.file_id)
+                    {
+                        file.audio_fingerprint = detection.fingerprint_cache.clone();
                     }
                 }
-                Err(error) => {
-                    tracing::warn!(root_id, error = ?error, "intro detection batch failed");
+
+                if !target_file_id_set.contains(&batch_file.file_id) {
+                    continue;
+                }
+
+                let segments = detection
+                    .intro
+                    .and_then(intro_segment_from_range)
+                    .into_iter()
+                    .collect::<Vec<_>>();
+
+                store_segments(pool, &batch_file.file_id, &segments).await?;
+
+                if let Some(file) = root_files
+                    .iter_mut()
+                    .find(|file| file.file_id == batch_file.file_id)
+                {
+                    file.has_intro_marker = segments
+                        .iter()
+                        .any(|segment| segment.kind == StoredFileSegmentKind::Intro);
+                    file.pending_segments = false;
                 }
             }
 
@@ -196,7 +203,7 @@ impl JobHandler for RootIntroSegmentsJob {
             }
         }
 
-        Ok(())
+        Ok(JobRunResult::Complete)
     }
 }
 

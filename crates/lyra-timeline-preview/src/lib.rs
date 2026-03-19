@@ -1,4 +1,5 @@
 use std::{path::PathBuf, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 mod extract;
 mod generate;
@@ -42,7 +43,23 @@ pub struct TimelinePreview {
 pub async fn generate_previews(
     video_path: &PathBuf,
     options: &PreviewOptions,
-) -> anyhow::Result<Vec<TimelinePreview>> {
-    let frame_paths = extract::extract_frame_paths(video_path, options).await?;
-    generate::generate_sheets(&frame_paths, options).await
+    cancellation_token: Option<&CancellationToken>,
+) -> anyhow::Result<Option<Vec<TimelinePreview>>> {
+    let owned_cancellation_token;
+    let cancellation_token = match cancellation_token {
+        Some(cancellation_token) => cancellation_token,
+        None => {
+            owned_cancellation_token = CancellationToken::new();
+            &owned_cancellation_token
+        }
+    };
+    let Some(frame_paths) =
+        extract::extract_frame_paths(video_path, options, cancellation_token).await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(
+        generate::generate_sheets(&frame_paths, options).await?,
+    ))
 }

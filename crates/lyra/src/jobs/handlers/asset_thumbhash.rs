@@ -2,7 +2,7 @@ use crate::{
     assets::storage,
     entities::{assets, jobs as jobs_entity},
     jobs::handlers::shared,
-    jobs::{ASSET_ID_COLUMN, JobHandler, JobTarget},
+    jobs::{ASSET_ID_COLUMN, JobHandler, JobRunContext, JobRunResult, JobTarget},
 };
 use anyhow::Context;
 use sea_orm::{
@@ -17,6 +17,10 @@ pub struct AssetThumbhashJob;
 impl JobHandler for AssetThumbhashJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
         jobs_entity::JobKind::AssetGenerateThumbhash
+    }
+
+    fn is_heavy(&self) -> bool {
+        false
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
@@ -38,10 +42,11 @@ impl JobHandler for AssetThumbhashJob {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+        _ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult> {
         let asset_id = shared::expect_job_asset_id(job)?;
         let Some(asset) = assets::Entity::find_by_id(&asset_id).one(pool).await? else {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         };
 
         if asset
@@ -49,7 +54,7 @@ impl JobHandler for AssetThumbhashJob {
             .as_ref()
             .is_some_and(|thumbhash| !thumbhash.is_empty())
         {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         }
 
         let hash_sha256 = asset
@@ -78,6 +83,6 @@ impl JobHandler for AssetThumbhashJob {
         updated.thumbhash = Set(Some(thumbhash));
         updated.update(pool).await?;
 
-        Ok(())
+        Ok(JobRunResult::Complete)
     }
 }

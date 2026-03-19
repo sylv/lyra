@@ -1,6 +1,16 @@
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path, process::Command};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    process::{Command as StdCommand, Output, Stdio},
+};
+use tokio::{
+    io::{AsyncRead, AsyncReadExt},
+    process::Command,
+    task::JoinHandle,
+};
+use tokio_util::sync::CancellationToken;
 
 pub mod paths;
 
@@ -144,12 +154,12 @@ struct ProbeFrame {
 }
 
 pub fn probe_streams(ffprobe_bin: &Path, input: &Path) -> Result<ProbeResult> {
-    let parsed = probe_output(ffprobe_bin, input)?;
+    let parsed = probe_output_blocking(ffprobe_bin, input)?;
     probe_streams_from_output(&parsed)
 }
 
-pub fn probe_output(ffprobe_bin: &Path, input: &Path) -> Result<FfprobeOutput> {
-    let output = Command::new(ffprobe_bin)
+pub fn probe_output_blocking(ffprobe_bin: &Path, input: &Path) -> Result<FfprobeOutput> {
+    let output = StdCommand::new(ffprobe_bin)
         .args([
             "-v",
             "error",
@@ -169,6 +179,41 @@ pub fn probe_output(ffprobe_bin: &Path, input: &Path) -> Result<FfprobeOutput> {
     }
 
     serde_json::from_slice(&output.stdout).context("failed to parse ffprobe JSON")
+}
+
+pub async fn probe_output(
+    ffprobe_bin: impl AsRef<Path>,
+    input: impl AsRef<Path>,
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<Option<FfprobeOutput>> {
+    let ffprobe_bin = ffprobe_bin.as_ref().to_path_buf();
+    let input = input.as_ref().to_path_buf();
+    let output = run_ffprobe_command(
+        &ffprobe_bin,
+        &[
+            "-v",
+            "error",
+            "-show_streams",
+            "-show_format",
+            "-show_data",
+            "-of",
+            "json",
+        ],
+        &input,
+        cancellation_token,
+    )
+    .await?;
+    let Some(output) = output else {
+        return Ok(None);
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("ffprobe failed: {stderr}");
+    }
+
+    let parsed = serde_json::from_slice(&output.stdout).context("failed to parse ffprobe JSON")?;
+    Ok(Some(parsed))
 }
 
 pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> {
@@ -245,8 +290,8 @@ pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> 
     })
 }
 
-pub fn probe_keyframes_pts(ffprobe_bin: &Path, input: &Path) -> Result<Vec<i64>> {
-    let output = Command::new(ffprobe_bin)
+pub fn probe_keyframes_pts_blocking(ffprobe_bin: &Path, input: &Path) -> Result<Vec<i64>> {
+    let output = StdCommand::new(ffprobe_bin)
         .args([
             "-fflags",
             "+genpts",
@@ -289,6 +334,121 @@ pub fn probe_keyframes_pts(ffprobe_bin: &Path, input: &Path) -> Result<Vec<i64>>
     times.sort_unstable();
     times.dedup();
     Ok(times)
+}
+
+pub async fn probe_keyframes_pts(
+    ffprobe_bin: impl AsRef<Path>,
+    input: impl AsRef<Path>,
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<Option<Vec<i64>>> {
+    let ffprobe_bin = ffprobe_bin.as_ref().to_path_buf();
+    let input = input.as_ref().to_path_buf();
+    let output = run_ffprobe_command(
+        &ffprobe_bin,
+        &[
+            "-fflags",
+            "+genpts",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-skip_frame",
+            "nokey",
+            "-show_frames",
+            "-show_entries",
+            "frame=best_effort_timestamp,pkt_pts",
+            "-of",
+            "json",
+        ],
+        &input,
+        cancellation_token,
+    )
+    .await?;
+    let Some(output) = output else {
+        return Ok(None);
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("ffprobe keyframe scan failed: {stderr}");
+    }
+
+    let frames: ProbeFrames =
+        serde_json::from_slice(&output.stdout).context("failed to parse ffprobe keyframes JSON")?;
+
+    let mut times = Vec::new();
+    for frame in frames.frames {
+        if let Some(value) = frame.best_effort_timestamp.or(frame.pkt_pts) {
+            times.push(value);
+        }
+    }
+
+    times.sort_unstable();
+    times.dedup();
+    Ok(Some(times))
+}
+
+async fn run_ffprobe_command(
+    ffprobe_bin: &PathBuf,
+    args: &[&str],
+    input: &Path,
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<Option<Output>> {
+    let mut child = Command::new(ffprobe_bin);
+    child.kill_on_drop(true);
+    child
+        .args(args)
+        .arg(input)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = child
+        .spawn()
+        .with_context(|| format!("failed to run ffprobe with {}", ffprobe_bin.display()))?;
+    let stdout_task = spawn_pipe_reader(child.stdout.take());
+    let stderr_task = spawn_pipe_reader(child.stderr.take());
+
+    let status = if let Some(cancellation_token) = cancellation_token {
+        tokio::select! {
+            status = child.wait() => status?,
+            _ = cancellation_token.cancelled() => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                let _ = stdout_task.await;
+                let _ = stderr_task.await;
+                return Ok(None);
+            }
+        }
+    } else {
+        child.wait().await?
+    };
+
+    let stdout = stdout_task
+        .await
+        .context("ffprobe stdout task panicked")??;
+    let stderr = stderr_task
+        .await
+        .context("ffprobe stderr task panicked")??;
+    Ok(Some(Output {
+        status,
+        stdout,
+        stderr,
+    }))
+}
+
+fn spawn_pipe_reader<R>(pipe: Option<R>) -> JoinHandle<Result<Vec<u8>>>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let Some(mut pipe) = pipe else {
+            return Ok(Vec::new());
+        };
+
+        let mut output = Vec::new();
+        pipe.read_to_end(&mut output).await?;
+        Ok(output)
+    })
 }
 
 fn parse_time_base(value: &str) -> Result<TimeBase> {

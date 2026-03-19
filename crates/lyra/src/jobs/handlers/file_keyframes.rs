@@ -1,13 +1,13 @@
 use crate::{
     entities::{files, jobs as jobs_entity},
     jobs::handlers::shared,
-    jobs::{JobHandler, JobTarget},
+    jobs::{JobHandler, JobRunContext, JobRunResult, JobTarget},
     json_encoding,
 };
 use anyhow::Context;
 use lyra_ffprobe::{paths::get_ffprobe_path, probe_keyframes_pts};
 use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait, sea_query::SelectStatement};
-use std::{path::Path, path::PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct FileKeyframesJob;
@@ -16,6 +16,10 @@ pub struct FileKeyframesJob;
 impl JobHandler for FileKeyframesJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
         jobs_entity::JobKind::FileExtractKeyframes
+    }
+
+    fn is_heavy(&self) -> bool {
+        true
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
@@ -31,15 +35,21 @@ impl JobHandler for FileKeyframesJob {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+        ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult> {
         let file_id = shared::expect_job_file_id(job)?;
-        let Some(ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
+        let Some(file_ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
         else {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         };
 
-        extract_and_store_keyframes(pool, &ctx.file.id, &ctx.file_path).await?;
-        Ok(())
+        let Some(_) =
+            extract_and_store_keyframes(pool, &file_ctx.file.id, &file_ctx.file_path, ctx).await?
+        else {
+            return Ok(JobRunResult::Cancelled);
+        };
+
+        Ok(JobRunResult::Complete)
     }
 }
 
@@ -47,15 +57,20 @@ pub(crate) async fn extract_and_store_keyframes(
     pool: &DatabaseConnection,
     file_id: &str,
     file_path: &Path,
-) -> anyhow::Result<Vec<i64>> {
-    let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
-    let input = file_path.to_path_buf();
-    let keyframes = tokio::task::spawn_blocking(move || probe_keyframes_pts(&ffprobe_bin, &input))
-        .await
-        .context("ffprobe keyframe task panicked")??;
+    ctx: &JobRunContext,
+) -> anyhow::Result<Option<Vec<i64>>> {
+    let keyframes = probe_keyframes_pts(
+        get_ffprobe_path()?,
+        file_path,
+        Some(ctx.cancellation_token()),
+    )
+    .await?;
+    let Some(keyframes) = keyframes else {
+        return Ok(None);
+    };
 
     upsert_keyframes(pool, file_id, &keyframes).await?;
-    Ok(keyframes)
+    Ok(Some(keyframes))
 }
 
 async fn upsert_keyframes(

@@ -37,6 +37,8 @@ pub(crate) async fn generate_sheets(
     let sheet_frame_counts = distribute_frame_counts(frame_paths.len(), layout.frames_per_sheet);
     let mut start_index = 0usize;
 
+    // once extraction has finished, let the merge run through so we do not throw away
+    // nearly-complete work for a short webp encode.
     for (sheet_index, frame_count) in sheet_frame_counts.iter().copied().enumerate() {
         let end_index = start_index + frame_count;
         let frame_chunk = &frame_paths[start_index..end_index];
@@ -202,6 +204,7 @@ async fn convert_rgb_to_webp(
     }
 
     let mut child = Command::new(ffmpeg_bin)
+        .kill_on_drop(true)
         .args([
             "-hide_banner",
             "-loglevel",

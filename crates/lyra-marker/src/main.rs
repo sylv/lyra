@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use lyra_marker::{IntroDetectionInputFile, detect_intros};
+use lyra_marker::{IntroDetectionInputFile, detect_intros_blocking};
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     let mut input_files = collect_input_files(input_dir)?;
     input_files.sort();
 
-    let intros = detect_intros(
+    let intros = detect_intros_blocking(
         &input_files
             .iter()
             .cloned()

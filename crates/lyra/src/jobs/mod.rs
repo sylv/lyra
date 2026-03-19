@@ -1,4 +1,5 @@
 use crate::entities::jobs as jobs_entity;
+use crate::job_block::JobLock;
 use anyhow::Context;
 use sea_orm::{
     ActiveModelTrait,
@@ -15,6 +16,7 @@ use std::sync::{
 use std::time::Instant;
 use tokio::sync::Notify;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 pub mod handlers;
 pub mod registry;
@@ -35,6 +37,31 @@ pub const NODE_ID_COLUMN: &str = "node_id";
 
 pub struct JobExecutionPolicy {
     backoff_seconds: &'static [i64],
+}
+
+#[derive(Clone)]
+pub struct JobRunContext {
+    cancellation_token: CancellationToken,
+}
+
+impl JobRunContext {
+    pub fn new(cancellation_token: CancellationToken) -> Self {
+        Self { cancellation_token }
+    }
+
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation_token.is_cancelled()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobRunResult {
+    Complete,
+    Cancelled,
 }
 
 impl Default for JobExecutionPolicy {
@@ -157,6 +184,8 @@ impl JobTarget {
 pub trait JobHandler: Send + Sync {
     fn job_kind(&self) -> jobs_entity::JobKind;
 
+    fn is_heavy(&self) -> bool;
+
     fn targets(&self) -> (JobTarget, SelectStatement);
 
     fn execution_policy(&self) -> JobExecutionPolicy {
@@ -167,7 +196,8 @@ pub trait JobHandler: Send + Sync {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()>;
+        ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult>;
 }
 
 struct PendingTargetRecord {
@@ -263,6 +293,7 @@ pub struct JobManager {
     database: DatabaseConnection,
     wake_signal: Arc<Notify>,
     activity_state: Arc<JobActivityState>,
+    job_lock: JobLock,
 }
 
 impl JobManager {
@@ -271,12 +302,14 @@ impl JobManager {
         database: DatabaseConnection,
         wake_signal: Arc<Notify>,
         activity_state: Arc<JobActivityState>,
+        job_lock: JobLock,
     ) -> Self {
         Self {
             handler,
             database,
             wake_signal,
             activity_state,
+            job_lock,
         }
     }
 
@@ -286,6 +319,10 @@ impl JobManager {
 
     pub async fn start_thread(&self) -> anyhow::Result<()> {
         loop {
+            if self.handler.is_heavy() {
+                self.job_lock.wait_until_unblocked().await;
+            }
+
             let now = chrono::Utc::now().timestamp();
             let (target_kind, target_query) = self.handler.targets();
             let enqueued = self.sync_targets(target_kind, target_query, now).await?;
@@ -484,16 +521,55 @@ impl JobManager {
         let policy = self.handler.execution_policy();
         let now = chrono::Utc::now().timestamp();
         let subject_key = job.subject_key.clone();
+        let is_heavy = self.handler.is_heavy();
+        let cancellation_token = CancellationToken::new();
+        let run_ctx = JobRunContext::new(cancellation_token.clone());
 
         let start = Instant::now();
         tracing::info!(
             job_kind = ?job_kind,
             subject_key = %subject_key,
+            is_heavy,
             "executing job"
         );
 
-        match self.handler.execute(&self.database, &job).await {
-            Ok(()) => {
+        if run_ctx.is_cancelled() {
+            tracing::info!(
+                job_kind = ?job_kind,
+                subject_key = %subject_key,
+                "job cancelled before execution"
+            );
+            self.persist_job_outcome(job, now, JobOutcome::cancelled(now))
+                .await?;
+            return Ok(());
+        }
+
+        let result = if is_heavy {
+            let handler = self.handler.clone();
+            let database = self.database.clone();
+            let task_job = job.clone();
+            let task =
+                tokio::spawn(async move { handler.execute(&database, &task_job, &run_ctx).await });
+            tokio::pin!(task);
+
+            tokio::select! {
+                result = &mut task => result.context("heavy job task panicked")?,
+                _ = self.job_lock.wait_until_blocked() => {
+                    tracing::info!(
+                        job_kind = ?job_kind,
+                        subject_key = %subject_key,
+                        "job lock engaged; cancelling heavy job"
+                    );
+                    cancellation_token.cancel();
+                    task.await.context("heavy job task panicked")?
+                }
+            }
+        } else {
+            self.handler.execute(&self.database, &job, &run_ctx).await
+        };
+
+        match result {
+            Ok(JobRunResult::Complete) => {
                 tracing::debug!(
                     job_kind = ?job_kind,
                     subject_key = %subject_key,
@@ -502,6 +578,29 @@ impl JobManager {
                 );
 
                 self.persist_job_outcome(job, now, JobOutcome::success())
+                    .await?;
+            }
+            Ok(JobRunResult::Cancelled) => {
+                tracing::info!(
+                    job_kind = ?job_kind,
+                    subject_key = %subject_key,
+                    elapsed = ?start.elapsed(),
+                    "job cancelled"
+                );
+
+                self.persist_job_outcome(job, now, JobOutcome::cancelled(now))
+                    .await?;
+            }
+            Err(error) if cancellation_token.is_cancelled() => {
+                tracing::info!(
+                    job_kind = ?job_kind,
+                    subject_key = %subject_key,
+                    elapsed = ?start.elapsed(),
+                    error = %error,
+                    "job exited after cancellation"
+                );
+
+                self.persist_job_outcome(job, now, JobOutcome::cancelled(now))
                     .await?;
             }
             Err(error) => {
@@ -514,7 +613,7 @@ impl JobManager {
                     attempt_count,
                     run_after,
                     error = %error,
-                    "job execution failed"
+                    "heavy job execution failed"
                 );
 
                 self.persist_job_outcome(
@@ -557,6 +656,14 @@ impl JobOutcome {
     fn success() -> Self {
         Self {
             run_after: None,
+            attempt_count: 0,
+            last_error_message: None,
+        }
+    }
+
+    fn cancelled(now: i64) -> Self {
+        Self {
+            run_after: Some(now),
             attempt_count: 0,
             last_error_message: None,
         }

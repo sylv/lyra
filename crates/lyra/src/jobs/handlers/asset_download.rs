@@ -2,7 +2,7 @@ use crate::{
     assets::download_asset_to_local,
     entities::{assets, jobs as jobs_entity},
     jobs::handlers::shared,
-    jobs::{ASSET_ID_COLUMN, JobHandler, JobTarget},
+    jobs::{ASSET_ID_COLUMN, JobHandler, JobRunContext, JobRunResult, JobTarget},
 };
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
@@ -16,6 +16,10 @@ pub struct AssetDownloadJob;
 impl JobHandler for AssetDownloadJob {
     fn job_kind(&self) -> jobs_entity::JobKind {
         jobs_entity::JobKind::AssetDownload
+    }
+
+    fn is_heavy(&self) -> bool {
+        false
     }
 
     fn targets(&self) -> (JobTarget, SelectStatement) {
@@ -33,17 +37,18 @@ impl JobHandler for AssetDownloadJob {
         &self,
         pool: &DatabaseConnection,
         job: &jobs_entity::Model,
-    ) -> anyhow::Result<()> {
+        _ctx: &JobRunContext,
+    ) -> anyhow::Result<JobRunResult> {
         let asset_id = shared::expect_job_asset_id(job)?;
         let Some(asset) = assets::Entity::find_by_id(asset_id).one(pool).await? else {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         };
 
         if asset.hash_sha256.is_some() {
-            return Ok(());
+            return Ok(JobRunResult::Complete);
         }
 
         download_asset_to_local(pool, &asset).await?;
-        Ok(())
+        Ok(JobRunResult::Complete)
     }
 }

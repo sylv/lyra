@@ -4,6 +4,7 @@ use crate::{
     config::get_config,
     entities::{files, libraries},
     file_analysis,
+    jobs::JobRunContext,
     jobs::handlers::{file_ffprobe, file_keyframes},
 };
 use axum::{
@@ -20,6 +21,7 @@ use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::fs;
 use tokio_util::io::ReaderStream;
+use tokio_util::sync::CancellationToken;
 #[cfg(debug_assertions)]
 use tower_http::cors::CorsLayer;
 
@@ -54,6 +56,7 @@ async fn get_master_playlist(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
 ) -> Result<Response, (StatusCode, &'static str)> {
+    let _job_lock = state.job_lock.take_block();
     let packager_state = get_or_build_packager_state(&state, file_id.clone()).await?;
     let playlist = rewrite_playlist_for_file(packager_state.master_playlist(), &file_id);
 
@@ -70,6 +73,7 @@ async fn get_stream_playlist(
     State(state): State<AppState>,
     Path((file_id, stream_id, profile_id)): Path<(String, u32, String)>,
 ) -> Result<Response, (StatusCode, &'static str)> {
+    let _job_lock = state.job_lock.take_block();
     let packager_state = get_or_build_packager_state(&state, file_id.clone()).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
@@ -90,6 +94,7 @@ async fn get_segment(
     Path((file_id, stream_id, profile_id, name)): Path<(String, u32, String, String)>,
     Query(query): Query<SegmentQuery>,
 ) -> Result<Response, (StatusCode, &'static str)> {
+    let _job_lock = state.job_lock.take_block();
     let packager_state = get_or_build_packager_state(&state, file_id).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
@@ -171,19 +176,25 @@ async fn get_or_build_packager_state(
         Some(output) => output,
         None => {
             generated_probe = true;
-            file_ffprobe::extract_and_store_ffprobe(&state.pool, &file_id, &file_path)
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                        file_id,
-                        error = %err,
-                        "failed to generate ffprobe data on-demand"
-                    );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
+            file_ffprobe::extract_and_store_ffprobe(
+                &state.pool,
+                &file_id,
+                &file_path,
+                &JobRunContext::new(CancellationToken::new()),
+            )
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    file_id,
+                    error = %err,
+                    "failed to generate ffprobe data on-demand"
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare stream metadata",
+                )
+            })?
+            .expect("uncancellable ffprobe extraction should not cancel")
         }
     };
 
@@ -204,19 +215,25 @@ async fn get_or_build_packager_state(
         Some(keyframes) => keyframes,
         None => {
             generated_keyframes = true;
-            file_keyframes::extract_and_store_keyframes(&state.pool, &file_id, &file_path)
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                        file_id,
-                        error = %err,
-                        "failed to generate keyframe data on-demand"
-                    );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
+            file_keyframes::extract_and_store_keyframes(
+                &state.pool,
+                &file_id,
+                &file_path,
+                &JobRunContext::new(CancellationToken::new()),
+            )
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    file_id,
+                    error = %err,
+                    "failed to generate keyframe data on-demand"
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare stream metadata",
+                )
+            })?
+            .expect("uncancellable keyframe extraction should not cancel")
         }
     };
 

@@ -17,7 +17,9 @@ async fn main() -> Result<()> {
         ..PreviewOptions::default()
     };
 
-    let previews = generate_previews(&input_file, &options).await?;
+    let previews = generate_previews(&input_file, &options, None)
+        .await?
+        .expect("timeline preview CLI should not cancel");
     for (index, preview) in previews.iter().enumerate() {
         let output_path = env::current_dir()?.join(format!("generated_preview_{}.webp", index + 1));
         tokio::fs::write(&output_path, &preview.preview_bytes).await?;
