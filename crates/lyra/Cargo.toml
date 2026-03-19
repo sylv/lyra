@@ -71,3 +71,7 @@ rusty-chromaprint = "0.3.0"
 
 [features]
 static = []
+
+[build-dependencies]
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
