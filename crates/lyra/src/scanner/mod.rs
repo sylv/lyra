@@ -10,10 +10,10 @@ use crate::ids;
 use crate::scanner::derive_nodes::derive_library_media;
 use crate::scanner::local::insert_local_node_metadata;
 use lyra_parser::{ParsedFile, parse_files};
-use sea_orm::sea_query::OnConflict;
+use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter,
+    QueryOrder, QuerySelect, TransactionTrait,
 };
 use std::path::Path as StdPath;
 use std::path::PathBuf;
@@ -24,6 +24,7 @@ use tokio::time::{Duration, sleep};
 const MIN_FILE_SIZE_MB: u64 = 25 * 1024 * 1024;
 const PARSE_BATCH_SIZE: usize = 100;
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mkv", "avi", "mov", "webm"];
+const PARKED_NODE_ORDER_OFFSET: i64 = 1_000_000_000;
 
 pub async fn start_scanner(
     pool: DatabaseConnection,
@@ -253,6 +254,19 @@ async fn upsert_derived_media(
         return Ok(());
     }
 
+    let root_ids = derived
+        .nodes
+        .iter()
+        .map(|node| node.root_id.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    // move current rows out of the final order range before applying reordered siblings.
+    // sqlite enforces the unique (root_id, order) index immediately, so a direct in-place
+    // update can fail during harmless swaps or insert-before-existing cases.
+    park_existing_root_orders(&txn, &library_id, &root_ids).await?;
+
     for node in &derived.nodes {
         let existing = nodes::Entity::find_by_id(node.id.clone()).one(&txn).await?;
         let match_candidates_json = existing.and_then(|row| {
@@ -368,4 +382,188 @@ async fn upsert_derived_media(
 
     txn.commit().await?;
     Ok(())
+}
+
+async fn park_existing_root_orders(
+    txn: &impl sea_orm::ConnectionTrait,
+    library_id: &str,
+    root_ids: &[String],
+) -> anyhow::Result<()> {
+    if root_ids.is_empty() {
+        return Ok(());
+    }
+
+    nodes::Entity::update_many()
+        .col_expr(
+            nodes::Column::Order,
+            Expr::col(nodes::Column::Order).add(PARKED_NODE_ORDER_OFFSET),
+        )
+        .filter(nodes::Column::LibraryId.eq(library_id))
+        .filter(nodes::Column::RootId.is_in(root_ids.iter().cloned()))
+        .exec(txn)
+        .await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::{libraries, nodes};
+    use sea_orm::Database;
+
+    async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {
+        let pool = Database::connect("sqlite::memory:").await?;
+        sqlx::migrate!("../../migrations")
+            .run(pool.get_sqlite_connection_pool())
+            .await?;
+
+        Ok(pool)
+    }
+
+    #[tokio::test]
+    async fn upsert_derived_media_handles_reordered_root_children() -> anyhow::Result<()> {
+        let pool = setup_test_db().await?;
+
+        libraries::Entity::insert(libraries::ActiveModel {
+            id: Set("lib".to_owned()),
+            path: Set("/library".to_owned()),
+            name: Set("Library".to_owned()),
+            last_scanned_at: Set(None),
+            created_at: Set(0),
+        })
+        .exec(&pool)
+        .await?;
+
+        let root_id = "root".to_owned();
+        let episode_id = "episode-1".to_owned();
+        nodes::Entity::insert_many([
+            nodes::ActiveModel {
+                id: Set(root_id.clone()),
+                library_id: Set("lib".to_owned()),
+                root_id: Set(root_id.clone()),
+                parent_id: Set(None),
+                kind: Set(nodes::NodeKind::Series),
+                name: Set("Show".to_owned()),
+                order: Set(0),
+                season_number: Set(None),
+                episode_number: Set(None),
+                match_candidates_json: Set(None),
+                last_added_at: Set(0),
+                created_at: Set(0),
+                updated_at: Set(0),
+            },
+            nodes::ActiveModel {
+                id: Set(episode_id.clone()),
+                library_id: Set("lib".to_owned()),
+                root_id: Set(root_id.clone()),
+                parent_id: Set(Some(root_id.clone())),
+                kind: Set(nodes::NodeKind::Episode),
+                name: Set("Episode 1".to_owned()),
+                order: Set(1),
+                season_number: Set(None),
+                episode_number: Set(Some(1)),
+                match_candidates_json: Set(None),
+                last_added_at: Set(0),
+                created_at: Set(0),
+                updated_at: Set(0),
+            },
+        ])
+        .exec(&pool)
+        .await?;
+
+        let derived = derive_nodes::DerivedLibraryMedia {
+            nodes: vec![
+                derive_nodes::DerivedNode {
+                    id: root_id.clone(),
+                    root_id: root_id.clone(),
+                    parent_id: None,
+                    kind: nodes::NodeKind::Series,
+                    name: "Show".to_owned(),
+                    order: 0,
+                    season_number: None,
+                    episode_number: None,
+                    imdb_id: None,
+                    tmdb_id: None,
+                    last_added_at: 0,
+                },
+                derive_nodes::DerivedNode {
+                    id: "season-1".to_owned(),
+                    root_id: root_id.clone(),
+                    parent_id: Some(root_id.clone()),
+                    kind: nodes::NodeKind::Season,
+                    name: "Season 1".to_owned(),
+                    order: 1,
+                    season_number: Some(1),
+                    episode_number: None,
+                    imdb_id: None,
+                    tmdb_id: None,
+                    last_added_at: 0,
+                },
+                derive_nodes::DerivedNode {
+                    id: episode_id.clone(),
+                    root_id: root_id.clone(),
+                    parent_id: Some("season-1".to_owned()),
+                    kind: nodes::NodeKind::Episode,
+                    name: "Episode 1".to_owned(),
+                    order: 2,
+                    season_number: Some(1),
+                    episode_number: Some(1),
+                    imdb_id: None,
+                    tmdb_id: None,
+                    last_added_at: 0,
+                },
+            ],
+            node_files: Vec::new(),
+            closure: vec![
+                node_closure::Model {
+                    ancestor_id: root_id.clone(),
+                    descendant_id: root_id.clone(),
+                    depth: 0,
+                },
+                node_closure::Model {
+                    ancestor_id: "season-1".to_owned(),
+                    descendant_id: "season-1".to_owned(),
+                    depth: 0,
+                },
+                node_closure::Model {
+                    ancestor_id: root_id.clone(),
+                    descendant_id: "season-1".to_owned(),
+                    depth: 1,
+                },
+                node_closure::Model {
+                    ancestor_id: episode_id.clone(),
+                    descendant_id: episode_id.clone(),
+                    depth: 0,
+                },
+                node_closure::Model {
+                    ancestor_id: "season-1".to_owned(),
+                    descendant_id: episode_id.clone(),
+                    depth: 1,
+                },
+                node_closure::Model {
+                    ancestor_id: root_id.clone(),
+                    descendant_id: episode_id.clone(),
+                    depth: 2,
+                },
+            ],
+        };
+
+        upsert_derived_media(&pool, "lib".to_owned(), derived).await?;
+
+        let rows = nodes::Entity::find()
+            .filter(nodes::Column::RootId.eq(root_id.clone()))
+            .order_by_asc(nodes::Column::Order)
+            .all(&pool)
+            .await?;
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].id, root_id);
+        assert_eq!(rows[0].order, 0);
+        assert_eq!(rows[1].id, "season-1");
+        assert_eq!(rows[1].order, 1);
+        assert_eq!(rows[2].id, episode_id);
+        assert_eq!(rows[2].order, 2);
+
+        Ok(())
+    }
 }
