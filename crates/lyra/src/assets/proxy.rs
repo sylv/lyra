@@ -1,8 +1,9 @@
 use crate::{
     AppState, RequestAuth,
-    assets::{download_asset_to_local, storage},
-    entities::assets as assets_entity,
+    assets::storage,
+    entities::{assets as assets_entity, jobs as jobs_entity},
     error::AppError,
+    jobs::{self, TryRunJobFilter},
 };
 use axum::{
     Router,
@@ -15,9 +16,11 @@ use image::{GenericImageView, ImageOutputFormat, imageops::FilterType};
 use reqwest::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
-use std::{io::Cursor, path::Path as FsPath};
+use std::{io::Cursor, path::Path as FsPath, time::Duration};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
+
+const ON_DEMAND_JOB_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TranscodeParams {
@@ -41,7 +44,19 @@ async fn get_asset(
         .ok_or_else(|| anyhow::anyhow!("asset not found"))?;
 
     if asset.hash_sha256.is_none() {
-        asset = download_asset_to_local(&state.pool, &asset).await?;
+        jobs::try_run_job(
+            &state.pool,
+            state.job_wake_signal.as_ref(),
+            jobs_entity::JobKind::AssetDownload,
+            TryRunJobFilter::AssetId(&asset.id),
+            ON_DEMAND_JOB_TIMEOUT,
+        )
+        .await?;
+
+        asset = assets_entity::Entity::find_by_id(asset.id.clone())
+            .one(&state.pool)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("asset disappeared after download job"))?;
     }
 
     serve_asset(&asset, &params).await

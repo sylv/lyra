@@ -18,7 +18,9 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 pub mod handlers;
+pub mod on_demand;
 pub mod registry;
+pub use on_demand::{TryRunJobFilter, clear_locked_jobs_on_startup, try_run_job};
 
 const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 const DEFAULT_BACKOFF_SECONDS: &[i64] = &[24 * 60 * 60, 7 * 24 * 60 * 60, 30 * 24 * 60 * 60];
@@ -286,6 +288,12 @@ impl JobActivityRegistry {
     }
 }
 
+#[derive(Clone, Copy)]
+enum DueJobKind {
+    Priority,
+    Standard,
+}
+
 pub struct JobManager {
     handler: Arc<dyn JobHandler>,
     database: DatabaseConnection,
@@ -317,14 +325,19 @@ impl JobManager {
 
     pub async fn start_thread(&self) -> anyhow::Result<()> {
         loop {
-            if self.handler.is_heavy() {
-                self.job_lock.wait_until_unblocked().await;
-            }
-
             let now = chrono::Utc::now().timestamp();
             let (target_kind, target_query) = self.handler.targets();
             let enqueued = self.sync_targets(target_kind, target_query, now).await?;
-            let next_job = self.find_next_due_job(now).await?;
+
+            let next_job =
+                if let Some(job) = self.claim_next_due_job(now, DueJobKind::Priority).await? {
+                    Some(job)
+                } else if self.handler.is_heavy() && self.job_lock.is_blocked() {
+                    None
+                } else {
+                    self.claim_next_due_job(chrono::Utc::now().timestamp(), DueJobKind::Standard)
+                        .await?
+                };
             let had_work = enqueued > 0 || next_job.is_some();
 
             if had_work {
@@ -337,6 +350,8 @@ impl JobManager {
                 self.run_job_for_entry(job).await?;
                 self.activity_state
                     .mark_active(chrono::Utc::now().timestamp());
+            } else if self.handler.is_heavy() && self.job_lock.is_blocked() {
+                self.wait_for_work_or_job_unlock().await;
             } else if enqueued == 0 {
                 self.wait_for_work().await;
             }
@@ -346,6 +361,14 @@ impl JobManager {
     async fn wait_for_work(&self) {
         tokio::select! {
             _ = self.wake_signal.notified() => {},
+            _ = sleep(EMPTY_POLL_INTERVAL) => {},
+        }
+    }
+
+    async fn wait_for_work_or_job_unlock(&self) {
+        tokio::select! {
+            _ = self.wake_signal.notified() => {},
+            _ = self.job_lock.wait_until_unblocked() => {},
             _ = sleep(EMPTY_POLL_INTERVAL) => {},
         }
     }
@@ -457,6 +480,8 @@ impl JobManager {
                 updated.file_id = Set(target.file_id);
                 updated.asset_id = Set(target.asset_id);
                 updated.node_id = Set(target.node_id.clone());
+                updated.locked_at = Set(None);
+                updated.priority_at = Set(None);
                 updated.run_after = Set(Some(now));
                 updated.last_error_message = Set(None);
                 updated.attempt_count = Set(0);
@@ -473,6 +498,8 @@ impl JobManager {
                 file_id: Set(target.file_id),
                 asset_id: Set(target.asset_id),
                 node_id: Set(target.node_id),
+                locked_at: Set(None),
+                priority_at: Set(None),
                 run_after: Set(Some(now)),
                 last_run_at: Set(0),
                 last_error_message: Set(None),
@@ -497,15 +524,51 @@ impl JobManager {
         Ok(enqueued)
     }
 
-    async fn find_next_due_job(&self, now: i64) -> anyhow::Result<Option<jobs_entity::Model>> {
-        Ok(jobs_entity::Entity::find()
-            .filter(jobs_entity::Column::JobKind.eq(self.handler.job_kind()))
-            .filter(jobs_entity::Column::RunAfter.is_not_null())
-            .filter(jobs_entity::Column::RunAfter.lte(now))
-            .order_by_asc(jobs_entity::Column::RunAfter)
-            .order_by_asc(jobs_entity::Column::Id)
-            .one(&self.database)
-            .await?)
+    async fn claim_next_due_job(
+        &self,
+        now: i64,
+        due_job_kind: DueJobKind,
+    ) -> anyhow::Result<Option<jobs_entity::Model>> {
+        loop {
+            let mut query = jobs_entity::Entity::find()
+                .filter(jobs_entity::Column::JobKind.eq(self.handler.job_kind()))
+                .filter(jobs_entity::Column::LockedAt.is_null())
+                .filter(jobs_entity::Column::RunAfter.is_not_null())
+                .filter(jobs_entity::Column::RunAfter.lte(now));
+
+            query = match due_job_kind {
+                DueJobKind::Priority => query
+                    .filter(jobs_entity::Column::PriorityAt.is_not_null())
+                    .order_by_asc(jobs_entity::Column::PriorityAt)
+                    .order_by_asc(jobs_entity::Column::RunAfter)
+                    .order_by_asc(jobs_entity::Column::Id),
+                DueJobKind::Standard => query
+                    .filter(jobs_entity::Column::PriorityAt.is_null())
+                    .order_by_asc(jobs_entity::Column::RunAfter)
+                    .order_by_asc(jobs_entity::Column::Id),
+            };
+
+            let Some(mut candidate) = query.one(&self.database).await? else {
+                return Ok(None);
+            };
+
+            let claim_result = jobs_entity::Entity::update_many()
+                .set(jobs_entity::ActiveModel {
+                    locked_at: Set(Some(now)),
+                    updated_at: Set(now),
+                    ..Default::default()
+                })
+                .filter(jobs_entity::Column::Id.eq(candidate.id))
+                .filter(jobs_entity::Column::LockedAt.is_null())
+                .exec(&self.database)
+                .await?;
+
+            if claim_result.rows_affected == 1 {
+                candidate.locked_at = Some(now);
+                candidate.updated_at = now;
+                return Ok(Some(candidate));
+            }
+        }
     }
 
     async fn run_job_for_entry(&self, job: jobs_entity::Model) -> anyhow::Result<()> {
@@ -513,7 +576,8 @@ impl JobManager {
         let policy = self.handler.execution_policy();
         let now = chrono::Utc::now().timestamp();
         let subject_key = job.subject_key.clone();
-        let is_heavy = self.handler.is_heavy();
+        let is_priority = job.priority_at.is_some();
+        let is_heavy = self.handler.is_heavy() && !is_priority;
         let cancellation_token = CancellationToken::new();
         let run_ctx = JobRunContext::new(cancellation_token.clone());
 
@@ -605,7 +669,7 @@ impl JobManager {
                     attempt_count,
                     run_after,
                     error = %error,
-                    "heavy job execution failed"
+                    "job execution failed"
                 );
 
                 self.persist_job_outcome(
@@ -627,6 +691,8 @@ impl JobManager {
         outcome: JobOutcome,
     ) -> anyhow::Result<()> {
         let mut updated: jobs_entity::ActiveModel = job.into();
+        updated.locked_at = Set(None);
+        updated.priority_at = Set(None);
         updated.run_after = Set(outcome.run_after);
         updated.attempt_count = Set(outcome.attempt_count);
         updated.last_error_message = Set(outcome.last_error_message);

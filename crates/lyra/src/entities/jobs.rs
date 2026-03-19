@@ -15,6 +15,8 @@ pub struct Model {
     pub asset_id: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub node_id: Option<String>,
+    pub locked_at: Option<i64>,
+    pub priority_at: Option<i64>,
     pub run_after: Option<i64>,
     pub last_run_at: i64,
     #[sea_orm(column_type = "Text", nullable)]

@@ -2,10 +2,9 @@ use crate::{
     AppState,
     auth::RequestAuth,
     config::get_config,
-    entities::{files, libraries},
+    entities::{files, jobs as jobs_entity, libraries},
     file_analysis,
-    jobs::JobRunContext,
-    jobs::handlers::{file_ffprobe, file_keyframes},
+    jobs::{self, TryRunJobFilter},
 };
 use axum::{
     Router,
@@ -21,9 +20,10 @@ use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::fs;
 use tokio_util::io::ReaderStream;
-use tokio_util::sync::CancellationToken;
 #[cfg(debug_assertions)]
 use tower_http::cors::CorsLayer;
+
+const ON_DEMAND_JOB_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Deserialize)]
 struct SegmentQuery {
@@ -176,11 +176,12 @@ async fn get_or_build_packager_state(
         Some(output) => output,
         None => {
             generated_probe = true;
-            file_ffprobe::extract_and_store_ffprobe(
+            jobs::try_run_job(
                 &state.pool,
-                &file_id,
-                &file_path,
-                &JobRunContext::new(CancellationToken::new()),
+                state.job_wake_signal.as_ref(),
+                jobs_entity::JobKind::FileExtractFfprobe,
+                TryRunJobFilter::FileId(&file_id),
+                ON_DEMAND_JOB_TIMEOUT,
             )
             .await
             .map_err(|err| {
@@ -193,8 +194,28 @@ async fn get_or_build_packager_state(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to prepare stream metadata",
                 )
-            })?
-            .expect("uncancellable ffprobe extraction should not cancel")
+            })?;
+
+            file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        file_id,
+                        error = %err,
+                        "failed to load cached ffprobe data after on-demand job"
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
+                .ok_or_else(|| {
+                    tracing::error!(file_id, "ffprobe job finished without storing probe data");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
         }
     };
 
@@ -215,11 +236,12 @@ async fn get_or_build_packager_state(
         Some(keyframes) => keyframes,
         None => {
             generated_keyframes = true;
-            file_keyframes::extract_and_store_keyframes(
+            jobs::try_run_job(
                 &state.pool,
-                &file_id,
-                &file_path,
-                &JobRunContext::new(CancellationToken::new()),
+                state.job_wake_signal.as_ref(),
+                jobs_entity::JobKind::FileExtractKeyframes,
+                TryRunJobFilter::FileId(&file_id),
+                ON_DEMAND_JOB_TIMEOUT,
             )
             .await
             .map_err(|err| {
@@ -232,8 +254,28 @@ async fn get_or_build_packager_state(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to prepare stream metadata",
                 )
-            })?
-            .expect("uncancellable keyframe extraction should not cancel")
+            })?;
+
+            file_analysis::load_cached_keyframes(&state.pool, &file_id)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        file_id,
+                        error = %err,
+                        "failed to load cached keyframe data after on-demand job"
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
+                .ok_or_else(|| {
+                    tracing::error!(file_id, "keyframe job finished without storing keyframes");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
         }
     };
 

@@ -58,6 +58,7 @@ struct AppState {
     packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
     pool: DatabaseConnection,
     schema: Arc<AppSchema>,
+    job_wake_signal: Arc<Notify>,
     job_lock: JobLock,
     setup_code: u32,
     last_setup_code_attempt: Arc<AtomicI64>,
@@ -155,6 +156,9 @@ async fn main() {
     let pool = DatabaseConnection::from(pool);
     let job_wake_signal = Arc::new(Notify::new());
     let job_lock = JobLock::default();
+    jobs::clear_locked_jobs_on_startup(&pool)
+        .await
+        .expect("Failed to clear stale job locks");
 
     tracing::info!("running startup library scan");
     scanner::run_startup_scan(&pool, &job_wake_signal)
@@ -222,6 +226,7 @@ async fn main() {
             packager_states: Arc::new(Mutex::new(HashMap::new())),
             pool: pool.clone(),
             schema: Arc::new(schema),
+            job_wake_signal,
             job_lock,
             setup_code,
             last_setup_code_attempt: Arc::new(AtomicI64::new(0)),
