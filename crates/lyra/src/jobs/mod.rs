@@ -5,7 +5,6 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
     sea_query::{OnConflict, SelectStatement},
 };
 use std::collections::{HashMap, HashSet};
@@ -21,8 +20,7 @@ use tokio_util::sync::CancellationToken;
 pub mod handlers;
 pub mod registry;
 
-const BATCH_SIZE: u64 = 100;
-const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+const EMPTY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 const DEFAULT_BACKOFF_SECONDS: &[i64] = &[24 * 60 * 60, 7 * 24 * 60 * 60, 30 * 24 * 60 * 60];
 const EXISTING_SUBJECT_LOOKUP_CHUNK_SIZE: usize = 400;
 pub const IDLE_RESET_AFTER_SECONDS: i64 = 5 * 60;
@@ -326,8 +324,8 @@ impl JobManager {
             let now = chrono::Utc::now().timestamp();
             let (target_kind, target_query) = self.handler.targets();
             let enqueued = self.sync_targets(target_kind, target_query, now).await?;
-            let due_jobs = self.find_due_jobs(now).await?;
-            let had_work = enqueued > 0 || !due_jobs.is_empty();
+            let next_job = self.find_next_due_job(now).await?;
+            let had_work = enqueued > 0 || next_job.is_some();
 
             if had_work {
                 self.activity_state.mark_active(now);
@@ -335,17 +333,12 @@ impl JobManager {
                 self.activity_state.mark_idle(now);
             }
 
-            if due_jobs.is_empty() {
-                if enqueued == 0 {
-                    self.wait_for_work().await;
-                }
-                continue;
-            }
-
-            for job in due_jobs {
+            if let Some(job) = next_job {
                 self.run_job_for_entry(job).await?;
                 self.activity_state
                     .mark_active(chrono::Utc::now().timestamp());
+            } else if enqueued == 0 {
+                self.wait_for_work().await;
             }
         }
     }
@@ -504,15 +497,14 @@ impl JobManager {
         Ok(enqueued)
     }
 
-    async fn find_due_jobs(&self, now: i64) -> anyhow::Result<Vec<jobs_entity::Model>> {
+    async fn find_next_due_job(&self, now: i64) -> anyhow::Result<Option<jobs_entity::Model>> {
         Ok(jobs_entity::Entity::find()
             .filter(jobs_entity::Column::JobKind.eq(self.handler.job_kind()))
             .filter(jobs_entity::Column::RunAfter.is_not_null())
             .filter(jobs_entity::Column::RunAfter.lte(now))
             .order_by_asc(jobs_entity::Column::RunAfter)
             .order_by_asc(jobs_entity::Column::Id)
-            .limit(BATCH_SIZE)
-            .all(&self.database)
+            .one(&self.database)
             .await?)
     }
 
