@@ -70,6 +70,7 @@ pub async fn try_run_job(
         anyhow::bail!(message);
     }
 
+    tracing::info!(job = %job.id, "running job on demand");
     if job.locked_at.is_none() && job.run_after.is_some() {
         let now = chrono::Utc::now().timestamp();
         let mut updated: jobs_entity::ActiveModel = job.clone().into();

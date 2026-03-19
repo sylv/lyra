@@ -5,7 +5,7 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    sea_query::{OnConflict, SelectStatement},
+    sea_query::{Expr, OnConflict, SelectStatement},
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{
@@ -288,12 +288,6 @@ impl JobActivityRegistry {
     }
 }
 
-#[derive(Clone, Copy)]
-enum DueJobKind {
-    Priority,
-    Standard,
-}
-
 pub struct JobManager {
     handler: Arc<dyn JobHandler>,
     database: DatabaseConnection,
@@ -329,15 +323,17 @@ impl JobManager {
             let (target_kind, target_query) = self.handler.targets();
             let enqueued = self.sync_targets(target_kind, target_query, now).await?;
 
-            let next_job =
-                if let Some(job) = self.claim_next_due_job(now, DueJobKind::Priority).await? {
-                    Some(job)
-                } else if self.handler.is_heavy() && self.job_lock.is_blocked() {
-                    None
-                } else {
-                    self.claim_next_due_job(chrono::Utc::now().timestamp(), DueJobKind::Standard)
-                        .await?
-                };
+            let mut next_job = jobs_entity::Entity::find()
+                .filter(jobs_entity::Column::JobKind.eq(self.handler.job_kind()))
+                .filter(jobs_entity::Column::LockedAt.is_null())
+                .filter(jobs_entity::Column::RunAfter.is_not_null())
+                .filter(jobs_entity::Column::RunAfter.lte(now))
+                .order_by_asc(Expr::col(jobs_entity::Column::PriorityAt).is_null())
+                .order_by_asc(jobs_entity::Column::PriorityAt)
+                .order_by_asc(jobs_entity::Column::RunAfter)
+                .order_by_asc(jobs_entity::Column::Id)
+                .one(&self.database)
+                .await?;
             let had_work = enqueued > 0 || next_job.is_some();
 
             if had_work {
@@ -346,7 +342,34 @@ impl JobManager {
                 self.activity_state.mark_idle(now);
             }
 
-            if let Some(job) = next_job {
+            if let Some(mut job) = next_job.take() {
+                // heavy background work yields to the shared job lock unless it was explicitly promoted.
+                if self.handler.is_heavy()
+                    && job.priority_at.is_none()
+                    && self.job_lock.is_blocked()
+                {
+                    self.wait_for_work_or_job_unlock().await;
+                    continue;
+                }
+
+                let lock_now = chrono::Utc::now().timestamp();
+                let lock_result = jobs_entity::Entity::update_many()
+                    .set(jobs_entity::ActiveModel {
+                        locked_at: Set(Some(lock_now)),
+                        updated_at: Set(lock_now),
+                        ..Default::default()
+                    })
+                    .filter(jobs_entity::Column::Id.eq(job.id))
+                    .filter(jobs_entity::Column::LockedAt.is_null())
+                    .exec(&self.database)
+                    .await?;
+
+                if lock_result.rows_affected != 1 {
+                    continue;
+                }
+
+                job.locked_at = Some(lock_now);
+                job.updated_at = lock_now;
                 self.run_job_for_entry(job).await?;
                 self.activity_state
                     .mark_active(chrono::Utc::now().timestamp());
@@ -523,54 +546,6 @@ impl JobManager {
 
         Ok(enqueued)
     }
-
-    async fn claim_next_due_job(
-        &self,
-        now: i64,
-        due_job_kind: DueJobKind,
-    ) -> anyhow::Result<Option<jobs_entity::Model>> {
-        loop {
-            let mut query = jobs_entity::Entity::find()
-                .filter(jobs_entity::Column::JobKind.eq(self.handler.job_kind()))
-                .filter(jobs_entity::Column::LockedAt.is_null())
-                .filter(jobs_entity::Column::RunAfter.is_not_null())
-                .filter(jobs_entity::Column::RunAfter.lte(now));
-
-            query = match due_job_kind {
-                DueJobKind::Priority => query
-                    .filter(jobs_entity::Column::PriorityAt.is_not_null())
-                    .order_by_asc(jobs_entity::Column::PriorityAt)
-                    .order_by_asc(jobs_entity::Column::RunAfter)
-                    .order_by_asc(jobs_entity::Column::Id),
-                DueJobKind::Standard => query
-                    .filter(jobs_entity::Column::PriorityAt.is_null())
-                    .order_by_asc(jobs_entity::Column::RunAfter)
-                    .order_by_asc(jobs_entity::Column::Id),
-            };
-
-            let Some(mut candidate) = query.one(&self.database).await? else {
-                return Ok(None);
-            };
-
-            let claim_result = jobs_entity::Entity::update_many()
-                .set(jobs_entity::ActiveModel {
-                    locked_at: Set(Some(now)),
-                    updated_at: Set(now),
-                    ..Default::default()
-                })
-                .filter(jobs_entity::Column::Id.eq(candidate.id))
-                .filter(jobs_entity::Column::LockedAt.is_null())
-                .exec(&self.database)
-                .await?;
-
-            if claim_result.rows_affected == 1 {
-                candidate.locked_at = Some(now);
-                candidate.updated_at = now;
-                return Ok(Some(candidate));
-            }
-        }
-    }
-
     async fn run_job_for_entry(&self, job: jobs_entity::Model) -> anyhow::Result<()> {
         let job_kind = self.handler.job_kind();
         let policy = self.handler.execution_policy();
