@@ -8,9 +8,10 @@ use crate::ids;
 use lyra_metadata::{EpisodeMetadata, ImageSet, MovieMetadata, SeasonMetadata, SeriesMetadata};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
+use std::collections::HashSet;
 
 pub async fn upsert_remote_node_metadata_from_series(
     pool: &DatabaseConnection,
@@ -53,17 +54,30 @@ pub async fn overwrite_remote_episode_metadata_for_batch(
     episodes: &[EpisodeMetadata],
     now: i64,
 ) -> anyhow::Result<()> {
-    let node_ids = batch.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
-    clear_remote_node_metadata_for_batch(pool, &node_ids).await?;
+    let batch_node_ids = batch
+        .iter()
+        .map(|node| node.id.clone())
+        .collect::<HashSet<_>>();
+    let matched_node_ids = episodes
+        .iter()
+        .map(|episode| episode.item_id.clone())
+        .collect::<HashSet<_>>();
+    let stale_node_ids = batch
+        .iter()
+        .filter(|node| !matched_node_ids.contains(&node.id))
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
+    let txn = pool.begin().await?;
 
+    // upsert before deleting stale rows so matched metadata keeps a stable backing rowid.
     for episode in episodes {
-        let Some(node) = batch.iter().find(|node| node.id == episode.item_id) else {
+        if !batch_node_ids.contains(&episode.item_id) {
             continue;
-        };
+        }
 
         upsert_remote_node_metadata(
-            pool,
-            &node.id,
+            &txn,
+            &episode.item_id,
             provider_id,
             MetadataFields {
                 imdb_id: None,
@@ -81,6 +95,9 @@ pub async fn overwrite_remote_episode_metadata_for_batch(
         .await?;
     }
 
+    clear_remote_node_metadata_for_batch(&txn, &stale_node_ids).await?;
+    txn.commit().await?;
+
     Ok(())
 }
 
@@ -91,12 +108,11 @@ pub async fn overwrite_remote_movie_metadata_for_batch(
     metadata: &MovieMetadata,
     now: i64,
 ) -> anyhow::Result<()> {
-    let node_ids = batch.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
-    clear_remote_node_metadata_for_batch(pool, &node_ids).await?;
+    let txn = pool.begin().await?;
 
     for node in batch {
         upsert_remote_node_metadata(
-            pool,
+            &txn,
             &node.id,
             provider_id,
             metadata_fields_from_movie(metadata),
@@ -104,6 +120,8 @@ pub async fn overwrite_remote_movie_metadata_for_batch(
         )
         .await?;
     }
+
+    txn.commit().await?;
 
     Ok(())
 }
@@ -118,21 +136,15 @@ pub async fn overwrite_remote_season_metadata_for_batch(
     let season_ids = batch
         .iter()
         .filter_map(|node| node.parent_id.clone())
-        .collect::<std::collections::HashSet<_>>()
+        .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
     if season_ids.is_empty() {
         return Ok(());
     }
 
-    node_metadata::Entity::delete_many()
-        .filter(node_metadata::Column::NodeId.is_in(season_ids.clone()))
-        .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
-        .exec(pool)
-        .await?;
-
     let season_number_map = nodes::Entity::find()
-        .filter(nodes::Column::Id.is_in(season_ids))
+        .filter(nodes::Column::Id.is_in(season_ids.clone()))
         .filter(nodes::Column::Kind.eq(NodeKind::Season))
         .all(pool)
         .await?
@@ -142,14 +154,18 @@ pub async fn overwrite_remote_season_metadata_for_batch(
                 .map(|season_number| (season_number, node.id))
         })
         .collect::<std::collections::HashMap<_, _>>();
+    let mut matched_season_ids = HashSet::new();
+    let txn = pool.begin().await?;
 
+    // keep matched season rows alive and only clear seasons the provider no longer returned.
     for season in seasons_result {
         let Some(season_id) = season_number_map.get(&(season.season_number as i64)) else {
             continue;
         };
+        matched_season_ids.insert(season_id.clone());
 
         upsert_remote_node_metadata(
-            pool,
+            &txn,
             season_id,
             provider_id,
             MetadataFields {
@@ -168,11 +184,18 @@ pub async fn overwrite_remote_season_metadata_for_batch(
         .await?;
     }
 
+    let stale_season_ids = season_ids
+        .into_iter()
+        .filter(|season_id| !matched_season_ids.contains(season_id))
+        .collect::<Vec<_>>();
+    clear_remote_node_metadata_for_batch(&txn, &stale_season_ids).await?;
+    txn.commit().await?;
+
     Ok(())
 }
 
-pub async fn clear_remote_node_metadata_for_batch(
-    pool: &DatabaseConnection,
+pub async fn clear_remote_node_metadata_for_batch<C: ConnectionTrait>(
+    pool: &C,
     node_ids: &[String],
 ) -> anyhow::Result<()> {
     if node_ids.is_empty() {
@@ -230,7 +253,7 @@ fn metadata_fields_from_movie(metadata: &MovieMetadata) -> MetadataFields {
 }
 
 async fn upsert_remote_node_metadata(
-    pool: &DatabaseConnection,
+    pool: &impl ConnectionTrait,
     node_id: &str,
     provider_id: &str,
     metadata: MetadataFields,
@@ -288,7 +311,7 @@ async fn upsert_remote_node_metadata(
 }
 
 async fn ensure_remote_asset(
-    pool: &DatabaseConnection,
+    pool: &impl ConnectionTrait,
     source_url: Option<&str>,
     now: i64,
 ) -> anyhow::Result<Option<String>> {
