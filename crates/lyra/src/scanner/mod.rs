@@ -12,8 +12,8 @@ use crate::scanner::local::insert_local_node_metadata;
 use lyra_parser::{ParsedFile, parse_files};
 use sea_orm::sea_query::{Expr, OnConflict};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter,
-    QueryOrder, QuerySelect, TransactionTrait,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Order, QueryFilter, QueryOrder,
+    QuerySelect, TransactionTrait,
 };
 use std::path::Path as StdPath;
 use std::path::PathBuf;
@@ -77,7 +77,8 @@ async fn scan_library(
 
     // if the library root can't be read, treat the whole library as unavailable for this pass
     // instead of crashing startup or the scanner loop.
-    let scan_result = scan_directory(pool, library, &library_path, &library_path, scan_start_time).await;
+    let scan_result =
+        scan_directory(pool, library, &library_path, &library_path, scan_start_time).await;
     if let Err(error) = scan_result {
         tracing::warn!(
             library_id = %library.id,

@@ -1,3 +1,4 @@
+use crate::entities::metadata_source::MetadataSource;
 use crate::entities::{jobs as jobs_entity, node_metadata, nodes, nodes::NodeKind};
 use crate::jobs::{JobExecutionPolicy, JobHandler, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN};
 use crate::json_encoding;
@@ -242,29 +243,39 @@ async fn load_root_match_hint(
     pool: &DatabaseConnection,
     node: &nodes::Model,
 ) -> anyhow::Result<RootMatchHint> {
-    let metadata = node_metadata::Entity::find()
+    let metadata_rows = node_metadata::Entity::find()
         .filter(node_metadata::Column::NodeId.eq(node.id.clone()))
         .order_by_desc(node_metadata::Column::Source)
-        .one(pool)
+        .all(pool)
         .await?;
 
     let years = if node.kind == NodeKind::Movie {
-        metadata
-            .as_ref()
-            .and_then(|row| row.released_at)
+        metadata_rows
+            .iter()
+            .find_map(|row| row.released_at)
             .map(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0).map(|dt| dt.year()))
             .flatten()
     } else {
         None
     };
 
+    // prefer parser-derived ids from local metadata, but keep remote ids as a fallback.
+    let local_metadata = metadata_rows
+        .iter()
+        .find(|row| row.source == MetadataSource::Local);
+
     Ok(RootMatchHint {
-        title: metadata
-            .map(|row| row.name)
+        title: local_metadata
+            .map(|row| row.name.clone())
             .unwrap_or_else(|| node.name.clone()),
         start_year: years,
         end_year: None,
-        imdb_id: None,
-        tmdb_id: None,
+        imdb_id: local_metadata
+            .and_then(|row| row.imdb_id.clone())
+            .or_else(|| local_metadata.and_then(|row| row.imdb_id.clone())),
+        tmdb_id: local_metadata
+            .and_then(|row| row.tmdb_id)
+            .or_else(|| local_metadata.and_then(|row| row.tmdb_id))
+            .and_then(|value| u64::try_from(value).ok()),
     })
 }
