@@ -1,6 +1,7 @@
 use crate::{
     auth::RequestAuth,
     config::get_config,
+    content_update::CONTENT_UPDATE,
     entities::{
         libraries,
         users::{self},
@@ -10,7 +11,7 @@ use crate::{
 };
 use anyhow::Context;
 use async_graphql::{Schema, http::GraphiQLSource};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
     Json, Router,
     extract::{FromRef, State},
@@ -36,6 +37,7 @@ use tokio::{signal, task::JoinSet};
 mod assets;
 mod auth;
 mod config;
+mod content_update;
 mod entities;
 mod error;
 mod file_analysis;
@@ -51,7 +53,11 @@ mod scanner;
 mod segment_markers;
 
 type AppSchema =
-    Schema<graphql::query::Query, graphql::mutation::Mutation, async_graphql::EmptySubscription>;
+    Schema<
+        graphql::query::Query,
+        graphql::mutation::Mutation,
+        graphql::subscription::SubscriptionRoot,
+    >;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -65,7 +71,12 @@ struct AppState {
 }
 
 async fn get_graphql() -> impl IntoResponse {
-    Html(GraphiQLSource::build().endpoint("/api/graphql").finish())
+    Html(
+        GraphiQLSource::build()
+            .endpoint("/api/graphql")
+            .subscription_endpoint("/api/graphql/ws")
+            .finish(),
+    )
 }
 
 async fn post_graphql(
@@ -156,6 +167,7 @@ async fn main() {
     let pool = DatabaseConnection::from(pool);
     let job_wake_signal = Arc::new(Notify::new());
     let job_lock = JobLock::default();
+    CONTENT_UPDATE.start();
     jobs::clear_locked_jobs_on_startup(&pool)
         .await
         .expect("Failed to clear stale job locks");
@@ -188,7 +200,7 @@ async fn main() {
     let schema: AppSchema = Schema::build(
         graphql::query::Query,
         graphql::mutation::Mutation,
-        async_graphql::EmptySubscription,
+        graphql::subscription::SubscriptionRoot,
     )
     .limit_depth(8)
     .limit_complexity(100)
@@ -220,6 +232,7 @@ async fn main() {
         .nest("/api/hls", hls::get_hls_router())
         .nest("/api/assets", assets::get_assets_router())
         .route("/api/graphql", get(get_graphql).post(post_graphql))
+        .route_service("/api/graphql/ws", GraphQLSubscription::new(schema.clone()))
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))
         .with_state(AppState {

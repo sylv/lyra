@@ -15,6 +15,7 @@ import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-
  */
 type Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": typeof types.GetActivitiesDocument,
+    "\n\tsubscription ContentUpdates {\n\t\tcontentUpdates\n\t}\n": typeof types.ContentUpdatesDocument,
     "\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n": typeof types.GetFilesDocument,
     "\n\tfragment EpisodeCard on Node {\n\t\tid\n\t\tname\n\t\tproperties {\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\treleasedAt\n\t\t\truntimeMinutes\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\t...GetPathForNode\n\t}\n": typeof types.EpisodeCardFragmentDoc,
     "\n\tfragment ImageAsset on Asset {\n\t\tid\n\t\tthumbhash\n\t}\n": typeof types.ImageAssetFragmentDoc,
@@ -37,6 +38,7 @@ type Documents = {
 };
 const documents: Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": types.GetActivitiesDocument,
+    "\n\tsubscription ContentUpdates {\n\t\tcontentUpdates\n\t}\n": types.ContentUpdatesDocument,
     "\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n": types.GetFilesDocument,
     "\n\tfragment EpisodeCard on Node {\n\t\tid\n\t\tname\n\t\tproperties {\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\treleasedAt\n\t\t\truntimeMinutes\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\t...GetPathForNode\n\t}\n": types.EpisodeCardFragmentDoc,
     "\n\tfragment ImageAsset on Asset {\n\t\tid\n\t\tthumbhash\n\t}\n": types.ImageAssetFragmentDoc,
@@ -76,6 +78,10 @@ export function graphql(source: string): unknown;
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tsubscription ContentUpdates {\n\t\tcontentUpdates\n\t}\n"): (typeof documents)["\n\tsubscription ContentUpdates {\n\t\tcontentUpdates\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

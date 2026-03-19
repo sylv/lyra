@@ -1,5 +1,6 @@
 use crate::RequestAuth;
 use crate::auth::{PermissionGuard, create_session_for_user};
+use crate::content_update::CONTENT_UPDATE;
 use crate::entities::users::UserPerms;
 use crate::entities::{files, libraries, node_files, users, watch_progress};
 use crate::ids;
@@ -165,6 +166,7 @@ impl Mutation {
             blank_user.password_hash = Set(Some(password_hash));
             blank_user.invite_code = Set(None);
             let user = blank_user.update(pool).await?;
+            CONTENT_UPDATE.emit();
             Ok(user)
         } else {
             let auth = ctx.data::<RequestAuth>()?;
@@ -201,6 +203,7 @@ impl Mutation {
                 ctx.insert_http_header("Set-Cookie", cookie);
             }
 
+            CONTENT_UPDATE.emit();
             Ok(user)
         }
     }
@@ -289,6 +292,7 @@ impl Mutation {
             updated_rows.push(row);
         }
 
+        CONTENT_UPDATE.emit();
         Ok(updated_rows)
     }
 
@@ -332,6 +336,10 @@ impl Mutation {
         }
         .map_err(|error| async_graphql::Error::new(error.to_string()))?;
 
+        if result.imported > 0 {
+            CONTENT_UPDATE.emit();
+        }
+
         Ok(result.into())
     }
 
@@ -360,6 +368,7 @@ impl Mutation {
         .await
         .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
+        CONTENT_UPDATE.emit();
         Ok(library)
     }
 }

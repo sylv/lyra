@@ -1,6 +1,7 @@
 pub mod derive_nodes;
 
 use crate::config::get_config;
+use crate::content_update::CONTENT_UPDATE;
 use crate::entities::{
     files, libraries, metadata_source::MetadataSource, node_closure, node_files, node_metadata,
     nodes,
@@ -117,6 +118,7 @@ async fn scan_library(
     .await?;
 
     wake_signal.notify_waiters();
+    CONTENT_UPDATE.emit();
     Ok(())
 }
 

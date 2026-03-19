@@ -1,13 +1,34 @@
-import { ApolloClient, InMemoryCache } from "@apollo/client";
+import { ApolloClient, InMemoryCache, split } from "@apollo/client";
 import { HttpLink } from "@apollo/client/link/http";
+import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { relayStylePagination } from "@apollo/client/utilities";
+import { OperationTypeNode } from "graphql";
+import { createClient } from "graphql-ws";
 import { create } from "zustand";
 
-const createApolloClient = () =>
-	new ApolloClient({
-		link: new HttpLink({
-			uri: "/api/graphql",
+const getGraphqlWebsocketUrl = () => {
+	const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+	return `${protocol}//${window.location.host}/api/graphql/ws`;
+};
+
+const createApolloClient = () => {
+	const httpLink = new HttpLink({
+		uri: "/api/graphql",
+	});
+	const wsLink = new GraphQLWsLink(
+		createClient({
+			url: getGraphqlWebsocketUrl(),
+			retryAttempts: Number.MAX_SAFE_INTEGER,
 		}),
+	);
+	const link = split(
+		({ operationType }) => operationType === OperationTypeNode.SUBSCRIPTION,
+		wsLink,
+		httpLink,
+	);
+
+	return new ApolloClient({
+		link,
 		cache: new InMemoryCache({
 			typePolicies: {
 				Query: {
@@ -18,6 +39,7 @@ const createApolloClient = () =>
 			},
 		}),
 	});
+};
 
 interface ApolloClientState {
 	client: ApolloClient;

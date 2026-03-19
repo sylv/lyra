@@ -18,6 +18,10 @@ type Asset {
 	createdAt: Int!
 }
 
+enum ContentUpdateEvent {
+	CONTENT_UPDATE
+}
+
 type File {
 	id: String!
 	libraryId: String!
@@ -260,6 +264,10 @@ type SearchResults {
 	episodes: [Node!]!
 }
 
+type SubscriptionRoot {
+	contentUpdates: ContentUpdateEvent!
+}
+
 type TimelinePreviewSheet {
 	positionMs: Int!
 	endMs: Int!
@@ -299,4 +307,5 @@ directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 schema {
 	query: Query
 	mutation: Mutation
+	subscription: SubscriptionRoot
 }

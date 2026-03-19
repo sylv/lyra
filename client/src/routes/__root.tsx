@@ -6,6 +6,7 @@ import { apolloClientStore } from "../client";
 import { DynamicBackground } from "../components/dynamic-background";
 import { AppErrorBoundary } from "../components/error-boundary";
 import { SuspenseBoundary } from "../components/fallback";
+import { ContentUpdateListener } from "../components/content-update-listener";
 import { PlayerWrapper } from "../components/player/player-wrapper";
 import { SetupWrapper } from "../components/setup/setup-wrapper";
 import { Sidebar } from "../components/sidebar";
@@ -27,6 +28,7 @@ function RootComponent() {
 			<ApolloProvider client={client}>
 				<AppErrorBoundary className="fixed inset-0">
 					<SetupWrapper>
+						<ContentUpdateListener />
 						<AppErrorBoundary className="fixed inset-0">
 							<SuspenseBoundary className="fixed inset-0">
 								{isSetupRoute ? (

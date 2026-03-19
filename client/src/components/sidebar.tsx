@@ -1,7 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@apollo/client/react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { Activity, HomeIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
-import { useEffect, useState, type FC, type ReactNode } from "react";
+import { useState, type FC, type ReactNode } from "react";
 import BrandLogo from "../assets/logo.svg";
 import { graphql } from "../@generated/gql";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
@@ -67,21 +67,8 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
 	const { data } = useSuspenseQuery(LibrariesQuery);
-	const [pollInterval, setPollInterval] = useState(10000);
-	const [activitiesRunning, setActivitiesRunning] = useState(false);
-	const { data: activityData } = useQuery(ActivityPanelQuery, {
-		pollInterval: pollInterval,
-	});
-
-	useEffect(() => {
-		if (!activityData) {
-			return;
-		}
-
-		const hasRunning = activityData.activities.some((activity) => activity.current < activity.total);
-		setActivitiesRunning(hasRunning);
-		setPollInterval(hasRunning ? 1000 : 10000);
-	}, [activityData]);
+	const { data: activityData } = useQuery(ActivityPanelQuery);
+	const activitiesRunning = activityData?.activities.some((activity) => activity.current < activity.total) ?? false;
 
 	return (
 		<div className="flex w-dvw h-dvh overflow-hidden">
