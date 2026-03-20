@@ -200,6 +200,8 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	});
 	// Keep the previous item mounted while loading the next/previous item so browser fullscreen is preserved.
 	const currentMedia = data?.node ?? (isItemLoading ? previousData?.node : null) ?? null;
+	// only treat query loading as player loading while we're still resolving a different item.
+	const isResolvingRequestedMedia = isItemLoading && currentMedia?.id !== itemId;
 	const introSegment = useMemo(() => {
 		const segments = currentMedia?.file?.segments;
 		if (!Array.isArray(segments)) {
@@ -239,13 +241,13 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	}, [currentTime, introSegment]);
 
 	useEffect(() => {
-		if (!isItemLoading) {
+		if (!isResolvingRequestedMedia) {
 			return;
 		}
 
 		setErrorMessage(null);
 		setPlayerLoading(true);
-	}, [isItemLoading]);
+	}, [isResolvingRequestedMedia]);
 
 	useEffect(() => {
 		if (!itemLoadError) {
