@@ -1,6 +1,6 @@
 import { useQuery } from "@apollo/client/react";
 import { createFileRoute } from "@tanstack/react-router";
-import { LibrariesQuery, LibraryManager } from "../components/library-manager";
+import { LibrariesQuery, LibraryManager } from "../components/settings/libraries";
 
 export const Route = createFileRoute("/settings/libraries")({
 	component: RouteComponent,

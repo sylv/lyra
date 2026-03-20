@@ -1,10 +1,10 @@
 import { useApolloClient, useMutation } from "@apollo/client/react";
 import { useState, type FC, type FormEvent } from "react";
-import type { LibraryCardFragment as LibraryCardData } from "../../@generated/gql/graphql";
-import { Button, ButtonStyle } from "../button";
-import { DirectoryPicker } from "../directory-picker";
-import { Input } from "../input";
-import { Modal, ModalBody, ModalHeader } from "../modal";
+import type { LibraryCardFragment as LibraryCardData } from "../../../@generated/gql/graphql";
+import { Button, ButtonStyle } from "../../button";
+import { DirectoryPicker } from "../../directory-picker";
+import { Input } from "../../input";
+import { Modal, ModalBody, ModalHeader } from "../../modal";
 import { CreateLibraryMutation, LibrariesQuery, UpdateLibraryMutation } from "./queries";
 
 interface LibraryFormModalProps {

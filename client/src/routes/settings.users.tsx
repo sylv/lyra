@@ -1,6 +1,6 @@
 import { useQuery } from "@apollo/client/react";
 import { createFileRoute } from "@tanstack/react-router";
-import { UserManager, UsersManagementQuery } from "../components/user-manager";
+import { UserManager, UsersManagementQuery } from "../components/settings/users";
 
 export const Route = createFileRoute("/settings/users")({
 	component: RouteComponent,

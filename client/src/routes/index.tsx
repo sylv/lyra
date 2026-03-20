@@ -4,16 +4,16 @@ import { useState } from "react";
 import { graphql } from "../@generated/gql";
 import { NodeKind, OrderBy, type NodeFilter } from "../@generated/gql/graphql";
 import { getApolloClient } from "../client";
-import { MediaFilterList } from "../components/media-filter-list";
-import { MediaList } from "../components/media-list";
+import { NodeFilterList } from "../components/nodes/node-filter-list";
+import { NodeList } from "../components/nodes/node-list";
 import { useTitle } from "../hooks/use-title";
 
 const Query = graphql(`
-	query GetAllMedia($filter: NodeFilter!, $after: String) {
+	query GetAllNodes($filter: NodeFilter!, $after: String) {
 		nodeList(filter: $filter, first: 45, after: $after) {
 			edges {
 				node {
-					...MediaList
+					...NodeList
 				}
 			}
 			pageInfo {
@@ -51,12 +51,12 @@ function HomeRoute() {
 		<div>
 			<div className="my-4 flex flex-col gap-2">
 				<div className="flex flex-wrap gap-2">
-					<MediaFilterList value={filter} onChange={setFilter} />
+					<NodeFilterList value={filter} onChange={setFilter} />
 				</div>
 			</div>
 			<div className="flex flex-wrap gap-4">
-				<MediaList
-					media={data?.nodeList?.edges?.map((edge) => edge.node)}
+				<NodeList
+					nodes={data?.nodeList?.edges?.map((edge) => edge.node)}
 					loading={loading}
 					onLoadMore={() => {
 						if (!data?.nodeList?.pageInfo?.hasNextPage) return;

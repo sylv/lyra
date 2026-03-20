@@ -1,21 +1,22 @@
 import { useMutation } from "@apollo/client/react";
 import { EllipsisVertical, KeyRound, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState, type FC } from "react";
-import { graphql, unmask, type FragmentType } from "../../@generated/gql";
-import type { UserCardFragment as UserCardData } from "../../@generated/gql/graphql";
+import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
+import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
+import { describePermissions } from "../../../lib/describe-permissions";
+import { formatLastSeen } from "../../../lib/format-last-seen";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-import { ManagementCard } from "../settings-manager/management-card";
+} from "../../ui/dropdown-menu";
+import { ManagementCard } from "../management-card";
 import { ConfirmDeleteUserModal } from "./confirm-delete-user-modal";
 import { InviteLinkField } from "./invite-link-field";
 import { DeleteUserMutation, ResetUserInviteMutation, UsersManagementQuery } from "./queries";
-import { describePermissions, formatLastSeen } from "./utils";
-import { generateGradientIcon } from "../../lib/generate-gradient-icon";
+import { generateGradientIcon } from "../../../lib/generate-gradient-icon";
 
 interface UserCardProps {
 	user: FragmentType<typeof UserCardFragment>;

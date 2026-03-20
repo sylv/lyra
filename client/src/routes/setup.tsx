@@ -1,6 +1,6 @@
 import { Outlet, createFileRoute, useLocation } from "@tanstack/react-router";
 import { Modal } from "../components/modal";
-import { useSetup } from "../components/setup/setup-wrapper";
+import { useSetup } from "../components/settings/setup/setup-wrapper";
 
 export const Route = createFileRoute("/setup")({
 	component: SetupRoute,

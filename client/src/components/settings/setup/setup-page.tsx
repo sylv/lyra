@@ -1,5 +1,5 @@
 import type { FC, ReactNode } from "react";
-import { ModalHeader } from "../modal";
+import { ModalHeader } from "../../modal";
 
 interface SetupPageProps {
 	title: string;

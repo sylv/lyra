@@ -1,7 +1,7 @@
 import { useQuery } from "@apollo/client/react";
-import { LibrariesQuery, LibraryManager } from "../../library-manager";
-import { SetupStep } from "../setup-step";
-import { useSetup } from "../setup-wrapper";
+import { LibrariesQuery, LibraryManager } from "../libraries";
+import { SetupStep } from "./setup-step";
+import { useSetup } from "./setup-wrapper";
 
 export function CreateLibraryStep() {
 	const { refresh } = useSetup();

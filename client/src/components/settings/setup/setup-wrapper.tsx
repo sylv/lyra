@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { createContext, useContext, useEffect, useRef, useState, type FC, type ReactNode } from "react";
-import { resetApolloClient } from "../../client";
+import { resetApolloClient } from "../../../client";
 import {
 	fetchInitState,
 	getPreviousSetupRoute,

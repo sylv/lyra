@@ -1,6 +1,6 @@
 import { useApolloClient, useSubscription } from "@apollo/client/react";
 import { graphql } from "../@generated/gql";
-import { useSetup } from "./setup/setup-wrapper";
+import { useSetup } from "./settings/setup/setup-wrapper";
 
 const ContentUpdatesSubscription = graphql(`
 	subscription ContentUpdates {

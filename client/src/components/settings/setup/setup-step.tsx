@@ -1,8 +1,8 @@
 import { ArrowRight } from "lucide-react";
 import type { FC, ReactNode } from "react";
-import { Button } from "../button";
+import { Button } from "../../button";
 import { cn } from "@/lib/utils";
-import { ModalBody, ModalFooter } from "../modal";
+import { ModalBody, ModalFooter } from "../../modal";
 
 interface SetupStepProps {
 	children: ReactNode;

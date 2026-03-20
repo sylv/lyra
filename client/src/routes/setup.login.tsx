@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Input } from "../components/input";
-import { SetupPage } from "../components/setup/setup-page";
-import { SetupStep } from "../components/setup/setup-step";
-import { useSetup } from "../components/setup/setup-wrapper";
+import { SetupPage } from "../components/settings/setup/setup-page";
+import { SetupStep } from "../components/settings/setup/setup-step";
+import { useSetup } from "../components/settings/setup/setup-wrapper";
 import { useTitle } from "../hooks/use-title";
 
 export const Route = createFileRoute("/setup/login")({

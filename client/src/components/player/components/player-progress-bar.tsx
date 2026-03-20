@@ -1,32 +1,35 @@
+import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import { useMemo, useState, type FC } from "react";
+import { formatPlayerTime } from "../../../lib/format-player-time";
 import { cn } from "../../../lib/utils";
-import { formatPlayerTime } from "../utils";
 
 const TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX = 380;
 const TIMELINE_TIME_TOOLTIP_WIDTH_PX = 56;
 
-interface PlayerTimelinePreviewSheet {
-	positionMs: number;
-	endMs: number;
-	sheetIntervalMs: number;
-	sheetGapSize: number;
-	asset: {
-		id: number;
-		width?: number | null;
-		height?: number | null;
-	};
-}
+export const PlayerTimelinePreviewSheetFragment = graphql(`
+	fragment PlayerTimelinePreviewSheet on TimelinePreviewSheet {
+		positionMs
+		endMs
+		sheetIntervalMs
+		sheetGapSize
+		asset {
+			id
+			width
+			height
+		}
+	}
+`);
 
 interface PlayerProcessBarProps {
 	duration: number;
 	currentTime: number;
 	bufferedRanges: { start: number; end: number }[];
-	timelinePreviewSheets: PlayerTimelinePreviewSheet[];
+	timelinePreviewSheets: FragmentType<typeof PlayerTimelinePreviewSheetFragment>[];
 	onChange: (time: number) => void;
 }
 
 interface HoverPreviewFrame {
-	assetId: number;
+	assetId: string;
 	sheetWidthPx: number;
 	sheetHeightPx: number;
 	frameWidthPx: number;
@@ -37,7 +40,7 @@ interface HoverPreviewFrame {
 
 const getHoverPreviewFrame = (
 	hoverTimeSeconds: number,
-	sheets: PlayerTimelinePreviewSheet[],
+	sheets: Array<FragmentType<typeof PlayerTimelinePreviewSheetFragment>>,
 ): HoverPreviewFrame | null => {
 	if (!Number.isFinite(hoverTimeSeconds) || hoverTimeSeconds < 0) {
 		return null;
@@ -45,7 +48,8 @@ const getHoverPreviewFrame = (
 
 	const hoverMs = hoverTimeSeconds * 1000;
 
-	for (const sheet of sheets) {
+	for (const sheetRef of sheets) {
+		const sheet = unmask(PlayerTimelinePreviewSheetFragment, sheetRef);
 		const sheetWidthPx = sheet.asset.width ?? 0;
 		const sheetHeightPx = sheet.asset.height ?? 0;
 		if (sheetWidthPx <= 0 || sheetHeightPx <= 0 || sheet.sheetGapSize < 0 || sheet.sheetIntervalMs <= 0) {
@@ -109,11 +113,13 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 		barWidthPx: number;
 	} | null>(null);
 	const sortedTimelinePreviewSheets = useMemo(() => {
-		return [...timelinePreviewSheets].sort((a, b) => {
+		return [...timelinePreviewSheets].sort((aRef, bRef) => {
+			const a = unmask(PlayerTimelinePreviewSheetFragment, aRef);
+			const b = unmask(PlayerTimelinePreviewSheetFragment, bRef);
 			if (a.positionMs !== b.positionMs) {
 				return a.positionMs - b.positionMs;
 			}
-			return a.asset.id - b.asset.id;
+			return a.asset.id.localeCompare(b.asset.id);
 		});
 	}, [timelinePreviewSheets]);
 	const hoverPreviewFrame = useMemo(() => {

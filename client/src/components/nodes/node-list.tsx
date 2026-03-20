@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type FC } from "react";
-import { graphql, unmask, type FragmentType } from "../@generated/gql";
-import { MediaPoster } from "./media-poster";
-import { Spinner } from "./ui/spinner";
-import { ViewLoader } from "./view-loader";
+import { graphql, unmask, type FragmentType } from "../../@generated/gql";
+import { NodePoster } from "./node-poster";
+import { Spinner } from "../ui/spinner";
+import { ViewLoader } from "../view-loader";
 
 const Fragment = graphql(`
-	fragment MediaList on Node {
+	fragment NodeList on Node {
 		id
-		...MediaPoster
+		...NodePoster
 	}
 `);
 
-interface MediaListProps {
-	media?: FragmentType<typeof Fragment>[];
+interface NodeListProps {
+	nodes?: FragmentType<typeof Fragment>[];
 	loading: boolean;
 	onLoadMore?: () => void;
 }
@@ -20,8 +20,8 @@ interface MediaListProps {
 const POSTER_WIDTH = 185;
 const GAP_SIZE = 16;
 
-export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoadMore }) => {
-	const media = mediaRaw ? unmask(Fragment, mediaRaw) : [];
+export const NodeList: FC<NodeListProps> = ({ nodes: nodesRaw, loading, onLoadMore }) => {
+	const nodes = nodesRaw ? unmask(Fragment, nodesRaw) : [];
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [columns, setColumns] = useState<number | null>(null);
 
@@ -37,7 +37,7 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoad
 		return () => window.removeEventListener("resize", calculateLayout);
 	}, [calculateLayout]);
 
-	if (!media || (media.length === 0 && loading)) {
+	if (!nodes || (nodes.length === 0 && loading)) {
 		return (
 			<div ref={containerRef} className="mr-6 w-full h-dvh flex items-center justify-center">
 				<Spinner className="size-6" />
@@ -51,8 +51,8 @@ export const MediaList: FC<MediaListProps> = ({ media: mediaRaw, loading, onLoad
 				className="grid"
 				style={{ gridTemplateColumns: `repeat(${columns}, 1fr)`, columnGap: GAP_SIZE, rowGap: GAP_SIZE }}
 			>
-				{media.map((mediaItem) => (
-					<MediaPoster media={mediaItem} key={mediaItem.id} />
+				{nodes.map((node) => (
+					<NodePoster node={node} key={node.id} />
 				))}
 			</div>
 			<ViewLoader onLoadMore={onLoadMore} />

@@ -1,20 +1,20 @@
 import { useApolloClient, useMutation } from "@apollo/client/react";
 import { EllipsisVertical, Pencil, Trash2 } from "lucide-react";
 import { useState, type FC } from "react";
-import { graphql, unmask, type FragmentType } from "../../@generated/gql";
+import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-import { ManagementCard } from "../settings-manager/management-card";
+} from "../../ui/dropdown-menu";
+import { ManagementCard } from "../management-card";
 import { ConfirmDeleteLibraryModal } from "./confirm-delete-library-modal";
 import { DeleteLibraryMutation, LibrariesQuery } from "./queries";
-import { formatLastScannedAt } from "./utils";
-import { generateGradientIcon } from "../../lib/generate-gradient-icon";
-import type { LibraryCardFragment as LibraryCardData } from "../../@generated/gql/graphql";
+import { formatLastScannedAt } from "../../../lib/format-last-scanned-at";
+import { generateGradientIcon } from "../../../lib/generate-gradient-icon";
+import type { LibraryCardFragment as LibraryCardData } from "../../../@generated/gql/graphql";
 
 interface LibraryCardProps {
 	library: FragmentType<typeof LibraryCardFragment>;

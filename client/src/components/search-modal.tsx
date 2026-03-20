@@ -207,18 +207,20 @@ export const SearchModal: FC<{ open: boolean; onOpenChange: (open: boolean) => v
 						{roots.length > 0 && (
 							<section>
 								<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3">
-									{roots.map((node) => (
-										<SearchNodeCard key={node.id} node={node} onSelect={() => handleOpenChange(false)} />
-									))}
+									{roots.map((node) => {
+										const result = unmask(SearchNodeResultFragment, node);
+										return <SearchNodeCard key={result.id} node={node} onSelect={() => handleOpenChange(false)} />;
+									})}
 								</div>
 							</section>
 						)}
 						{episodes.length > 0 && (
 							<section>
 								<div className={cn("mt-2", episodes.length > 0 && "space-y-1")}>
-									{episodes.map((node) => (
-										<SearchNodeCard key={node.id} node={node} onSelect={() => handleOpenChange(false)} />
-									))}
+									{episodes.map((node) => {
+										const result = unmask(SearchNodeResultFragment, node);
+										return <SearchNodeCard key={result.id} node={node} onSelect={() => handleOpenChange(false)} />;
+									})}
 								</div>
 							</section>
 						)}

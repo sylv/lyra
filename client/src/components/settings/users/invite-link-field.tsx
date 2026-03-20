@@ -1,7 +1,7 @@
 import { Copy } from "lucide-react";
 import { useState, type FC } from "react";
-import { Button, ButtonStyle } from "../button";
-import { Input } from "../input";
+import { Button, ButtonStyle } from "../../button";
+import { Input } from "../../input";
 
 export const InviteLinkField: FC<{ inviteLink: string }> = ({ inviteLink }) => {
 	const [copied, setCopied] = useState(false);

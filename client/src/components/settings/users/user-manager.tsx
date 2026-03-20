@@ -1,7 +1,7 @@
 import { useState, type FC } from "react";
-import type { FragmentType } from "../../@generated/gql";
-import { ManagementCreateCard } from "../settings-manager/management-card";
-import type { UserCardFragment as UserCardData } from "../../@generated/gql/graphql";
+import type { FragmentType } from "../../../@generated/gql";
+import { ManagementCreateCard } from "../management-card";
+import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
 import { UserCard, UserCardFragment } from "./user-card";
 import { UserFormModal } from "./user-form-modal";
 

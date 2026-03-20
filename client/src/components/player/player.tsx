@@ -137,15 +137,7 @@ const ItemPlaybackQuery = graphql(`
 					endMs
 				}
 				timelinePreview {
-					positionMs
-					endMs
-					sheetIntervalMs
-					sheetGapSize
-					asset {
-						id
-						width
-						height
-					}
+					...PlayerTimelinePreviewSheet
 				}
 			}
 			previousPlayable {

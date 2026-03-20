@@ -8,7 +8,9 @@ import {
 	SkipBackIcon,
 	SkipForwardIcon,
 } from "lucide-react";
+import type { FragmentType } from "../../../@generated/gql";
 import { useMemo, type FC } from "react";
+import { formatPlayerTime } from "../../../lib/format-player-time";
 import { cn } from "../../../lib/utils";
 import {
 	DropdownMenu,
@@ -21,26 +23,13 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "../../ui/dropdown-menu";
-import { formatPlayerTime } from "../utils";
 import { PlayerButton } from "./player-button";
-import { PlayerProgressBar } from "./player-progress-bar";
+import { PlayerProgressBar, PlayerTimelinePreviewSheetFragment } from "./player-progress-bar";
 import { PlayerVolumeControl } from "./player-volume-control";
 
 interface PlayerAudioTrackOption {
 	id: number;
 	label: string;
-}
-
-interface PlayerTimelinePreviewSheet {
-	positionMs: number;
-	endMs: number;
-	sheetIntervalMs: number;
-	sheetGapSize: number;
-	asset: {
-		id: number;
-		width?: number | null;
-		height?: number | null;
-	};
 }
 
 interface PlayerControlsProps {
@@ -49,7 +38,7 @@ interface PlayerControlsProps {
 	currentTime: number;
 	duration: number;
 	bufferedRanges: { start: number; end: number }[];
-	timelinePreviewSheets: PlayerTimelinePreviewSheet[];
+	timelinePreviewSheets: FragmentType<typeof PlayerTimelinePreviewSheetFragment>[];
 	playing: boolean;
 	volume: number;
 	isMuted: boolean;

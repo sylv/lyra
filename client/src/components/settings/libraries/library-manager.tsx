@@ -1,8 +1,8 @@
 import { useState, type FC } from "react";
-import type { FragmentType } from "../../@generated/gql";
-import { cn } from "../../lib/utils";
-import { ManagementCreateCard } from "../settings-manager/management-card";
-import type { LibraryCardFragment as LibraryCardData } from "../../@generated/gql/graphql";
+import type { FragmentType } from "../../../@generated/gql";
+import { cn } from "../../../lib/utils";
+import { ManagementCreateCard } from "../management-card";
+import type { LibraryCardFragment as LibraryCardData } from "../../../@generated/gql/graphql";
 import { LibraryCard, LibraryCardFragment } from "./library-card";
 import { LibraryFormModal } from "./library-form-modal";
 

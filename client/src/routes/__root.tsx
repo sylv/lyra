@@ -8,7 +8,7 @@ import { AppErrorBoundary } from "../components/error-boundary";
 import { SuspenseBoundary } from "../components/fallback";
 import { ContentUpdateListener } from "../components/content-update-listener";
 import { PlayerWrapper } from "../components/player/player-wrapper";
-import { SetupWrapper } from "../components/setup/setup-wrapper";
+import { SetupWrapper } from "../components/settings/setup/setup-wrapper";
 import { Sidebar } from "../components/sidebar";
 import { Toaster } from "../components/ui/sonner";
 

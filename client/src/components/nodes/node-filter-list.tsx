@@ -1,14 +1,14 @@
 import { CalendarClockIcon, CalendarPlusIcon, ListOrderedIcon, SortAscIcon, StarIcon } from "lucide-react";
 import { Fragment, type FC } from "react";
-import { OrderBy, type NodeFilter } from "../@generated/gql/graphql";
-import { FilterButton, FilterSelect } from "./filter-button";
+import { OrderBy, type NodeFilter } from "../../@generated/gql/graphql";
+import { FilterButton, FilterSelect } from "../filter-button";
 
-interface MediaFilterListProps {
+interface NodeFilterListProps {
 	value: NodeFilter;
 	onChange: (value: NodeFilter) => void;
 }
 
-export const MediaFilterList: FC<MediaFilterListProps> = ({ value, onChange }) => {
+export const NodeFilterList: FC<NodeFilterListProps> = ({ value, onChange }) => {
 	const produceChange = (partial: Partial<NodeFilter>) => onChange({ ...value, ...partial });
 
 	return (

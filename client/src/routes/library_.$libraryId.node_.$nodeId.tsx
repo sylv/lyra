@@ -81,8 +81,8 @@ export const Route = createFileRoute("/library_/$libraryId/node_/$nodeId")({
 			variables: { nodeId: params.nodeId },
 		});
 
-		const node = data.node;
-		if (node.kind === "EPISODE" && node.parent) {
+		const node = data?.node;
+		if (node?.kind === "EPISODE" && node.parent) {
 			throw redirect({
 				to: getPathForNodeData({
 					id: node.parent.id,
@@ -99,6 +99,9 @@ function NodeRoute() {
 	const { nodeId } = Route.useParams();
 	const { data } = useSuspenseQuery(Query, { variables: { nodeId } });
 	const node = data.node;
+	if (node == null) {
+		return null;
+	}
 	const playableItemId = node.nextPlayable?.id ?? (node.kind === "MOVIE" || node.kind === "EPISODE" ? node.id : null);
 	const playableWatchProgress =
 		node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
@@ -121,7 +124,7 @@ function NodeRoute() {
 	});
 
 	useDynamicBackground(node.properties.backgroundImage ?? poster);
-	useTitle(node.root.name);
+	useTitle(node.root?.name ?? node.name);
 
 	if (node.kind === "SEASON") {
 		const episodes = sortedChildren.filter((child) => child.kind === "EPISODE");

@@ -1,12 +1,12 @@
 import { useMutation } from "@apollo/client/react";
 import { useState, type FC, type FormEvent } from "react";
-import type { UserCardFragment as UserCardData } from "../../@generated/gql/graphql";
-import { Button, ButtonStyle } from "../button";
-import { Input } from "../input";
-import { Modal, ModalBody, ModalHeader } from "../modal";
-import { CheckboxCard } from "../settings-manager/checkbox-card";
+import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
+import { Button, ButtonStyle } from "../../button";
+import { Input } from "../../input";
+import { Modal, ModalBody, ModalHeader } from "../../modal";
+import { CheckboxCard } from "../checkbox-card";
 import { CreateUserInviteMutation, UpdateUserMutation, UsersManagementQuery } from "./queries";
-import { ADMIN_BIT, permissionOptions } from "./types";
+import { ADMIN_BIT, permissionOptions } from "../../../lib/user-permissions";
 
 interface UserFormModalProps {
 	activeForm:
