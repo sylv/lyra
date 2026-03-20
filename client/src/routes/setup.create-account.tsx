@@ -34,7 +34,7 @@ function SetupCreateAccountRoute() {
 		<SetupPage
 			title="Let's get you sorted"
 			description={
-				state.state === "create_invited_user" ? "Finish setting up your invited account" : "Create your first account"
+				state.state === "create_invited_user" ? "Finish setting up your account" : "Create your first account"
 			}
 		>
 			<CreateAccountForm
@@ -59,7 +59,6 @@ function CreateAccountForm({
 	const { refresh } = useSetup();
 	const isInviteFlow = mode === "create_invited_user";
 	const [username, setUsername] = useState(initialUsername);
-	const [usernameLocked, setUsernameLocked] = useState(isInviteFlow);
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -72,7 +71,6 @@ function CreateAccountForm({
 
 	useEffect(() => {
 		setUsername(initialUsername);
-		setUsernameLocked(isInviteFlow);
 		setWaitingForCode(!isInviteFlow);
 		setSetupCode(null);
 	}, [initialUsername, isInviteFlow]);
@@ -162,22 +160,14 @@ function CreateAccountForm({
 					}}
 				>
 					<fieldset className="flex flex-col gap-2">
-						<div className="flex items-center gap-2">
-							<Input
-								type="text"
-								placeholder="Username"
-								value={username}
-								onChange={(e) => setUsername(e.target.value)}
-								disabled={usernameLocked}
-								required
-								className="w-full"
-							/>
-							{isInviteFlow ? (
-								<Button style={ButtonStyle.Transparent} onClick={() => setUsernameLocked((current) => !current)}>
-									{usernameLocked ? "Change" : "Lock"}
-								</Button>
-							) : null}
-						</div>
+						<Input
+							type="text"
+							placeholder="Username"
+							value={username}
+							onChange={(e) => setUsername(e.target.value)}
+							required
+							className="w-full"
+						/>
 						<Input
 							type="password"
 							placeholder="Password"
