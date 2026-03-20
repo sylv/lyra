@@ -9,6 +9,12 @@ pub fn new_session_token() -> String {
     encode_crockford(&bytes)
 }
 
+pub fn new_invite_code() -> String {
+    let mut bytes = [0_u8; 12];
+    rand::rng().fill_bytes(&mut bytes);
+    encode_crockford(&bytes)
+}
+
 pub fn generate_ulid() -> String {
     format!("u_{}", ulid::Ulid::new())
 }

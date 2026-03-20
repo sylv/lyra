@@ -9,9 +9,11 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
     pub username: String,
+    #[graphql(skip)]
     pub password_hash: Option<String>,
     pub invite_code: Option<String>,
     pub permissions: i64,
+    pub last_seen_at: Option<i64>,
     pub created_at: i64,
 }
 

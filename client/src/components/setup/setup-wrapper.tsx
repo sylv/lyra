@@ -91,7 +91,7 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 			return request.current;
 		}
 
-		request.current = fetchInitState()
+		request.current = fetchInitState(searchStrRef.current)
 			.then((nextState) => {
 				setError(null);
 

@@ -1,6 +1,6 @@
+use crate::content_update::CONTENT_UPDATE;
 use crate::entities::jobs as jobs_entity;
 use crate::job_block::JobLock;
-use crate::content_update::CONTENT_UPDATE;
 use anyhow::Context;
 use sea_orm::{
     ActiveModelTrait,

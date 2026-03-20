@@ -251,11 +251,7 @@ const LibraryForm: FC<{
 
 			<div className="flex justify-end gap-2">
 				{canCancel && (
-					<button
-						type="button"
-						onClick={onClose}
-						className="px-3 py-1 text-sm text-zinc-400 hover:text-zinc-200"
-					>
+					<button type="button" onClick={onClose} className="px-3 py-1 text-sm text-zinc-400 hover:text-zinc-200">
 						Cancel
 					</button>
 				)}

@@ -1,8 +1,9 @@
 use crate::{
+    auth::PermissionGuard,
     auth::RequestAuth,
     entities::{
         jobs as jobs_entity, libraries, metadata_source::MetadataSource, node_metadata, nodes,
-        watch_progress,
+        users, watch_progress,
     },
     jobs,
 };
@@ -410,6 +411,24 @@ impl Query {
     ) -> Result<Vec<libraries::Model>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         Ok(libraries::Entity::find().all(pool).await?)
+    }
+
+    async fn viewer(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<users::Model>, async_graphql::Error> {
+        Ok(ctx
+            .data_opt::<RequestAuth>()
+            .and_then(|auth| auth.get_user().cloned()))
+    }
+
+    #[graphql(guard = PermissionGuard::new(users::UserPerms::CREATE_USER))]
+    async fn users(&self, ctx: &Context<'_>) -> Result<Vec<users::Model>, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        Ok(users::Entity::find()
+            .order_by_asc(users::Column::CreatedAt)
+            .all(pool)
+            .await?)
     }
 
     async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {

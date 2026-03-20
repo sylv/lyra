@@ -48,7 +48,7 @@ function LoginForm() {
 
 		try {
 			setLoading(true);
-			await fetch("/api/login", {
+			const response = await fetch("/api/login", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -58,6 +58,10 @@ function LoginForm() {
 					password,
 				}),
 			});
+			if (!response.ok) {
+				const errorBody = (await response.json().catch(() => null)) as { error_message?: string } | null;
+				throw new Error(errorBody?.error_message ?? `Login failed (${response.status})`);
+			}
 
 			await refresh();
 			setLoading(false);
@@ -71,7 +75,13 @@ function LoginForm() {
 
 	return (
 		<SetupStep loading={loading} disabled={loading} onSubmit={handleSubmit} error={error}>
-			<form id="create-account-form" onSubmit={handleSubmit}>
+			<form
+				id="create-account-form"
+				onSubmit={(event) => {
+					event.preventDefault();
+					void handleSubmit();
+				}}
+			>
 				<fieldset className="flex flex-col gap-2">
 					<Input
 						type="text"

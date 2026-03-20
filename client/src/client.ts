@@ -21,11 +21,7 @@ const createApolloClient = () => {
 			retryAttempts: Number.MAX_SAFE_INTEGER,
 		}),
 	);
-	const link = split(
-		({ operationType }) => operationType === OperationTypeNode.SUBSCRIPTION,
-		wsLink,
-		httpLink,
-	);
+	const link = split(({ operationType }) => operationType === OperationTypeNode.SUBSCRIPTION, wsLink, httpLink);
 
 	return new ApolloClient({
 		link,

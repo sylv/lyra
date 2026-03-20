@@ -111,6 +111,10 @@ type Library {
 
 type Mutation {
 	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
+	createUserInvite(username: String!, permissions: Int!): User!
+	updateUser(userId: String!, username: String!, permissions: Int!): User!
+	resetUserInvite(userId: String!): User!
+	deleteUser(userId: String!): Boolean!
 	updateWatchProgress(fileId: String!, progressPercent: Float!, userId: String): [WatchProgress!]!
 	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
 	createLibrary(name: String!, path: String!): Library!
@@ -257,6 +261,8 @@ type Query {
 	listFiles(path: String!): [String!]!
 	library(libraryId: String!): Library!
 	libraries: [Library!]!
+	viewer: User
+	users: [User!]!
 	activities: [Activity!]!
 }
 
@@ -280,9 +286,9 @@ type TimelinePreviewSheet {
 type User {
 	id: String!
 	username: String!
-	passwordHash: String
 	inviteCode: String
 	permissions: Int!
+	lastSeenAt: Int
 	createdAt: Int!
 }
 

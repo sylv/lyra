@@ -14,7 +14,7 @@ use async_graphql::{Schema, http::GraphiQLSource};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
     Json, Router,
-    extract::{FromRef, State},
+    extract::{FromRef, Query as AxumQuery, State},
     response::{Html, IntoResponse},
     routing::{get, post},
 };
@@ -52,12 +52,11 @@ mod metadata;
 mod scanner;
 mod segment_markers;
 
-type AppSchema =
-    Schema<
-        graphql::query::Query,
-        graphql::mutation::Mutation,
-        graphql::subscription::SubscriptionRoot,
-    >;
+type AppSchema = Schema<
+    graphql::query::Query,
+    graphql::mutation::Mutation,
+    graphql::subscription::SubscriptionRoot,
+>;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -81,14 +80,15 @@ async fn get_graphql() -> impl IntoResponse {
 
 async fn post_graphql(
     State(state): State<AppState>,
-    auth: RequestAuth,
+    auth: Option<RequestAuth>,
     req: GraphQLRequest,
 ) -> GraphQLResponse {
-    state
-        .schema
-        .execute(req.into_inner().data(auth))
-        .await
-        .into()
+    let req = req.into_inner();
+
+    match auth {
+        Some(auth) => state.schema.execute(req.data(auth)).await.into(),
+        None => state.schema.execute(req).await.into(),
+    }
 }
 
 #[derive(Serialize)]
@@ -96,15 +96,38 @@ async fn post_graphql(
 pub enum InitState {
     Login,
     CreateFirstUser,
+    CreateInvitedUser,
     CreateFirstLibrary,
     Ready,
 }
 
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InitQuery {
+    invite_code: Option<String>,
+}
+
 async fn get_init_state(
     State(state): State<AppState>,
+    AxumQuery(query): AxumQuery<InitQuery>,
     auth: Option<RequestAuth>,
 ) -> Result<impl IntoResponse, AppError> {
     if auth.is_none() {
+        if let Some(invite_code) = query
+            .invite_code
+            .as_deref()
+            .map(str::trim)
+            .filter(|invite_code| !invite_code.is_empty())
+        {
+            if let Some(user) = auth::find_pending_invite_user(&state.pool, invite_code).await? {
+                return Ok(Json(json!({
+                    "state": InitState::CreateInvitedUser,
+                    "invite_code": invite_code,
+                    "username": user.username,
+                })));
+            }
+        }
+
         let user_count = users::Entity::find().count(&state.pool).await?;
         let has_first_user = user_count > 0;
         if has_first_user {

@@ -41,7 +41,10 @@ impl ContentUpdateState {
         let debounce_deadline = latest_request_at + DEBOUNCE_WINDOW;
         let max_debounce_deadline = pending_since + MAX_DEBOUNCE_WINDOW;
 
-        Some(max(min_emit_at, min(debounce_deadline, max_debounce_deadline)))
+        Some(max(
+            min_emit_at,
+            min(debounce_deadline, max_debounce_deadline),
+        ))
     }
 
     fn mark_pending(&mut self, now: Instant) {

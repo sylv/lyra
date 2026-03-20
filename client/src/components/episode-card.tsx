@@ -65,7 +65,12 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 		>
 			<div className="relative overflow-hidden h-min rounded-sm shrink-0">
 				<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>
-					<Image type={ImageType.Thumbnail} asset={episode.properties.thumbnailImage} alt={episode.name} className="h-36" />
+					<Image
+						type={ImageType.Thumbnail}
+						asset={episode.properties.thumbnailImage}
+						alt={episode.name}
+						className="h-36"
+					/>
 				</PlayWrapper>
 			</div>
 			<div>
@@ -79,7 +84,9 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					{releaseDate && <div>{releaseDate}</div>}
 					{episode.properties.runtimeMinutes && <div>{formatRuntime(episode.properties.runtimeMinutes)}</div>}
 				</div>
-				<p className="text-xs text-zinc-300 line-clamp-3">{episode.properties.description || "No description available"}</p>
+				<p className="text-xs text-zinc-300 line-clamp-3">
+					{episode.properties.description || "No description available"}
+				</p>
 			</div>
 		</button>
 	);

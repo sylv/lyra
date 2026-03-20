@@ -3,6 +3,7 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useTitle } from "../hooks/use-title";
 
 const settingsTabs = {
+	users: "/settings/users",
 	libraries: "/settings/libraries",
 	about: "/settings/about",
 	import: "/settings/import",
@@ -19,11 +20,13 @@ function RouteComponent() {
 		select: (location) => location.pathname,
 	});
 	const navigate = useNavigate();
-	const activeTab: SettingsTab = pathname.startsWith(settingsTabs.libraries)
-		? "libraries"
-		: pathname.startsWith(settingsTabs.import)
-			? "import"
-			: "about";
+	const activeTab: SettingsTab = pathname.startsWith(settingsTabs.users)
+		? "users"
+		: pathname.startsWith(settingsTabs.libraries)
+			? "libraries"
+			: pathname.startsWith(settingsTabs.import)
+				? "import"
+				: "about";
 
 	useTitle("Settings");
 
@@ -42,6 +45,7 @@ function RouteComponent() {
 				className="w-full"
 			>
 				<TabsList>
+					<TabsTrigger value="users">Users</TabsTrigger>
 					<TabsTrigger value="libraries">Libraries</TabsTrigger>
 					<TabsTrigger value="about">About</TabsTrigger>
 					<TabsTrigger value="import">Import</TabsTrigger>

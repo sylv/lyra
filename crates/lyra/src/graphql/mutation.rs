@@ -1,9 +1,9 @@
 use crate::RequestAuth;
-use crate::auth::{PermissionGuard, create_session_for_user};
+use crate::auth::{PermissionGuard, create_session_for_user, find_pending_invite_user};
 use crate::content_update::CONTENT_UPDATE;
 use crate::entities::users::UserPerms;
-use crate::entities::{files, libraries, node_files, users, watch_progress};
-use crate::ids;
+use crate::entities::{files, libraries, node_files, user_sessions, users, watch_progress};
+use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
 use argon2::{
     Argon2,
@@ -14,11 +14,32 @@ use chrono::Utc;
 use sea_orm::Set;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    QuerySelect,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, QuerySelect, TransactionTrait,
 };
 
 pub struct Mutation;
+
+fn normalize_username(username: String) -> Result<String, async_graphql::Error> {
+    let username = username.trim();
+    if username.is_empty() {
+        return Err(async_graphql::Error::new("Username is required"));
+    }
+
+    Ok(username.to_string())
+}
+
+fn hash_password(password: &str) -> Result<String, async_graphql::Error> {
+    if password.is_empty() {
+        return Err(async_graphql::Error::new("Password is required"));
+    }
+
+    let argon2 = Argon2::default();
+    let salt = SaltString::generate(&mut OsRng);
+    Ok(argon2
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string())
+}
 
 #[derive(Debug, Clone, InputObject)]
 pub struct ImportWatchStatesInput {
@@ -125,7 +146,6 @@ impl From<watch_state_import::ImportWatchStatesResultData> for ImportWatchStates
 
 #[Object]
 impl Mutation {
-    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
     pub async fn signup(
         &self,
         ctx: &Context<'_>,
@@ -135,24 +155,21 @@ impl Mutation {
         invite_code: Option<String>,
     ) -> Result<users::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        let password_hash = {
-            let argon2 = Argon2::default();
-            let salt = SaltString::generate(&mut OsRng);
-            argon2
-                .hash_password(password.as_bytes(), &salt)?
-                .to_string()
-        };
+        let username = normalize_username(username)?;
+        let password_hash = hash_password(&password)?;
 
-        if let Some(invite_code) = invite_code {
-            let blank_user = users::Entity::find()
-                .filter(users::Column::InviteCode.eq(invite_code))
-                .one(pool)
+        if let Some(invite_code) = invite_code
+            .as_deref()
+            .map(str::trim)
+            .filter(|invite_code| !invite_code.is_empty())
+        {
+            let blank_user = find_pending_invite_user(pool, invite_code)
                 .await
                 .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
             let Some(blank_user) = blank_user else {
                 return Err(async_graphql::Error::new(
-                    "Invite code already used".to_string(),
+                    "Invite code is invalid or already used".to_string(),
                 ));
             };
 
@@ -163,13 +180,20 @@ impl Mutation {
             }
 
             let mut blank_user = blank_user.into_active_model();
+            blank_user.username = Set(username);
             blank_user.password_hash = Set(Some(password_hash));
             blank_user.invite_code = Set(None);
             let user = blank_user.update(pool).await?;
+            let cookie = create_session_for_user(pool, &user.id)
+                .await
+                .map_err(|e| -> async_graphql::Error { e.into() })?;
+            ctx.insert_http_header("Set-Cookie", cookie);
             CONTENT_UPDATE.emit();
             Ok(user)
         } else {
-            let auth = ctx.data::<RequestAuth>()?;
+            let auth = ctx.data_opt::<RequestAuth>().ok_or_else(|| {
+                async_graphql::Error::new("No invite code provided and users already exist")
+            })?;
             if !auth.has_permission(UserPerms::CREATE_USER) {
                 return Err(async_graphql::Error::new(
                     "No invite code provided and users already exist".to_string(),
@@ -206,6 +230,158 @@ impl Mutation {
             CONTENT_UPDATE.emit();
             Ok(user)
         }
+    }
+
+    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
+    pub async fn create_user_invite(
+        &self,
+        ctx: &Context<'_>,
+        username: String,
+        permissions: u32,
+    ) -> Result<users::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let username = normalize_username(username)?;
+        let invite_code = new_invite_code();
+
+        let user = users::Entity::insert(users::ActiveModel {
+            id: Set(ids::generate_ulid()),
+            username: Set(username),
+            password_hash: Set(None),
+            invite_code: Set(Some(invite_code)),
+            permissions: Set(permissions as i64),
+            ..Default::default()
+        })
+        .exec_with_returning(pool)
+        .await
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        CONTENT_UPDATE.emit();
+        Ok(user)
+    }
+
+    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
+    pub async fn update_user(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+        username: String,
+        permissions: u32,
+    ) -> Result<users::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let username = normalize_username(username)?;
+        let existing_user = users::Entity::find_by_id(user_id)
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
+
+        let mut user = existing_user.into_active_model();
+        user.username = Set(username);
+        user.permissions = Set(permissions as i64);
+
+        let user = user
+            .update(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        CONTENT_UPDATE.emit();
+        Ok(user)
+    }
+
+    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
+    pub async fn reset_user_invite(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+    ) -> Result<users::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let existing_user = users::Entity::find_by_id(user_id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
+
+        if auth
+            .get_user()
+            .is_some_and(|current_user| current_user.id == existing_user.id)
+        {
+            return Err(async_graphql::Error::new(
+                "You cannot reset your current account",
+            ));
+        }
+
+        let user_count = users::Entity::find().count(pool).await?;
+        if user_count <= 1 {
+            return Err(async_graphql::Error::new(
+                "The last remaining account cannot be reset",
+            ));
+        }
+        let invite_code = new_invite_code();
+        let txn = pool
+            .begin()
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        let mut user = existing_user.into_active_model();
+        user.password_hash = Set(None);
+        user.invite_code = Set(Some(invite_code));
+        let user = user
+            .update(&txn)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        user_sessions::Entity::delete_many()
+            .filter(user_sessions::Column::UserId.eq(user_id))
+            .exec(&txn)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        txn.commit()
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        CONTENT_UPDATE.emit();
+        Ok(user)
+    }
+
+    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
+    pub async fn delete_user(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+    ) -> Result<bool, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let existing_user = users::Entity::find_by_id(user_id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
+
+        if auth
+            .get_user()
+            .is_some_and(|current_user| current_user.id == existing_user.id)
+        {
+            return Err(async_graphql::Error::new(
+                "You cannot delete your current account",
+            ));
+        }
+
+        let user_count = users::Entity::find().count(pool).await?;
+        if user_count <= 1 {
+            return Err(async_graphql::Error::new(
+                "The last remaining account cannot be deleted",
+            ));
+        }
+
+        users::Entity::delete_by_id(user_id)
+            .exec(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        CONTENT_UPDATE.emit();
+        Ok(true)
     }
 
     pub async fn update_watch_progress(

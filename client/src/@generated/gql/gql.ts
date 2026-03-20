@@ -31,11 +31,16 @@ type Documents = {
     "\n\tquery SearchMedia($query: String!, $limit: Int) {\n\t\tsearch(query: $query, limit: $limit) {\n\t\t\troots {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t\tepisodes {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t}\n\t}\n": typeof types.SearchMediaDocument,
     "\n\tfragment SeasonCard on Node {\n\t\tid\n\t\tname\n\t\tproperties {\n\t\t\tseasonNumber\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\treleasedAt\n\t\t\tendedAt\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\tunplayedCount\n\t\tepisodeCount\n\t\t...GetPathForNode\n\t}\n": typeof types.SeasonCardFragmentDoc,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": typeof types.LibrariesDocument,
+    "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": typeof types.UsersManagementDocument,
+    "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": typeof types.CreateUserInviteDocument,
+    "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": typeof types.UpdateUserDocument,
+    "\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": typeof types.ResetUserInviteDocument,
+    "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": typeof types.DeleteUserDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": typeof types.GetPathForNodeFragmentDoc,
     "\n\tquery GetAllMedia($filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\t...MediaList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": typeof types.GetAllMediaDocument,
     "\n\tquery GetLibraryMedia($libraryId: String!, $filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\tid\n\t\t\t\t\t...MediaList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t\tlibrary(libraryId: $libraryId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": typeof types.GetLibraryMediaDocument,
     "\n\tquery GetNodeById($nodeId: String!) {\n\t\tnode(nodeId: $nodeId) {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tkind\n\t\t\tname\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tparent {\n\t\t\t\tid\n\t\t\t\tname\n\t\t\t\tlibraryId\n\t\t\t}\n\t\t\troot {\n\t\t\t\tid\n\t\t\t\tname\n\t\t\t}\n\t\t\tchildren {\n\t\t\t\tid\n\t\t\t\tkind\n\t\t\t\torder\n\t\t\t\t...SeasonCard\n\t\t\t\t...EpisodeCard\n\t\t\t}\n\t\t\tproperties {\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\treleasedAt\n\t\t\t\tendedAt\n\t\t\t\truntimeMinutes\n\t\t\t\tdescription\n\t\t\t}\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t\tnextPlayable {\n\t\t\t\tid\n\t\t\t\twatchProgress {\n\t\t\t\t\tprogressPercent\n\t\t\t\t\tcompleted\n\t\t\t\t\tupdatedAt\n\t\t\t\t}\n\t\t\t}\n\t\t\tpreviousPlayable {\n\t\t\t\tid\n\t\t\t}\n\t\t\tunplayedCount\n\t\t}\n\t}\n": typeof types.GetNodeByIdDocument,
-    "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": typeof types.SignupDocument,
+    "\n\tmutation Signup($username: String!, $password: String!, $inviteCode: String) {\n\t\tsignup(username: $username, password: $password, inviteCode: $inviteCode) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": typeof types.SignupDocument,
 };
 const documents: Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": types.GetActivitiesDocument,
@@ -55,11 +60,16 @@ const documents: Documents = {
     "\n\tquery SearchMedia($query: String!, $limit: Int) {\n\t\tsearch(query: $query, limit: $limit) {\n\t\t\troots {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t\tepisodes {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t}\n\t}\n": types.SearchMediaDocument,
     "\n\tfragment SeasonCard on Node {\n\t\tid\n\t\tname\n\t\tproperties {\n\t\t\tseasonNumber\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\treleasedAt\n\t\t\tendedAt\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\tunplayedCount\n\t\tepisodeCount\n\t\t...GetPathForNode\n\t}\n": types.SeasonCardFragmentDoc,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": types.LibrariesDocument,
+    "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": types.UsersManagementDocument,
+    "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": types.CreateUserInviteDocument,
+    "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": types.UpdateUserDocument,
+    "\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n": types.ResetUserInviteDocument,
+    "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": types.DeleteUserDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": types.GetPathForNodeFragmentDoc,
     "\n\tquery GetAllMedia($filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\t...MediaList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": types.GetAllMediaDocument,
     "\n\tquery GetLibraryMedia($libraryId: String!, $filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\tid\n\t\t\t\t\t...MediaList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t\tlibrary(libraryId: $libraryId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": types.GetLibraryMediaDocument,
     "\n\tquery GetNodeById($nodeId: String!) {\n\t\tnode(nodeId: $nodeId) {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tkind\n\t\t\tname\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tparent {\n\t\t\t\tid\n\t\t\t\tname\n\t\t\t\tlibraryId\n\t\t\t}\n\t\t\troot {\n\t\t\t\tid\n\t\t\t\tname\n\t\t\t}\n\t\t\tchildren {\n\t\t\t\tid\n\t\t\t\tkind\n\t\t\t\torder\n\t\t\t\t...SeasonCard\n\t\t\t\t...EpisodeCard\n\t\t\t}\n\t\t\tproperties {\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\treleasedAt\n\t\t\t\tendedAt\n\t\t\t\truntimeMinutes\n\t\t\t\tdescription\n\t\t\t}\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t\tnextPlayable {\n\t\t\t\tid\n\t\t\t\twatchProgress {\n\t\t\t\t\tprogressPercent\n\t\t\t\t\tcompleted\n\t\t\t\t\tupdatedAt\n\t\t\t\t}\n\t\t\t}\n\t\t\tpreviousPlayable {\n\t\t\t\tid\n\t\t\t}\n\t\t\tunplayedCount\n\t\t}\n\t}\n": types.GetNodeByIdDocument,
-    "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": types.SignupDocument,
+    "\n\tmutation Signup($username: String!, $password: String!, $inviteCode: String) {\n\t\tsignup(username: $username, password: $password, inviteCode: $inviteCode) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n": types.SignupDocument,
 };
 
 /**
@@ -147,6 +157,26 @@ export function graphql(source: "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\ti
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function graphql(source: "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\tid\n\t\t\tusername\n\t\t\tinviteCode\n\t\t\tpermissions\n\t\t\tlastSeenAt\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n"): (typeof documents)["\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function graphql(source: "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n"): (typeof documents)["\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -163,7 +193,7 @@ export function graphql(source: "\n\tquery GetNodeById($nodeId: String!) {\n\t\t
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation Signup($username: String!, $password: String!) {\n\t\tsignup(username: $username, password: $password) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n"];
+export function graphql(source: "\n\tmutation Signup($username: String!, $password: String!, $inviteCode: String) {\n\t\tsignup(username: $username, password: $password, inviteCode: $inviteCode) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation Signup($username: String!, $password: String!, $inviteCode: String) {\n\t\tsignup(username: $username, password: $password, inviteCode: $inviteCode) {\n\t\t\tid\n\t\t\tusername\n\t\t}\n\t}\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

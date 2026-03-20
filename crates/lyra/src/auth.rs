@@ -19,10 +19,15 @@ use chrono::Utc;
 use cookie::{Cookie, SameSite};
 use reqwest::{StatusCode, header::SET_COOKIE};
 use sea_orm::Set;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::atomic::Ordering;
+
+const LAST_SEEN_UPDATE_INTERVAL_SECONDS: i64 = 12 * 60 * 60;
 
 pub struct RequestAuth {
     user: Option<users::Model>,
@@ -32,7 +37,7 @@ pub struct RequestAuth {
 
 impl RequestAuth {
     pub fn has_permission(&self, permission: UserPerms) -> bool {
-        self.permissions.contains(permission)
+        self.permissions.contains(UserPerms::ADMIN) || self.permissions.contains(permission)
     }
 
     pub fn get_user_or_err(&self) -> Result<&users::Model, async_graphql::Error> {
@@ -48,6 +53,17 @@ impl RequestAuth {
     pub fn is_setup(&self) -> bool {
         self.is_setup
     }
+}
+
+pub async fn find_pending_invite_user(
+    pool: &DatabaseConnection,
+    invite_code: &str,
+) -> Result<Option<users::Model>, sea_orm::DbErr> {
+    users::Entity::find()
+        .filter(users::Column::InviteCode.eq(invite_code))
+        .filter(users::Column::PasswordHash.is_null())
+        .one(pool)
+        .await
 }
 
 impl<S> FromRequestParts<S> for RequestAuth
@@ -117,6 +133,8 @@ where
         if session.expires_at < Utc::now().timestamp() {
             return Err(AuthError::SessionExpired);
         }
+
+        touch_last_seen(&state.pool, &session, &user).await?;
 
         let permissions = UserPerms::from_bits_truncate(user.permissions as u32);
         Ok(RequestAuth {
@@ -228,18 +246,31 @@ pub async fn create_session_for_user(
     let session_expiry = 2 * 7 * 24 * 60 * 60; // 2 weeks
     let session_id = ids::generate_ulid();
     let session_token = ids::new_session_token();
+    let now = Utc::now().timestamp();
 
     user_sessions::Entity::insert(user_sessions::ActiveModel {
         id: Set(session_id),
         token: Set(session_token.clone()),
         user_id: Set(user_id.to_string()),
-        created_at: Set(Utc::now().timestamp()),
-        expires_at: Set(Utc::now().timestamp() + session_expiry),
-        last_seen_at: Set(Utc::now().timestamp()),
+        created_at: Set(now),
+        expires_at: Set(now + session_expiry),
+        last_seen_at: Set(now),
     })
     .exec(pool)
     .await
     .map_err(|_| AuthError::InternalError)?;
+
+    if let Some(user) = users::Entity::find_by_id(user_id)
+        .one(pool)
+        .await
+        .map_err(|_| AuthError::InternalError)?
+    {
+        let mut user = user.into_active_model();
+        user.last_seen_at = Set(Some(now));
+        user.update(pool)
+            .await
+            .map_err(|_| AuthError::InternalError)?;
+    }
 
     // the session expiry is extended when its used, so we want the cookie
     // to last longer than the session expiry.
@@ -251,6 +282,42 @@ pub async fn create_session_for_user(
         .build();
 
     Ok(cookie.to_string())
+}
+
+// keep the stored last-seen coarse so normal browsing doesn't turn into a write on every request.
+async fn touch_last_seen(
+    pool: &DatabaseConnection,
+    session: &user_sessions::Model,
+    user: &users::Model,
+) -> Result<(), AuthError> {
+    let now = Utc::now().timestamp();
+    let should_update_session = now - session.last_seen_at >= LAST_SEEN_UPDATE_INTERVAL_SECONDS;
+    let should_update_user = user
+        .last_seen_at
+        .is_none_or(|last_seen_at| now - last_seen_at >= LAST_SEEN_UPDATE_INTERVAL_SECONDS);
+
+    if !should_update_session && !should_update_user {
+        return Ok(());
+    }
+
+    if should_update_session {
+        let mut session = session.clone().into_active_model();
+        session.last_seen_at = Set(now);
+        session
+            .update(pool)
+            .await
+            .map_err(|_| AuthError::InternalError)?;
+    }
+
+    if should_update_user {
+        let mut user = user.clone().into_active_model();
+        user.last_seen_at = Set(Some(now));
+        user.update(pool)
+            .await
+            .map_err(|_| AuthError::InternalError)?;
+    }
+
+    Ok(())
 }
 
 #[debug_handler]
