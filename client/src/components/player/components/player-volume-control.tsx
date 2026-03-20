@@ -9,6 +9,9 @@ interface PlayerVolumeControlProps {
 	isMuted: boolean;
 	onVolumeChange: (volume: number) => void;
 	onToggleMute: () => void;
+	onInteractionStart: () => void;
+	onInteractionEnd: () => void;
+	onActivity: () => void;
 }
 
 export const PlayerVolumeControl: FC<PlayerVolumeControlProps> = ({
@@ -16,6 +19,9 @@ export const PlayerVolumeControl: FC<PlayerVolumeControlProps> = ({
 	isMuted,
 	onVolumeChange,
 	onToggleMute,
+	onInteractionStart,
+	onInteractionEnd,
+	onActivity,
 }) => {
 	const [showSlider, setShowSlider] = useState(false);
 
@@ -28,19 +34,24 @@ export const PlayerVolumeControl: FC<PlayerVolumeControlProps> = ({
 
 	const handleSliderChange = (value: number[]) => {
 		const newVolume = value[0];
+		onActivity();
 		onVolumeChange(newVolume);
 	};
 
 	return (
 		<div
 			className="relative flex items-center"
-			onMouseEnter={() => setShowSlider(true)}
+			onMouseEnter={() => {
+				setShowSlider(true);
+				onActivity();
+			}}
 			onMouseLeave={() => setShowSlider(false)}
 		>
 			<PlayerButton
 				aria-label={isMuted ? "Unmute" : "Mute"}
 				onClick={(e) => {
 					e.stopPropagation();
+					onActivity();
 					onToggleMute();
 				}}
 			>
@@ -59,6 +70,10 @@ export const PlayerVolumeControl: FC<PlayerVolumeControlProps> = ({
 						max={1}
 						step={0.05}
 						onValueChange={handleSliderChange}
+						onPointerDown={onInteractionStart}
+						onPointerUp={onInteractionEnd}
+						onPointerCancel={onInteractionEnd}
+						onLostPointerCapture={onInteractionEnd}
 					>
 						<Slider.Track className="bg-white/20 relative grow rounded-full h-1">
 							<Slider.Range className="absolute bg-white rounded-full h-full" />

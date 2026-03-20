@@ -56,6 +56,9 @@ interface PlayerControlsProps {
 	onAudioTrackChange: (trackId: number) => void;
 	isSettingsMenuOpen: boolean;
 	onSettingsMenuOpenChange: (open: boolean) => void;
+	onControlsInteractionStart: () => void;
+	onControlsInteractionEnd: () => void;
+	onControlsActivity: () => void;
 	dropdownPortalContainer: HTMLElement | null;
 }
 
@@ -83,6 +86,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 	onAudioTrackChange,
 	isSettingsMenuOpen,
 	onSettingsMenuOpenChange,
+	onControlsInteractionStart,
+	onControlsInteractionEnd,
+	onControlsActivity,
 	dropdownPortalContainer,
 }) => {
 	// eg, "6:33pm"
@@ -119,6 +125,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 				bufferedRanges={bufferedRanges}
 				timelinePreviewSheets={timelinePreviewSheets}
 				onChange={onSeek}
+				onInteractionStart={onControlsInteractionStart}
+				onInteractionEnd={onControlsInteractionEnd}
+				onActivity={onControlsActivity}
 			/>
 
 			{/* Control buttons */}
@@ -161,6 +170,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 						isMuted={isMuted}
 						onVolumeChange={onVolumeChange}
 						onToggleMute={onToggleMute}
+						onInteractionStart={onControlsInteractionStart}
+						onInteractionEnd={onControlsInteractionEnd}
+						onActivity={onControlsActivity}
 					/>
 				</div>
 				{/* Right side */}

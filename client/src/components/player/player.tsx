@@ -169,6 +169,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<number | null>(null);
 	const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(false);
 	const [resumePromptPosition, setResumePromptPosition] = useState<number | null>(null);
+	const [isControlsInteracting, setIsControlsInteracting] = useState<boolean>(false);
 
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const hlsRef = useRef<Hls | null>(null);
@@ -179,7 +180,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	const resumePromptDecisionRef = useRef<"confirm" | "cancel" | null>(null);
 	const pendingResumePositionRef = useRef<number | null>(null);
 	const pendingStartLoadRef = useRef<((startPosition: number) => void) | null>(null);
-	const isControlsPinned = isSettingsMenuOpen;
+	const isControlsPinned = isSettingsMenuOpen || isControlsInteracting;
 	const {
 		data,
 		previousData,
@@ -619,6 +620,21 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		}, 3000);
 	};
 
+	// keep controls visible while drag interactions are active, even if the pointer is stationary.
+	const beginControlsInteraction = () => {
+		setIsControlsInteracting(true);
+		setShowControls(true);
+		if (controlsTimeoutRef.current) {
+			clearTimeout(controlsTimeoutRef.current);
+			controlsTimeoutRef.current = null;
+		}
+	};
+
+	const endControlsInteraction = () => {
+		setIsControlsInteracting(false);
+		showControlsTemporarily();
+	};
+
 	useEffect(() => {
 		if (!isControlsPinned) {
 			return;
@@ -735,6 +751,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		}
 
 		if (triggered) {
+			showControlsTemporarily();
 			event.preventDefault();
 			event.stopPropagation();
 		}
@@ -981,6 +998,9 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 					onAudioTrackChange={onAudioTrackChange}
 					isSettingsMenuOpen={isSettingsMenuOpen}
 					onSettingsMenuOpenChange={setIsSettingsMenuOpen}
+					onControlsInteractionStart={beginControlsInteraction}
+					onControlsInteractionEnd={endControlsInteraction}
+					onControlsActivity={showControlsTemporarily}
 					dropdownPortalContainer={containerRef.current}
 				/>
 			</div>

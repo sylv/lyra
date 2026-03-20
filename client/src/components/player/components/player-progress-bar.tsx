@@ -26,6 +26,9 @@ interface PlayerProcessBarProps {
 	bufferedRanges: { start: number; end: number }[];
 	timelinePreviewSheets: FragmentType<typeof PlayerTimelinePreviewSheetFragment>[];
 	onChange: (time: number) => void;
+	onInteractionStart: () => void;
+	onInteractionEnd: () => void;
+	onActivity: () => void;
 }
 
 interface HoverPreviewFrame {
@@ -106,6 +109,9 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 	bufferedRanges,
 	timelinePreviewSheets,
 	onChange,
+	onInteractionStart,
+	onInteractionEnd,
+	onActivity,
 }) => {
 	const [hoverState, setHoverState] = useState<{
 		time: number;
@@ -172,6 +178,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 
 	const handleProgressClick = (event: React.MouseEvent<HTMLDivElement>) => {
 		event.stopPropagation();
+		onActivity();
 
 		const rect = event.currentTarget.getBoundingClientRect();
 		const clickX = event.clientX - rect.left;
@@ -182,6 +189,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 
 	const handleProgressMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
 		if (!duration) return;
+		onActivity();
 
 		const rect = event.currentTarget.getBoundingClientRect();
 		const hoverX = event.clientX - rect.left;
@@ -206,21 +214,25 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 		const step = 5;
 		if (event.key === "ArrowLeft") {
 			event.preventDefault();
+			onActivity();
 			onChange(Math.max(0, currentTime - step));
 			return;
 		}
 		if (event.key === "ArrowRight") {
 			event.preventDefault();
+			onActivity();
 			onChange(Math.min(duration, currentTime + step));
 			return;
 		}
 		if (event.key === "Home") {
 			event.preventDefault();
+			onActivity();
 			onChange(0);
 			return;
 		}
 		if (event.key === "End") {
 			event.preventDefault();
+			onActivity();
 			onChange(duration);
 		}
 	};
@@ -234,6 +246,9 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 			onMouseMove={handleProgressMouseMove}
 			onMouseLeave={onMouseLeave}
 			onKeyDown={handleKeyDown}
+			onPointerDown={onInteractionStart}
+			onPointerUp={onInteractionEnd}
+			onPointerCancel={onInteractionEnd}
 			role="slider"
 			tabIndex={0}
 			aria-label="Seek video"
