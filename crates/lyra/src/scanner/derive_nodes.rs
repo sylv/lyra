@@ -118,6 +118,27 @@ pub fn build_root_materialization_plans(
     plans
 }
 
+pub fn group_parsed_files_by_root(
+    library_root: &StdPath,
+    input: &[(files::Model, ParsedFile)],
+) -> HashMap<String, Vec<(files::Model, ParsedFile)>> {
+    let mut grouped = HashMap::new();
+
+    for (file, parsed) in input {
+        let Some(rec) = derive_file_recommendation(library_root, &file.relative_path, parsed)
+        else {
+            continue;
+        };
+
+        grouped
+            .entry(rec.root_id)
+            .or_insert_with(Vec::new)
+            .push((file.clone(), parsed.clone()));
+    }
+
+    grouped
+}
+
 fn ensure_node(nodes_by_id: &mut HashMap<String, WantedNode>, next: WantedNode) {
     if let Some(existing) = nodes_by_id.get_mut(&next.id) {
         existing.name = next.name;
