@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    auth::RequestAuth,
+    auth::{RequestAuth, ensure_library_access},
     config::get_config,
     entities::{files, jobs as jobs_entity, libraries},
     file_analysis,
@@ -52,12 +52,12 @@ pub fn get_hls_router() -> Router<AppState> {
 }
 
 async fn get_master_playlist(
-    _user: RequestAuth,
+    auth: RequestAuth,
     State(state): State<AppState>,
     Path(file_id): Path<String>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let _job_lock = state.job_lock.take_block();
-    let packager_state = get_or_build_packager_state(&state, file_id.clone()).await?;
+    let packager_state = get_or_build_packager_state(&state, &auth, file_id.clone()).await?;
     let playlist = rewrite_playlist_for_file(packager_state.master_playlist(), &file_id);
 
     let mut response = Response::new(Body::from(playlist));
@@ -69,12 +69,12 @@ async fn get_master_playlist(
 }
 
 async fn get_stream_playlist(
-    _user: RequestAuth,
+    auth: RequestAuth,
     State(state): State<AppState>,
     Path((file_id, stream_id, profile_id)): Path<(String, u32, String)>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let _job_lock = state.job_lock.take_block();
-    let packager_state = get_or_build_packager_state(&state, file_id.clone()).await?;
+    let packager_state = get_or_build_packager_state(&state, &auth, file_id.clone()).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
         .ok_or((StatusCode::NOT_FOUND, "stream profile not found"))?;
@@ -89,13 +89,13 @@ async fn get_stream_playlist(
 }
 
 async fn get_segment(
-    _user: RequestAuth,
+    auth: RequestAuth,
     State(state): State<AppState>,
     Path((file_id, stream_id, profile_id, name)): Path<(String, u32, String, String)>,
     Query(query): Query<SegmentQuery>,
 ) -> Result<Response, (StatusCode, &'static str)> {
     let _job_lock = state.job_lock.take_block();
-    let packager_state = get_or_build_packager_state(&state, file_id).await?;
+    let packager_state = get_or_build_packager_state(&state, &auth, file_id).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
         .ok_or((StatusCode::NOT_FOUND, "stream profile not found"))?
@@ -147,8 +147,11 @@ async fn get_segment(
 
 async fn get_or_build_packager_state(
     state: &AppState,
+    auth: &RequestAuth,
     file_id: String,
 ) -> Result<Arc<Package>, (StatusCode, &'static str)> {
+    let file_path = resolve_file_path(state, auth, &file_id).await?;
+
     if let Some(existing) = state
         .packager_states
         .lock()
@@ -158,8 +161,6 @@ async fn get_or_build_packager_state(
     {
         return Ok(existing);
     }
-
-    let file_path = resolve_file_path(state, &file_id).await?;
     let mut generated_probe = false;
     let ffprobe_output = match file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
         .await
@@ -320,6 +321,7 @@ async fn get_or_build_packager_state(
 
 async fn resolve_file_path(
     state: &AppState,
+    auth: &RequestAuth,
     file_id: &str,
 ) -> Result<PathBuf, (StatusCode, &'static str)> {
     let (file, library) = files::Entity::find_by_id(file_id)
@@ -337,6 +339,9 @@ async fn resolve_file_path(
     }
 
     let library = library.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "library not found"))?;
+    ensure_library_access(&state.pool, auth, &library.id)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, "file not found"))?;
     Ok(PathBuf::from(library.path).join(&file.relative_path))
 }
 

@@ -1,9 +1,13 @@
-use crate::entities::{
-    assets,
-    file_assets::{self, FileAssetRole},
-    file_probe, files, node_files, node_metadata, nodes,
-};
 use crate::segment_markers::StoredFileSegmentKind;
+use crate::{
+    auth::RequestAuth,
+    entities::{
+        assets,
+        file_assets::{self, FileAssetRole},
+        file_probe, files, node_files, node_metadata, nodes,
+    },
+    signer::Signer,
+};
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
@@ -12,6 +16,7 @@ use sea_orm::{
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, SimpleObject)]
+#[graphql(complex)]
 pub struct Asset {
     pub id: String,
     pub source_url: Option<String>,
@@ -22,6 +27,25 @@ pub struct Asset {
     pub width: Option<i64>,
     pub thumbhash: Option<String>,
     pub created_at: i64,
+}
+
+#[ComplexObject]
+impl Asset {
+    pub async fn signed_url(&self, ctx: &Context<'_>) -> async_graphql::Result<String> {
+        const ASSET_URL_SIGNATURE_SCOPE: &str = "asset_url";
+        const ASSET_URL_SIGNATURE_TTL_SECONDS: i64 = 24 * 60 * 60;
+
+        let auth = ctx.data::<RequestAuth>()?;
+        let user_id = auth.get_user_or_err()?.id.as_str();
+        let signer = ctx.data_unchecked::<Signer>();
+        let signature = signer.sign(
+            ASSET_URL_SIGNATURE_SCOPE,
+            ASSET_URL_SIGNATURE_TTL_SECONDS,
+            &[user_id, &self.id],
+        );
+
+        Ok(format!("/api/assets/{}/{}", self.id, signature))
+    }
 }
 
 #[derive(Clone, Debug, SimpleObject)]

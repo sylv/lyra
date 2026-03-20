@@ -21,6 +21,7 @@ use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 const ON_DEMAND_JOB_TIMEOUT: Duration = Duration::from_secs(120);
+const ASSET_URL_SIGNATURE_SCOPE: &str = "asset_url";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TranscodeParams {
@@ -29,16 +30,27 @@ pub struct TranscodeParams {
 }
 
 pub fn get_assets_router() -> Router<AppState> {
-    Router::new().route("/{asset_id}", get(get_asset))
+    Router::new().route("/{asset_id}/{signature}", get(get_asset))
 }
 
 async fn get_asset(
-    _auth: RequestAuth,
+    auth: RequestAuth,
     State(state): State<AppState>,
-    Path(asset_id): Path<String>,
+    Path((asset_id, signature)): Path<(String, String)>,
     Query(params): Query<TranscodeParams>,
 ) -> Result<Response, AppError> {
-    let mut asset = assets_entity::Entity::find_by_id(asset_id)
+    let user_id = auth
+        .get_user()
+        .map(|user| user.id.as_str())
+        .ok_or_else(|| anyhow::anyhow!("asset not found"))?;
+    if !state
+        .signer
+        .verify(ASSET_URL_SIGNATURE_SCOPE, &[user_id, &asset_id], &signature)
+    {
+        return Err(anyhow::anyhow!("asset not found").into());
+    }
+
+    let mut asset = assets_entity::Entity::find_by_id(&asset_id)
         .one(&state.pool)
         .await?
         .ok_or_else(|| anyhow::anyhow!("asset not found"))?;

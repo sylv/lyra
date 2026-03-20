@@ -14,6 +14,7 @@ export const PlayerTimelinePreviewSheetFragment = graphql(`
 		sheetGapSize
 		asset {
 			id
+			signedUrl
 			width
 			height
 		}
@@ -32,7 +33,7 @@ interface PlayerProcessBarProps {
 }
 
 interface HoverPreviewFrame {
-	assetId: string;
+	assetSignedUrl: string;
 	sheetWidthPx: number;
 	sheetHeightPx: number;
 	frameWidthPx: number;
@@ -90,7 +91,7 @@ const getHoverPreviewFrame = (
 		const offsetYPx = sheet.sheetGapSize + rowIndex * (frameHeightPx + sheet.sheetGapSize);
 
 		return {
-			assetId: sheet.asset.id,
+			assetSignedUrl: sheet.asset.signedUrl,
 			sheetWidthPx,
 			sheetHeightPx,
 			frameWidthPx,
@@ -141,7 +142,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 
 		const scale = TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX / hoverPreviewFrame.frameWidthPx;
 		return {
-			assetId: hoverPreviewFrame.assetId,
+			assetSignedUrl: hoverPreviewFrame.assetSignedUrl,
 			frameWidthPx: Math.max(1, TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX),
 			frameHeightPx: Math.max(1, hoverPreviewFrame.frameHeightPx * scale),
 			scale,
@@ -305,7 +306,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 											height: `${renderedHoverPreviewFrame.sourceFrameHeightPx}px`,
 											transform: `scale(${renderedHoverPreviewFrame.scale})`,
 											transformOrigin: "top left",
-											backgroundImage: `url(/api/assets/${renderedHoverPreviewFrame.assetId})`,
+											backgroundImage: `url(${renderedHoverPreviewFrame.assetSignedUrl})`,
 											backgroundPosition: `-${renderedHoverPreviewFrame.offsetXPx}px -${renderedHoverPreviewFrame.offsetYPx}px`,
 											backgroundSize: `${renderedHoverPreviewFrame.sheetWidthPx}px ${renderedHoverPreviewFrame.sheetHeightPx}px`,
 											backgroundRepeat: "no-repeat",

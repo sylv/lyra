@@ -10,10 +10,12 @@ use crate::{
     job_block::JobLock,
 };
 use anyhow::Context;
+use async_graphql::Data;
 use async_graphql::{Schema, http::GraphiQLSource};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
+use async_graphql_axum::{GraphQLProtocol, GraphQLRequest, GraphQLResponse, GraphQLWebSocket};
 use axum::{
     Json, Router,
+    extract::ws::WebSocketUpgrade,
     extract::{FromRef, Query as AxumQuery, State},
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -51,6 +53,7 @@ mod json_encoding;
 mod metadata;
 mod scanner;
 mod segment_markers;
+mod signer;
 
 type AppSchema = Schema<
     graphql::query::Query,
@@ -60,6 +63,7 @@ type AppSchema = Schema<
 
 #[derive(Clone, FromRef)]
 struct AppState {
+    signer: signer::Signer,
     packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
     pool: DatabaseConnection,
     schema: Arc<AppSchema>,
@@ -69,13 +73,31 @@ struct AppState {
     last_setup_code_attempt: Arc<AtomicI64>,
 }
 
-async fn get_graphql() -> impl IntoResponse {
+async fn get_graphql(_auth: RequestAuth) -> impl IntoResponse {
     Html(
         GraphiQLSource::build()
             .endpoint("/api/graphql")
             .subscription_endpoint("/api/graphql/ws")
             .finish(),
     )
+}
+
+async fn get_graphql_ws(
+    ws: WebSocketUpgrade,
+    protocol: GraphQLProtocol,
+    auth: RequestAuth,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let schema = state.schema.as_ref().clone();
+    let mut data = Data::default();
+    data.insert(auth);
+
+    ws.protocols(async_graphql::http::ALL_WEBSOCKET_PROTOCOLS)
+        .on_upgrade(move |stream| {
+            GraphQLWebSocket::new(stream, schema, protocol)
+                .with_data(data)
+                .serve()
+        })
 }
 
 async fn post_graphql(
@@ -160,8 +182,13 @@ async fn get_init_state(
 async fn main() {
     tracing_subscriber::fmt::init();
     lyra_ffprobe::paths::init_ffmpeg().unwrap();
+    let config = get_config();
+    let private_key = config
+        .get_private_key()
+        .expect("failed to load private key");
+    let signer = signer::Signer::new(&private_key).expect("failed to load signer");
 
-    let db_path = get_config().data_dir.join("data.db");
+    let db_path = config.data_dir.join("data.db");
     let pool = SqlitePoolOptions::new()
         .max_connections(8)
         .acquire_timeout(Duration::from_secs(300))
@@ -229,6 +256,7 @@ async fn main() {
     .limit_complexity(100)
     .limit_directives(5)
     .data(pool.clone())
+    .data(signer.clone())
     .data(job_activity_registry)
     .finish();
 
@@ -255,10 +283,11 @@ async fn main() {
         .nest("/api/hls", hls::get_hls_router())
         .nest("/api/assets", assets::get_assets_router())
         .route("/api/graphql", get(get_graphql).post(post_graphql))
-        .route_service("/api/graphql/ws", GraphQLSubscription::new(schema.clone()))
+        .route("/api/graphql/ws", get(get_graphql_ws))
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))
         .with_state(AppState {
+            signer,
             packager_states: Arc::new(Mutex::new(HashMap::new())),
             pool: pool.clone(),
             schema: Arc::new(schema),
@@ -282,7 +311,6 @@ async fn main() {
         app = app.fallback_service(serve_dir)
     }
 
-    let config = get_config();
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
         .await
         .unwrap();

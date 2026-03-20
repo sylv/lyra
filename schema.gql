@@ -16,6 +16,7 @@ type Asset {
 	width: Int
 	thumbhash: String
 	createdAt: Int!
+	signedUrl: String!
 }
 
 enum ContentUpdateEvent {

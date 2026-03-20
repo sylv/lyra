@@ -3,6 +3,7 @@ import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import type { ImageAssetFragment } from "../@generated/gql/graphql";
+import { appendAssetQuery } from "../lib/assets";
 import { getThumbhashDataUrl } from "../lib/thumbhash";
 
 export enum ImageType {
@@ -13,6 +14,7 @@ export enum ImageType {
 export const Fragment = graphql(`
 	fragment ImageAsset on Asset {
 		id
+		signedUrl
 		thumbhash
 	}
 `);
@@ -47,12 +49,10 @@ interface ImageProps {
 	className?: string;
 }
 
-export const getAssetImageUrl = (asset: ImageAssetFragment | { id: number }, height: number): string => {
-	const assetId = "id" in asset ? asset.id : unmask(Fragment, asset).id;
-	const params = new URLSearchParams({
-		height: String(height),
+export const getAssetImageUrl = (asset: ImageAssetFragment, height: number): string => {
+	return appendAssetQuery(asset.signedUrl, {
+		height,
 	});
-	return `/api/assets/${assetId}?${params.toString()}`;
 };
 
 export const Image: FC<ImageProps> = ({ type, asset, alt, className }) => {

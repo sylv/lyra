@@ -1,7 +1,7 @@
 use crate::{
     AppState,
     entities::{
-        user_sessions,
+        library_users, user_sessions,
         users::{self, UserPerms},
     },
     ids,
@@ -21,7 +21,7 @@ use reqwest::{StatusCode, header::SET_COOKIE};
 use sea_orm::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter,
+    PaginatorTrait, QueryFilter, QuerySelect,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -53,6 +53,10 @@ impl RequestAuth {
     pub fn is_setup(&self) -> bool {
         self.is_setup
     }
+}
+
+fn get_user_or_auth_error(auth: &RequestAuth) -> Result<&users::Model, AuthError> {
+    auth.user.as_ref().ok_or(AuthError::Unauthenticated)
 }
 
 pub async fn find_pending_invite_user(
@@ -208,9 +212,24 @@ impl IntoResponse for AuthError {
     }
 }
 
-impl Into<async_graphql::Error> for AuthError {
-    fn into(self) -> async_graphql::Error {
-        async_graphql::Error::new(self.to_response().1)
+impl From<AuthError> for async_graphql::Error {
+    fn from(value: AuthError) -> Self {
+        async_graphql::Error::new(value.to_response().1)
+    }
+}
+
+pub struct AuthenticatedGuard;
+
+impl AuthenticatedGuard {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Guard for AuthenticatedGuard {
+    async fn check(&self, ctx: &Context<'_>) -> Result<(), async_graphql::Error> {
+        let _ = ctx.data::<RequestAuth>()?;
+        Ok(())
     }
 }
 
@@ -231,6 +250,44 @@ impl Guard for PermissionGuard {
 
         Ok(())
     }
+}
+
+// library visibility is either global via VIEW_ALL_LIBRARIES/admin or explicit via library_users.
+pub async fn accessible_library_ids(
+    pool: &DatabaseConnection,
+    auth: &RequestAuth,
+) -> Result<Option<Vec<String>>, AuthError> {
+    if auth.has_permission(UserPerms::VIEW_ALL_LIBRARIES) {
+        return Ok(None);
+    }
+
+    let user = get_user_or_auth_error(auth)?;
+    let library_ids = library_users::Entity::find()
+        .filter(library_users::Column::UserId.eq(user.id.clone()))
+        .select_only()
+        .column(library_users::Column::LibraryId)
+        .into_tuple::<String>()
+        .all(pool)
+        .await
+        .map_err(|_| AuthError::InternalError)?;
+
+    Ok(Some(library_ids))
+}
+
+pub async fn ensure_library_access(
+    pool: &DatabaseConnection,
+    auth: &RequestAuth,
+    library_id: &str,
+) -> Result<(), AuthError> {
+    let Some(library_ids) = accessible_library_ids(pool, auth).await? else {
+        return Ok(());
+    };
+
+    if library_ids.iter().any(|candidate| candidate == library_id) {
+        return Ok(());
+    }
+
+    Err(AuthError::InsufficientPermissions)
 }
 
 #[derive(Deserialize)]

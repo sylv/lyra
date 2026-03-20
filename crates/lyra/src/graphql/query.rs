@@ -1,6 +1,5 @@
 use crate::{
-    auth::PermissionGuard,
-    auth::RequestAuth,
+    auth::{AuthenticatedGuard, PermissionGuard, RequestAuth, accessible_library_ids},
     entities::{
         jobs as jobs_entity, libraries, metadata_source::MetadataSource, node_metadata, nodes,
         users, watch_progress,
@@ -159,29 +158,46 @@ async fn search_nodes_by_kinds(
     fts_query: &str,
     limit: i64,
     kinds: &[nodes::NodeKind],
+    visible_library_ids: Option<&[String]>,
 ) -> Result<Vec<nodes::Model>, sea_orm::DbErr> {
     if kinds.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    if visible_library_ids.is_some_and(|library_ids| library_ids.is_empty()) {
         return Ok(Vec::new());
     }
 
     let kind_placeholders = std::iter::repeat_n("?", kinds.len())
         .collect::<Vec<_>>()
         .join(", ");
+    let library_sql = visible_library_ids
+        .map(|library_ids| {
+            let placeholders = std::iter::repeat_n("?", library_ids.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(" AND nodes.library_id IN ({placeholders})")
+        })
+        .unwrap_or_default();
     let sql = format!(
         r#"
             SELECT DISTINCT nodes.*
             FROM nodes
             JOIN node_search_fts ON node_search_fts.node_id = nodes.id
             WHERE node_search_fts MATCH ?
-              AND nodes.kind IN ({kind_placeholders})
+              AND nodes.kind IN ({kind_placeholders}){library_sql}
             ORDER BY bm25(node_search_fts, 8.0, 1.0) ASC, node_search_fts.rowid ASC
             LIMIT ?
         "#
     );
 
-    let mut values: Vec<Value> = Vec::with_capacity(kinds.len() + 2);
+    let mut values: Vec<Value> =
+        Vec::with_capacity(kinds.len() + visible_library_ids.map_or(0, |ids| ids.len()) + 2);
     values.push(fts_query.to_owned().into());
     values.extend(kinds.iter().map(|kind| Value::from(kind.to_value())));
+    if let Some(library_ids) = visible_library_ids {
+        values.extend(library_ids.iter().cloned().map(Value::from));
+    }
     values.push(limit.into());
 
     let statement = Statement::from_sql_and_values(DbBackend::Sqlite, sql, values);
@@ -195,6 +211,7 @@ pub struct Query;
 
 #[Object]
 impl Query {
+    #[graphql(guard = AuthenticatedGuard::new())]
     async fn node_list(
         &self,
         ctx: &Context<'_>,
@@ -212,6 +229,10 @@ impl Query {
             None,
             |after, _before, first, _last| async move {
                 let pool = ctx.data::<DatabaseConnection>()?;
+                let auth = ctx.data::<RequestAuth>()?;
+                let visible_library_ids = accessible_library_ids(pool, auth)
+                    .await
+                    .map_err(async_graphql::Error::from)?;
                 let mut qb = nodes::Entity::find()
                     .join(JoinType::LeftJoin, nodes::Relation::NodeMetadata.def())
                     .filter(
@@ -233,7 +254,23 @@ impl Query {
                     );
 
                 if let Some(library_id) = filter.library_id {
+                    if let Some(visible_library_ids) = visible_library_ids.as_ref() {
+                        if !visible_library_ids
+                            .iter()
+                            .any(|visible_id| visible_id == &library_id)
+                        {
+                            let connection = connection::Connection::new(false, false);
+                            return Ok::<_, async_graphql::Error>(connection);
+                        }
+                    }
                     qb = qb.filter(nodes::Column::LibraryId.eq(library_id));
+                } else if let Some(visible_library_ids) = visible_library_ids.as_ref() {
+                    if visible_library_ids.is_empty() {
+                        let connection = connection::Connection::new(false, false);
+                        return Ok::<_, async_graphql::Error>(connection);
+                    }
+
+                    qb = qb.filter(nodes::Column::LibraryId.is_in(visible_library_ids.clone()));
                 }
                 if let Some(root_id) = &filter.root_id {
                     qb = qb.filter(nodes::Column::RootId.eq(root_id.clone()));
@@ -316,18 +353,33 @@ impl Query {
         .await
     }
 
+    #[graphql(guard = AuthenticatedGuard::new())]
     async fn node(
         &self,
         ctx: &Context<'_>,
         node_id: String,
     ) -> Result<nodes::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        nodes::Entity::find_by_id(node_id)
+        let auth = ctx.data::<RequestAuth>()?;
+        let mut query = nodes::Entity::find().filter(nodes::Column::Id.eq(node_id));
+        if let Some(visible_library_ids) = accessible_library_ids(pool, auth)
+            .await
+            .map_err(async_graphql::Error::from)?
+        {
+            if visible_library_ids.is_empty() {
+                return Err(async_graphql::Error::new("Node not found"));
+            }
+
+            query = query.filter(nodes::Column::LibraryId.is_in(visible_library_ids));
+        }
+
+        query
             .one(pool)
             .await?
             .ok_or_else(|| async_graphql::Error::new("Node not found"))
     }
 
+    #[graphql(guard = AuthenticatedGuard::new())]
     async fn search(
         &self,
         ctx: &Context<'_>,
@@ -342,21 +394,33 @@ impl Query {
         };
 
         let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
         let limit = limit.unwrap_or(10).clamp(1, 20) as i64;
+        let visible_library_ids = accessible_library_ids(pool, auth)
+            .await
+            .map_err(async_graphql::Error::from)?;
 
         let roots = search_nodes_by_kinds(
             pool,
             &fts_query,
             limit,
             &[nodes::NodeKind::Movie, nodes::NodeKind::Series],
+            visible_library_ids.as_deref(),
         )
         .await?;
-        let episodes =
-            search_nodes_by_kinds(pool, &fts_query, limit, &[nodes::NodeKind::Episode]).await?;
+        let episodes = search_nodes_by_kinds(
+            pool,
+            &fts_query,
+            limit,
+            &[nodes::NodeKind::Episode],
+            visible_library_ids.as_deref(),
+        )
+        .await?;
 
         Ok(SearchResults { roots, episodes })
     }
 
+    #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]
     async fn list_files(&self, path: String) -> Result<Vec<String>, async_graphql::Error> {
         if !path.starts_with('/') || path.contains("..") || path.contains("/.") {
             return Err(async_graphql::Error::new("Invalid path"));
@@ -393,33 +457,63 @@ impl Query {
         .await?
     }
 
+    #[graphql(guard = AuthenticatedGuard::new())]
     async fn library(
         &self,
         ctx: &Context<'_>,
         library_id: String,
     ) -> Result<libraries::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        libraries::Entity::find_by_id(library_id)
+        let auth = ctx.data::<RequestAuth>()?;
+        let mut query = libraries::Entity::find().filter(libraries::Column::Id.eq(library_id));
+        if let Some(visible_library_ids) = accessible_library_ids(pool, auth)
+            .await
+            .map_err(async_graphql::Error::from)?
+        {
+            if visible_library_ids.is_empty() {
+                return Err(async_graphql::Error::new("Library not found"));
+            }
+
+            query = query.filter(libraries::Column::Id.is_in(visible_library_ids));
+        }
+
+        query
             .one(pool)
             .await?
             .ok_or_else(|| async_graphql::Error::new("Library not found"))
     }
 
+    #[graphql(guard = AuthenticatedGuard::new())]
     async fn libraries(
         &self,
         ctx: &Context<'_>,
     ) -> Result<Vec<libraries::Model>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
-        Ok(libraries::Entity::find().all(pool).await?)
+        let auth = ctx.data::<RequestAuth>()?;
+        let mut query = libraries::Entity::find();
+        if let Some(visible_library_ids) = accessible_library_ids(pool, auth)
+            .await
+            .map_err(async_graphql::Error::from)?
+        {
+            if visible_library_ids.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            query = query.filter(libraries::Column::Id.is_in(visible_library_ids));
+        }
+
+        Ok(query.all(pool).await?)
     }
 
+    #[graphql(guard = AuthenticatedGuard::new())]
     async fn viewer(
         &self,
         ctx: &Context<'_>,
     ) -> Result<Option<users::Model>, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
         Ok(ctx
             .data_opt::<RequestAuth>()
-            .and_then(|auth| auth.get_user().cloned()))
+            .and_then(|_| auth.get_user().cloned()))
     }
 
     #[graphql(guard = PermissionGuard::new(users::UserPerms::CREATE_USER))]
@@ -431,6 +525,7 @@ impl Query {
             .await?)
     }
 
+    #[graphql(guard = AuthenticatedGuard::new())]
     async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let activity_registry = ctx.data::<jobs::JobActivityRegistry>()?;

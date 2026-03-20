@@ -14,6 +14,7 @@ const CONFLICT_EPSILON: f32 = 0.0001;
 #[derive(Debug, Clone)]
 pub struct ImportWatchStatesRequest {
     pub user_id: String,
+    pub accessible_library_ids: Option<Vec<String>>,
     pub overwrite_conflicts: bool,
     pub rows: Vec<ImportWatchStateRow>,
 }
@@ -358,7 +359,12 @@ async fn run_import(
         .into_iter()
         .map(normalize_row)
         .collect::<Vec<_>>();
-    let lookups = load_match_lookups(pool, &normalized_rows).await?;
+    let lookups = load_match_lookups(
+        pool,
+        &normalized_rows,
+        request.accessible_library_ids.as_deref(),
+    )
+    .await?;
 
     let mut matched_rows = Vec::new();
     let mut unmatched_rows = Vec::new();
@@ -501,6 +507,7 @@ async fn run_import(
 async fn load_match_lookups(
     pool: &DatabaseConnection,
     rows: &[NormalizedImportWatchStateRow],
+    accessible_library_ids: Option<&[String]>,
 ) -> Result<MatchLookups, sea_orm::DbErr> {
     let tmdb_ids = rows
         .iter()
@@ -529,12 +536,15 @@ async fn load_match_lookups(
                 metadata_condition.add(node_metadata::Column::ImdbId.is_in(imdb_ids));
         }
 
-        let metadata_rows = node_metadata::Entity::find()
+        let mut metadata_query = node_metadata::Entity::find()
             .join(JoinType::InnerJoin, node_metadata::Relation::Nodes.def())
             .filter(metadata_condition)
-            .filter(nodes::Column::ParentId.is_null())
-            .all(pool)
-            .await?;
+            .filter(nodes::Column::ParentId.is_null());
+        if let Some(library_ids) = accessible_library_ids {
+            metadata_query =
+                metadata_query.filter(nodes::Column::LibraryId.is_in(library_ids.to_vec()));
+        }
+        let metadata_rows = metadata_query.all(pool).await?;
 
         for metadata in metadata_rows {
             if let Some(tmdb_id) = metadata.tmdb_id {
@@ -551,11 +561,14 @@ async fn load_match_lookups(
     }
 
     if !file_sizes.is_empty() {
-        let candidate_files = files::Entity::find()
+        let mut candidate_files_query = files::Entity::find()
             .filter(files::Column::UnavailableAt.is_null())
-            .filter(files::Column::SizeBytes.is_in(file_sizes))
-            .all(pool)
-            .await?;
+            .filter(files::Column::SizeBytes.is_in(file_sizes));
+        if let Some(library_ids) = accessible_library_ids {
+            candidate_files_query =
+                candidate_files_query.filter(files::Column::LibraryId.is_in(library_ids.to_vec()));
+        }
+        let candidate_files = candidate_files_query.all(pool).await?;
 
         for file in candidate_files {
             if let Some(relative_basename) = basename_from_path(&file.relative_path) {
@@ -588,18 +601,26 @@ async fn load_match_lookups(
     }
 
     if !matched_root_ids.is_empty() {
-        let playable_nodes = nodes::Entity::find()
+        let mut playable_nodes_query = nodes::Entity::find()
             .filter(
                 nodes::Column::RootId
                     .is_in(matched_root_ids.clone().into_iter().collect::<Vec<_>>()),
             )
-            .filter(nodes::Column::Kind.is_in([NodeKind::Movie, NodeKind::Episode]))
-            .all(pool)
-            .await?;
+            .filter(nodes::Column::Kind.is_in([NodeKind::Movie, NodeKind::Episode]));
+        if let Some(library_ids) = accessible_library_ids {
+            playable_nodes_query =
+                playable_nodes_query.filter(nodes::Column::LibraryId.is_in(library_ids.to_vec()));
+        }
+        let playable_nodes = playable_nodes_query.all(pool).await?;
 
-        let seasons_by_id = nodes::Entity::find()
+        let mut seasons_query = nodes::Entity::find()
             .filter(nodes::Column::RootId.is_in(matched_root_ids.into_iter().collect::<Vec<_>>()))
-            .filter(nodes::Column::Kind.eq(NodeKind::Season))
+            .filter(nodes::Column::Kind.eq(NodeKind::Season));
+        if let Some(library_ids) = accessible_library_ids {
+            seasons_query =
+                seasons_query.filter(nodes::Column::LibraryId.is_in(library_ids.to_vec()));
+        }
+        let seasons_by_id = seasons_query
             .all(pool)
             .await?
             .into_iter()

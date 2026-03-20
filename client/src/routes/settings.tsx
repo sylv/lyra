@@ -1,6 +1,9 @@
-import { Outlet, createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import { useSuspenseQuery } from "@apollo/client/react";
+import { Navigate, Outlet, createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import { graphql } from "../@generated/gql";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useTitle } from "../hooks/use-title";
+import { ADMIN_BIT, CREATE_USER_BIT } from "../lib/user-permissions";
 
 const settingsTabs = {
 	users: "/settings/users",
@@ -11,6 +14,15 @@ const settingsTabs = {
 
 type SettingsTab = keyof typeof settingsTabs;
 
+const SettingsViewerQuery = graphql(`
+	query SettingsViewer {
+		viewer {
+			id
+			permissions
+		}
+	}
+`);
+
 export const Route = createFileRoute("/settings")({
 	component: RouteComponent,
 });
@@ -20,6 +32,17 @@ function RouteComponent() {
 		select: (location) => location.pathname,
 	});
 	const navigate = useNavigate();
+	const { data } = useSuspenseQuery(SettingsViewerQuery);
+	const viewerPermissions = data.viewer?.permissions ?? 0;
+	const canManageUsers = (viewerPermissions & (ADMIN_BIT | CREATE_USER_BIT)) !== 0;
+	const canManageLibraries = (viewerPermissions & ADMIN_BIT) !== 0;
+	const visibleTabs = [
+		canManageUsers ? "users" : null,
+		canManageLibraries ? "libraries" : null,
+		"about",
+		"import",
+	].filter((tab): tab is SettingsTab => tab != null);
+	const fallbackTab = visibleTabs[0] ?? "about";
 	const activeTab: SettingsTab = pathname.startsWith(settingsTabs.users)
 		? "users"
 		: pathname.startsWith(settingsTabs.libraries)
@@ -27,8 +50,14 @@ function RouteComponent() {
 			: pathname.startsWith(settingsTabs.import)
 				? "import"
 				: "about";
+	const activeTabVisible =
+		activeTab === "users" ? canManageUsers : activeTab === "libraries" ? canManageLibraries : true;
 
 	useTitle("Settings");
+
+	if (!activeTabVisible) {
+		return <Navigate to={settingsTabs[fallbackTab]} replace />;
+	}
 
 	return (
 		<div className="pt-6">
@@ -45,8 +74,8 @@ function RouteComponent() {
 				className="w-full"
 			>
 				<TabsList>
-					<TabsTrigger value="users">Users</TabsTrigger>
-					<TabsTrigger value="libraries">Libraries</TabsTrigger>
+					{canManageUsers ? <TabsTrigger value="users">Users</TabsTrigger> : null}
+					{canManageLibraries ? <TabsTrigger value="libraries">Libraries</TabsTrigger> : null}
 					<TabsTrigger value="about">About</TabsTrigger>
 					<TabsTrigger value="import">Import</TabsTrigger>
 				</TabsList>

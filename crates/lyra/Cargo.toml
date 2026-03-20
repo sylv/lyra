@@ -30,6 +30,7 @@ async-graphql = { version = "7.0.14", features = ["dataloader"] }
 async-graphql-axum = "7.0.14"
 image = { version = "0.24", features = ["jpeg"] }
 sha2 = "0.10"
+hmac = "0.12"
 hex = "0.4.3"
 tokio-util = "0.7.15"
 futures-util = "0.3.31"

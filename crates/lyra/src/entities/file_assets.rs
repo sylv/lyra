@@ -29,11 +29,25 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Assets,
+    #[sea_orm(
+        belongs_to = "super::files::Entity",
+        from = "Column::FileId",
+        to = "super::files::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Files,
 }
 
 impl Related<super::assets::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Assets.def()
+    }
+}
+
+impl Related<super::files::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Files.def()
     }
 }
 

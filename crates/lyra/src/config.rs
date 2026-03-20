@@ -1,5 +1,8 @@
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+const PRIVATE_KEY_FILENAME: &str = "private_key";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -43,6 +46,24 @@ impl Config {
     pub fn get_tmp_dir(&self) -> PathBuf {
         self.data_dir.join("tmp")
     }
+
+    pub fn get_private_key_path(&self) -> PathBuf {
+        self.data_dir.join(PRIVATE_KEY_FILENAME)
+    }
+
+    pub fn get_private_key(&self) -> Result<String, Box<dyn std::error::Error>> {
+        let private_key_path = self.get_private_key_path();
+        if private_key_path.exists() {
+            let private_key = std::fs::read_to_string(&private_key_path)?;
+            validate_private_key(private_key.trim())?;
+            return Ok(private_key.trim().to_string());
+        }
+
+        // keep the key stable across restarts so issued signatures remain valid until expiry.
+        let private_key = generate_private_key();
+        std::fs::write(&private_key_path, &private_key)?;
+        Ok(private_key)
+    }
 }
 
 static CONFIG: once_cell::sync::Lazy<Config> =
@@ -67,7 +88,6 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         .unwrap();
 
     let config: Config = config.try_deserialize()?;
-    tracing::info!("loaded config: {:?}", config);
 
     if config.clear_transcode_cache_on_start && config.get_transcode_cache_dir().exists() {
         tracing::info!("clearing transcode cache");
@@ -86,5 +106,31 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&config.get_asset_store_dir())?;
     std::fs::create_dir_all(&config.get_tmp_dir())?;
 
+    tracing::info!(
+        data_dir = ?config.data_dir,
+        host = %config.host,
+        port = config.port,
+        "loaded config"
+    );
+
     Ok(config)
+}
+
+fn validate_private_key(private_key: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let decoded = hex::decode(private_key.trim())?;
+    if decoded.len() != 32 {
+        return Err(format!(
+            "config.private_key must decode to 32 bytes, got {}",
+            decoded.len()
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+fn generate_private_key() -> String {
+    let mut bytes = [0_u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
 }

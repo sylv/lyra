@@ -1,5 +1,8 @@
 use crate::RequestAuth;
-use crate::auth::{PermissionGuard, create_session_for_user, find_pending_invite_user};
+use crate::auth::{
+    PermissionGuard, accessible_library_ids, create_session_for_user, ensure_library_access,
+    find_pending_invite_user,
+};
 use crate::content_update::CONTENT_UPDATE;
 use crate::entities::users::UserPerms;
 use crate::entities::{files, libraries, node_files, user_sessions, users, watch_progress};
@@ -427,6 +430,9 @@ impl Mutation {
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?
             .ok_or_else(|| async_graphql::Error::new("File not found".to_string()))?;
+        ensure_library_access(pool, auth, &file.library_id)
+            .await
+            .map_err(|_| async_graphql::Error::new("File not found"))?;
 
         let linked_node_ids: Vec<String> = node_files::Entity::find()
             .filter(node_files::Column::FileId.eq(file.id.clone()))
@@ -494,6 +500,9 @@ impl Mutation {
 
         let request = watch_state_import::ImportWatchStatesRequest {
             user_id: user.id.clone(),
+            accessible_library_ids: accessible_library_ids(pool, auth)
+                .await
+                .map_err(|error| -> async_graphql::Error { error.into() })?,
             overwrite_conflicts: input.overwrite_conflicts,
             rows: input
                 .rows
