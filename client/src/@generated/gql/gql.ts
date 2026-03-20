@@ -33,12 +33,12 @@ type Documents = {
     "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": typeof types.CreateLibraryDocument,
     "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": typeof types.UpdateLibraryDocument,
     "\n\tmutation DeleteLibrary($libraryId: String!) {\n\t\tdeleteLibrary(libraryId: $libraryId)\n\t}\n": typeof types.DeleteLibraryDocument,
-    "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.UsersManagementDocument,
-    "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.CreateUserInviteDocument,
-    "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.UpdateUserDocument,
+    "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.UsersManagementDocument,
+    "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.CreateUserInviteDocument,
+    "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.UpdateUserDocument,
     "\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.ResetUserInviteDocument,
     "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": typeof types.DeleteUserDocument,
-    "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": typeof types.UserCardFragmentDoc,
+    "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tlibraries {\n\t\t\tid\n\t\t}\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": typeof types.UserCardFragmentDoc,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": typeof types.LibrariesDocument,
     "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": typeof types.SidebarViewerDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": typeof types.GetPathForNodeFragmentDoc,
@@ -69,12 +69,12 @@ const documents: Documents = {
     "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": types.CreateLibraryDocument,
     "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": types.UpdateLibraryDocument,
     "\n\tmutation DeleteLibrary($libraryId: String!) {\n\t\tdeleteLibrary(libraryId: $libraryId)\n\t}\n": types.DeleteLibraryDocument,
-    "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.UsersManagementDocument,
-    "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.CreateUserInviteDocument,
-    "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.UpdateUserDocument,
+    "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.UsersManagementDocument,
+    "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.CreateUserInviteDocument,
+    "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.UpdateUserDocument,
     "\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.ResetUserInviteDocument,
     "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": types.DeleteUserDocument,
-    "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": types.UserCardFragmentDoc,
+    "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tlibraries {\n\t\t\tid\n\t\t}\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": types.UserCardFragmentDoc,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": types.LibrariesDocument,
     "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": types.SidebarViewerDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": types.GetPathForNodeFragmentDoc,
@@ -179,15 +179,15 @@ export function graphql(source: "\n\tmutation DeleteLibrary($libraryId: String!)
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n"];
+export function graphql(source: "\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery UsersManagement {\n\t\tviewer {\n\t\t\tid\n\t\t}\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t\tusers {\n\t\t\tid\n\t\t\t...UserCard\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreateUserInvite($username: String!, $permissions: Int!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"];
+export function graphql(source: "\n\tmutation CreateUserInvite($username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreateUserInvite($username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tcreateUserInvite(username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"];
+export function graphql(source: "\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation UpdateUser($userId: String!, $username: String!, $permissions: Int!, $libraryIds: [String!]!) {\n\t\tupdateUser(userId: $userId, username: $username, permissions: $permissions, libraryIds: $libraryIds) {\n\t\t\t...UserCard\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -199,7 +199,7 @@ export function graphql(source: "\n\tmutation DeleteUser($userId: String!) {\n\t
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n"): (typeof documents)["\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n"];
+export function graphql(source: "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tlibraries {\n\t\t\tid\n\t\t}\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n"): (typeof documents)["\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tlibraries {\n\t\t\tid\n\t\t}\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

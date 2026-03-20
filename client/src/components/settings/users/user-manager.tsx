@@ -7,12 +7,17 @@ import { UserFormModal } from "./user-form-modal";
 
 interface UserManagerProps {
 	users: Array<{ id: string } & FragmentType<typeof UserCardFragment>>;
+	libraries: Array<{
+		id: string;
+		name: string;
+		createdAt: number;
+	}>;
 	viewerId?: string | null;
 	loading?: boolean;
 	error?: string | null;
 }
 
-export const UserManager: FC<UserManagerProps> = ({ users, viewerId, loading = false, error }) => {
+export const UserManager: FC<UserManagerProps> = ({ users, libraries, viewerId, loading = false, error }) => {
 	const [activeForm, setActiveForm] = useState<
 		| { mode: "create" }
 		| {
@@ -25,7 +30,12 @@ export const UserManager: FC<UserManagerProps> = ({ users, viewerId, loading = f
 	return (
 		<div className="space-y-4">
 			{activeForm ? (
-				<UserFormModal activeForm={activeForm} viewerId={viewerId ?? null} onClose={() => setActiveForm(null)} />
+				<UserFormModal
+					activeForm={activeForm}
+					libraries={libraries}
+					viewerId={viewerId ?? null}
+					onClose={() => setActiveForm(null)}
+				/>
 			) : null}
 
 			{error ? <p className="rounded bg-red-950/50 px-3 py-2 text-sm text-red-300">{error}</p> : null}

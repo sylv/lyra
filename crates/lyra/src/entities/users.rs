@@ -4,7 +4,7 @@ use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, SimpleObject)]
 #[sea_orm(table_name = "users")]
-#[graphql(name = "User")]
+#[graphql(name = "User", complex)]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
@@ -61,7 +61,6 @@ bitflags! {
     pub struct UserPerms: u32 {
         const ADMIN = 1 << 0;
         const CREATE_INVITE = 1 << 1;
-        const CREATE_USER = 1 << 2;
         const EDIT_OTHERS_WATCH_STATE = 1 << 3;
         const VIEW_ALL_LIBRARIES = 1 << 4;
     }

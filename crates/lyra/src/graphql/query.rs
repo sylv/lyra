@@ -516,7 +516,7 @@ impl Query {
             .and_then(|_| auth.get_user().cloned()))
     }
 
-    #[graphql(guard = PermissionGuard::new(users::UserPerms::CREATE_USER))]
+    #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]
     async fn users(&self, ctx: &Context<'_>) -> Result<Vec<users::Model>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         Ok(users::Entity::find()

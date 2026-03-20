@@ -3,7 +3,7 @@ import { Navigate, Outlet, createFileRoute, useLocation, useNavigate } from "@ta
 import { graphql } from "../@generated/gql";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useTitle } from "../hooks/use-title";
-import { ADMIN_BIT, CREATE_USER_BIT } from "../lib/user-permissions";
+import { ADMIN_BIT } from "../lib/user-permissions";
 
 const settingsTabs = {
 	users: "/settings/users",
@@ -34,7 +34,7 @@ function RouteComponent() {
 	const navigate = useNavigate();
 	const { data } = useSuspenseQuery(SettingsViewerQuery);
 	const viewerPermissions = data.viewer?.permissions ?? 0;
-	const canManageUsers = (viewerPermissions & (ADMIN_BIT | CREATE_USER_BIT)) !== 0;
+	const canManageUsers = (viewerPermissions & ADMIN_BIT) !== 0;
 	const canManageLibraries = (viewerPermissions & ADMIN_BIT) !== 0;
 	const visibleTabs = [
 		canManageUsers ? "users" : null,

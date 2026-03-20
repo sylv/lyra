@@ -5,7 +5,9 @@ use crate::auth::{
 };
 use crate::content_update::CONTENT_UPDATE;
 use crate::entities::users::UserPerms;
-use crate::entities::{files, libraries, node_files, user_sessions, users, watch_progress};
+use crate::entities::{
+    files, libraries, library_users, node_files, user_sessions, users, watch_progress,
+};
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
 use argon2::{
@@ -42,6 +44,55 @@ fn hash_password(password: &str) -> Result<String, async_graphql::Error> {
     Ok(argon2
         .hash_password(password.as_bytes(), &salt)?
         .to_string())
+}
+
+fn normalize_library_ids(mut library_ids: Vec<String>) -> Vec<String> {
+    library_ids.sort();
+    library_ids.dedup();
+    library_ids
+}
+
+// keep user updates atomic so permission flips and explicit library assignments can't drift apart.
+async fn sync_user_library_access<C>(
+    db: &C,
+    user_id: &str,
+    library_ids: &[String],
+) -> Result<(), async_graphql::Error>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    if !library_ids.is_empty() {
+        let found_library_count = libraries::Entity::find()
+            .filter(libraries::Column::Id.is_in(library_ids.iter().cloned()))
+            .count(db)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        if found_library_count != library_ids.len() as u64 {
+            return Err(async_graphql::Error::new("One or more libraries were not found"));
+        }
+    }
+
+    library_users::Entity::delete_many()
+        .filter(library_users::Column::UserId.eq(user_id.to_string()))
+        .exec(db)
+        .await
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+    if library_ids.is_empty() {
+        return Ok(());
+    }
+
+    library_users::Entity::insert_many(library_ids.iter().cloned().map(|library_id| {
+        library_users::ActiveModel {
+            library_id: Set(library_id),
+            user_id: Set(user_id.to_string()),
+        }
+    }))
+    .exec(db)
+    .await
+    .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, InputObject)]
@@ -197,7 +248,7 @@ impl Mutation {
             let auth = ctx.data_opt::<RequestAuth>().ok_or_else(|| {
                 async_graphql::Error::new("No invite code provided and users already exist")
             })?;
-            if !auth.has_permission(UserPerms::CREATE_USER) {
+            if !auth.has_permission(UserPerms::ADMIN) {
                 return Err(async_graphql::Error::new(
                     "No invite code provided and users already exist".to_string(),
                 ));
@@ -235,16 +286,22 @@ impl Mutation {
         }
     }
 
-    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
+    #[graphql(guard = PermissionGuard::new(UserPerms::ADMIN))]
     pub async fn create_user_invite(
         &self,
         ctx: &Context<'_>,
         username: String,
         permissions: u32,
+        library_ids: Vec<String>,
     ) -> Result<users::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let username = normalize_username(username)?;
         let invite_code = new_invite_code();
+        let library_ids = normalize_library_ids(library_ids);
+        let txn = pool
+            .begin()
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
         let user = users::Entity::insert(users::ActiveModel {
             id: Set(ids::generate_ulid()),
@@ -254,47 +311,13 @@ impl Mutation {
             permissions: Set(permissions as i64),
             ..Default::default()
         })
-        .exec_with_returning(pool)
+        .exec_with_returning(&txn)
         .await
         .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        CONTENT_UPDATE.emit();
-        Ok(user)
-    }
+        sync_user_library_access(&txn, &user.id, &library_ids).await?;
 
-    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
-    pub async fn update_user(
-        &self,
-        ctx: &Context<'_>,
-        user_id: String,
-        username: String,
-        permissions: u32,
-    ) -> Result<users::Model, async_graphql::Error> {
-        let pool = ctx.data::<DatabaseConnection>()?;
-        let auth = ctx.data::<RequestAuth>()?;
-        let username = normalize_username(username)?;
-        let existing_user = users::Entity::find_by_id(user_id)
-            .one(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
-
-        if auth
-            .get_user()
-            .is_some_and(|current_user| current_user.id == existing_user.id)
-            && existing_user.permissions != permissions as i64
-        {
-            return Err(async_graphql::Error::new(
-                "You cannot edit your current account permissions",
-            ));
-        }
-
-        let mut user = existing_user.into_active_model();
-        user.username = Set(username);
-        user.permissions = Set(permissions as i64);
-
-        let user = user
-            .update(pool)
+        txn.commit()
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
@@ -302,7 +325,67 @@ impl Mutation {
         Ok(user)
     }
 
-    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
+    #[graphql(guard = PermissionGuard::new(UserPerms::ADMIN))]
+    pub async fn update_user(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+        username: String,
+        permissions: u32,
+        library_ids: Vec<String>,
+    ) -> Result<users::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let username = normalize_username(username)?;
+        let library_ids = normalize_library_ids(library_ids);
+        let existing_user = users::Entity::find_by_id(user_id)
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
+        let existing_library_ids = normalize_library_ids(
+            library_users::Entity::find()
+            .filter(library_users::Column::UserId.eq(existing_user.id.clone()))
+            .select_only()
+            .column(library_users::Column::LibraryId)
+            .into_tuple::<String>()
+            .all(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?,
+        );
+
+        if auth
+            .get_user()
+            .is_some_and(|current_user| current_user.id == existing_user.id)
+            && (existing_user.permissions != permissions as i64 || existing_library_ids != library_ids)
+        {
+            return Err(async_graphql::Error::new(
+                "You cannot edit your current account permissions or library access",
+            ));
+        }
+
+        let mut user = existing_user.into_active_model();
+        user.username = Set(username);
+        user.permissions = Set(permissions as i64);
+
+        let txn = pool
+            .begin()
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        let user = user
+            .update(&txn)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        sync_user_library_access(&txn, &user.id, &library_ids).await?;
+        txn.commit()
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        CONTENT_UPDATE.emit();
+        Ok(user)
+    }
+
+    #[graphql(guard = PermissionGuard::new(UserPerms::ADMIN))]
     pub async fn reset_user_invite(
         &self,
         ctx: &Context<'_>,
@@ -359,7 +442,7 @@ impl Mutation {
         Ok(user)
     }
 
-    #[graphql(guard = PermissionGuard::new(UserPerms::CREATE_USER))]
+    #[graphql(guard = PermissionGuard::new(UserPerms::ADMIN))]
     pub async fn delete_user(
         &self,
         ctx: &Context<'_>,

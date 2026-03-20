@@ -19,6 +19,7 @@ function RouteComponent() {
 			</div>
 			<UserManager
 				users={data?.users ?? []}
+				libraries={data?.libraries ?? []}
 				viewerId={data?.viewer?.id ?? null}
 				loading={loading}
 				error={error?.message ?? null}

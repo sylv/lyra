@@ -6,7 +6,8 @@ import { Input } from "../../input";
 import { Modal, ModalBody, ModalHeader } from "../../modal";
 import { CheckboxCard } from "../checkbox-card";
 import { CreateUserInviteMutation, UpdateUserMutation, UsersManagementQuery } from "./queries";
-import { ADMIN_BIT, permissionOptions } from "../../../lib/user-permissions";
+import { ADMIN_BIT, VIEW_ALL_LIBRARIES_BIT, permissionOptions } from "../../../lib/user-permissions";
+import { generateGradientIcon } from "../../../lib/generate-gradient-icon";
 
 interface UserFormModalProps {
 	activeForm:
@@ -15,11 +16,16 @@ interface UserFormModalProps {
 				mode: "edit";
 				user: UserCardData;
 		  };
+	libraries: Array<{
+		id: string;
+		name: string;
+		createdAt: number;
+	}>;
 	viewerId: string | null;
 	onClose: () => void;
 }
 
-export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, viewerId, onClose }) => {
+export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, libraries, viewerId, onClose }) => {
 	const title = activeForm.mode === "edit" ? "Edit User" : "New User";
 	const description =
 		activeForm.mode === "edit"
@@ -37,6 +43,7 @@ export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, viewerId, on
 			<ModalBody>
 				<UserForm
 					mode={activeForm.mode}
+					libraries={libraries}
 					user={activeForm.mode === "edit" ? activeForm.user : undefined}
 					viewerId={viewerId}
 					onClose={onClose}
@@ -48,10 +55,15 @@ export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, viewerId, on
 
 const UserForm: FC<{
 	mode: "create" | "edit";
+	libraries: Array<{
+		id: string;
+		name: string;
+		createdAt: number;
+	}>;
 	onClose: () => void;
 	user?: UserCardData;
 	viewerId: string | null;
-}> = ({ mode, onClose, user, viewerId }) => {
+}> = ({ mode, libraries, onClose, user, viewerId }) => {
 	const [createUserInvite, { loading: creating }] = useMutation(CreateUserInviteMutation, {
 		refetchQueries: [UsersManagementQuery],
 		awaitRefetchQueries: true,
@@ -62,8 +74,11 @@ const UserForm: FC<{
 	});
 	const [username, setUsername] = useState(user?.username ?? "");
 	const [permissions, setPermissions] = useState(user?.permissions ?? 0);
+	const [libraryIds, setLibraryIds] = useState(() => user?.libraries.map((library) => library.id) ?? []);
 	const [error, setError] = useState<string | null>(null);
 	const adminEnabled = (permissions & ADMIN_BIT) !== 0;
+	const allLibrariesEnabled = (permissions & VIEW_ALL_LIBRARIES_BIT) !== 0;
+	const effectiveAllLibrariesEnabled = adminEnabled || allLibrariesEnabled;
 	const submitting = creating || updating;
 	const isEditingCurrentUser = mode === "edit" && user?.id === viewerId;
 
@@ -78,6 +93,7 @@ const UserForm: FC<{
 						userId: user.id,
 						username: username.trim(),
 						permissions,
+						libraryIds,
 					},
 				});
 			} else {
@@ -85,6 +101,7 @@ const UserForm: FC<{
 					variables: {
 						username: username.trim(),
 						permissions,
+						libraryIds,
 					},
 				});
 			}
@@ -132,6 +149,50 @@ const UserForm: FC<{
 								description={option.description}
 								onCheckedChange={(isEnabled) => {
 									setPermissions((current) => (isEnabled ? current | option.bit : current & ~option.bit));
+								}}
+							/>
+						);
+					})}
+				</div>
+			</div>
+
+			<div className="space-y-3">
+				<div className="text-xs font-medium uppercase tracking-wide text-zinc-400">Library Access</div>
+				<div className="space-y-3">
+					<CheckboxCard
+						id={`${mode}-user-library-access-all`}
+						checked={effectiveAllLibrariesEnabled}
+						disabled={submitting || isEditingCurrentUser || adminEnabled}
+						title="All libraries"
+						description="Can see every library without needing per-library assignments."
+						onCheckedChange={(isEnabled) => {
+							setPermissions((current) =>
+								isEnabled ? current | VIEW_ALL_LIBRARIES_BIT : current & ~VIEW_ALL_LIBRARIES_BIT,
+							);
+						}}
+					/>
+					{libraries.map((library) => {
+						const checked = effectiveAllLibrariesEnabled || libraryIds.includes(library.id);
+						const disabled = submitting || isEditingCurrentUser || effectiveAllLibrariesEnabled;
+						const checkboxId = `${mode}-user-library-${library.id}`;
+						const icon = generateGradientIcon(library.createdAt.toString(), { size: 32 });
+
+						return (
+							<CheckboxCard
+								key={library.id}
+								id={checkboxId}
+								checked={checked}
+								disabled={disabled}
+								title={
+									<span className="flex items-center gap-2">
+										<img src={icon} alt="" className="size-5 rounded-full" />
+										<span>{library.name}</span>
+									</span>
+								}
+								onCheckedChange={(isEnabled) => {
+									setLibraryIds((current) =>
+										isEnabled ? [...current, library.id] : current.filter((candidate) => candidate !== library.id),
+									);
 								}}
 							/>
 						);

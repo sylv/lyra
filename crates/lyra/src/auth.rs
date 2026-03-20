@@ -114,7 +114,7 @@ where
 
             return Ok(RequestAuth {
                 user: None,
-                permissions: UserPerms::CREATE_USER,
+                permissions: UserPerms::ADMIN,
                 is_setup: true,
             });
         }

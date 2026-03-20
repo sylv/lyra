@@ -4,7 +4,7 @@ use crate::{
     entities::{
         assets,
         file_assets::{self, FileAssetRole},
-        file_probe, files, node_files, node_metadata, nodes,
+        file_probe, files, libraries, library_users, node_files, node_metadata, nodes, users,
     },
     signer::Signer,
 };
@@ -137,6 +137,27 @@ impl NodeProperties {
 
         let asset_id = self.file_thumbnail_asset_id(pool).await?;
         find_asset(pool, asset_id).await
+    }
+}
+
+#[ComplexObject]
+impl users::Model {
+    pub async fn libraries(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<libraries::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+
+        let rows = library_users::Entity::find()
+            .filter(library_users::Column::UserId.eq(&self.id))
+            .find_also_related(libraries::Entity)
+            .all(pool)
+            .await?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|(_, library)| library)
+            .collect())
     }
 }
 

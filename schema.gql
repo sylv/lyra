@@ -112,8 +112,8 @@ type Library {
 
 type Mutation {
 	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
-	createUserInvite(username: String!, permissions: Int!): User!
-	updateUser(userId: String!, username: String!, permissions: Int!): User!
+	createUserInvite(username: String!, permissions: Int!, libraryIds: [String!]!): User!
+	updateUser(userId: String!, username: String!, permissions: Int!, libraryIds: [String!]!): User!
 	resetUserInvite(userId: String!): User!
 	deleteUser(userId: String!): Boolean!
 	updateWatchProgress(fileId: String!, progressPercent: Float!, userId: String): [WatchProgress!]!
@@ -292,6 +292,7 @@ type User {
 	permissions: Int!
 	lastSeenAt: Int
 	createdAt: Int!
+	libraries: [Library!]!
 }
 
 type WatchProgress {
