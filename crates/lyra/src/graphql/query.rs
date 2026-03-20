@@ -525,7 +525,7 @@ impl Query {
             .await?)
     }
 
-    #[graphql(guard = AuthenticatedGuard::new())]
+    #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]
     async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let activity_registry = ctx.data::<jobs::JobActivityRegistry>()?;

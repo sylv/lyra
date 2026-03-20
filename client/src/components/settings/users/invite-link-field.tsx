@@ -20,10 +20,10 @@ export const InviteLinkField: FC<{ inviteLink: string }> = ({ inviteLink }) => {
 		<div className="space-y-2">
 			<div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Invite link</div>
 			<div className="flex items-center gap-2">
-				<Input value={inviteLink} readOnly className="w-full" />
+				<Input value={inviteLink} readOnly className="w-full bg-zinc-700/40" />
 				<Button
 					onClick={handleCopy}
-					style={ButtonStyle.Transparent}
+					style={ButtonStyle.Primary}
 					icon={["copy", Copy]}
 					iconSide="left"
 					className="px-3 text-zinc-200 hover:text-zinc-100"

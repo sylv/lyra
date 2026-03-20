@@ -5,6 +5,7 @@ import { useState, type FC, type ReactNode } from "react";
 import BrandLogo from "../assets/logo.svg";
 import { graphql } from "../@generated/gql";
 import { generateGradientIcon } from "../lib/generate-gradient-icon";
+import { ADMIN_BIT } from "../lib/user-permissions";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
 import { SuspenseBoundary } from "./fallback";
@@ -59,6 +60,15 @@ const LibrariesQuery = graphql(`
 	}
 `);
 
+const SidebarViewerQuery = graphql(`
+	query SidebarViewer {
+		viewer {
+			id
+			permissions
+		}
+	}
+`);
+
 export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 	const pathname = useLocation({
 		select: (location) => location.pathname,
@@ -67,7 +77,11 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
 	const { data } = useSuspenseQuery(LibrariesQuery);
-	const { data: activityData } = useQuery(ActivityPanelQuery);
+	const { data: viewerData } = useSuspenseQuery(SidebarViewerQuery);
+	const isAdmin = ((viewerData.viewer?.permissions ?? 0) & ADMIN_BIT) !== 0;
+	const { data: activityData } = useQuery(ActivityPanelQuery, {
+		skip: !isAdmin,
+	});
 	const activitiesRunning = activityData?.activities.some((activity) => activity.current < activity.total) ?? false;
 
 	return (
@@ -82,34 +96,36 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 						</div>
 					</div>
 					<div className="flex items-center gap-1">
-						<DropdownMenu open={isActivityOpen} onOpenChange={setIsActivityOpen}>
-							<DropdownMenuTrigger asChild>
-								{/* todo: with activities running, show indicator icon with count */}
-								<button
-									type="button"
-									className={cn(
-										"flex items-center p-2 rounded transition hover:bg-zinc-200/10 relative",
-										isActivityOpen && "bg-zinc-200/10",
-									)}
+						{isAdmin ? (
+							<DropdownMenu open={isActivityOpen} onOpenChange={setIsActivityOpen}>
+								<DropdownMenuTrigger asChild>
+									{/* todo: with activities running, show indicator icon with count */}
+									<button
+										type="button"
+										className={cn(
+											"flex items-center p-2 rounded transition hover:bg-zinc-200/10 relative",
+											isActivityOpen && "bg-zinc-200/10",
+										)}
+									>
+										{/* todo: kinda gross but we can't use the bg trick to add an outline to a little spinner because the background can change */}
+										<Activity className="size-4" />
+										{activitiesRunning && (
+											<div className="absolute top-1 right-1 rounded-md">
+												<Spinner className="size-2.5" />
+											</div>
+										)}
+									</button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent
+									align="start"
+									side="right"
+									sideOffset={12}
+									className="border-0 bg-transparent p-0 shadow-none"
 								>
-									{/* todo: kinda gross but we can't use the bg trick to add an outline to a little spinner because the background can change */}
-									<Activity className="size-4" />
-									{activitiesRunning && (
-										<div className="absolute top-1 right-1 rounded-md">
-											<Spinner className="size-2.5" />
-										</div>
-									)}
-								</button>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent
-								align="start"
-								side="right"
-								sideOffset={12}
-								className="border-0 bg-transparent p-0 shadow-none"
-							>
-								<ActivityPanel open={isActivityOpen} data={activityData} />
-							</DropdownMenuContent>
-						</DropdownMenu>
+									<ActivityPanel open={isActivityOpen} data={activityData} />
+								</DropdownMenuContent>
+							</DropdownMenu>
+						) : null}
 						<Link
 							to="/settings/about"
 							className={cn(

@@ -40,6 +40,7 @@ type Documents = {
     "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": typeof types.DeleteUserDocument,
     "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": typeof types.UserCardFragmentDoc,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": typeof types.LibrariesDocument,
+    "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": typeof types.SidebarViewerDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": typeof types.GetPathForNodeFragmentDoc,
     "\n\tquery GetAllNodes($filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\t...NodeList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": typeof types.GetAllNodesDocument,
     "\n\tquery GetLibraryNodes($libraryId: String!, $filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\tid\n\t\t\t\t\t...NodeList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t\tlibrary(libraryId: $libraryId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": typeof types.GetLibraryNodesDocument,
@@ -75,6 +76,7 @@ const documents: Documents = {
     "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": types.DeleteUserDocument,
     "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": types.UserCardFragmentDoc,
     "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": types.LibrariesDocument,
+    "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": types.SidebarViewerDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": types.GetPathForNodeFragmentDoc,
     "\n\tquery GetAllNodes($filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\t...NodeList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t}\n": types.GetAllNodesDocument,
     "\n\tquery GetLibraryNodes($libraryId: String!, $filter: NodeFilter!, $after: String) {\n\t\tnodeList(filter: $filter, first: 45, after: $after) {\n\t\t\tedges {\n\t\t\t\tnode {\n\t\t\t\t\tid\n\t\t\t\t\t...NodeList\n\t\t\t\t}\n\t\t\t}\n\t\t\tpageInfo {\n\t\t\t\tendCursor\n\t\t\t\thasNextPage\n\t\t\t}\n\t\t}\n\t\tlibrary(libraryId: $libraryId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": types.GetLibraryNodesDocument,
@@ -202,6 +204,10 @@ export function graphql(source: "\n\tfragment UserCard on User {\n\t\tid\n\t\tus
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
