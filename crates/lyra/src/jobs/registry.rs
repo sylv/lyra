@@ -14,7 +14,7 @@ use crate::metadata::{
 };
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, Semaphore};
 
 pub struct RegisteredJobs {
     pub managers: Vec<JobManager>,
@@ -42,6 +42,7 @@ pub fn get_registered_jobs(
 ) -> RegisteredJobs {
     let handlers = get_registered_job_handlers();
     let now = chrono::Utc::now().timestamp();
+    let heavy_job_semaphore = Arc::new(Semaphore::new(1));
     let activity_registry =
         JobActivityRegistry::new(handlers.iter().map(|handler| handler.job_kind()), now);
 
@@ -58,6 +59,7 @@ pub fn get_registered_jobs(
                 wake_signal.clone(),
                 activity_state,
                 job_lock.clone(),
+                heavy_job_semaphore.clone(),
             )
         })
         .collect();

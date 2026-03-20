@@ -14,7 +14,7 @@ use std::sync::{
     atomic::{AtomicI64, Ordering},
 };
 use std::time::Instant;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
@@ -295,6 +295,7 @@ pub struct JobManager {
     wake_signal: Arc<Notify>,
     activity_state: Arc<JobActivityState>,
     job_lock: JobLock,
+    heavy_semaphore: Arc<Semaphore>,
 }
 
 impl JobManager {
@@ -304,6 +305,7 @@ impl JobManager {
         wake_signal: Arc<Notify>,
         activity_state: Arc<JobActivityState>,
         job_lock: JobLock,
+        heavy_semaphore: Arc<Semaphore>,
     ) -> Self {
         Self {
             handler,
@@ -311,6 +313,7 @@ impl JobManager {
             wake_signal,
             activity_state,
             job_lock,
+            heavy_semaphore,
         }
     }
 
@@ -345,13 +348,25 @@ impl JobManager {
 
             if let Some(mut job) = next_job.take() {
                 // heavy background work yields to the shared job lock unless it was explicitly promoted.
-                if self.handler.is_heavy()
-                    && job.priority_at.is_none()
-                    && self.job_lock.is_blocked()
-                {
-                    self.wait_for_work_or_job_unlock().await;
-                    continue;
-                }
+                let heavy_permit = if self.handler.is_heavy() && job.priority_at.is_none() {
+                    if self.job_lock.is_blocked() {
+                        self.wait_for_work_or_job_unlock().await;
+                        continue;
+                    }
+
+                    let Some(permit) = self.try_acquire_heavy_permit().await else {
+                        continue;
+                    };
+
+                    if self.job_lock.is_blocked() {
+                        self.wait_for_work_or_job_unlock().await;
+                        continue;
+                    }
+
+                    Some(permit)
+                } else {
+                    None
+                };
 
                 let lock_now = chrono::Utc::now().timestamp();
                 let lock_result = jobs_entity::Entity::update_many()
@@ -371,7 +386,7 @@ impl JobManager {
 
                 job.locked_at = Some(lock_now);
                 job.updated_at = lock_now;
-                self.run_job_for_entry(job).await?;
+                self.run_job_for_entry(job, heavy_permit).await?;
                 self.activity_state
                     .mark_active(chrono::Utc::now().timestamp());
             } else if self.handler.is_heavy() && self.job_lock.is_blocked() {
@@ -394,6 +409,23 @@ impl JobManager {
             _ = self.wake_signal.notified() => {},
             _ = self.job_lock.wait_until_unblocked() => {},
             _ = sleep(EMPTY_POLL_INTERVAL) => {},
+        }
+    }
+
+    async fn try_acquire_heavy_permit(&self) -> Option<OwnedSemaphorePermit> {
+        if let Ok(permit) = self.heavy_semaphore.clone().try_acquire_owned() {
+            return Some(permit);
+        }
+
+        // non-priority heavy jobs wait in the semaphore queue, but wake-driven requeries
+        // still get a chance to notice a newly promoted priority job and step aside.
+        tokio::select! {
+            biased;
+            _ = self.wake_signal.notified() => None,
+            _ = self.job_lock.wait_until_blocked() => None,
+            permit = self.heavy_semaphore.clone().acquire_owned() => {
+                Some(permit.expect("heavy job semaphore closed"))
+            },
         }
     }
 
@@ -547,7 +579,11 @@ impl JobManager {
 
         Ok(enqueued)
     }
-    async fn run_job_for_entry(&self, job: jobs_entity::Model) -> anyhow::Result<()> {
+    async fn run_job_for_entry(
+        &self,
+        job: jobs_entity::Model,
+        _heavy_permit: Option<OwnedSemaphorePermit>,
+    ) -> anyhow::Result<()> {
         let job_kind = self.handler.job_kind();
         let policy = self.handler.execution_policy();
         let now = chrono::Utc::now().timestamp();
