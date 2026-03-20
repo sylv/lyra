@@ -371,4 +371,45 @@ impl Mutation {
         CONTENT_UPDATE.emit();
         Ok(library)
     }
+
+    pub async fn update_library(
+        &self,
+        ctx: &Context<'_>,
+        library_id: String,
+        name: String,
+        path: String,
+    ) -> Result<libraries::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+
+        if !auth.has_permission(UserPerms::ADMIN) {
+            return Err(async_graphql::Error::new(
+                "Lacking permission to update libraries".to_string(),
+            ));
+        }
+
+        let existing_library = libraries::Entity::find_by_id(library_id)
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("Library not found".to_string()))?;
+        let path_changed = existing_library.path != path;
+        let mut library = existing_library.into_active_model();
+        library.name = Set(name);
+        library.path = Set(path);
+
+        // force the scheduler to rescan quickly when the root changes
+        // instead of leaving the moved library on the previous scan cadence.
+        if path_changed {
+            library.last_scanned_at = Set(None);
+        }
+
+        let library = library
+            .update(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        CONTENT_UPDATE.emit();
+        Ok(library)
+    }
 }

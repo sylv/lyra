@@ -114,6 +114,7 @@ type Mutation {
 	updateWatchProgress(fileId: String!, progressPercent: Float!, userId: String): [WatchProgress!]!
 	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
 	createLibrary(name: String!, path: String!): Library!
+	updateLibrary(libraryId: String!, name: String!, path: String!): Library!
 }
 
 type Node {

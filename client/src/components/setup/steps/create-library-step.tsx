@@ -1,119 +1,16 @@
-import { useMutation, useQuery } from "@apollo/client/react";
-import { Folder, Plus } from "lucide-react";
-import { useState, type FC } from "react";
-import { graphql } from "../../../@generated/gql";
-import { DirectoryPicker } from "../../directory-picker";
+import { useQuery } from "@apollo/client/react";
+import { LibrariesQuery, LibraryManager } from "../../library-manager";
 import { SetupStep } from "../setup-step";
 import { useSetup } from "../setup-wrapper";
-import { Input } from "../../input";
-
-const Query = graphql(`
-	query GetLibraries {
-		libraries {
-			id
-			name
-			path
-		}
-	}
-`);
-
-const Mutation = graphql(`
-	mutation CreateLibrary($name: String!, $path: String!) {
-		createLibrary(name: $name, path: $path) {
-			id
-			name
-			path
-		}
-	}
-`);
 
 export function CreateLibraryStep() {
 	const { refresh } = useSetup();
-	const [showAddForm, setShowAddForm] = useState(false);
-	const { data: librariesData } = useQuery(Query);
+	const { data: librariesData, loading } = useQuery(LibrariesQuery);
 	const libraries = librariesData?.libraries || [];
 
 	return (
-		<SetupStep loading={false} disabled={libraries.length === 0} onSubmit={() => refresh()} centered={false}>
-			{!showAddForm ? (
-				<div className="grid grid-cols-4 gap-4 mb-6">
-					{libraries.map((library) => (
-						<div
-							key={library.id}
-							className="aspect-square bg-zinc-800 rounded border border-zinc-700 p-4 flex flex-col items-center justify-center text-center"
-						>
-							<Folder className="size-8 text-indigo-500 mb-2" />
-							<h3 className="font-medium text-sm mb-1 truncate w-full">{library.name}</h3>
-							<p className="text-xs text-zinc-400 truncate w-full" title={library.path}>
-								{library.path}
-							</p>
-						</div>
-					))}
-
-					<button
-						type="button"
-						onClick={() => setShowAddForm(true)}
-						className="aspect-square rounded border border-zinc-700 border-dashed hover:border-zinc-600 hover:bg-zinc-950 transition-colors flex flex-col items-center justify-center text-zinc-400 hover:text-zinc-300"
-					>
-						<Plus className="size-8 mb-2" />
-						<span className="text-sm">Add Library</span>
-					</button>
-				</div>
-			) : (
-				<CreateLibraryForm onClose={() => setShowAddForm(false)} />
-			)}
+		<SetupStep loading={loading} disabled={libraries.length === 0} onSubmit={() => refresh()} centered={false}>
+			<LibraryManager libraries={libraries} loading={loading} className="mb-6" />
 		</SetupStep>
 	);
 }
-
-const CreateLibraryForm: FC<{ onClose: () => void }> = ({ onClose }) => {
-	const [createLibrary, { loading: creating }] = useMutation(Mutation, {
-		refetchQueries: [Query],
-	});
-
-	const [libraryName, setLibraryName] = useState("");
-	const [selectedPath, setSelectedPath] = useState<string | null>(null);
-
-	const handleAddLibrary = async () => {
-		if (!libraryName.trim() || !selectedPath) return;
-
-		await createLibrary({
-			variables: {
-				name: libraryName.trim(),
-				path: selectedPath,
-			},
-		});
-
-		setLibraryName("");
-		setSelectedPath(null);
-		onClose();
-	};
-
-	return (
-		<div className="flex flex-col gap-4">
-			<Input
-				type="text"
-				placeholder="Library name"
-				value={libraryName}
-				onChange={(e) => setLibraryName(e.target.value)}
-				className="w-full"
-			/>
-
-			<DirectoryPicker onPathChange={setSelectedPath} initialPath="/" />
-
-			<div className="flex justify-between gap-2">
-				<button type="button" onClick={onClose} className="px-3 py-1 text-xs rounded hover:underline">
-					Cancel
-				</button>
-				<button
-					type="button"
-					onClick={handleAddLibrary}
-					disabled={!libraryName.trim() || !selectedPath || creating}
-					className="px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-600 disabled:cursor-not-allowed rounded"
-				>
-					{creating ? "Adding..." : "Add"}
-				</button>
-			</div>
-		</div>
-	);
-};

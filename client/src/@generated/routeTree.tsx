@@ -17,6 +17,7 @@ import { Route as SettingsIndexRouteImport } from './../routes/settings.index'
 import { Route as SetupLoginRouteImport } from './../routes/setup.login'
 import { Route as SetupCreateLibraryRouteImport } from './../routes/setup.create-library'
 import { Route as SetupCreateAccountRouteImport } from './../routes/setup.create-account'
+import { Route as SettingsLibrariesRouteImport } from './../routes/settings.libraries'
 import { Route as SettingsImportRouteImport } from './../routes/settings.import'
 import { Route as SettingsAboutRouteImport } from './../routes/settings.about'
 import { Route as LibraryLibraryIdRouteImport } from './../routes/library.$libraryId'
@@ -62,6 +63,11 @@ const SetupCreateAccountRoute = SetupCreateAccountRouteImport.update({
   path: '/create-account',
   getParentRoute: () => SetupRoute,
 } as any)
+const SettingsLibrariesRoute = SettingsLibrariesRouteImport.update({
+  id: '/libraries',
+  path: '/libraries',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsImportRoute = SettingsImportRouteImport.update({
   id: '/import',
   path: '/import',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/library/$libraryId': typeof LibraryLibraryIdRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/import': typeof SettingsImportRoute
+  '/settings/libraries': typeof SettingsLibrariesRoute
   '/setup/create-account': typeof SetupCreateAccountRoute
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
@@ -105,6 +112,7 @@ export interface FileRoutesByTo {
   '/library/$libraryId': typeof LibraryLibraryIdRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/import': typeof SettingsImportRoute
+  '/settings/libraries': typeof SettingsLibrariesRoute
   '/setup/create-account': typeof SetupCreateAccountRoute
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
@@ -120,6 +128,7 @@ export interface FileRoutesById {
   '/library/$libraryId': typeof LibraryLibraryIdRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/import': typeof SettingsImportRoute
+  '/settings/libraries': typeof SettingsLibrariesRoute
   '/setup/create-account': typeof SetupCreateAccountRoute
   '/setup/create-library': typeof SetupCreateLibraryRoute
   '/setup/login': typeof SetupLoginRoute
@@ -136,6 +145,7 @@ export interface FileRouteTypes {
     | '/library/$libraryId'
     | '/settings/about'
     | '/settings/import'
+    | '/settings/libraries'
     | '/setup/create-account'
     | '/setup/create-library'
     | '/setup/login'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/library/$libraryId'
     | '/settings/about'
     | '/settings/import'
+    | '/settings/libraries'
     | '/setup/create-account'
     | '/setup/create-library'
     | '/setup/login'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/library/$libraryId'
     | '/settings/about'
     | '/settings/import'
+    | '/settings/libraries'
     | '/setup/create-account'
     | '/setup/create-library'
     | '/setup/login'
@@ -237,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetupCreateAccountRouteImport
       parentRoute: typeof SetupRoute
     }
+    '/settings/libraries': {
+      id: '/settings/libraries'
+      path: '/libraries'
+      fullPath: '/settings/libraries'
+      preLoaderRoute: typeof SettingsLibrariesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/import': {
       id: '/settings/import'
       path: '/import'
@@ -271,12 +290,14 @@ declare module '@tanstack/react-router' {
 interface SettingsRouteChildren {
   SettingsAboutRoute: typeof SettingsAboutRoute
   SettingsImportRoute: typeof SettingsImportRoute
+  SettingsLibrariesRoute: typeof SettingsLibrariesRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAboutRoute: SettingsAboutRoute,
   SettingsImportRoute: SettingsImportRoute,
+  SettingsLibrariesRoute: SettingsLibrariesRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 
