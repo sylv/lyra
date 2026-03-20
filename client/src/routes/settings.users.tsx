@@ -11,6 +11,12 @@ function RouteComponent() {
 
 	return (
 		<section className="space-y-4">
+			<div>
+				<h3>Users</h3>
+				<p className="mt-1 text-sm text-zinc-400">
+					Create and manage user accounts, set permissions, and invite others
+				</p>
+			</div>
 			<UserManager
 				users={data?.users ?? []}
 				viewerId={data?.viewer?.id ?? null}

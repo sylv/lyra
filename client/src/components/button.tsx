@@ -1,11 +1,12 @@
 import { Loader2, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { FC, ReactNode } from "react";
+import type { ButtonHTMLAttributes, FC, ReactNode } from "react";
 import { cn } from "../lib/utils";
 
 export enum ButtonStyle {
 	Primary = "bg-amethyst-600/50 not-disabled:hover:bg-amethyst-600/70",
-	Transparent = "bg-transparent not-disabled:hover:bg-zinc-500/20",
+	White = "bg-zinc-100 text-zinc-950 not-disabled:hover:bg-white",
+	Transparent = "bg-transparent text-zinc-400 not-disabled:hover:bg-zinc-500/20 not-disabled:hover:text-zinc-100",
 }
 
 interface ButtonProps {
@@ -17,6 +18,7 @@ interface ButtonProps {
 	style?: ButtonStyle;
 	disabled?: boolean;
 	onClick?: () => void;
+	type?: ButtonHTMLAttributes<HTMLButtonElement>["type"];
 }
 
 export const Button: FC<ButtonProps> = ({
@@ -28,6 +30,7 @@ export const Button: FC<ButtonProps> = ({
 	style = ButtonStyle.Primary,
 	disabled,
 	onClick,
+	type = "button",
 }) => {
 	if (loading) {
 		icon = ["loading-spinner", Loader2];
@@ -64,7 +67,7 @@ export const Button: FC<ButtonProps> = ({
 
 	return (
 		<button
-			type="button"
+			type={type}
 			onClick={onClick}
 			disabled={disabled || loading}
 			className={cn(

@@ -268,12 +268,23 @@ impl Mutation {
         permissions: u32,
     ) -> Result<users::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
         let username = normalize_username(username)?;
         let existing_user = users::Entity::find_by_id(user_id)
             .one(pool)
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?
             .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
+
+        if auth
+            .get_user()
+            .is_some_and(|current_user| current_user.id == existing_user.id)
+            && existing_user.permissions != permissions as i64
+        {
+            return Err(async_graphql::Error::new(
+                "You cannot edit your current account permissions",
+            ));
+        }
 
         let mut user = existing_user.into_active_model();
         user.username = Set(username);
@@ -587,5 +598,34 @@ impl Mutation {
 
         CONTENT_UPDATE.emit();
         Ok(library)
+    }
+
+    pub async fn delete_library(
+        &self,
+        ctx: &Context<'_>,
+        library_id: String,
+    ) -> Result<bool, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+
+        if !auth.has_permission(UserPerms::ADMIN) {
+            return Err(async_graphql::Error::new(
+                "Lacking permission to delete libraries".to_string(),
+            ));
+        }
+
+        libraries::Entity::find_by_id(library_id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("Library not found".to_string()))?;
+
+        libraries::Entity::delete_by_id(library_id)
+            .exec(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        CONTENT_UPDATE.emit();
+        Ok(true)
     }
 }

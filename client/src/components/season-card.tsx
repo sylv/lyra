@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { FC } from "react";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
-import type { SeasonCardFragment } from "../@generated/gql/graphql";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForNode } from "../lib/getPathForMedia";
 import { Image, ImageType } from "./image";

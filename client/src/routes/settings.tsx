@@ -50,7 +50,7 @@ function RouteComponent() {
 					<TabsTrigger value="about">About</TabsTrigger>
 					<TabsTrigger value="import">Import</TabsTrigger>
 				</TabsList>
-				<div className="min-h-[70vh] rounded bg-zinc-400/10 p-6">
+				<div className="min-h-[70vh] rounded-xl border border-zinc-700/60 bg-zinc-500/20 p-6">
 					<Outlet />
 				</div>
 			</Tabs>

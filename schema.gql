@@ -119,6 +119,7 @@ type Mutation {
 	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
 	createLibrary(name: String!, path: String!): Library!
 	updateLibrary(libraryId: String!, name: String!, path: String!): Library!
+	deleteLibrary(libraryId: String!): Boolean!
 }
 
 type Node {
