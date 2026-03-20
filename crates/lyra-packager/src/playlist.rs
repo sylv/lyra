@@ -78,6 +78,49 @@ pub fn create_fmp4_hls_playlist_from_segment_starts_pts(
     Ok(playlist)
 }
 
+pub fn create_webvtt_hls_playlist_from_segment_starts_pts(
+    segment_start_pts: &[i64],
+    total_duration_pts: i64,
+    time_base_num: i64,
+    time_base_den: i64,
+    endpoint_prefix: &str,
+    endpoint_suffix: &str,
+) -> Result<String, String> {
+    if segment_start_pts.is_empty() {
+        return Err("segment_start_pts cannot be empty".to_string());
+    }
+    if total_duration_pts <= 0 {
+        return Err("total_duration_pts must be positive".to_string());
+    }
+
+    let mut playlist = String::new();
+    playlist.push_str("#EXTM3U\n");
+    playlist.push_str("#EXT-X-VERSION:3\n");
+    playlist.push_str("#EXT-X-TARGETDURATION:7\n");
+    playlist.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+    playlist.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
+
+    for (index, &start_pts) in segment_start_pts.iter().enumerate() {
+        let end_pts = segment_start_pts
+            .get(index + 1)
+            .copied()
+            .unwrap_or(total_duration_pts);
+        if end_pts < start_pts {
+            return Err("segment_start_pts must be non-decreasing".to_string());
+        }
+        let seg_pts = end_pts - start_pts;
+        let dur_seconds = (seg_pts as f64) * (time_base_num as f64) / (time_base_den as f64);
+        playlist.push_str(&format!("#EXTINF:{:.6},\n", dur_seconds));
+        playlist.push_str(&format!(
+            "{}{}.vtt{}?startPts={}\n",
+            endpoint_prefix, index, endpoint_suffix, start_pts
+        ));
+    }
+
+    playlist.push_str("#EXT-X-ENDLIST\n");
+    Ok(playlist)
+}
+
 pub fn seconds_to_pts(seconds: f64, time_base_num: i64, time_base_den: i64) -> i64 {
     let pts = seconds * (time_base_den as f64) / (time_base_num as f64);
     pts.round() as i64

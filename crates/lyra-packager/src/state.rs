@@ -2,7 +2,7 @@ use crate::{
     config::TARGET_SEGMENT_SECONDS,
     model::{StreamDescriptor, StreamInfo, StreamType},
     playlist,
-    profiles::{Profile, ProfileContext, SegmentLayout},
+    profiles::{PlaylistKind, Profile, ProfileContext, SegmentLayout},
 };
 use anyhow::{Context, Result};
 use lyra_ffprobe::{
@@ -240,6 +240,19 @@ pub fn build_stream_profiles(
             hls_cuts: Arc::new(hls_cuts),
         }
     };
+    let single_timeline = {
+        let time_base_num = 1;
+        let time_base_den = 1_000_000;
+        let total_duration_pts =
+            playlist::seconds_to_pts(duration_seconds, time_base_num, time_base_den);
+        SegmentTimeline {
+            start_pts: vec![0],
+            total_duration_pts,
+            time_base_num,
+            time_base_den,
+            hls_cuts: Arc::new(String::new()),
+        }
+    };
 
     for stream in streams {
         for profile in profiles {
@@ -288,6 +301,7 @@ pub fn build_stream_profiles(
                     timeline
                 }
                 SegmentLayout::Fixed => &fixed_timeline,
+                SegmentLayout::Single => &single_timeline,
             };
 
             let (
@@ -296,7 +310,7 @@ pub fn build_stream_profiles(
                 timeline_time_base_num,
                 timeline_time_base_den,
                 hls_cuts,
-            ) = build_stream_profile_playlist(timeline, &endpoint_prefix)?;
+            ) = build_stream_profile_playlist(timeline, &endpoint_prefix, profile.playlist_kind())?;
 
             let key = StreamProfileKey {
                 stream_id: stream.stream_id,
@@ -332,15 +346,26 @@ pub fn build_stream_profiles(
 fn build_stream_profile_playlist(
     timeline: &SegmentTimeline,
     endpoint_prefix: &str,
+    playlist_kind: PlaylistKind,
 ) -> Result<(String, Vec<i64>, i64, i64, Arc<String>)> {
-    let playlist = playlist::create_fmp4_hls_playlist_from_segment_starts_pts(
-        &timeline.start_pts,
-        timeline.total_duration_pts,
-        timeline.time_base_num,
-        timeline.time_base_den,
-        endpoint_prefix,
-        "",
-    )
+    let playlist = match playlist_kind {
+        PlaylistKind::Fmp4 => playlist::create_fmp4_hls_playlist_from_segment_starts_pts(
+            &timeline.start_pts,
+            timeline.total_duration_pts,
+            timeline.time_base_num,
+            timeline.time_base_den,
+            endpoint_prefix,
+            "",
+        ),
+        PlaylistKind::WebVtt => playlist::create_webvtt_hls_playlist_from_segment_starts_pts(
+            &timeline.start_pts,
+            timeline.total_duration_pts,
+            timeline.time_base_num,
+            timeline.time_base_den,
+            endpoint_prefix,
+            "",
+        ),
+    }
     .map_err(|err| anyhow::anyhow!(err))?;
     Ok((
         playlist,
@@ -396,6 +421,45 @@ pub fn build_master_playlist(
         playlist.push_str(&format!("#EXT-X-MEDIA:{}\n", media_attrs.join(",")));
     }
 
+    let mut subtitle_renditions: Vec<&StreamDescriptor> = streams
+        .iter()
+        .filter(|stream| stream.stream_type == StreamType::Subtitle)
+        .collect();
+    subtitle_renditions.sort_by_key(|stream| stream.stream_id);
+
+    let mut has_subtitles = false;
+    for stream in &subtitle_renditions {
+        let key = StreamProfileKey {
+            stream_id: stream.stream_id,
+            profile_id: "subtitle_webvtt".to_string(),
+        };
+        if !stream_profiles.contains_key(&key) {
+            continue;
+        }
+        has_subtitles = true;
+        let name = stream
+            .language
+            .clone()
+            .unwrap_or_else(|| format!("Subtitle {}", stream.stream_id));
+        let uri = format!(
+            "/stream/{}/{}/index.m3u8",
+            stream.stream_id, "subtitle_webvtt"
+        );
+        let mut media_attrs = vec![
+            "TYPE=SUBTITLES".to_string(),
+            "GROUP-ID=\"subs\"".to_string(),
+            format!("NAME=\"{}\"", name),
+            "DEFAULT=NO".to_string(),
+            "AUTOSELECT=YES".to_string(),
+            "FORCED=NO".to_string(),
+            format!("URI=\"{}\"", uri),
+        ];
+        if let Some(language) = stream.language.as_deref() {
+            media_attrs.push(format!("LANGUAGE=\"{}\"", language));
+        }
+        playlist.push_str(&format!("#EXT-X-MEDIA:{}\n", media_attrs.join(",")));
+    }
+
     let primary_video = streams
         .iter()
         .find(|stream| stream.is_primary_video && stream.stream_type == StreamType::Video)
@@ -441,6 +505,9 @@ pub fn build_master_playlist(
 
         if has_audio {
             attrs.push("AUDIO=\"audio\"".to_string());
+        }
+        if has_subtitles {
+            attrs.push("SUBTITLES=\"subs\"".to_string());
         }
 
         playlist.push_str(&format!("#EXT-X-STREAM-INF:{}\n", attrs.join(",")));
@@ -545,4 +612,142 @@ fn build_hls_cuts_arg(start_pts: &[i64], time_base_num: i64, time_base_den: i64)
         cuts.push_str(&pts_to_av_time(start, time_base_num, time_base_den).to_string());
     }
     cuts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profiles::{AudioAacProfile, SubtitleWebVttProfile, VideoCopyProfile};
+    use std::sync::atomic::AtomicI64;
+
+    fn sample_stream(
+        stream_id: u32,
+        stream_type: StreamType,
+        language: Option<&str>,
+        is_primary_video: bool,
+    ) -> StreamDescriptor {
+        StreamDescriptor {
+            stream_id,
+            stream_index: stream_id,
+            stream_type,
+            codec_name: match stream_type {
+                StreamType::Video => "h264".to_string(),
+                StreamType::Audio => "aac".to_string(),
+                StreamType::Subtitle => "subrip".to_string(),
+            },
+            bit_rate: Some(1_000_000),
+            frame_rate: Some(24.0),
+            width: Some(1920),
+            height: Some(1080),
+            channels: Some(2),
+            language: language.map(str::to_string),
+            is_primary_video,
+        }
+    }
+
+    fn sample_state(
+        stream: StreamDescriptor,
+        profile: Arc<dyn Profile>,
+    ) -> Arc<StreamProfileState> {
+        Arc::new(StreamProfileState {
+            key: StreamProfileKey {
+                stream_id: stream.stream_id,
+                profile_id: profile.id_name().to_string(),
+            },
+            stream,
+            profile,
+            playlist: String::new(),
+            segment_start_pts: vec![0],
+            timeline_time_base_num: 1,
+            timeline_time_base_den: 1_000_000,
+            hls_cuts: Arc::new(String::new()),
+            segment_dir: PathBuf::new(),
+            input: PathBuf::new(),
+            stream_info: None,
+            keyframes: None,
+            ffmpeg: Mutex::new(FfmpegState::default()),
+            ffmpeg_ops: Mutex::new(()),
+            last_generated: Arc::new(AtomicI64::new(-1)),
+            _segment_guard: SegmentDirGuard {
+                path: PathBuf::new(),
+            },
+        })
+    }
+
+    #[test]
+    fn master_playlist_includes_subtitle_group() {
+        let video_stream = sample_stream(0, StreamType::Video, None, true);
+        let audio_stream = sample_stream(1, StreamType::Audio, Some("en"), false);
+        let subtitle_stream = sample_stream(2, StreamType::Subtitle, Some("en"), false);
+        let streams = vec![
+            video_stream.clone(),
+            audio_stream.clone(),
+            subtitle_stream.clone(),
+        ];
+
+        let mut profiles = HashMap::new();
+        profiles.insert(
+            StreamProfileKey {
+                stream_id: video_stream.stream_id,
+                profile_id: "video_copy".to_string(),
+            },
+            sample_state(video_stream, Arc::new(VideoCopyProfile)),
+        );
+        profiles.insert(
+            StreamProfileKey {
+                stream_id: audio_stream.stream_id,
+                profile_id: "audio_aac".to_string(),
+            },
+            sample_state(audio_stream, Arc::new(AudioAacProfile)),
+        );
+        profiles.insert(
+            StreamProfileKey {
+                stream_id: subtitle_stream.stream_id,
+                profile_id: "subtitle_webvtt".to_string(),
+            },
+            sample_state(subtitle_stream, Arc::new(SubtitleWebVttProfile)),
+        );
+
+        let playlist = build_master_playlist(&profiles, &streams).expect("playlist should build");
+
+        assert!(playlist.contains("TYPE=SUBTITLES"));
+        assert!(playlist.contains("GROUP-ID=\"subs\""));
+        assert!(playlist.contains("URI=\"/stream/2/subtitle_webvtt/index.m3u8\""));
+        assert!(playlist.contains("SUBTITLES=\"subs\""));
+    }
+
+    #[test]
+    fn build_stream_profiles_creates_single_segment_subtitle_playlist() {
+        let root = std::env::temp_dir().join(format!("lyra-packager-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("temp root should exist");
+
+        let stream = sample_stream(7, StreamType::Subtitle, Some("en"), false);
+        let profiles = vec![Arc::new(SubtitleWebVttProfile) as Arc<dyn Profile>];
+        let states = build_stream_profiles(
+            &PathBuf::from("/tmp/input.mkv"),
+            &root,
+            std::slice::from_ref(&stream),
+            None,
+            None,
+            120.0,
+            &profiles,
+        )
+        .expect("subtitle profiles should build");
+
+        let key = StreamProfileKey {
+            stream_id: stream.stream_id,
+            profile_id: "subtitle_webvtt".to_string(),
+        };
+        let state = states.get(&key).expect("subtitle state should exist");
+
+        assert_eq!(state.segment_start_pts, vec![0]);
+        assert!(state.playlist.contains("#EXTINF:120.000000,"));
+        assert!(
+            state
+                .playlist
+                .contains("/stream/7/subtitle_webvtt/segment/0.vtt?startPts=0")
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

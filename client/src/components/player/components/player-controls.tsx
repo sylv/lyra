@@ -32,6 +32,11 @@ interface PlayerAudioTrackOption {
 	label: string;
 }
 
+interface PlayerSubtitleTrackOption {
+	id: number;
+	label: string;
+}
+
 interface PlayerControlsProps {
 	showControls: boolean;
 	isFullscreen: boolean;
@@ -54,6 +59,9 @@ interface PlayerControlsProps {
 	audioTrackOptions: PlayerAudioTrackOption[];
 	selectedAudioTrackId: number | null;
 	onAudioTrackChange: (trackId: number) => void;
+	subtitleTrackOptions: PlayerSubtitleTrackOption[];
+	selectedSubtitleTrackId: number | null;
+	onSubtitleTrackChange: (trackId: number) => void;
 	isSettingsMenuOpen: boolean;
 	onSettingsMenuOpenChange: (open: boolean) => void;
 	onControlsInteractionStart: () => void;
@@ -84,6 +92,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 	audioTrackOptions,
 	selectedAudioTrackId,
 	onAudioTrackChange,
+	subtitleTrackOptions,
+	selectedSubtitleTrackId,
+	onSubtitleTrackChange,
 	isSettingsMenuOpen,
 	onSettingsMenuOpenChange,
 	onControlsInteractionStart,
@@ -210,6 +221,36 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 											onValueChange={(value) => onAudioTrackChange(Number.parseInt(value, 10))}
 										>
 											{audioTrackOptions.map((track) => (
+												<DropdownMenuRadioItem
+													className="py-2.5 focus:bg-zinc-800"
+													key={track.id}
+													value={track.id.toString()}
+												>
+													{track.label}
+												</DropdownMenuRadioItem>
+											))}
+										</DropdownMenuRadioGroup>
+									)}
+								</DropdownMenuSubContent>
+							</DropdownMenuSub>
+							<DropdownMenuSub>
+								<DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
+									Subtitles
+								</DropdownMenuSubTrigger>
+								<DropdownMenuSubContent className="z-[70] border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
+									{subtitleTrackOptions.length === 0 ? (
+										<DropdownMenuItem className="py-2.5" disabled>
+											No subtitles
+										</DropdownMenuItem>
+									) : (
+										<DropdownMenuRadioGroup
+											value={selectedSubtitleTrackId?.toString()}
+											onValueChange={(value) => onSubtitleTrackChange(Number.parseInt(value, 10))}
+										>
+											<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="-1">
+												Off
+											</DropdownMenuRadioItem>
+											{subtitleTrackOptions.map((track) => (
 												<DropdownMenuRadioItem
 													className="py-2.5 focus:bg-zinc-800"
 													key={track.id}

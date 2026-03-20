@@ -124,8 +124,9 @@ async fn stream_segment_handler(
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
     let mut response = Response::new(body);
-    response
-        .headers_mut()
-        .insert(header::CONTENT_TYPE, HeaderValue::from_static("video/mp4"));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(session.segment_content_type()),
+    );
     Ok(response)
 }

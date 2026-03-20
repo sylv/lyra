@@ -71,12 +71,18 @@ pub async fn ensure_ffmpeg_for_segment(
     }
 
     let _guard = state.ffmpeg_ops.lock().await;
-    let last_generated = find_last_generated(&state.segment_dir).await.unwrap_or(-1);
+    let last_generated =
+        find_last_generated(&state.segment_dir, state.profile.segment_file_extension())
+            .await
+            .unwrap_or(-1);
     state
         .last_generated
         .store(last_generated, Ordering::Relaxed);
     let segment_ready = {
-        let path = state.segment_dir.join(format!("{requested_segment}.m4s"));
+        let path = state.segment_dir.join(format!(
+            "{requested_segment}.{}",
+            state.profile.segment_file_extension()
+        ));
         match fs::metadata(&path).await {
             Ok(metadata) => metadata.len() > 0,
             Err(_) => false,
@@ -145,8 +151,12 @@ pub fn parse_segment_index(name: &str) -> Option<i64> {
     if name == "init.mp4" || name == "-1.mp4" {
         return Some(-1);
     }
-    let name = name.strip_suffix(".m4s")?;
-    name.parse::<i64>().ok()
+    for suffix in [".m4s", ".vtt"] {
+        if let Some(name) = name.strip_suffix(suffix) {
+            return name.parse::<i64>().ok();
+        }
+    }
+    None
 }
 
 async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Result<()> {
@@ -268,13 +278,16 @@ async fn stop_ffmpeg(state: &Arc<StreamProfileState>) -> Result<()> {
 async fn throttle_loop(state: Arc<StreamProfileState>) {
     loop {
         sleep(Duration::from_millis(300)).await;
-        let last_generated = match find_last_generated(&state.segment_dir).await {
-            Ok(value) => value,
-            Err(err) => {
-                tracing::warn!(error = %err, "failed to scan segments");
-                continue;
-            }
-        };
+        let last_generated =
+            match find_last_generated(&state.segment_dir, state.profile.segment_file_extension())
+                .await
+            {
+                Ok(value) => value,
+                Err(err) => {
+                    tracing::warn!(error = %err, "failed to scan segments");
+                    continue;
+                }
+            };
         state
             .last_generated
             .store(last_generated, Ordering::Relaxed);
@@ -298,7 +311,7 @@ async fn throttle_loop(state: Arc<StreamProfileState>) {
                         pid,
                         last_generated,
                         last_requested = ffmpeg.last_requested_segment,
-                        "ffmpeg throttled (SIGSTOP)"
+                        "ffmpeg throttled"
                     );
                     ffmpeg.throttled = true;
                 }
@@ -308,7 +321,7 @@ async fn throttle_loop(state: Arc<StreamProfileState>) {
                         pid,
                         last_generated,
                         last_requested = ffmpeg.last_requested_segment,
-                        "ffmpeg resumed (SIGCONT)"
+                        "ffmpeg resumed"
                     );
                     ffmpeg.throttled = false;
                 }
@@ -334,7 +347,7 @@ async fn clean_segments(dir: &Path) -> Result<()> {
         let path = entry.path();
         if path.is_file() {
             if let Some(ext) = path.extension() {
-                if ext == "mp4" || ext == "m4s" || ext == "m3u8" {
+                if ext == "mp4" || ext == "m4s" || ext == "m3u8" || ext == "vtt" {
                     let _ = fs::remove_file(&path).await;
                 }
             }
@@ -343,16 +356,17 @@ async fn clean_segments(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn find_last_generated(dir: &Path) -> Result<i64> {
+async fn find_last_generated(dir: &Path, extension: &str) -> Result<i64> {
     let mut entries = fs::read_dir(dir).await?;
     let mut max_index = -1;
+    let suffix = format!(".{extension}");
     while let Some(entry) = entries.next_entry().await? {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !name.ends_with(".m4s") {
+        if !name.ends_with(&suffix) {
             continue;
         }
-        let stem = &name[..name.len() - 4];
+        let stem = &name[..name.len() - suffix.len()];
         if let Ok(index) = stem.parse::<i64>() {
             if index > max_index {
                 max_index = index;
@@ -365,15 +379,31 @@ async fn find_last_generated(dir: &Path) -> Result<i64> {
 fn update_child_status(state: &StreamProfileState, ffmpeg: &mut FfmpegState) -> Result<()> {
     if let Some(child) = ffmpeg.child.as_mut() {
         if let Ok(Some(status)) = child.try_wait() {
-            let last_generated = state.last_generated.load(Ordering::Relaxed);
+            let last_generated = find_last_generated_blocking(
+                &state.segment_dir,
+                state.profile.segment_file_extension(),
+            )
+            .unwrap_or_else(|| state.last_generated.load(Ordering::Relaxed));
+            state
+                .last_generated
+                .store(last_generated, Ordering::Relaxed);
             let last_index = state.segment_start_pts.len() as i64 - 1;
             if last_index >= 0 && last_generated >= last_index {
-                tracing::info!(
-                    ?status,
-                    last_generated,
-                    last_index,
-                    "ffmpeg exited after segment generation"
-                );
+                if status.success() {
+                    tracing::info!(
+                        ?status,
+                        last_generated,
+                        last_index,
+                        "ffmpeg exited after segment generation"
+                    );
+                } else {
+                    tracing::warn!(
+                        ?status,
+                        last_generated,
+                        last_index,
+                        "ffmpeg exited with a non-zero status after segment generation"
+                    );
+                }
             } else {
                 tracing::error!(
                     ?status,
@@ -389,6 +419,29 @@ fn update_child_status(state: &StreamProfileState, ffmpeg: &mut FfmpegState) -> 
         }
     }
     Ok(())
+}
+
+fn find_last_generated_blocking(dir: &Path, extension: &str) -> Option<i64> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let suffix = format!(".{extension}");
+    let mut max_index = -1;
+
+    for entry in entries {
+        let entry = entry.ok()?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.ends_with(&suffix) {
+            continue;
+        }
+        let stem = &name[..name.len() - suffix.len()];
+        if let Ok(index) = stem.parse::<i64>() {
+            if index > max_index {
+                max_index = index;
+            }
+        }
+    }
+
+    Some(max_index)
 }
 
 fn should_restart_ffmpeg(
@@ -425,8 +478,14 @@ fn should_restart_ffmpeg(
 
 fn parse_segment_index_from_line(line: &str) -> Option<i64> {
     let trimmed = line.trim();
-    let candidate = trimmed.strip_suffix(".m4s")?;
-    candidate.parse::<i64>().ok()
+    for suffix in [".m4s", ".vtt"] {
+        if let Some(candidate) = trimmed.strip_suffix(suffix) {
+            if let Ok(index) = candidate.parse::<i64>() {
+                return Some(index);
+            }
+        }
+    }
+    None
 }
 
 enum FfmpegAction {

@@ -1,7 +1,7 @@
 use crate::{
     config::TARGET_SEGMENT_SECONDS,
     model::StreamType,
-    profiles::{Profile, ProfileContext, ProfileType, SegmentLayout},
+    profiles::{PlaylistKind, Profile, ProfileContext, ProfileType, SegmentLayout},
 };
 use std::ffi::OsString;
 
@@ -23,6 +23,10 @@ impl Profile for VideoCopyProfile {
 
     fn segment_layout(&self) -> SegmentLayout {
         SegmentLayout::Keyframe
+    }
+
+    fn playlist_kind(&self) -> PlaylistKind {
+        PlaylistKind::Fmp4
     }
 
     fn stream_type(&self) -> StreamType {
@@ -109,6 +113,10 @@ impl Profile for VideoH264Profile {
 
     fn segment_layout(&self) -> SegmentLayout {
         SegmentLayout::Fixed
+    }
+
+    fn playlist_kind(&self) -> PlaylistKind {
+        PlaylistKind::Fmp4
     }
 
     fn stream_type(&self) -> StreamType {

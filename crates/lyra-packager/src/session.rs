@@ -3,7 +3,9 @@ use crate::{
     ffmpeg::{
         ensure_ffmpeg_for_init, ensure_ffmpeg_for_segment, parse_segment_index, wait_for_file,
     },
-    profiles::{AudioAacProfile, Profile, VideoCopyProfile, VideoH264Profile},
+    profiles::{
+        AudioAacProfile, Profile, SubtitleWebVttProfile, VideoCopyProfile, VideoH264Profile,
+    },
     state::{
         build_master_playlist, build_stream_profiles, create_process_segment_dir,
         prepare_segments_root_at, streams_from_probe_output,
@@ -41,6 +43,7 @@ pub fn get_profiles() -> Vec<Arc<dyn Profile>> {
         Arc::new(VideoCopyProfile),
         Arc::new(VideoH264Profile),
         Arc::new(AudioAacProfile),
+        Arc::new(SubtitleWebVttProfile),
     ]
 }
 
@@ -188,6 +191,10 @@ impl Session {
 
     pub fn parse_segment_name(name: &str) -> Option<i64> {
         parse_segment_index(name)
+    }
+
+    pub fn segment_content_type(&self) -> &'static str {
+        self.inner.profile.segment_content_type()
     }
 
     pub async fn ensure_init(&self) -> Result<()> {

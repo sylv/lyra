@@ -138,9 +138,10 @@ async fn get_segment(
         .map_err(|_| (StatusCode::NOT_FOUND, "segment not found"))?;
     let body = Body::from_stream(ReaderStream::new(file));
     let mut response = Response::new(body);
-    response
-        .headers_mut()
-        .insert(header::CONTENT_TYPE, HeaderValue::from_static("video/mp4"));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(session.segment_content_type()),
+    );
     Ok(response)
 }
 

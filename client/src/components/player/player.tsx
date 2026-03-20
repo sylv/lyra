@@ -87,6 +87,34 @@ const getAudioTrackLabel = (
 	return `Track ${id + 1}`;
 };
 
+const getSubtitleTrackLabel = (
+	track: {
+		name?: string;
+		lang?: string;
+		language?: string;
+	},
+	id: number,
+) => {
+	const name = track.name?.trim();
+	const trackLanguage = toLanguageName(track.lang) || toLanguageName(track.language);
+	if (name) {
+		const parsedName = toLanguageName(name);
+		if (parsedName) {
+			return parsedName;
+		}
+		if (trackLanguage) {
+			return `${name} (${trackLanguage})`;
+		}
+		return name;
+	}
+
+	if (trackLanguage) {
+		return trackLanguage;
+	}
+
+	return `Subtitle ${id + 1}`;
+};
+
 const formatResumeTimestamp = (seconds: number): string => {
 	const safeSeconds = Math.max(0, Math.floor(seconds));
 	const hours = Math.floor(safeSeconds / 3600);
@@ -167,6 +195,8 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
 	const [audioTrackOptions, setAudioTrackOptions] = useState<Array<{ id: number; label: string }>>([]);
 	const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<number | null>(null);
+	const [subtitleTrackOptions, setSubtitleTrackOptions] = useState<Array<{ id: number; label: string }>>([]);
+	const [selectedSubtitleTrackId, setSelectedSubtitleTrackId] = useState<number | null>(null);
 	const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(false);
 	const [resumePromptPosition, setResumePromptPosition] = useState<number | null>(null);
 	const [isControlsInteracting, setIsControlsInteracting] = useState<boolean>(false);
@@ -254,6 +284,8 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	useEffect(() => {
 		setAudioTrackOptions([]);
 		setSelectedAudioTrackId(null);
+		setSubtitleTrackOptions([]);
+		setSelectedSubtitleTrackId(null);
 		setIsSettingsMenuOpen(false);
 		setResumePromptPosition(null);
 		resumePromptDecisionRef.current = null;
@@ -351,6 +383,15 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 				setSelectedAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : null);
 			};
 
+			const syncSubtitleTracks = () => {
+				const tracks = hls.subtitleTracks.map((track, id) => ({
+					id,
+					label: getSubtitleTrackLabel(track, id),
+				}));
+				setSubtitleTrackOptions(tracks);
+				setSelectedSubtitleTrackId(tracks.length > 0 ? (hls.subtitleTrack >= 0 ? hls.subtitleTrack : -1) : null);
+			};
+
 			hls.on(Hls.Events.ERROR, (event, data) => {
 				console.error("HLS error:", event, data);
 				if (data.fatal) {
@@ -361,6 +402,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 			});
 			hls.on(Hls.Events.MANIFEST_PARSED, () => {
 				syncAudioTracks();
+				syncSubtitleTracks();
 				if (!hasResumableWatchProgress) {
 					startLoadAt(-1);
 					return;
@@ -397,6 +439,22 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 			hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
 				if (typeof data.id === "number") {
 					setSelectedAudioTrackId(data.id);
+				}
+			});
+			hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
+				syncSubtitleTracks();
+			});
+			hls.on(Hls.Events.SUBTITLE_TRACKS_CLEARED, () => {
+				setSubtitleTrackOptions([]);
+				setSelectedSubtitleTrackId(null);
+			});
+			hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (_event, data) => {
+				if (typeof data.id === "number") {
+					setSelectedSubtitleTrackId(data.id);
+				} else if (hls.subtitleTracks.length > 0) {
+					setSelectedSubtitleTrackId(-1);
+				} else {
+					setSelectedSubtitleTrackId(null);
 				}
 			});
 
@@ -785,6 +843,24 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		setSelectedAudioTrackId(trackId);
 	};
 
+	const onSubtitleTrackChange = (trackId: number) => {
+		const hls = hlsRef.current;
+		if (!hls || Number.isNaN(trackId)) {
+			return;
+		}
+
+		if (trackId < 0) {
+			hls.subtitleDisplay = false;
+			hls.subtitleTrack = -1;
+			setSelectedSubtitleTrackId(-1);
+			return;
+		}
+
+		hls.subtitleDisplay = true;
+		hls.subtitleTrack = trackId;
+		setSelectedSubtitleTrackId(trackId);
+	};
+
 	const onSeek = (time: number) => {
 		if (videoRef.current) {
 			videoRef.current.currentTime = time;
@@ -996,6 +1072,9 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 					audioTrackOptions={audioTrackOptions}
 					selectedAudioTrackId={selectedAudioTrackId}
 					onAudioTrackChange={onAudioTrackChange}
+					subtitleTrackOptions={subtitleTrackOptions}
+					selectedSubtitleTrackId={selectedSubtitleTrackId}
+					onSubtitleTrackChange={onSubtitleTrackChange}
 					isSettingsMenuOpen={isSettingsMenuOpen}
 					onSettingsMenuOpenChange={setIsSettingsMenuOpen}
 					onControlsInteractionStart={beginControlsInteraction}
