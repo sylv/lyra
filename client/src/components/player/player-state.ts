@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { createJSONStorage, persist, type PersistOptions, type StateStorage } from "zustand/middleware";
+import { createJSONStorage, persist, type PersistOptions } from "zustand/middleware";
 
 interface PlayerState {
 	currentItemId: string | null;
@@ -13,15 +13,9 @@ interface PlayerState {
 
 type PersistedPlayerState = Pick<PlayerState, "currentItemId" | "volume" | "isMuted">;
 
-const NOOP_STORAGE: StateStorage = {
-	getItem: () => null,
-	setItem: () => {},
-	removeItem: () => {},
-};
-
 const playerPersistOptions: PersistOptions<PlayerState, PersistedPlayerState> = {
 	name: "lyra.player",
-	storage: createJSONStorage(() => (typeof window === "undefined" ? NOOP_STORAGE : window.localStorage)),
+	storage: createJSONStorage(() => window.localStorage),
 	partialize: (state) => ({
 		currentItemId: state.currentItemId,
 		volume: state.volume,

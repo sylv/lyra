@@ -197,7 +197,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 			return;
 		}
 
-		const step = Math.max(duration / 20, 5);
+		const step = 5;
 		if (event.key === "ArrowLeft") {
 			event.preventDefault();
 			onChange(Math.max(0, currentTime - step));

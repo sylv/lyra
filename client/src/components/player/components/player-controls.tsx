@@ -22,7 +22,7 @@ import {
 	DropdownMenuTrigger,
 } from "../../ui/dropdown-menu";
 import { formatPlayerTime } from "../utils";
-import { PaddedPlayerButton, PlayerButton } from "./player-button";
+import { PlayerButton } from "./player-button";
 import { PlayerProgressBar } from "./player-progress-bar";
 import { PlayerVolumeControl } from "./player-volume-control";
 
@@ -136,9 +136,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 			<div className="flex items-center justify-between">
 				{/* Left side */}
 				<div className="flex items-center gap-2">
-					<PaddedPlayerButton onClick={onTogglePlaying} side="left">
+					<PlayerButton aria-label={playing ? "Pause" : "Play"} onClick={onTogglePlaying}>
 						{playing ? <PauseIcon className="size-6 text-white" /> : <PlayIcon className="size-6 text-white" />}
-					</PaddedPlayerButton>
+					</PlayerButton>
 					{showItemNavigation && (
 						<>
 							<PlayerButton
@@ -223,8 +223,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 							</DropdownMenuSub>
 						</DropdownMenuContent>
 					</DropdownMenu>
-					<PaddedPlayerButton
-						side="right"
+					<PlayerButton
 						aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
 						onClick={(e) => {
 							e.stopPropagation();
@@ -232,7 +231,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 						}}
 					>
 						{isFullscreen ? <MinimizeIcon className="size-5" /> : <MaximizeIcon className="size-5" />}
-					</PaddedPlayerButton>
+					</PlayerButton>
 				</div>
 			</div>
 		</div>

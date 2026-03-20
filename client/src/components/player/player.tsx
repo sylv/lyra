@@ -23,10 +23,9 @@ import {
 } from "./player-state";
 
 const NUMBER_REGEX = /^\d$/;
-const LANGUAGE_DISPLAY_NAMES =
-	typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
-		? new Intl.DisplayNames(["en"], { type: "language" })
-		: null;
+const ARROW_SEEK_SECONDS = 5;
+const LETTER_SEEK_SECONDS = 10;
+const LANGUAGE_DISPLAY_NAMES = new Intl.DisplayNames(["en"], { type: "language" });
 
 const toLanguageName = (value?: string) => {
 	if (!value || LANGUAGE_DISPLAY_NAMES == null) {
@@ -182,6 +181,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const hlsRef = useRef<Hls | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const surfaceRef = useRef<HTMLDivElement>(null);
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const doubleClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const resumePromptDecisionRef = useRef<"confirm" | "cancel" | null>(null);
@@ -602,6 +602,17 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		}
 	};
 
+	const seekBy = (deltaSeconds: number) => {
+		const video = videoRef.current;
+		if (!video) {
+			return;
+		}
+
+		const maxTime = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : duration;
+		const nextTime = video.currentTime + deltaSeconds;
+		video.currentTime = Math.max(0, maxTime > 0 ? Math.min(maxTime, nextTime) : nextTime);
+	};
+
 	const showControlsTemporarily = () => {
 		setShowControls(true);
 		if (controlsTimeoutRef.current) {
@@ -662,53 +673,82 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		}, 300);
 	};
 
-	useEffect(() => {
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (isSettingsMenuOpen) {
-				return;
-			}
+	// keep player shortcuts scoped to the focused player surface so the rest of the app keeps normal typing behavior.
+	const handlePlayerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+		if (event.defaultPrevented || isSettingsMenuOpen) {
+			return;
+		}
 
-			const target = event.target as HTMLElement | null;
-			if (target?.closest("[data-slot='dialog-content']") || target?.closest("[data-slot='dropdown-menu-content']")) {
-				return;
-			}
+		if (event.altKey || event.ctrlKey || event.metaKey) {
+			return;
+		}
 
+		const target = event.target as HTMLElement | null;
+		if (target?.closest("[data-slot='dialog-content']") || target?.closest("[data-slot='dropdown-menu-content']")) {
+			return;
+		}
+
+		if (
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			target instanceof HTMLSelectElement ||
+			target?.isContentEditable
+		) {
+			return;
+		}
+
+		if ((event.key === " " || event.key === "Enter") && target instanceof HTMLButtonElement) {
+			return;
+		}
+
+		if (event.key === "Enter" && target === event.currentTarget) {
+			event.preventDefault();
+			event.stopPropagation();
+			handleContainerClick();
+			return;
+		}
+
+		const key = event.key.toLowerCase();
+		const isNumber = NUMBER_REGEX.test(event.key);
+		let triggered = true;
+
+		if (key === "arrowleft") {
+			seekBy(-ARROW_SEEK_SECONDS);
+		} else if (key === "arrowright") {
+			seekBy(ARROW_SEEK_SECONDS);
+		} else if (key === "j") {
+			seekBy(-LETTER_SEEK_SECONDS);
+		} else if (key === "l") {
+			seekBy(LETTER_SEEK_SECONDS);
+		} else if (key === "f") {
+			togglePlayerFullscreen();
+		} else if (key === "m") {
+			onToggleMute();
+		} else if (key === " ") {
+			onTogglePlaying();
+		} else if (event.key === "Escape") {
+			togglePlayerFullscreen(false);
+		} else if (isNumber) {
 			const video = videoRef.current;
-			if (!video) return;
-
-			const isNumber = NUMBER_REGEX.test(event.key);
-
-			let triggered = true;
-			if (event.key === "ArrowLeft") {
-				video.currentTime -= 10;
-			} else if (event.key === "ArrowRight") {
-				video.currentTime += 30;
-			} else if (event.key === "f") {
-				togglePlayerFullscreen();
-			} else if (event.key === "m") {
-				onToggleMute();
-			} else if (event.key === "c") {
-				// todo: enable captions
-			} else if (event.key === " ") {
-				onTogglePlaying();
-				event.preventDefault();
-			} else if (event.key === "Escape") {
-				togglePlayerFullscreen(false);
-			} else if (isNumber) {
-				const seekTo = (parseInt(event.key, 10) / 10) * duration;
-				if (seekTo) {
-					video.currentTime = seekTo;
-				}
-			} else {
-				triggered = false;
+			if (!video) {
+				return;
 			}
 
-			if (triggered) {
-				event.preventDefault();
-				event.stopPropagation();
+			const seekTo = (Number.parseInt(event.key, 10) / 10) * duration;
+			if (seekTo) {
+				video.currentTime = seekTo;
 			}
-		};
+		} else {
+			triggered = false;
+		}
 
+		if (triggered) {
+			event.preventDefault();
+			event.stopPropagation();
+		}
+	};
+
+	useEffect(() => {
 		// closing browser fullscreen will set the player to also not be fullscreen
 		const handleFullscreenChange = () => {
 			if (!document.fullscreenElement) {
@@ -716,13 +756,15 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 			}
 		};
 
-		document.addEventListener("keydown", handleKeyDown);
 		document.addEventListener("fullscreenchange", handleFullscreenChange);
 		return () => {
-			document.removeEventListener("keydown", handleKeyDown);
 			document.removeEventListener("fullscreenchange", handleFullscreenChange);
 		};
-	}, [duration, onToggleMute, onTogglePlaying, isSettingsMenuOpen]);
+	}, []);
+
+	useEffect(() => {
+		surfaceRef.current?.focus();
+	}, [currentMedia?.id]);
 
 	const onAudioTrackChange = (trackId: number) => {
 		const hls = hlsRef.current;
@@ -811,21 +853,23 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 
 			{/* Overlay controls */}
 			<div
+				ref={surfaceRef}
 				className={cn(
 					"absolute inset-0 cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
 					!isFullscreen && "rounded",
 				)}
 				role="button"
 				tabIndex={0}
-				onClick={handleContainerClick}
-				onKeyDown={(event) => {
-					if (event.key !== "Enter" && event.key !== " ") {
+				onKeyDown={handlePlayerKeyDown}
+				onMouseDownCapture={(event) => {
+					const target = event.target as HTMLElement | null;
+					if (target?.closest("button, [role='slider']")) {
 						return;
 					}
 
-					event.preventDefault();
-					handleContainerClick();
+					surfaceRef.current?.focus();
 				}}
+				onClick={handleContainerClick}
 				aria-label="Toggle play/pause"
 			>
 				{/* Vignette overlay */}
