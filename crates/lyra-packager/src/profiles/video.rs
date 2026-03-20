@@ -56,11 +56,7 @@ impl Profile for VideoCopyProfile {
         let mut a: Vec<OsString> = Vec::new();
 
         if start_segment > 0 {
-            // We bump by 0.05s to bias towards the keyframe that starts the target segment.
-            // The stream copy path relies on keyframe-aligned seeks; this reduces off-by-one
-            // segment selection when timestamps are slightly earlier than the desired boundary.
-            let seek_seconds = start_seconds + 0.05;
-            ffarg!(a, "-ss", format!("{seek_seconds:.6}"));
+            ffarg!(a, "-ss", format!("{start_seconds:.6}"));
             ffarg!(a, "-noaccurate_seek");
         }
 
@@ -141,7 +137,6 @@ impl Profile for VideoH264Profile {
         let mut a: Vec<OsString> = Vec::new();
 
         if start_segment > 0 {
-            // unlike copy, we can seek to the exact start position using exact seeks.
             ffarg!(a, "-ss", format!("{start_seconds:.6}"));
         }
 
