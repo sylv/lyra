@@ -25,95 +25,6 @@ import {
 const NUMBER_REGEX = /^\d$/;
 const ARROW_SEEK_SECONDS = 5;
 const LETTER_SEEK_SECONDS = 10;
-const LANGUAGE_DISPLAY_NAMES = new Intl.DisplayNames(["en"], { type: "language" });
-
-const toLanguageName = (value?: string) => {
-	if (!value || LANGUAGE_DISPLAY_NAMES == null) {
-		return null;
-	}
-
-	const trimmed = value.trim();
-	if (!trimmed) {
-		return null;
-	}
-
-	const variants = [
-		trimmed.replaceAll("_", "-"),
-		trimmed.toLowerCase().replaceAll("_", "-"),
-		trimmed.toLowerCase().split("-")[0],
-	];
-	for (const variant of variants) {
-		if (!variant) {
-			continue;
-		}
-		try {
-			const label = LANGUAGE_DISPLAY_NAMES.of(variant);
-			if (label) {
-				return label;
-			}
-		} catch {
-			// ignore invalid language tags
-		}
-	}
-
-	return null;
-};
-
-const getAudioTrackLabel = (
-	track: {
-		name?: string;
-		lang?: string;
-		language?: string;
-	},
-	id: number,
-) => {
-	const name = track.name?.trim();
-	const trackLanguage = toLanguageName(track.lang) || toLanguageName(track.language);
-	if (name) {
-		const parsedName = toLanguageName(name);
-		if (parsedName) {
-			return parsedName;
-		}
-		if (trackLanguage) {
-			return `${name} (${trackLanguage})`;
-		}
-		return name;
-	}
-
-	if (trackLanguage) {
-		return trackLanguage;
-	}
-
-	return `Track ${id + 1}`;
-};
-
-const getSubtitleTrackLabel = (
-	track: {
-		name?: string;
-		lang?: string;
-		language?: string;
-	},
-	id: number,
-) => {
-	const name = track.name?.trim();
-	const trackLanguage = toLanguageName(track.lang) || toLanguageName(track.language);
-	if (name) {
-		const parsedName = toLanguageName(name);
-		if (parsedName) {
-			return parsedName;
-		}
-		if (trackLanguage) {
-			return `${name} (${trackLanguage})`;
-		}
-		return name;
-	}
-
-	if (trackLanguage) {
-		return trackLanguage;
-	}
-
-	return `Subtitle ${id + 1}`;
-};
 
 const formatResumeTimestamp = (seconds: number): string => {
 	const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -132,6 +43,26 @@ const UpdateWatchState = graphql(`
 		updateWatchProgress(fileId: $fileId, progressPercent: $progressPercent) {
 			progressPercent
 			updatedAt
+		}
+	}
+`);
+
+const SetPreferredAudio = graphql(`
+	mutation SetPreferredAudio($language: String, $disposition: TrackDispositionPreference) {
+		setPreferredAudio(language: $language, disposition: $disposition) {
+			id
+			preferredAudioLanguage
+			preferredAudioDisposition
+		}
+	}
+`);
+
+const SetPreferredSubtitle = graphql(`
+	mutation SetPreferredSubtitle($language: String, $disposition: TrackDispositionPreference) {
+		setPreferredSubtitle(language: $language, disposition: $disposition) {
+			id
+			preferredSubtitleLanguage
+			preferredSubtitleDisposition
 		}
 	}
 `);
@@ -159,6 +90,20 @@ const ItemPlaybackQuery = graphql(`
 			}
 			file {
 				id
+				tracks {
+					trackIndex
+					manifestIndex
+					trackType
+					displayName
+					language
+					disposition
+					isForced
+				}
+				recommendedTracks {
+					manifestIndex
+					trackType
+					enabled
+				}
 				segments {
 					kind
 					startMs
@@ -374,22 +319,49 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 			});
 			hlsRef.current = hls;
 
+			const serverTracks = currentMedia.file?.tracks ?? [];
+			const serverTrackByManifestIndex = (type: "AUDIO" | "SUBTITLE", manifestIndex: number) =>
+				serverTracks.find((t) => t.trackType === type && t.manifestIndex === manifestIndex);
+
 			const syncAudioTracks = () => {
-				const tracks = hls.audioTracks.map((track, id) => ({
-					id,
-					label: getAudioTrackLabel(track, id),
-				}));
+				const tracks = hls.audioTracks.map((_track, id) => {
+					const serverTrack = serverTrackByManifestIndex("AUDIO", id);
+					return {
+						id,
+						label: serverTrack?.displayName ?? `Audio ${id + 1}`,
+					};
+				});
 				setAudioTrackOptions(tracks);
 				setSelectedAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : null);
 			};
 
 			const syncSubtitleTracks = () => {
-				const tracks = hls.subtitleTracks.map((track, id) => ({
-					id,
-					label: getSubtitleTrackLabel(track, id),
-				}));
+				const tracks = hls.subtitleTracks.map((_track, id) => {
+					const serverTrack = serverTrackByManifestIndex("SUBTITLE", id);
+					return {
+						id,
+						label: serverTrack?.displayName ?? `Subtitle ${id + 1}`,
+					};
+				});
 				setSubtitleTrackOptions(tracks);
 				setSelectedSubtitleTrackId(tracks.length > 0 ? (hls.subtitleTrack >= 0 ? hls.subtitleTrack : -1) : null);
+			};
+
+			const applyRecommendations = () => {
+				const recommendations = currentMedia.file?.recommendedTracks ?? [];
+				for (const rec of recommendations) {
+					if (rec.trackType === "AUDIO" && rec.enabled) {
+						hls.audioTrack = rec.manifestIndex;
+					}
+				}
+				const enabledSub = recommendations.find((r) => r.trackType === "SUBTITLE" && r.enabled);
+				if (enabledSub) {
+					hls.subtitleDisplay = true;
+					hls.subtitleTrack = enabledSub.manifestIndex;
+				} else {
+					hls.subtitleDisplay = false;
+					hls.subtitleTrack = -1;
+				}
 			};
 
 			hls.on(Hls.Events.ERROR, (event, data) => {
@@ -403,6 +375,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 			hls.on(Hls.Events.MANIFEST_PARSED, () => {
 				syncAudioTracks();
 				syncSubtitleTracks();
+				applyRecommendations();
 				if (!hasResumableWatchProgress) {
 					startLoadAt(-1);
 					return;
@@ -507,6 +480,12 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	}, [volume, isMuted]);
 
 	const [updateWatchProgress] = useMutation(UpdateWatchState);
+	const [setPreferredAudio] = useMutation(SetPreferredAudio, {
+		refetchQueries: [{ query: ItemPlaybackQuery, variables: { itemId } }],
+	});
+	const [setPreferredSubtitle] = useMutation(SetPreferredSubtitle, {
+		refetchQueries: [{ query: ItemPlaybackQuery, variables: { itemId } }],
+	});
 
 	// watch state handling
 	useEffect(() => {
@@ -833,32 +812,78 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		surfaceRef.current?.focus();
 	}, [currentMedia?.id]);
 
-	const onAudioTrackChange = (trackId: number) => {
+	const onAudioTrackChange = (trackId: number | null) => {
 		const hls = hlsRef.current;
-		if (!hls || Number.isNaN(trackId)) {
+		if (!hls) {
+			return;
+		}
+
+		if (trackId === null) {
+			// "Auto" — reset to first track and clear preference
+			hls.audioTrack = 0;
+			setSelectedAudioTrackId(0);
+			setPreferredAudio({ variables: { language: null, disposition: null } }).catch((err: unknown) => {
+				console.error("failed to save audio preference", err);
+			});
+			return;
+		}
+
+		if (Number.isNaN(trackId)) {
 			return;
 		}
 
 		hls.audioTrack = trackId;
 		setSelectedAudioTrackId(trackId);
+
+		// only persist preference when the track has a parseable language
+		const serverTrack = currentMedia?.file?.tracks?.find(
+			(t) => t.trackType === "AUDIO" && t.manifestIndex === trackId,
+		);
+		if (serverTrack?.language != null) {
+			setPreferredAudio({
+				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
+			}).catch((err: unknown) => {
+				console.error("failed to save audio preference", err);
+			});
+		}
 	};
 
-	const onSubtitleTrackChange = (trackId: number) => {
+	const onSubtitleTrackChange = (trackId: number | null) => {
 		const hls = hlsRef.current;
-		if (!hls || Number.isNaN(trackId)) {
+		if (!hls) {
 			return;
 		}
 
-		if (trackId < 0) {
+		if (trackId === null || trackId < 0) {
+			// "Auto" / "Off" — disable subtitles and clear preference
 			hls.subtitleDisplay = false;
 			hls.subtitleTrack = -1;
-			setSelectedSubtitleTrackId(-1);
+			setSelectedSubtitleTrackId(trackId === null ? null : -1);
+			setPreferredSubtitle({ variables: { language: null, disposition: null } }).catch((err: unknown) => {
+				console.error("failed to save subtitle preference", err);
+			});
+			return;
+		}
+
+		if (Number.isNaN(trackId)) {
 			return;
 		}
 
 		hls.subtitleDisplay = true;
 		hls.subtitleTrack = trackId;
 		setSelectedSubtitleTrackId(trackId);
+
+		// only persist preference when the track has a parseable language
+		const serverTrack = currentMedia?.file?.tracks?.find(
+			(t) => t.trackType === "SUBTITLE" && t.manifestIndex === trackId,
+		);
+		if (serverTrack?.language != null) {
+			setPreferredSubtitle({
+				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
+			}).catch((err: unknown) => {
+				console.error("failed to save subtitle preference", err);
+			});
+		}
 	};
 
 	const onSeek = (time: number) => {

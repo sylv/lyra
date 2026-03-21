@@ -8,6 +8,7 @@ use crate::entities::users::UserPerms;
 use crate::entities::{
     files, libraries, library_users, node_files, user_sessions, users, watch_progress,
 };
+use crate::graphql::properties::TrackDispositionPreference;
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
 use argon2::{
@@ -690,6 +691,62 @@ impl Mutation {
 
         CONTENT_UPDATE.emit();
         Ok(library)
+    }
+
+    pub async fn set_preferred_audio(
+        &self,
+        ctx: &Context<'_>,
+        language: Option<String>,
+        disposition: Option<TrackDispositionPreference>,
+    ) -> Result<users::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+
+        let existing = users::Entity::find_by_id(user.id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+
+        let mut active = existing.into_active_model();
+        active.preferred_audio_language = Set(language);
+        active.preferred_audio_disposition = Set(disposition.map(|d| d.as_str().to_string()));
+
+        let updated = active
+            .update(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        Ok(updated)
+    }
+
+    pub async fn set_preferred_subtitle(
+        &self,
+        ctx: &Context<'_>,
+        language: Option<String>,
+        disposition: Option<TrackDispositionPreference>,
+    ) -> Result<users::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+
+        let existing = users::Entity::find_by_id(user.id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+
+        let mut active = existing.into_active_model();
+        active.preferred_subtitle_language = Set(language);
+        active.preferred_subtitle_disposition = Set(disposition.map(|d| d.as_str().to_string()));
+
+        let updated = active
+            .update(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        Ok(updated)
     }
 
     pub async fn delete_library(

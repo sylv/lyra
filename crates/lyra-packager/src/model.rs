@@ -18,6 +18,10 @@ pub struct StreamDescriptor {
     pub channels: Option<u32>,
     pub language: Option<String>,
     pub is_primary_video: bool,
+    pub is_forced: bool,
+    pub is_sdh: bool,
+    pub is_commentary: bool,
+    pub display_name: String,
 }
 
 #[derive(Clone, Debug)]

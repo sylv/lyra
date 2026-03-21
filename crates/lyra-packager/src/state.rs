@@ -98,6 +98,36 @@ struct SegmentTimeline {
     hls_cuts: Arc<String>,
 }
 
+/// resolve a language tag to the canonical english display name.
+/// handles both iso 639-1 ("en") and iso 639-3 ("eng").
+pub fn language_to_display_name(tag: &str) -> Option<&'static str> {
+    isolang::Language::from_639_3(tag)
+        .or_else(|| isolang::Language::from_639_1(tag))
+        .map(|l| l.to_name())
+}
+
+pub fn build_track_display_name(
+    language: Option<&str>,
+    title: Option<&str>,
+    fallback: &str,
+    is_forced: bool,
+    is_sdh: bool,
+    is_commentary: bool,
+) -> String {
+    let base = language
+        .and_then(language_to_display_name)
+        .map(str::to_string)
+        .or_else(|| title.map(str::to_string))
+        .unwrap_or_else(|| fallback.to_string());
+
+    match (is_forced, is_sdh, is_commentary) {
+        (true, _, _) => format!("{base} (Forced)"),
+        (_, true, _) => format!("{base} (SDH)"),
+        (_, _, true) => format!("{base} (Commentary)"),
+        _ => base,
+    }
+}
+
 pub fn prepare_segments_root_at(root: &Path) -> Result<PathBuf> {
     let root = root.to_path_buf();
     std::fs::create_dir_all(&root)
@@ -165,6 +195,20 @@ pub fn streams_from_probe_output(
             });
         }
 
+        let fallback = match stream_type {
+            StreamType::Audio => format!("Audio {}", streams.iter().filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Audio).count() + 1),
+            StreamType::Subtitle => format!("Subtitle {}", streams.iter().filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Subtitle).count() + 1),
+            StreamType::Video => format!("Video {}", streams.iter().filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Video).count() + 1),
+        };
+        let display_name = build_track_display_name(
+            stream.language.as_deref(),
+            stream.title.as_deref(),
+            &fallback,
+            stream.is_forced,
+            stream.is_hearing_impaired,
+            stream.is_commentary,
+        );
+
         streams.push(StreamDescriptor {
             stream_id: stream_index,
             stream_index,
@@ -178,6 +222,10 @@ pub fn streams_from_probe_output(
             channels: stream.channels,
             language: stream.language,
             is_primary_video,
+            is_forced: stream.is_forced,
+            is_sdh: stream.is_hearing_impaired,
+            is_commentary: stream.is_commentary,
+            display_name,
         });
     }
 
@@ -400,10 +448,7 @@ pub fn build_master_playlist(
             continue;
         }
         has_audio = true;
-        let name = stream
-            .language
-            .clone()
-            .unwrap_or_else(|| format!("Audio {}", stream.stream_id));
+        let name = stream.display_name.clone();
         let language = stream.language.as_deref().unwrap_or("und");
         let uri = format!("/stream/{}/{}/index.m3u8", stream.stream_id, "audio_aac");
         let mut media_attrs = vec![
@@ -437,21 +482,19 @@ pub fn build_master_playlist(
             continue;
         }
         has_subtitles = true;
-        let name = stream
-            .language
-            .clone()
-            .unwrap_or_else(|| format!("Subtitle {}", stream.stream_id));
+        let name = stream.display_name.clone();
         let uri = format!(
             "/stream/{}/{}/index.m3u8",
             stream.stream_id, "subtitle_webvtt"
         );
+        let forced_attr = if stream.is_forced { "FORCED=YES" } else { "FORCED=NO" };
         let mut media_attrs = vec![
             "TYPE=SUBTITLES".to_string(),
             "GROUP-ID=\"subs\"".to_string(),
             format!("NAME=\"{}\"", name),
             "DEFAULT=NO".to_string(),
             "AUTOSELECT=YES".to_string(),
-            "FORCED=NO".to_string(),
+            forced_attr.to_string(),
             format!("URI=\"{}\"", uri),
         ];
         if let Some(language) = stream.language.as_deref() {
@@ -626,6 +669,14 @@ mod tests {
         language: Option<&str>,
         is_primary_video: bool,
     ) -> StreamDescriptor {
+        let display_name = language
+            .and_then(language_to_display_name)
+            .map(str::to_string)
+            .unwrap_or_else(|| match stream_type {
+                StreamType::Audio => "Audio 1".to_string(),
+                StreamType::Subtitle => "Subtitle 1".to_string(),
+                StreamType::Video => "Video 1".to_string(),
+            });
         StreamDescriptor {
             stream_id,
             stream_index: stream_id,
@@ -642,6 +693,10 @@ mod tests {
             channels: Some(2),
             language: language.map(str::to_string),
             is_primary_video,
+            is_forced: false,
+            is_sdh: false,
+            is_commentary: false,
+            display_name,
         }
     }
 

@@ -5,7 +5,7 @@ pub mod model;
 pub mod playlist;
 pub mod profiles;
 pub mod session;
-mod state;
+pub mod state;
 
 pub use session::{
     Package, Session, SessionKey, build_package, build_package_with_defaults,

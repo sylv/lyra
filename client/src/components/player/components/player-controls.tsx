@@ -58,10 +58,10 @@ interface PlayerControlsProps {
 	onToggleFullscreen: () => void;
 	audioTrackOptions: PlayerAudioTrackOption[];
 	selectedAudioTrackId: number | null;
-	onAudioTrackChange: (trackId: number) => void;
+	onAudioTrackChange: (trackId: number | null) => void;
 	subtitleTrackOptions: PlayerSubtitleTrackOption[];
 	selectedSubtitleTrackId: number | null;
-	onSubtitleTrackChange: (trackId: number) => void;
+	onSubtitleTrackChange: (trackId: number | null) => void;
 	isSettingsMenuOpen: boolean;
 	onSettingsMenuOpenChange: (open: boolean) => void;
 	onControlsInteractionStart: () => void;
@@ -217,9 +217,16 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 										</DropdownMenuItem>
 									) : (
 										<DropdownMenuRadioGroup
-											value={selectedAudioTrackId?.toString()}
-											onValueChange={(value) => onAudioTrackChange(Number.parseInt(value, 10))}
+											value={selectedAudioTrackId?.toString() ?? "auto"}
+											onValueChange={(value) =>
+												value === "auto"
+													? onAudioTrackChange(null)
+													: onAudioTrackChange(Number.parseInt(value, 10))
+											}
 										>
+											<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="auto">
+												Auto
+											</DropdownMenuRadioItem>
 											{audioTrackOptions.map((track) => (
 												<DropdownMenuRadioItem
 													className="py-2.5 focus:bg-zinc-800"
@@ -244,9 +251,20 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 										</DropdownMenuItem>
 									) : (
 										<DropdownMenuRadioGroup
-											value={selectedSubtitleTrackId?.toString()}
-											onValueChange={(value) => onSubtitleTrackChange(Number.parseInt(value, 10))}
+											value={selectedSubtitleTrackId?.toString() ?? "auto"}
+											onValueChange={(value) => {
+												if (value === "auto") {
+													onSubtitleTrackChange(null);
+												} else if (value === "-1") {
+													onSubtitleTrackChange(-1);
+												} else {
+													onSubtitleTrackChange(Number.parseInt(value, 10));
+												}
+											}}
 										>
+											<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="auto">
+												Auto
+											</DropdownMenuRadioItem>
 											<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="-1">
 												Off
 											</DropdownMenuRadioItem>

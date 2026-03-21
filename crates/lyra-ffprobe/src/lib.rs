@@ -58,6 +58,10 @@ pub struct Stream {
     pub r_frame_rate: Option<String>,
     pub extradata: Option<String>,
     pub extradata_size: Option<u32>,
+    pub is_forced: bool,
+    pub is_hearing_impaired: bool,
+    pub is_commentary: bool,
+    pub title: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,6 +76,18 @@ pub struct FfprobeOutput {
     pub streams: Vec<FfprobeStream>,
     #[serde(default)]
     pub format: Option<FfprobeFormat>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct FfprobeDisposition {
+    #[serde(default)]
+    pub forced: i64,
+    #[serde(default)]
+    pub hearing_impaired: i64,
+    #[serde(default)]
+    pub comment: i64,
+    #[serde(default)]
+    pub default: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -132,6 +148,8 @@ pub struct FfprobeStream {
     pub extradata_size: Option<i64>,
     #[serde(default)]
     pub tags: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub disposition: Option<FfprobeDisposition>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -251,6 +269,17 @@ pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> 
                 .and_then(|tags| tags.get("language"))
                 .cloned();
 
+            let title = stream
+                .tags
+                .as_ref()
+                .and_then(|tags| tags.get("title"))
+                .cloned();
+
+            let disposition = stream.disposition.as_ref();
+            let is_forced = disposition.map(|d| d.forced != 0).unwrap_or(false);
+            let is_hearing_impaired = disposition.map(|d| d.hearing_impaired != 0).unwrap_or(false);
+            let is_commentary = disposition.map(|d| d.comment != 0).unwrap_or(false);
+
             Some(Stream {
                 index,
                 stream_type,
@@ -280,6 +309,10 @@ pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> 
                 r_frame_rate: stream.r_frame_rate.clone(),
                 extradata: stream.extradata.clone(),
                 extradata_size: parse_optional_u32_from_i64(stream.extradata_size),
+                is_forced,
+                is_hearing_impaired,
+                is_commentary,
+                title,
             })
         })
         .collect();

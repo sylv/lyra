@@ -15,6 +15,10 @@ pub struct Model {
     pub permissions: i64,
     pub last_seen_at: Option<i64>,
     pub created_at: i64,
+    pub preferred_audio_language: Option<String>,
+    pub preferred_audio_disposition: Option<String>,
+    pub preferred_subtitle_language: Option<String>,
+    pub preferred_subtitle_disposition: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

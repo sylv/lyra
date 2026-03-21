@@ -35,6 +35,8 @@ type File {
 	scannedAt: Int
 	discoveredAt: Int!
 	timelinePreview: [TimelinePreviewSheet!]!
+	tracks: [TrackInfo!]!
+	recommendedTracks: [RecommendedTrack!]!
 	segments: [FileSegment!]!
 }
 
@@ -120,6 +122,8 @@ type Mutation {
 	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
 	createLibrary(name: String!, path: String!): Library!
 	updateLibrary(libraryId: String!, name: String!, path: String!): Library!
+	setPreferredAudio(language: String, disposition: TrackDispositionPreference): User!
+	setPreferredSubtitle(language: String, disposition: TrackDispositionPreference): User!
 	deleteLibrary(libraryId: String!): Boolean!
 }
 
@@ -268,6 +272,12 @@ type Query {
 	activities: [Activity!]!
 }
 
+type RecommendedTrack {
+	manifestIndex: Int!
+	trackType: TrackType!
+	enabled: Boolean!
+}
+
 type SearchResults {
 	roots: [Node!]!
 	episodes: [Node!]!
@@ -285,6 +295,39 @@ type TimelinePreviewSheet {
 	asset: Asset!
 }
 
+enum TrackDispositionPreference {
+	NORMAL
+	SDH
+	COMMENTARY
+}
+
+type TrackInfo {
+	"""
+	original ffprobe stream index
+	"""
+	trackIndex: Int!
+	"""
+	0-based index within type (maps to HLS.js index directly)
+	"""
+	manifestIndex: Int!
+	trackType: TrackType!
+	displayName: String!
+	"""
+	iso 639 language code, null if unparseable
+	"""
+	language: String
+	"""
+	null if forced or unparseable
+	"""
+	disposition: TrackDispositionPreference
+	isForced: Boolean!
+}
+
+enum TrackType {
+	AUDIO
+	SUBTITLE
+}
+
 type User {
 	id: String!
 	username: String!
@@ -292,6 +335,10 @@ type User {
 	permissions: Int!
 	lastSeenAt: Int
 	createdAt: Int!
+	preferredAudioLanguage: String
+	preferredAudioDisposition: String
+	preferredSubtitleLanguage: String
+	preferredSubtitleDisposition: String
 	libraries: [Library!]!
 }
 

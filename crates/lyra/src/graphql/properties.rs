@@ -9,11 +9,67 @@ use crate::{
     signer::Signer,
 };
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
+use lyra_ffprobe::StreamType as ProbeStreamType;
+use lyra_packager::state::{build_track_display_name, language_to_display_name};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait,
 };
 use std::collections::HashMap;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum TrackType {
+    Audio,
+    Subtitle,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum TrackDispositionPreference {
+    Normal,
+    Sdh,
+    Commentary,
+}
+
+impl TrackDispositionPreference {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "Normal" => Some(Self::Normal),
+            "Sdh" => Some(Self::Sdh),
+            "Commentary" => Some(Self::Commentary),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "Normal",
+            Self::Sdh => "Sdh",
+            Self::Commentary => "Commentary",
+        }
+    }
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct TrackInfo {
+    /// original ffprobe stream index
+    pub track_index: i32,
+    /// 0-based index within type (maps to HLS.js index directly)
+    pub manifest_index: i32,
+    pub track_type: TrackType,
+    pub display_name: String,
+    /// iso 639 language code, null if unparseable
+    pub language: Option<String>,
+    /// null if forced or unparseable
+    pub disposition: Option<TrackDispositionPreference>,
+    pub is_forced: bool,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct RecommendedTrack {
+    pub manifest_index: i32,
+    pub track_type: TrackType,
+    pub enabled: bool,
+}
 
 #[derive(Clone, Debug, SimpleObject)]
 #[graphql(complex)]
@@ -228,6 +284,182 @@ impl files::Model {
         Ok(sheets)
     }
 
+    pub async fn tracks(&self, ctx: &Context<'_>) -> Result<Vec<TrackInfo>, async_graphql::Error> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+
+        let probe = file_probe::Entity::find_by_id(self.id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        let Some(probe) = probe else {
+            return Ok(Vec::new());
+        };
+
+        let ffprobe_output = match probe.decode_ffprobe_output() {
+            Ok(v) => v,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let probe_result = match lyra_ffprobe::probe_streams_from_output(&ffprobe_output) {
+            Ok(v) => v,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        // separate audio and subtitle tracks, sorted by stream index, to match HLS manifest order
+        let mut audio_streams: Vec<_> = probe_result
+            .streams
+            .iter()
+            .filter(|s| s.stream_type == ProbeStreamType::Audio)
+            .collect();
+        audio_streams.sort_by_key(|s| s.index);
+
+        let mut subtitle_streams: Vec<_> = probe_result
+            .streams
+            .iter()
+            .filter(|s| s.stream_type == ProbeStreamType::Subtitle)
+            .collect();
+        subtitle_streams.sort_by_key(|s| s.index);
+
+        let mut tracks = Vec::new();
+
+        for (manifest_index, stream) in audio_streams.iter().enumerate() {
+            let has_parseable_lang = stream.language.as_deref()
+                .and_then(language_to_display_name)
+                .is_some();
+
+            let (language, disposition) = if has_parseable_lang {
+                let disp = if stream.is_commentary {
+                    Some(TrackDispositionPreference::Commentary)
+                } else if stream.is_hearing_impaired {
+                    Some(TrackDispositionPreference::Sdh)
+                } else {
+                    Some(TrackDispositionPreference::Normal)
+                };
+                (stream.language.clone(), disp)
+            } else {
+                (None, None)
+            };
+
+            let fallback = format!("Audio {}", manifest_index + 1);
+            let display_name = build_track_display_name(
+                stream.language.as_deref(),
+                stream.title.as_deref(),
+                &fallback,
+                stream.is_forced,
+                stream.is_hearing_impaired,
+                stream.is_commentary,
+            );
+
+            tracks.push(TrackInfo {
+                track_index: stream.index as i32,
+                manifest_index: manifest_index as i32,
+                track_type: TrackType::Audio,
+                display_name,
+                language,
+                disposition,
+                is_forced: stream.is_forced,
+            });
+        }
+
+        for (manifest_index, stream) in subtitle_streams.iter().enumerate() {
+            let has_parseable_lang = stream.language.as_deref()
+                .and_then(language_to_display_name)
+                .is_some();
+
+            // forced tracks are not a user-selectable disposition; disposition is set to null for them
+            let (language, disposition) = if has_parseable_lang && !stream.is_forced {
+                let disp = if stream.is_commentary {
+                    Some(TrackDispositionPreference::Commentary)
+                } else if stream.is_hearing_impaired {
+                    Some(TrackDispositionPreference::Sdh)
+                } else {
+                    Some(TrackDispositionPreference::Normal)
+                };
+                (stream.language.clone(), disp)
+            } else if has_parseable_lang && stream.is_forced {
+                (stream.language.clone(), None)
+            } else {
+                (None, None)
+            };
+
+            let fallback = format!("Subtitle {}", manifest_index + 1);
+            let display_name = build_track_display_name(
+                stream.language.as_deref(),
+                stream.title.as_deref(),
+                &fallback,
+                stream.is_forced,
+                stream.is_hearing_impaired,
+                stream.is_commentary,
+            );
+
+            tracks.push(TrackInfo {
+                track_index: stream.index as i32,
+                manifest_index: manifest_index as i32,
+                track_type: TrackType::Subtitle,
+                display_name,
+                language,
+                disposition,
+                is_forced: stream.is_forced,
+            });
+        }
+
+        Ok(tracks)
+    }
+
+    pub async fn recommended_tracks(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<RecommendedTrack>, async_graphql::Error> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let auth = ctx.data::<RequestAuth>()?;
+
+        let Some(user) = auth.get_user() else {
+            return Ok(Vec::new());
+        };
+
+        let probe = file_probe::Entity::find_by_id(self.id.clone())
+            .one(pool)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        let Some(probe) = probe else {
+            return Ok(Vec::new());
+        };
+
+        let ffprobe_output = match probe.decode_ffprobe_output() {
+            Ok(v) => v,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let probe_result = match lyra_ffprobe::probe_streams_from_output(&ffprobe_output) {
+            Ok(v) => v,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut audio_streams: Vec<_> = probe_result
+            .streams
+            .iter()
+            .filter(|s| s.stream_type == ProbeStreamType::Audio)
+            .collect();
+        audio_streams.sort_by_key(|s| s.index);
+
+        let mut subtitle_streams: Vec<_> = probe_result
+            .streams
+            .iter()
+            .filter(|s| s.stream_type == ProbeStreamType::Subtitle)
+            .collect();
+        subtitle_streams.sort_by_key(|s| s.index);
+
+        let recommendations = compute_recommended_tracks(
+            &audio_streams,
+            &subtitle_streams,
+            user,
+        );
+
+        Ok(recommendations)
+    }
+
     pub async fn segments(&self, _ctx: &Context<'_>) -> Result<Vec<FileSegment>, sea_orm::DbErr> {
         if self.segments_json.is_empty() {
             return Ok(Vec::new());
@@ -436,4 +668,169 @@ async fn find_asset(
 
     let model = assets::Entity::find_by_id(asset_id).one(pool).await?;
     Ok(model.map(Asset::from_model))
+}
+
+fn normalize_lang(tag: &str) -> Option<isolang::Language> {
+    isolang::Language::from_639_3(tag).or_else(|| isolang::Language::from_639_1(tag))
+}
+
+fn langs_match(a: &str, b: &str) -> bool {
+    match (normalize_lang(a), normalize_lang(b)) {
+        (Some(la), Some(lb)) => la == lb,
+        _ => false,
+    }
+}
+
+fn compute_recommended_tracks(
+    audio_streams: &[&lyra_ffprobe::Stream],
+    subtitle_streams: &[&lyra_ffprobe::Stream],
+    user: &users::Model,
+) -> Vec<RecommendedTrack> {
+    let mut recommendations = Vec::new();
+
+    // --- audio recommendation ---
+    let audio_manifest_index = if audio_streams.is_empty() {
+        None
+    } else if let Some(ref pref_lang) = user.preferred_audio_language {
+        let pref_disp = user
+            .preferred_audio_disposition
+            .as_deref()
+            .and_then(TrackDispositionPreference::from_str);
+
+        // find all tracks matching the preferred language
+        let matching: Vec<(usize, &&lyra_ffprobe::Stream)> = audio_streams
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                s.language
+                    .as_deref()
+                    .map(|lang| langs_match(lang, pref_lang))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        if matching.is_empty() {
+            Some(0usize)
+        } else if let Some(disp) = pref_disp {
+            // prefer exact disposition match, then fall through ordering
+            let exact = matching.iter().find(|(_, s)| {
+                match disp {
+                    TrackDispositionPreference::Commentary => s.is_commentary,
+                    TrackDispositionPreference::Sdh => s.is_hearing_impaired && !s.is_commentary,
+                    TrackDispositionPreference::Normal => !s.is_hearing_impaired && !s.is_commentary,
+                }
+            });
+            Some(exact.or_else(|| matching.first()).map(|(i, _)| *i).unwrap_or(0))
+        } else {
+            // prefer Normal > SDH > Commentary > other
+            let pick = matching
+                .iter()
+                .find(|(_, s)| !s.is_hearing_impaired && !s.is_commentary)
+                .or_else(|| matching.iter().find(|(_, s)| s.is_hearing_impaired && !s.is_commentary))
+                .or_else(|| matching.iter().find(|(_, s)| s.is_commentary))
+                .or_else(|| matching.first());
+            Some(pick.map(|(i, _)| *i).unwrap_or(0))
+        }
+    } else {
+        Some(0usize)
+    };
+
+    if let Some(idx) = audio_manifest_index {
+        recommendations.push(RecommendedTrack {
+            manifest_index: idx as i32,
+            track_type: TrackType::Audio,
+            enabled: true,
+        });
+    }
+
+    // determine active audio language for forced subtitle matching
+    let active_audio_lang: Option<String> = user
+        .preferred_audio_language
+        .clone()
+        .or_else(|| {
+            audio_streams
+                .first()
+                .and_then(|s| s.language.clone())
+        });
+
+    // --- subtitle recommendations ---
+    // forced tracks whose language matches active audio are always enabled
+    for (manifest_index, stream) in subtitle_streams.iter().enumerate() {
+        if !stream.is_forced {
+            continue;
+        }
+        let enabled = match (&stream.language, &active_audio_lang) {
+            (Some(sub_lang), Some(audio_lang)) => langs_match(sub_lang, audio_lang),
+            _ => false,
+        };
+        recommendations.push(RecommendedTrack {
+            manifest_index: manifest_index as i32,
+            track_type: TrackType::Subtitle,
+            enabled,
+        });
+    }
+
+    // non-forced subtitle tracks
+    let non_forced: Vec<(usize, &&lyra_ffprobe::Stream)> = subtitle_streams
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| !s.is_forced)
+        .collect();
+
+    if let Some(ref pref_lang) = user.preferred_subtitle_language {
+        let pref_disp = user
+            .preferred_subtitle_disposition
+            .as_deref()
+            .and_then(TrackDispositionPreference::from_str);
+
+        let matching: Vec<(usize, &&lyra_ffprobe::Stream)> = non_forced
+            .iter()
+            .filter(|(_, s)| {
+                s.language
+                    .as_deref()
+                    .map(|lang| langs_match(lang, pref_lang))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+
+        let best = if matching.is_empty() {
+            None
+        } else if let Some(disp) = pref_disp {
+            let exact = matching.iter().find(|(_, s)| match disp {
+                TrackDispositionPreference::Commentary => s.is_commentary,
+                TrackDispositionPreference::Sdh => s.is_hearing_impaired && !s.is_commentary,
+                TrackDispositionPreference::Normal => !s.is_hearing_impaired && !s.is_commentary,
+            });
+            exact.or_else(|| matching.first()).map(|(i, _)| *i)
+        } else {
+            let pick = matching
+                .iter()
+                .find(|(_, s)| !s.is_hearing_impaired && !s.is_commentary)
+                .or_else(|| matching.iter().find(|(_, s)| s.is_hearing_impaired && !s.is_commentary))
+                .or_else(|| matching.iter().find(|(_, s)| s.is_commentary))
+                .or_else(|| matching.first());
+            pick.map(|(i, _)| *i)
+        };
+
+        for (manifest_index, _) in &non_forced {
+            let enabled = best.map(|b| b == *manifest_index).unwrap_or(false);
+            recommendations.push(RecommendedTrack {
+                manifest_index: *manifest_index as i32,
+                track_type: TrackType::Subtitle,
+                enabled,
+            });
+        }
+    } else {
+        // no subtitle preference → disable all non-forced tracks
+        for (manifest_index, _) in &non_forced {
+            recommendations.push(RecommendedTrack {
+                manifest_index: *manifest_index as i32,
+                track_type: TrackType::Subtitle,
+                enabled: false,
+            });
+        }
+    }
+
+    recommendations
 }

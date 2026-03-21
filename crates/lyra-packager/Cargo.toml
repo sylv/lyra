@@ -25,3 +25,4 @@ tracing-subscriber = "0.3.19"
 libc = "0.2"
 uuid = { version = "1.7.0", features = ["v4"] }
 lyra-ffprobe = { path = "../lyra-ffprobe" }
+isolang = "2.4"
