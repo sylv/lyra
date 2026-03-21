@@ -836,9 +836,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 		setSelectedAudioTrackId(trackId);
 
 		// only persist preference when the track has a parseable language
-		const serverTrack = currentMedia?.file?.tracks?.find(
-			(t) => t.trackType === "AUDIO" && t.manifestIndex === trackId,
-		);
+		const serverTrack = currentMedia?.file?.tracks?.find((t) => t.trackType === "AUDIO" && t.manifestIndex === trackId);
 		if (serverTrack?.language != null) {
 			setPreferredAudio({
 				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
@@ -1023,7 +1021,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 									event.stopPropagation();
 									if (detailsPath) {
 										togglePlayerFullscreen(false);
-										navigate({ to: detailsPath as never });
+										navigate({ to: detailsPath });
 									}
 								}}
 							>
@@ -1045,7 +1043,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 									event.stopPropagation();
 									if (detailsPath) {
 										togglePlayerFullscreen(false);
-										navigate({ to: detailsPath as never });
+										navigate({ to: detailsPath });
 									}
 								}}
 							>

@@ -88,7 +88,7 @@ const SearchNodeCard: FC<{ node: FragmentType<typeof SearchNodeResultFragment>; 
 				: null;
 		return (
 			<Link
-				to={path as never}
+				to={path}
 				onClick={onSelect}
 				className="group flex items-start gap-3 rounded-md p-2 transition hover:bg-zinc-900"
 			>
@@ -114,7 +114,7 @@ const SearchNodeCard: FC<{ node: FragmentType<typeof SearchNodeResultFragment>; 
 	}
 
 	return (
-		<Link to={path as never} onClick={onSelect} className="group block rounded-md p-2 transition hover:bg-zinc-900">
+		<Link to={path} onClick={onSelect} className="group block rounded-md p-2 transition hover:bg-zinc-900">
 			<div className="overflow-hidden rounded-sm">
 				<Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.name} className="w-full" />
 			</div>

@@ -18,7 +18,7 @@ export const useQueryState = <T>(key: string, defaultValue?: T): [T, (value: T) 
 			url.searchParams.set(key, btoa(stringified));
 		}
 
-		navigate({ to: `${url.pathname}${url.search}${url.hash}` as never });
+		navigate({ to: `${url.pathname}${url.search}${url.hash}` });
 	};
 
 	return [value, setValue];

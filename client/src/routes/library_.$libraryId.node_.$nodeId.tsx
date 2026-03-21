@@ -83,12 +83,14 @@ export const Route = createFileRoute("/library_/$libraryId/node_/$nodeId")({
 
 		const node = data?.node;
 		if (node?.kind === "EPISODE" && node.parent) {
+			const path = getPathForNodeData({
+				id: node.parent.id,
+				libraryId: node.parent.libraryId,
+				__typename: "Node",
+			});
+
 			throw redirect({
-				to: getPathForNodeData({
-					id: node.parent.id,
-					libraryId: node.parent.libraryId,
-					__typename: "Node",
-				}) as never,
+				to: path,
 				replace: true,
 			});
 		}
@@ -131,7 +133,7 @@ function NodeRoute() {
 
 		return (
 			<div className="pt-6">
-				<div className="container mx-auto flex gap-6">
+				<div className="container mx-auto flex flex-col lg:flex-row gap-6">
 					<div className="shrink-0">
 						<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
 							<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
@@ -141,10 +143,7 @@ function NodeRoute() {
 					<div className="flex w-full flex-col gap-2 justify-between">
 						<div className="mt-3 flex flex-col gap-2">
 							{parentPath && (
-								<Link
-									to={parentPath as never}
-									className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline"
-								>
+								<Link to={parentPath} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
 									{node.parent?.name}
 								</Link>
 							)}
@@ -173,7 +172,7 @@ function NodeRoute() {
 
 	return (
 		<div className="pt-6">
-			<div className="container mx-auto flex gap-6">
+			<div className="container mx-auto flex flex-col lg:flex-row gap-6">
 				<div className="shrink-0">
 					<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
 						<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
@@ -183,10 +182,7 @@ function NodeRoute() {
 				<div className="flex w-full flex-col gap-2 justify-between">
 					<div className="mt-3 flex flex-col gap-2">
 						{parentPath ? (
-							<Link
-								to={parentPath as never}
-								className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline"
-							>
+							<Link to={parentPath} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
 								{node.parent?.name}
 							</Link>
 						) : releaseYear ? (

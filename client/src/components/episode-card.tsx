@@ -60,7 +60,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 			aria-label={`Play ${episode.name}`}
 			onClick={() => {
 				openPlayerMedia(episode.id, true);
-				navigate({ to: path as never });
+				navigate({ to: path });
 			}}
 		>
 			<div className="relative overflow-hidden h-min rounded-sm shrink-0">
@@ -69,7 +69,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 						type={ImageType.Thumbnail}
 						asset={episode.properties.thumbnailImage}
 						alt={episode.name}
-						className="h-36"
+						className="h-20 md:h-36 aspect-[12:8]"
 					/>
 				</PlayWrapper>
 			</div>

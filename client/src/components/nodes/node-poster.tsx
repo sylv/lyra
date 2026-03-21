@@ -59,7 +59,7 @@ export const NodePoster: FC<NodePosterProps> = ({ node: nodeRaw, className, styl
 				<Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.name} className="w-full" />
 				<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 			</PlayWrapper>
-			<Link to={path as never} className="block w-full truncate text-sm group">
+			<Link to={path} className="block w-full truncate text-sm group">
 				<span className="group-hover:underline">{node.name}</span>
 				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
 			</Link>

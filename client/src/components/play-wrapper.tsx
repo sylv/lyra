@@ -20,18 +20,18 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 	const navigate = useNavigate();
 
 	return (
-		<div className="relative shrink-0 overflow-hidden group/play rounded-sm">
+		<div className="relative inline-block overflow-hidden group/play rounded-sm">
 			{itemId && (
 				<button
 					type="button"
 					className={cn(
-						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 opacity-0 cursor-pointer z-10 transition-opacity duration-75",
-						"group-hover/play:opacity-100",
+						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 opacity-0 cursor-pointer z-10",
+						"group-hover/play:opacity-100 transition-opacity duration-75",
 					)}
 					onClick={() => {
 						if (!itemId) return;
 						openPlayerMedia(itemId, true);
-						navigate({ to: path as never });
+						navigate({ to: path });
 					}}
 				>
 					<PlayIcon className="h-10 w-10 text-white" />

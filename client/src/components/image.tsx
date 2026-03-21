@@ -5,6 +5,7 @@ import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import type { ImageAssetFragment } from "../@generated/gql/graphql";
 import { appendAssetQuery } from "../lib/assets";
 import { getThumbhashDataUrl } from "../lib/thumbhash";
+import { cn } from "../lib/utils";
 
 export enum ImageType {
 	Poster = "poster",
@@ -21,22 +22,19 @@ export const Fragment = graphql(`
 
 interface ImageTypeConfig {
 	baseClasses: string;
-	defaultClassName: string;
 	fallbackTextClasses: string;
 	proxyWidth: number;
 }
 
 const IMAGE_TYPE_CONFIG: Record<ImageType, ImageTypeConfig> = {
 	[ImageType.Poster]: {
-		baseClasses: "aspect-[2/3] bg-zinc-700/30 shrink-0 select-none",
-		defaultClassName: "h-64",
+		baseClasses: "aspect-[2/3] bg-zinc-700/30 shrink-0 select-none h-64",
 		fallbackTextClasses:
 			"max-w-[60%] text-sm text-center font-semibold whitespace-normal wrap-break-words wrap-anywhere",
 		proxyWidth: 400,
 	},
 	[ImageType.Thumbnail]: {
-		baseClasses: "bg-zinc-700/30 shrink-0 aspect-[16/9] object-cover select-none",
-		defaultClassName: "h-38",
+		baseClasses: "bg-zinc-700/30 shrink-0 aspect-[16/9] object-cover select-none h-38",
 		fallbackTextClasses: "text-sm text-center font-semibold",
 		proxyWidth: 600,
 	},
@@ -57,17 +55,16 @@ export const getAssetImageUrl = (asset: ImageAssetFragment, height: number): str
 
 export const Image: FC<ImageProps> = ({ type, asset, alt, className }) => {
 	const config = IMAGE_TYPE_CONFIG[type];
-	const resolvedClassName = className ?? config.defaultClassName;
 	const resolvedAsset = asset ? unmask(Fragment, asset) : null;
 	const thumbhashPreview = getThumbhashDataUrl(resolvedAsset?.thumbhash);
 
 	if (!resolvedAsset) {
 		return (
 			<div
-				className={clsx(
+				className={cn(
 					config.baseClasses,
 					"flex flex-col justify-center items-center gap-2 text-zinc-500 p-4 overflow-hidden",
-					resolvedClassName,
+					className,
 				)}
 			>
 				<ImageIcon />
@@ -80,7 +77,7 @@ export const Image: FC<ImageProps> = ({ type, asset, alt, className }) => {
 		<img
 			src={getAssetImageUrl(resolvedAsset, config.proxyWidth)}
 			alt={alt}
-			className={clsx(config.baseClasses, resolvedClassName)}
+			className={cn(config.baseClasses, className)}
 			style={
 				thumbhashPreview
 					? {

@@ -61,7 +61,7 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 				return;
 			}
 
-			void navigate({ to: getPreviousSetupRoute(currentSearchStr) as never, replace: true });
+			void navigate({ to: getPreviousSetupRoute(currentSearchStr), replace: true });
 			return;
 		}
 
@@ -83,7 +83,7 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 			return;
 		}
 
-		void navigate({ to: target as never, replace: true });
+		void navigate({ to: target, replace: true });
 	};
 
 	const refresh = async () => {

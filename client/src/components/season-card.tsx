@@ -55,7 +55,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw }) => {
 				<Image type={ImageType.Poster} asset={imageAsset} alt={season.name} className="w-full" />
 				<UnplayedItemsTab>{season.unplayedCount}</UnplayedItemsTab>
 			</PlayWrapper>
-			<Link to={path as never} className="block w-full truncate text-sm group">
+			<Link to={path} className="block w-full truncate text-sm group">
 				<span className="group-hover:underline">{season.name || `Season ${season.properties.seasonNumber}`}</span>
 				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
 			</Link>

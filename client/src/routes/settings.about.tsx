@@ -20,14 +20,12 @@ function RouteComponent() {
 				href="https://www.themoviedb.org/"
 				target="_blank"
 				rel="noopener noreferrer"
-				className="mt-6 flex items-center gap-6 group"
+				className="mt-6 flex flex-col-reverse md:flex-row items-start md:items-center gap-6 group"
 			>
+				<img src={TmdbLogo} alt="TMDB Logo" className="h-8 shrink-0" />
 				<div>
-					<img src={TmdbLogo} alt="TMDB Logo" className="h-8" />
-				</div>
-				<div>
-					<h3 className="group-hover:underline">Metadata sourced from TMDB</h3>
-					<p className="text-zinc-400 text-sm">
+					<h3 className="group-hover:underline text-sm">Metadata sourced from TMDB</h3>
+					<p className="text-zinc-400 text-xs">
 						This product uses the TMDB API but is not endorsed or certified by TMDB
 					</p>
 				</div>
