@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties, FC, ReactNode } from "react";
 import React, { createContext } from "react";
 import { createPortal } from "react-dom";
+import { Drawer, DrawerContent } from "./ui/drawer";
+import { useIsMobile } from "../hooks/use-mobile";
 import { useOnClickOutside } from "../hooks/use-on-click-outside";
 import { cn } from "../lib/utils";
 
@@ -33,18 +35,39 @@ export const Modal: FC<ModalProps> = ({
 	style,
 }) => {
 	const ref = React.useRef<HTMLDivElement>(null);
+	const isMobile = useIsMobile();
 	useOnClickOutside(ref, () => onOpenChange(false));
 
 	const contentStyle: CSSProperties = {
-		maxHeight: "calc(100vh - 2rem)",
-		maxWidth: "calc(100vw - 2rem)",
 		...style,
+		maxHeight: isMobile ? "calc(100dvh - 0.5rem)" : "calc(100vh - 2rem)",
+		maxWidth: isMobile ? "100vw" : "calc(100vw - 2rem)",
 	};
 
 	if (size) {
-		const aspectRatio = rotation === ModalRotation.Horizontal ? "4 / 2.5" : "2.5 / 4";
 		contentStyle.height = size;
-		contentStyle.aspectRatio = aspectRatio;
+		// on mobile the modal becomes a bottom sheet, so aspect-ratio sizing stops making sense.
+		if (!isMobile) {
+			const aspectRatio = rotation === ModalRotation.Horizontal ? "4 / 2.5" : "2.5 / 4";
+			contentStyle.aspectRatio = aspectRatio;
+		}
+	}
+
+	if (isMobile) {
+		contentStyle.width = "100vw";
+		return (
+			<Drawer open={open} onOpenChange={onOpenChange} direction="bottom" modal={true}>
+				<DrawerContent
+					className={cn(
+						className,
+						"max-h-[calc(100dvh-0.5rem)] !w-full max-w-none rounded-none border-0! bg-black text-zinc-100 shadow-2xl shadow-black/50",
+					)}
+					style={contentStyle}
+				>
+					<ModalContext.Provider value={{ onOpenChange }}>{children}</ModalContext.Provider>
+				</DrawerContent>
+			</Drawer>
+		);
 	}
 
 	return createPortal(
@@ -96,6 +119,7 @@ export const ModalHeader: FC<ModalHeaderProps> = ({
 	closeButton = true,
 }) => {
 	const context = React.useContext(ModalContext);
+	const isMobile = useIsMobile();
 	if (!context) {
 		throw new Error("ModalHeader must be used within a Modal");
 	}
@@ -106,7 +130,7 @@ export const ModalHeader: FC<ModalHeaderProps> = ({
 			style={height ? { height } : undefined}
 		>
 			<div className={cn("flex min-w-0 grow items-center px-6 font-semibold", contentClassName)}>{children}</div>
-			{closeButton && (
+			{closeButton && !isMobile && (
 				<button
 					type="button"
 					className="flex self-stretch items-center justify-center px-6 text-xs font-semibold text-zinc-400 transition hover:text-zinc-300 hover:underline"
