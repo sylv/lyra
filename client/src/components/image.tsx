@@ -28,7 +28,7 @@ interface ImageTypeConfig {
 
 const IMAGE_TYPE_CONFIG: Record<ImageType, ImageTypeConfig> = {
 	[ImageType.Poster]: {
-		baseClasses: "aspect-[2/3] bg-zinc-700/30 shrink-0 select-none h-64",
+		baseClasses: "aspect-[2/3] bg-zinc-700/30 shrink-0 select-none w-full",
 		fallbackTextClasses:
 			"max-w-[60%] text-sm text-center font-semibold whitespace-normal wrap-break-words wrap-anywhere",
 		proxyWidth: 400,

@@ -133,14 +133,14 @@ function NodeRoute() {
 
 		return (
 			<div className="pt-6">
-				<div className="container mx-auto flex flex-col lg:flex-row gap-6">
+				<div className="container mx-auto flex flex-col lg:flex-row lg:gap-6">
 					<div className="shrink-0">
 						<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
 							<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
 							<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 						</PlayWrapper>
 					</div>
-					<div className="flex w-full flex-col gap-2 justify-between">
+					<div className="flex w-full flex-col gap-2">
 						<div className="mt-3 flex flex-col gap-2">
 							{parentPath && (
 								<Link to={parentPath} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
@@ -172,14 +172,14 @@ function NodeRoute() {
 
 	return (
 		<div className="pt-6">
-			<div className="container mx-auto flex flex-col lg:flex-row gap-6">
+			<div className="container mx-auto flex flex-col lg:flex-row lg:gap-6">
 				<div className="shrink-0">
 					<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
 						<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
 						<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 					</PlayWrapper>
 				</div>
-				<div className="flex w-full flex-col gap-2 justify-between">
+				<div className="flex w-full flex-col gap-2">
 					<div className="mt-3 flex flex-col gap-2">
 						{parentPath ? (
 							<Link to={parentPath} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
