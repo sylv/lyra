@@ -73,15 +73,17 @@ const ItemPlaybackQuery = graphql(`
 			id
 			libraryId
 			kind
-			name
 			properties {
+				displayName
 				seasonNumber
 				episodeNumber
 				runtimeMinutes
 			}
 			root {
-				name
 				libraryId
+				properties {
+					displayName
+				}
 			}
 			watchProgress {
 				progressPercent
@@ -1008,7 +1010,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 								<ChevronDown className="size-6" />
 							</PlayerButton>
 						)}
-						{currentMedia.root?.name &&
+						{currentMedia.root?.properties.displayName &&
 						currentMedia.properties.seasonNumber &&
 						currentMedia.properties.episodeNumber ? (
 							<button
@@ -1026,10 +1028,10 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 								}}
 							>
 								<h2 className="text-xl font-semibold group-hover:underline">
-									{currentMedia.root.name}: Season {currentMedia.properties.seasonNumber}
+									{currentMedia.root.properties.displayName}: Season {currentMedia.properties.seasonNumber}
 								</h2>
 								<p className="text-sm text-gray-300">
-									Episode {currentMedia.properties.episodeNumber}: {currentMedia.name}
+									Episode {currentMedia.properties.episodeNumber}: {currentMedia.properties.displayName}
 								</p>
 							</button>
 						) : (
@@ -1047,7 +1049,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 									}
 								}}
 							>
-								<h2 className="text-xl font-semibold">{currentMedia.name}</h2>
+								<h2 className="text-xl font-semibold">{currentMedia.properties.displayName}</h2>
 							</button>
 						)}
 					</div>

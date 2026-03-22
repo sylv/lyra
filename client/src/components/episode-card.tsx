@@ -20,8 +20,8 @@ const formatRuntime = (minutes: number | null) => {
 const Fragment = graphql(`
 	fragment EpisodeCard on Node {
 		id
-		name
 		properties {
+			displayName
 			description
 			thumbnailImage {
 				...ImageAsset
@@ -57,7 +57,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 		<button
 			type="button"
 			className="group flex gap-4 group/play w-full text-left"
-			aria-label={`Play ${episode.name}`}
+			aria-label={`Play ${episode.properties.displayName}`}
 			onClick={() => {
 				openPlayerMedia(episode.id, true);
 				navigate({ to: path });
@@ -68,7 +68,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					<Image
 						type={ImageType.Thumbnail}
 						asset={episode.properties.thumbnailImage}
-						alt={episode.name}
+						alt={episode.properties.displayName}
 						className="h-20 md:h-36 aspect-[12:8]"
 					/>
 				</PlayWrapper>
@@ -78,7 +78,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					<div className="text-zinc-300">
 						S{episode.properties.seasonNumber}E{episode.properties.episodeNumber}
 					</div>
-					{episode.name}
+					{episode.properties.displayName}
 				</h3>
 				<div className="flex items-center gap-3 text-zinc-400 mb-2 text-sm">
 					{releaseDate && <div>{releaseDate}</div>}

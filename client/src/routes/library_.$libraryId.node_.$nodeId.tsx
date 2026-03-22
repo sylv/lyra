@@ -22,17 +22,20 @@ const Query = graphql(`
 			id
 			libraryId
 			kind
-			name
 			seasonNumber
 			episodeNumber
 			parent {
 				id
-				name
 				libraryId
+				properties {
+					displayName
+				}
 			}
 			root {
 				id
-				name
+				properties {
+					displayName
+				}
 			}
 			children {
 				id
@@ -45,6 +48,7 @@ const Query = graphql(`
 				...EpisodeCard
 			}
 			properties {
+				displayName
 				posterImage {
 					...ImageAsset
 				}
@@ -211,7 +215,7 @@ function NodeRoute() {
 	});
 
 	useDynamicBackground(node.properties.backgroundImage ?? poster);
-	useTitle(node.root?.name ?? node.name);
+	useTitle(node.root?.properties.displayName ?? node.properties.displayName);
 
 	if (node.kind === "SEASON") {
 		return (
@@ -219,7 +223,7 @@ function NodeRoute() {
 				<div className="container flex flex-col lg:flex-row lg:gap-6">
 					<div className="shrink-0">
 						<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
-							<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
+							<Image type={ImageType.Poster} asset={poster} alt={node.properties.displayName} className="h-96" />
 							<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 						</PlayWrapper>
 					</div>
@@ -227,10 +231,10 @@ function NodeRoute() {
 						<div className="mt-3 flex flex-col gap-2">
 							{parentPath && (
 								<Link to={parentPath} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
-									{node.parent?.name}
+									{node.parent?.properties.displayName}
 								</Link>
 							)}
-							<h1 className="text-2xl font-bold">{node.name}</h1>
+							<h1 className="text-2xl font-bold">{node.properties.displayName}</h1>
 							{node.properties.runtimeMinutes && (
 								<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
 							)}
@@ -258,7 +262,7 @@ function NodeRoute() {
 				<div className="container flex flex-col lg:flex-row lg:gap-6">
 					<div className="shrink-0">
 						<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
-							<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
+							<Image type={ImageType.Poster} asset={poster} alt={node.properties.displayName} className="h-96" />
 							<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 						</PlayWrapper>
 					</div>
@@ -269,7 +273,7 @@ function NodeRoute() {
 								onClick={() => setView(undefined)}
 								className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline text-left"
 							>
-								{node.name}
+								{node.properties.displayName}
 							</button>
 							<h1 className="text-2xl font-bold">All Episodes</h1>
 						</div>
@@ -289,7 +293,7 @@ function NodeRoute() {
 			<div className="container flex flex-col lg:flex-row lg:gap-6">
 				<div className="shrink-0">
 					<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
-						<Image type={ImageType.Poster} asset={poster} alt={node.name} className="h-96" />
+						<Image type={ImageType.Poster} asset={poster} alt={node.properties.displayName} className="h-96" />
 						<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 					</PlayWrapper>
 				</div>
@@ -297,12 +301,12 @@ function NodeRoute() {
 					<div className="mt-3 flex flex-col gap-2">
 						{parentPath ? (
 							<Link to={parentPath} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
-								{node.parent?.name}
+								{node.parent?.properties.displayName}
 							</Link>
 						) : releaseYear ? (
 							<span className="-mb-2 text-sm text-zinc-400">{releaseYear}</span>
 						) : null}
-						<h1 className="text-2xl font-bold">{node.name}</h1>
+						<h1 className="text-2xl font-bold">{node.properties.displayName}</h1>
 						{node.properties.runtimeMinutes && (
 							<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
 						)}

@@ -128,6 +128,7 @@ pub struct FileSegment {
 #[derive(Clone, Debug, SimpleObject)]
 #[graphql(complex)]
 pub struct NodeProperties {
+    pub display_name: String,
     pub description: Option<String>,
     pub rating: Option<f64>,
     pub season_number: Option<i64>,
@@ -518,6 +519,7 @@ impl NodeProperties {
 
         Ok(match metadata {
             Some(metadata) => Self {
+                display_name: metadata.name,
                 description: metadata.description,
                 rating: metadata.score_normalized.map(|score| score as f64 / 10.0),
                 season_number: node.season_number,
@@ -550,6 +552,7 @@ impl NodeProperties {
                 node_id: node.id.clone(),
             },
             None => Self {
+                display_name: node.name.clone(),
                 description: None,
                 rating: None,
                 season_number: node.season_number,

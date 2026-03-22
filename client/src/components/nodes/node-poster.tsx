@@ -19,10 +19,10 @@ interface NodePosterProps {
 const Fragment = graphql(`
 	fragment NodePoster on Node {
 		id
-		name
 		kind
 		libraryId
 		properties {
+			displayName
 			posterImage {
 				...ImageAsset
 			}
@@ -56,11 +56,11 @@ export const NodePoster: FC<NodePosterProps> = ({ node: nodeRaw, className, styl
 				path={path}
 				watchProgress={node.nextPlayable?.watchProgress ?? null}
 			>
-				<Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.name} className="w-full" />
+				<Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.properties.displayName} className="w-full" />
 				<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 			</PlayWrapper>
 			<Link to={path} className="block w-full truncate text-sm group">
-				<span className="group-hover:underline">{node.name}</span>
+				<span className="group-hover:underline">{node.properties.displayName}</span>
 				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
 			</Link>
 		</div>

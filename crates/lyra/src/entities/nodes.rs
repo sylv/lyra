@@ -12,6 +12,7 @@ pub struct Model {
     pub root_id: String,
     pub parent_id: Option<String>,
     pub kind: NodeKind,
+    #[graphql(skip)]
     pub name: String,
     pub order: i64,
     pub season_number: Option<i64>,

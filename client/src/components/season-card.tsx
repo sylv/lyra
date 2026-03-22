@@ -14,8 +14,8 @@ interface SeasonCardProps {
 const Fragment = graphql(`
 	fragment SeasonCard on Node {
 		id
-		name
 		properties {
+			displayName
 			seasonNumber
 			posterImage {
 				...ImageAsset
@@ -52,11 +52,11 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw }) => {
 	return (
 		<div className="flex flex-col gap-2 overflow-hidden w-38">
 			<PlayWrapper itemId={season.nextPlayable?.id} path={path} watchProgress={season.nextPlayable?.watchProgress}>
-				<Image type={ImageType.Poster} asset={imageAsset} alt={season.name} className="w-full" />
+				<Image type={ImageType.Poster} asset={imageAsset} alt={season.properties.displayName} className="w-full" />
 				<UnplayedItemsTab>{season.unplayedCount}</UnplayedItemsTab>
 			</PlayWrapper>
 			<Link to={path} className="block w-full truncate text-sm group">
-				<span className="group-hover:underline">{season.name || `Season ${season.properties.seasonNumber}`}</span>
+				<span className="group-hover:underline">{season.properties.displayName || `Season ${season.properties.seasonNumber}`}</span>
 				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
 			</Link>
 		</div>
