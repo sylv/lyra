@@ -17,6 +17,12 @@ interface VideoState {
 	isSettingsMenuOpen: boolean;
 	isControlsInteracting: boolean;
 
+	ended: boolean;
+	upNextDismissed: boolean;
+	upNextCountdownCancelled: boolean;
+	isUpNextActive: boolean;
+	isItemCardOpen: boolean;
+
 	// non-null while the resume prompt is showing; cleared when a decision is made.
 	resumePromptPosition: number | null;
 	confirmResumePrompt: (() => void) | null;
@@ -39,6 +45,12 @@ export const videoState = create<VideoState>()(() => ({
 	showControls: true,
 	isSettingsMenuOpen: false,
 	isControlsInteracting: false,
+
+	ended: false,
+	upNextDismissed: false,
+	upNextCountdownCancelled: false,
+	isUpNextActive: false,
+	isItemCardOpen: false,
 
 	resumePromptPosition: null,
 	confirmResumePrompt: null,

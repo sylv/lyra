@@ -50,9 +50,23 @@ export const ItemPlaybackQuery = graphql(`
 			}
 			previousPlayable {
 				id
+				properties {
+					displayName
+					description
+					thumbnailImage { ...ImageAsset }
+					seasonNumber
+					episodeNumber
+				}
 			}
 			nextPlayable {
 				id
+				properties {
+					displayName
+					description
+					thumbnailImage { ...ImageAsset }
+					seasonNumber
+					episodeNumber
+				}
 			}
 		}
 	}

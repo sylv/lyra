@@ -63,7 +63,16 @@ export const useKeyboardShortcuts = ({ actions, showControlsTemporarily, handleC
 		} else if (key === " ") {
 			actions.togglePlaying();
 		} else if (event.key === "Escape") {
-			togglePlayerFullscreen(false);
+			const { ended, upNextDismissed, upNextCountdownCancelled } = videoState.getState();
+			if (ended && !upNextDismissed) {
+				if (!upNextCountdownCancelled) {
+					videoState.setState({ upNextCountdownCancelled: true });
+				} else {
+					videoState.setState({ upNextDismissed: true });
+				}
+			} else {
+				togglePlayerFullscreen(false);
+			}
 		} else if (isNumber) {
 			const { duration } = videoState.getState();
 			const seekTo = (Number.parseInt(event.key, 10) / 10) * duration;

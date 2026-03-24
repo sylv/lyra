@@ -4,7 +4,15 @@ import { videoState } from "../video-state";
 
 export const useControlsVisibility = () => {
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-	const isControlsPinned = useStore(videoState, (s) => s.isSettingsMenuOpen || s.isControlsInteracting);
+	const isControlsPinned = useStore(
+		videoState,
+		(s) => s.isSettingsMenuOpen || s.isControlsInteracting || s.isUpNextActive || s.isItemCardOpen,
+	);
+
+	const areControlsPinned = () => {
+		const { isSettingsMenuOpen, isControlsInteracting, isUpNextActive, isItemCardOpen } = videoState.getState();
+		return isSettingsMenuOpen || isControlsInteracting || isUpNextActive || isItemCardOpen;
+	};
 
 	const showControlsTemporarily = () => {
 		videoState.setState({ showControls: true });
@@ -12,8 +20,7 @@ export const useControlsVisibility = () => {
 			clearTimeout(controlsTimeoutRef.current);
 			controlsTimeoutRef.current = null;
 		}
-		const { isSettingsMenuOpen, isControlsInteracting } = videoState.getState();
-		if (isSettingsMenuOpen || isControlsInteracting) return;
+		if (areControlsPinned()) return;
 		controlsTimeoutRef.current = setTimeout(() => {
 			videoState.setState({ showControls: false });
 		}, 3000);
@@ -34,13 +41,12 @@ export const useControlsVisibility = () => {
 	};
 
 	const handleMouseLeave = () => {
-		const { isSettingsMenuOpen, isControlsInteracting } = videoState.getState();
-		if (!isSettingsMenuOpen && !isControlsInteracting) {
+		if (!areControlsPinned()) {
 			videoState.setState({ showControls: false });
 		}
 	};
 
-	// whenever controls become pinned (settings open or drag in progress), cancel any pending hide timeout.
+	// keep cards/settings/drag interactions pinned so the overlay can't disappear mid-action.
 	useEffect(() => {
 		if (!isControlsPinned) return;
 		videoState.setState({ showControls: true });

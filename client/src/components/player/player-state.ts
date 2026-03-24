@@ -9,9 +9,10 @@ interface PlayerState {
 	volume: number;
 	isMuted: boolean;
 	isLoading: boolean;
+	autoplayNext: boolean;
 }
 
-type PersistedPlayerState = Pick<PlayerState, "currentItemId" | "volume" | "isMuted">;
+type PersistedPlayerState = Pick<PlayerState, "currentItemId" | "volume" | "isMuted" | "autoplayNext">;
 
 const playerPersistOptions: PersistOptions<PlayerState, PersistedPlayerState> = {
 	name: "lyra.player",
@@ -20,6 +21,7 @@ const playerPersistOptions: PersistOptions<PlayerState, PersistedPlayerState> = 
 		currentItemId: state.currentItemId,
 		volume: state.volume,
 		isMuted: state.isMuted,
+		autoplayNext: state.autoplayNext,
 	}),
 };
 
@@ -33,6 +35,7 @@ export const playerState = create<PlayerState>()(
 			volume: 1,
 			isMuted: false,
 			isLoading: false,
+			autoplayNext: true,
 		}),
 		playerPersistOptions,
 	),

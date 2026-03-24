@@ -1,5 +1,6 @@
 import { useMemo, type FC } from "react";
 import { useStore } from "zustand/react";
+import { AnimatePresence } from "motion/react";
 import type { ItemPlaybackQuery } from "../../../@generated/gql/graphql";
 import { playerState } from "../player-state";
 import { usePlayerActions } from "../hooks/use-player-actions";
@@ -45,15 +46,20 @@ export const PlayerIntroOverlay: FC<PlayerIntroOverlayProps> = ({ media }) => {
 		return positionMs >= introSegment.startMs && positionMs < introSegment.endMs;
 	}, [currentTime, introSegment]);
 
-	if (!introSegment || !isInsideIntroSegment || !isFullscreen) return null;
+	const showButton = !!introSegment && isInsideIntroSegment && !!isFullscreen;
 
 	return (
 		<div className="absolute right-0 flex justify-end px-4 pointer-events-none bottom-36">
 			<div className="pointer-events-auto">
-				<SkipIntroButton
-					progressPercent={introProgressPercent}
-					onSkip={() => onSeek(introSegment.endMs / 1000)}
-				/>
+				<AnimatePresence>
+					{showButton && introSegment && (
+						<SkipIntroButton
+							key="skip-intro"
+							progressPercent={introProgressPercent}
+							onSkip={() => onSeek(introSegment.endMs / 1000)}
+						/>
+					)}
+				</AnimatePresence>
 			</div>
 		</div>
 	);

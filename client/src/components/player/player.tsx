@@ -90,12 +90,12 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 		: [];
 
 	const onPreviousItem = () => {
-		const previousItemId = (currentMedia?.previousPlayable as { id: string } | null)?.id;
+		const previousItemId = currentMedia?.previousPlayable?.id;
 		if (previousItemId) setPlayerMedia(previousItemId, true);
 	};
 
 	const onNextItem = () => {
-		const nextItemId = (currentMedia?.nextPlayable as { id: string } | null)?.id;
+		const nextItemId = currentMedia?.nextPlayable?.id;
 		if (nextItemId) setPlayerMedia(nextItemId, true);
 	};
 
@@ -162,8 +162,8 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 						bottom={
 							<PlayerControls
 								timelinePreviewSheets={timelinePreviewSheets}
-								hasPreviousItem={!!currentMedia.previousPlayable}
-								hasNextItem={!!currentMedia.nextPlayable}
+								previousPlayable={currentMedia.previousPlayable}
+								nextPlayable={currentMedia.nextPlayable}
 								onPreviousItem={onPreviousItem}
 								onNextItem={onNextItem}
 								onAudioTrackChange={onAudioTrackChange}
