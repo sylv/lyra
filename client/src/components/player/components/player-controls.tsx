@@ -8,8 +8,9 @@ import {
 	SkipBackIcon,
 	SkipForwardIcon,
 } from "lucide-react";
-import type { FragmentType } from "../../../@generated/gql";
 import { useMemo, type FC } from "react";
+import { useStore } from "zustand/react";
+import type { FragmentType } from "../../../@generated/gql";
 import { formatPlayerTime } from "../../../lib/format-player-time";
 import { cn } from "../../../lib/utils";
 import {
@@ -23,47 +24,21 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "../../ui/dropdown-menu";
+import { usePlayerActions } from "../hooks/use-player-actions";
+import { playerState, togglePlayerFullscreen } from "../player-state";
+import { videoState } from "../video-state";
 import { PlayerButton } from "./player-button";
 import { PlayerProgressBar, PlayerTimelinePreviewSheetFragment } from "./player-progress-bar";
 import { PlayerVolumeControl } from "./player-volume-control";
 
-interface PlayerAudioTrackOption {
-	id: number;
-	label: string;
-}
-
-interface PlayerSubtitleTrackOption {
-	id: number;
-	label: string;
-}
-
 interface PlayerControlsProps {
-	showControls: boolean;
-	isFullscreen: boolean;
-	currentTime: number;
-	duration: number;
-	bufferedRanges: { start: number; end: number }[];
 	timelinePreviewSheets: FragmentType<typeof PlayerTimelinePreviewSheetFragment>[];
-	playing: boolean;
-	volume: number;
-	isMuted: boolean;
-	onSeek: (time: number) => void;
-	onTogglePlaying: () => void;
 	hasPreviousItem: boolean;
 	hasNextItem: boolean;
 	onPreviousItem: () => void;
 	onNextItem: () => void;
-	onToggleMute: () => void;
-	onVolumeChange: (volume: number) => void;
-	onToggleFullscreen: () => void;
-	audioTrackOptions: PlayerAudioTrackOption[];
-	selectedAudioTrackId: number | null;
 	onAudioTrackChange: (trackId: number | null) => void;
-	subtitleTrackOptions: PlayerSubtitleTrackOption[];
-	selectedSubtitleTrackId: number | null;
 	onSubtitleTrackChange: (trackId: number | null) => void;
-	isSettingsMenuOpen: boolean;
-	onSettingsMenuOpenChange: (open: boolean) => void;
 	onControlsInteractionStart: () => void;
 	onControlsInteractionEnd: () => void;
 	onControlsActivity: () => void;
@@ -71,37 +46,31 @@ interface PlayerControlsProps {
 }
 
 export const PlayerControls: FC<PlayerControlsProps> = ({
-	showControls,
-	isFullscreen,
-	currentTime,
-	duration,
-	bufferedRanges,
 	timelinePreviewSheets,
-	playing,
-	volume,
-	isMuted,
-	onSeek,
-	onTogglePlaying,
 	hasPreviousItem,
 	hasNextItem,
 	onPreviousItem,
 	onNextItem,
-	onToggleMute,
-	onVolumeChange,
-	onToggleFullscreen,
-	audioTrackOptions,
-	selectedAudioTrackId,
 	onAudioTrackChange,
-	subtitleTrackOptions,
-	selectedSubtitleTrackId,
 	onSubtitleTrackChange,
-	isSettingsMenuOpen,
-	onSettingsMenuOpenChange,
 	onControlsInteractionStart,
 	onControlsInteractionEnd,
 	onControlsActivity,
 	dropdownPortalContainer,
 }) => {
+	const currentTime = useStore(videoState, (s) => s.currentTime);
+	const duration = useStore(videoState, (s) => s.duration);
+	const bufferedRanges = useStore(videoState, (s) => s.bufferedRanges);
+	const playing = useStore(videoState, (s) => s.playing);
+	const audioTrackOptions = useStore(videoState, (s) => s.audioTrackOptions);
+	const selectedAudioTrackId = useStore(videoState, (s) => s.selectedAudioTrackId);
+	const subtitleTrackOptions = useStore(videoState, (s) => s.subtitleTrackOptions);
+	const selectedSubtitleTrackId = useStore(videoState, (s) => s.selectedSubtitleTrackId);
+	const showControls = useStore(videoState, (s) => s.showControls);
+	const isSettingsMenuOpen = useStore(videoState, (s) => s.isSettingsMenuOpen);
+	const { volume, isMuted, isFullscreen } = useStore(playerState);
+	const { onSeek, togglePlaying, onToggleMute, onVolumeChange } = usePlayerActions();
+
 	// eg, "6:33pm"
 	const finishTime = useMemo(() => {
 		if (!duration || !currentTime) return null;
@@ -118,7 +87,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 		<div
 			onClick={(event) => event.stopPropagation()}
 			className={cn(
-				"absolute bottom-0 left-0 right-0 transition-opacity duration-300 group cursor-default !pt-1",
+				"transition-opacity duration-300 group cursor-default !pt-1 pointer-events-auto",
 				showControls ? "opacity-100" : "opacity-0",
 				isFullscreen ? "p-6" : "p-4",
 			)}
@@ -145,7 +114,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 			<div className="flex items-center justify-between">
 				{/* Left side */}
 				<div className="flex items-center gap-2">
-					<PlayerButton aria-label={playing ? "Pause" : "Play"} onClick={onTogglePlaying}>
+					<PlayerButton aria-label={playing ? "Pause" : "Play"} onClick={togglePlaying}>
 						{playing ? <PauseIcon className="size-6 text-white" /> : <PlayIcon className="size-6 text-white" />}
 					</PlayerButton>
 					{showItemNavigation && (
@@ -189,7 +158,10 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 				{/* Right side */}
 				<div className="flex items-center gap-4">
 					{finishTime && <span className="text-sm">Finishes at {finishTime}</span>}
-					<DropdownMenu open={isSettingsMenuOpen} onOpenChange={onSettingsMenuOpenChange}>
+					<DropdownMenu
+						open={isSettingsMenuOpen}
+						onOpenChange={(open) => videoState.setState({ isSettingsMenuOpen: open })}
+					>
 						<DropdownMenuTrigger asChild>
 							<PlayerButton
 								aria-label="Open player settings"
@@ -287,7 +259,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 						aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
 						onClick={(e) => {
 							e.stopPropagation();
-							onToggleFullscreen();
+							togglePlayerFullscreen();
 						}}
 					>
 						{isFullscreen ? <MinimizeIcon className="size-5" /> : <MaximizeIcon className="size-5" />}

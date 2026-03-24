@@ -1,943 +1,114 @@
 /* oxlint-disable jsx_a11y/media-has-caption, jsx_a11y/prefer-tag-over-role */
-import { useMutation, useQuery } from "@apollo/client/react";
-import { useNavigate } from "@tanstack/react-router";
-import Hls from "hls.js";
-import { ChevronDown, Loader2, XIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FC } from "react";
+import { useQuery } from "@apollo/client/react";
+import { useEffect, useRef, type FC } from "react";
 import { useStore } from "zustand/react";
-import { graphql } from "../../@generated/gql";
-import { getPathForNodeData } from "../../lib/getPathForMedia";
 import { cn } from "../../lib/utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
-import { PlayerButton } from "./components/player-button";
+import { PlayerErrorOverlay } from "./components/player-error-overlay";
 import { PlayerControls } from "./components/player-controls";
-import { SkipIntroButton } from "./components/skip-intro-button";
-import {
-	clearPlayerMedia,
-	playerState,
-	setPlayerLoading,
-	setPlayerMedia,
-	setPlayerMuted,
-	setPlayerVolume,
-	togglePlayerFullscreen,
-} from "./player-state";
+import { PlayerIntroOverlay } from "./components/player-intro-overlay";
+import { PlayerLoadingIndicator } from "./components/player-loading-indicator";
+import { PlayerTopChrome } from "./components/player-top-chrome";
+import { ResumePromptDialog } from "./components/resume-prompt-dialog";
+import { useControlsVisibility } from "./hooks/use-controls-visibility";
+import { useFullscreen } from "./hooks/use-fullscreen";
+import { usePlaybackLifecycle } from "./hooks/use-playback-lifecycle";
+import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
+import { usePlayerActions } from "./hooks/use-player-actions";
+import { useSurfaceInteraction } from "./hooks/use-surface-interaction";
+import { useTrackSelection } from "./hooks/use-track-selection";
+import { useVideoEvents } from "./hooks/use-video-events";
+import { useWatchProgress } from "./hooks/use-watch-progress";
+import { PlayerContext, usePlayerContext } from "./player-context";
+import { PlayerLayout } from "./player-layout";
+import type { PlaybackEngine } from "./engines";
+import { ItemPlaybackQuery } from "./player-queries";
+import { playerState, setPlayerLoading, setPlayerMedia } from "./player-state";
+import { videoState } from "./video-state";
 
-const NUMBER_REGEX = /^\d$/;
-const ARROW_SEEK_SECONDS = 5;
-const LETTER_SEEK_SECONDS = 10;
-
-const formatResumeTimestamp = (seconds: number): string => {
-	const safeSeconds = Math.max(0, Math.floor(seconds));
-	const hours = Math.floor(safeSeconds / 3600);
-	const minutes = Math.floor((safeSeconds % 3600) / 60);
-	const remainingSeconds = safeSeconds % 60;
-	if (hours > 0) {
-		return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
-	}
-
-	return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-};
-
-const UpdateWatchState = graphql(`
-	mutation UpdateWatchState($fileId: String!, $progressPercent: Float!) {
-		updateWatchProgress(fileId: $fileId, progressPercent: $progressPercent) {
-			progressPercent
-			updatedAt
-		}
-	}
-`);
-
-const SetPreferredAudio = graphql(`
-	mutation SetPreferredAudio($language: String, $disposition: TrackDispositionPreference) {
-		setPreferredAudio(language: $language, disposition: $disposition) {
-			id
-			preferredAudioLanguage
-			preferredAudioDisposition
-		}
-	}
-`);
-
-const SetPreferredSubtitle = graphql(`
-	mutation SetPreferredSubtitle($language: String, $disposition: TrackDispositionPreference) {
-		setPreferredSubtitle(language: $language, disposition: $disposition) {
-			id
-			preferredSubtitleLanguage
-			preferredSubtitleDisposition
-		}
-	}
-`);
-
-const ItemPlaybackQuery = graphql(`
-	query ItemPlayback($itemId: String!) {
-		node(nodeId: $itemId) {
-			id
-			libraryId
-			kind
-			properties {
-				displayName
-				seasonNumber
-				episodeNumber
-				runtimeMinutes
-			}
-			root {
-				libraryId
-				properties {
-					displayName
-				}
-			}
-			watchProgress {
-				progressPercent
-				completed
-				updatedAt
-			}
-			file {
-				id
-				tracks {
-					trackIndex
-					manifestIndex
-					trackType
-					displayName
-					language
-					disposition
-					isForced
-				}
-				recommendedTracks {
-					manifestIndex
-					trackType
-					enabled
-				}
-				segments {
-					kind
-					startMs
-					endMs
-				}
-				timelinePreview {
-					...PlayerTimelinePreviewSheet
-				}
-			}
-			previousPlayable {
-				id
-			}
-			nextPlayable {
-				id
-			}
-		}
-	}
-`);
-
-export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume?: boolean }> = ({
+// PlayerContent runs inside PlayerContext.Provider so all hooks can access the shared refs.
+const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume: boolean }> = ({
 	itemId,
-	autoplay = false,
-	shouldPromptResume = false,
+	autoplay,
+	shouldPromptResume,
 }) => {
-	const { isFullscreen, volume, isMuted, isLoading } = useStore(playerState);
-	const navigate = useNavigate();
+	const { videoRef, containerRef, surfaceRef } = usePlayerContext();
+	const { isFullscreen, volume, isMuted } = useStore(playerState);
+	const showControls = useStore(videoState, (s) => s.showControls);
 
-	const [errorMessage, setErrorMessage] = useState<string | null>(null);
-	const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
-	const [playing, setPlaying] = useState<boolean>(false);
-	const [showControls, setShowControls] = useState<boolean>(true);
-	const [duration, setDuration] = useState<number>(0);
-	const [currentTime, setCurrentTime] = useState<number>(0);
-	const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
-	const [audioTrackOptions, setAudioTrackOptions] = useState<Array<{ id: number; label: string }>>([]);
-	const [selectedAudioTrackId, setSelectedAudioTrackId] = useState<number | null>(null);
-	const [subtitleTrackOptions, setSubtitleTrackOptions] = useState<Array<{ id: number; label: string }>>([]);
-	const [selectedSubtitleTrackId, setSelectedSubtitleTrackId] = useState<number | null>(null);
-	const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState<boolean>(false);
-	const [resumePromptPosition, setResumePromptPosition] = useState<number | null>(null);
-	const [isControlsInteracting, setIsControlsInteracting] = useState<boolean>(false);
-
-	const videoRef = useRef<HTMLVideoElement>(null);
-	const hlsRef = useRef<Hls | null>(null);
-	const containerRef = useRef<HTMLDivElement>(null);
-	const surfaceRef = useRef<HTMLDivElement>(null);
-	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-	const doubleClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-	const resumePromptDecisionRef = useRef<"confirm" | "cancel" | null>(null);
-	const pendingResumePositionRef = useRef<number | null>(null);
-	const pendingStartLoadRef = useRef<((startPosition: number) => void) | null>(null);
-	const isControlsPinned = isSettingsMenuOpen || isControlsInteracting;
 	const {
 		data,
 		previousData,
 		loading: isItemLoading,
 		error: itemLoadError,
-	} = useQuery(ItemPlaybackQuery, {
-		variables: {
-			itemId,
-		},
-	});
-	// Keep the previous item mounted while loading the next/previous item so browser fullscreen is preserved.
+	} = useQuery(ItemPlaybackQuery, { variables: { itemId } });
+	// keep the previous item mounted while loading so browser fullscreen is preserved
 	const currentMedia = data?.node ?? (isItemLoading ? previousData?.node : null) ?? null;
-	// only treat query loading as player loading while we're still resolving a different item.
+	// only treat query loading as player loading while we're still resolving a different item
 	const isResolvingRequestedMedia = isItemLoading && currentMedia?.id !== itemId;
-	const introSegment = useMemo(() => {
-		const segments = currentMedia?.file?.segments;
-		if (!Array.isArray(segments)) {
-			return null;
-		}
-
-		return (
-			segments.find(
-				(segment) =>
-					segment.kind === "INTRO" &&
-					typeof segment.startMs === "number" &&
-					typeof segment.endMs === "number" &&
-					segment.endMs > segment.startMs,
-			) ?? null
-		);
-	}, [currentMedia?.file?.segments]);
-	const introProgressPercent = useMemo(() => {
-		if (!introSegment) {
-			return 0;
-		}
-
-		const introDurationMs = introSegment.endMs - introSegment.startMs;
-		if (introDurationMs <= 0) {
-			return 0;
-		}
-
-		const positionMs = currentTime * 1000;
-		return Math.max(0, Math.min(1, (positionMs - introSegment.startMs) / introDurationMs));
-	}, [currentTime, introSegment]);
-	const isInsideIntroSegment = useMemo(() => {
-		if (!introSegment) {
-			return false;
-		}
-
-		const positionMs = currentTime * 1000;
-		return positionMs >= introSegment.startMs && positionMs < introSegment.endMs;
-	}, [currentTime, introSegment]);
 
 	useEffect(() => {
-		if (!isResolvingRequestedMedia) {
-			return;
-		}
-
-		setErrorMessage(null);
+		if (!isResolvingRequestedMedia) return;
+		videoState.setState({ errorMessage: null });
 		setPlayerLoading(true);
 	}, [isResolvingRequestedMedia]);
 
 	useEffect(() => {
-		if (!itemLoadError) {
-			return;
-		}
-
-		setErrorMessage("Sorry, this item is unavailable");
+		if (!itemLoadError) return;
+		videoState.setState({ errorMessage: "Sorry, this item is unavailable" });
 		setPlayerLoading(false);
 	}, [itemLoadError]);
 
-	useEffect(() => {
-		setAudioTrackOptions([]);
-		setSelectedAudioTrackId(null);
-		setSubtitleTrackOptions([]);
-		setSelectedSubtitleTrackId(null);
-		setIsSettingsMenuOpen(false);
-		setResumePromptPosition(null);
-		resumePromptDecisionRef.current = null;
-		pendingResumePositionRef.current = null;
-		pendingStartLoadRef.current = null;
-	}, [currentMedia?.id]);
-
-	const handleResumePromptConfirm = () => {
-		const resumePosition = pendingResumePositionRef.current;
-		const startLoadAt = pendingStartLoadRef.current;
-		resumePromptDecisionRef.current = "confirm";
-		pendingResumePositionRef.current = null;
-		pendingStartLoadRef.current = null;
-		setResumePromptPosition(null);
-
-		if (resumePosition == null || !startLoadAt) {
-			return;
-		}
-
-		if (videoRef.current) {
-			videoRef.current.currentTime = resumePosition;
-		}
-		startLoadAt(resumePosition);
-	};
-
-	const handleResumePromptCancel = () => {
-		const startLoadAt = pendingStartLoadRef.current;
-		resumePromptDecisionRef.current = "cancel";
-		pendingResumePositionRef.current = null;
-		pendingStartLoadRef.current = null;
-		setResumePromptPosition(null);
-		startLoadAt?.(-1);
-	};
-
-	useEffect(() => {
-		if (!videoRef.current || !currentMedia) return;
-
-		if (hlsRef.current != null) {
-			hlsRef.current.destroy();
-			hlsRef.current = null;
-		}
-
-		if (!currentMedia.file) {
-			videoRef.current.pause();
-			setErrorMessage("Sorry, this item is unavailable");
-			setPlayerLoading(false);
-			return;
-		}
-
-		if (Hls.isSupported()) {
-			setErrorMessage(null);
-			setPlayerLoading(true);
-			const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/master.m3u8`;
-			const watchProgressPercent = currentMedia.watchProgress?.completed
-				? null
-				: currentMedia.watchProgress?.progressPercent;
-			const hasResumableWatchProgress =
-				typeof watchProgressPercent === "number" &&
-				Number.isFinite(watchProgressPercent) &&
-				watchProgressPercent > 0 &&
-				watchProgressPercent < 1;
-			const safeWatchProgressPercent = hasResumableWatchProgress ? watchProgressPercent : 0;
-			const runtimeMinutes = currentMedia.properties.runtimeMinutes;
-			const runtimeDurationSeconds =
-				typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
-					? runtimeMinutes * 60
-					: null;
-			const clampResumePosition = (durationSeconds: number) => {
-				if (!hasResumableWatchProgress) {
-					return null;
-				}
-				const progress = Math.max(0, Math.min(0.999, safeWatchProgressPercent));
-				const maxStart = Math.max(0, durationSeconds - 0.5);
-				return Math.max(0, Math.min(progress * durationSeconds, maxStart));
-			};
-			let hasStartedLoading = false;
-			const startLoadAt = (startPosition: number) => {
-				if (hasStartedLoading) {
-					return;
-				}
-				hasStartedLoading = true;
-				hls.startLoad(Number.isFinite(startPosition) ? startPosition : -1);
-			};
-			const hls = new Hls({
-				autoStartLoad: false,
-			});
-			hlsRef.current = hls;
-
-			const serverTracks = currentMedia.file?.tracks ?? [];
-			const serverTrackByManifestIndex = (type: "AUDIO" | "SUBTITLE", manifestIndex: number) =>
-				serverTracks.find((t) => t.trackType === type && t.manifestIndex === manifestIndex);
-
-			const syncAudioTracks = () => {
-				const tracks = hls.audioTracks.map((_track, id) => {
-					const serverTrack = serverTrackByManifestIndex("AUDIO", id);
-					return {
-						id,
-						label: serverTrack?.displayName ?? `Audio ${id + 1}`,
-					};
-				});
-				setAudioTrackOptions(tracks);
-				setSelectedAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : null);
-			};
-
-			const syncSubtitleTracks = () => {
-				const tracks = hls.subtitleTracks.map((_track, id) => {
-					const serverTrack = serverTrackByManifestIndex("SUBTITLE", id);
-					return {
-						id,
-						label: serverTrack?.displayName ?? `Subtitle ${id + 1}`,
-					};
-				});
-				setSubtitleTrackOptions(tracks);
-				setSelectedSubtitleTrackId(tracks.length > 0 ? (hls.subtitleTrack >= 0 ? hls.subtitleTrack : -1) : null);
-			};
-
-			const applyRecommendations = () => {
-				const recommendations = currentMedia.file?.recommendedTracks ?? [];
-				for (const rec of recommendations) {
-					if (rec.trackType === "AUDIO" && rec.enabled) {
-						hls.audioTrack = rec.manifestIndex;
-					}
-				}
-				const enabledSub = recommendations.find((r) => r.trackType === "SUBTITLE" && r.enabled);
-				if (enabledSub) {
-					hls.subtitleDisplay = true;
-					hls.subtitleTrack = enabledSub.manifestIndex;
-				} else {
-					hls.subtitleDisplay = false;
-					hls.subtitleTrack = -1;
-				}
-			};
-
-			hls.on(Hls.Events.ERROR, (event, data) => {
-				console.error("HLS error:", event, data);
-				if (data.fatal) {
-					// setErrorMessage("Failed to load video stream");
-					setErrorMessage(`${data.type}: ${data.reason}`);
-					setPlayerLoading(false);
-				}
-			});
-			hls.on(Hls.Events.MANIFEST_PARSED, () => {
-				syncAudioTracks();
-				syncSubtitleTracks();
-				applyRecommendations();
-				if (!hasResumableWatchProgress) {
-					startLoadAt(-1);
-					return;
-				}
-
-				const levels = hls.levels;
-				const levelDurations = levels
-					.map((level) => level.details?.totalduration)
-					.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-				const durationSeconds = levelDurations[0] ?? runtimeDurationSeconds;
-				const resumePosition = durationSeconds == null ? null : clampResumePosition(durationSeconds);
-
-				if (resumePosition != null) {
-					if (shouldPromptResume) {
-						resumePromptDecisionRef.current = null;
-						pendingResumePositionRef.current = resumePosition;
-						pendingStartLoadRef.current = startLoadAt;
-						setResumePromptPosition(resumePosition);
-						return;
-					}
-
-					if (videoRef.current) {
-						videoRef.current.currentTime = resumePosition;
-					}
-					startLoadAt(resumePosition);
-					return;
-				}
-
-				startLoadAt(-1);
-			});
-			hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
-				syncAudioTracks();
-			});
-			hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
-				if (typeof data.id === "number") {
-					setSelectedAudioTrackId(data.id);
-				}
-			});
-			hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
-				syncSubtitleTracks();
-			});
-			hls.on(Hls.Events.SUBTITLE_TRACKS_CLEARED, () => {
-				setSubtitleTrackOptions([]);
-				setSelectedSubtitleTrackId(null);
-			});
-			hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (_event, data) => {
-				if (typeof data.id === "number") {
-					setSelectedSubtitleTrackId(data.id);
-				} else if (hls.subtitleTracks.length > 0) {
-					setSelectedSubtitleTrackId(-1);
-				} else {
-					setSelectedSubtitleTrackId(null);
-				}
-			});
-
-			hls.loadSource(hlsUrl);
-			hls.attachMedia(videoRef.current);
-
-			return () => {
-				setResumePromptPosition(null);
-				resumePromptDecisionRef.current = null;
-				pendingResumePositionRef.current = null;
-				pendingStartLoadRef.current = null;
-				hls.destroy();
-				if (hlsRef.current === hls) {
-					hlsRef.current = null;
-				}
-			};
-		} else {
-			setErrorMessage("Sorry, your browser does not support this video.");
-		}
-	}, [currentMedia?.id, shouldPromptResume]);
-
-	useEffect(() => {
-		if (autoplay) {
-			return;
-		}
-
-		videoRef.current?.pause();
-		setPlaying(false);
-	}, [autoplay, currentMedia?.id]);
-
-	useEffect(() => {
-		if (!videoRef.current) return;
-		const video = videoRef.current;
-
-		const handleLoadedMetadata = () => {
-			if (video.videoWidth <= 0 || video.videoHeight <= 0) return;
-			setVideoAspectRatio(video.videoWidth / video.videoHeight);
-		};
-
-		video.addEventListener("loadedmetadata", handleLoadedMetadata);
-		return () => {
-			video.removeEventListener("loadedmetadata", handleLoadedMetadata);
-		};
-	}, [currentMedia?.id]);
-
+	// sync volume/mute from playerState into the video element whenever they change
 	useEffect(() => {
 		if (!videoRef.current) return;
 		videoRef.current.volume = volume;
 		videoRef.current.muted = isMuted;
-	}, [volume, isMuted]);
+	}, [volume, isMuted, videoRef]);
 
-	const [updateWatchProgress] = useMutation(UpdateWatchState);
-	const [setPreferredAudio] = useMutation(SetPreferredAudio, {
-		refetchQueries: [{ query: ItemPlaybackQuery, variables: { itemId } }],
+	usePlaybackLifecycle(currentMedia, { shouldPromptResume, autoplay });
+	// useVideoEvents runs once with [] deps — the video element must be in the DOM on initial mount.
+	// we always render the container + video below (never return null before them) to guarantee this.
+	useVideoEvents();
+	useFullscreen();
+	useWatchProgress(currentMedia);
+
+	const actions = usePlayerActions();
+	const { showControlsTemporarily, beginControlsInteraction, endControlsInteraction, handleMouseLeave } =
+		useControlsVisibility();
+	const { handleContainerClick, handleMouseMove } = useSurfaceInteraction({
+		togglePlaying: actions.togglePlaying,
+		showControlsTemporarily,
 	});
-	const [setPreferredSubtitle] = useMutation(SetPreferredSubtitle, {
-		refetchQueries: [{ query: ItemPlaybackQuery, variables: { itemId } }],
-	});
+	const { handlePlayerKeyDown } = useKeyboardShortcuts({ actions, showControlsTemporarily, handleContainerClick });
+	const { onAudioTrackChange, onSubtitleTrackChange } = useTrackSelection(currentMedia, itemId);
 
-	// watch state handling
-	useEffect(() => {
-		if (!videoRef.current || !currentMedia) return;
-		const media = currentMedia;
-		const video = videoRef.current;
+	// default to 16:9 until the video reports its actual dimensions
+	const miniPlayerAspectRatio = Math.max(videoState.getState().videoAspectRatio, 16 / 9);
 
-		let lastUpdate = Date.now();
-		const onTimeUpdate = () => {
-			if (Date.now() - lastUpdate < 10_000) return;
-			if (!media.file || video.duration <= 0) return;
-			lastUpdate = Date.now();
-			updateWatchProgress({
-				variables: {
-					fileId: media.file.id,
-					progressPercent: video.currentTime / video.duration,
-				},
-			}).catch((err: unknown) => {
-				console.error("failed to update watch state", err);
-			});
-		};
-
-		const onSeek = () => {
-			// on seek we don't want to "destroy" the watch state that already exists (eg, if the user seeks forward accidentally
-			// persisting that would be bad), so we reset the debounce timer forcing a ~10s delay in update
-			lastUpdate = Date.now();
-		};
-
-		video.addEventListener("timeupdate", onTimeUpdate);
-		video.addEventListener("seeked", onSeek);
-
-		return () => {
-			video.removeEventListener("timeupdate", onTimeUpdate);
-			video.removeEventListener("seeked", onSeek);
-		};
-	}, [currentMedia?.id, currentMedia?.file?.id, videoRef]);
-
-	useEffect(() => {
-		if (!videoRef.current) return;
-
-		// todo: doing this all the time is wasteful, it would make more sense to handle this per-event
-		const updatePlayerData = () => {
-			const video = videoRef.current;
-			if (!video) return;
-
-			if (video.paused) setPlaying(false);
-			else setPlaying(true);
-
-			setCurrentTime(video.currentTime);
-			setDuration(video.duration);
-
-			// Sync volume state
-			setPlayerVolume(video.volume);
-			setPlayerMuted(video.muted);
-
-			// Collect all buffered ranges
-			const ranges: Array<{ start: number; end: number }> = [];
-			for (let i = 0; i < video.buffered.length; i++) {
-				ranges.push({
-					start: video.buffered.start(i),
-					end: video.buffered.end(i),
-				});
-			}
-			setBufferedRanges(ranges);
-		};
-
-		const handleLoadStart = () => setPlayerLoading(true);
-		const handleCanPlay = () => setPlayerLoading(false);
-		const handleWaiting = () => setPlayerLoading(true);
-		const handlePlaying = () => setPlayerLoading(false);
-		const handleLoadedData = () => setPlayerLoading(false);
-
-		let lastUpdated = 0;
-		const debouncedUpdate = () => {
-			if (Date.now() - lastUpdated < 300) return;
-			lastUpdated = Date.now();
-			updatePlayerData();
-		};
-
-		videoRef.current.addEventListener("timeupdate", debouncedUpdate);
-		videoRef.current.addEventListener("play", updatePlayerData);
-		videoRef.current.addEventListener("pause", updatePlayerData);
-		videoRef.current.addEventListener("loadedmetadata", updatePlayerData);
-		videoRef.current.addEventListener("volumechange", updatePlayerData);
-		videoRef.current.addEventListener("loadstart", handleLoadStart);
-		videoRef.current.addEventListener("canplay", handleCanPlay);
-		videoRef.current.addEventListener("waiting", handleWaiting);
-		videoRef.current.addEventListener("playing", handlePlaying);
-		videoRef.current.addEventListener("loadeddata", handleLoadedData);
-
-		return () => {
-			const video = videoRef.current;
-			if (video) {
-				video.removeEventListener("timeupdate", debouncedUpdate);
-				video.removeEventListener("play", updatePlayerData);
-				video.removeEventListener("pause", updatePlayerData);
-				video.removeEventListener("loadedmetadata", updatePlayerData);
-				video.removeEventListener("volumechange", updatePlayerData);
-				video.removeEventListener("loadstart", handleLoadStart);
-				video.removeEventListener("canplay", handleCanPlay);
-				video.removeEventListener("loadeddata", handleLoadedData);
-				video.removeEventListener("waiting", handleWaiting);
-				video.removeEventListener("playing", handlePlaying);
-			}
-		};
-	}, [videoRef, currentMedia, setCurrentTime, setDuration, setBufferedRanges, setPlaying]);
-
-	useEffect(() => {
-		if (isFullscreen == null || !containerRef.current) return;
-		if (isFullscreen) {
-			containerRef.current.requestFullscreen({ navigationUI: "hide" }).catch(() => false);
-		} else {
-			document.exitFullscreen().catch(() => false);
-		}
-	}, [isFullscreen]);
-
-	const onTogglePlaying = () => {
-		if (playing) {
-			videoRef.current?.pause();
-		} else {
-			videoRef.current?.play();
-		}
-	};
-
-	const onToggleMute = () => {
-		const newMuted = !isMuted;
-		setPlayerMuted(newMuted);
-		if (videoRef.current) {
-			videoRef.current.muted = newMuted;
-		}
-	};
-
-	const onVolumeChange = (newVolume: number) => {
-		setPlayerVolume(newVolume);
-		if (videoRef.current) {
-			videoRef.current.volume = newVolume;
-		}
-		// Unmute if volume is increased from 0
-		if (newVolume > 0 && isMuted) {
-			setPlayerMuted(false);
-			if (videoRef.current) {
-				videoRef.current.muted = false;
-			}
-		}
-	};
-
-	const seekBy = (deltaSeconds: number) => {
-		const video = videoRef.current;
-		if (!video) {
-			return;
-		}
-
-		const maxTime = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : duration;
-		const nextTime = video.currentTime + deltaSeconds;
-		video.currentTime = Math.max(0, maxTime > 0 ? Math.min(maxTime, nextTime) : nextTime);
-	};
-
-	const showControlsTemporarily = () => {
-		setShowControls(true);
-		if (controlsTimeoutRef.current) {
-			clearTimeout(controlsTimeoutRef.current);
-			controlsTimeoutRef.current = null;
-		}
-		if (isControlsPinned) {
-			return;
-		}
-		controlsTimeoutRef.current = setTimeout(() => {
-			setShowControls(false);
-		}, 3000);
-	};
-
-	// keep controls visible while drag interactions are active, even if the pointer is stationary.
-	const beginControlsInteraction = () => {
-		setIsControlsInteracting(true);
-		setShowControls(true);
-		if (controlsTimeoutRef.current) {
-			clearTimeout(controlsTimeoutRef.current);
-			controlsTimeoutRef.current = null;
-		}
-	};
-
-	const endControlsInteraction = () => {
-		setIsControlsInteracting(false);
-		showControlsTemporarily();
-	};
-
-	useEffect(() => {
-		if (!isControlsPinned) {
-			return;
-		}
-		setShowControls(true);
-		if (controlsTimeoutRef.current) {
-			clearTimeout(controlsTimeoutRef.current);
-			controlsTimeoutRef.current = null;
-		}
-	}, [isControlsPinned]);
-
-	useEffect(() => {
-		return () => {
-			if (controlsTimeoutRef.current) {
-				clearTimeout(controlsTimeoutRef.current);
-				controlsTimeoutRef.current = null;
-			}
-			if (doubleClickTimeoutRef.current) {
-				clearTimeout(doubleClickTimeoutRef.current);
-				doubleClickTimeoutRef.current = null;
-			}
-		};
-	}, []);
-
-	const handleMouseMove = () => {
-		showControlsTemporarily();
-	};
-
-	const handleContainerClick = () => {
-		// on double click, toggle fullscreen. otherwise play/pause
-		// its done this way to prevent it pausing on double click
-		if (doubleClickTimeoutRef.current != null) {
-			clearTimeout(doubleClickTimeoutRef.current);
-			doubleClickTimeoutRef.current = null;
-			togglePlayerFullscreen();
-			showControlsTemporarily();
-			return;
-		}
-
-		doubleClickTimeoutRef.current = setTimeout(() => {
-			onTogglePlaying();
-			showControlsTemporarily();
-			doubleClickTimeoutRef.current = null;
-		}, 300);
-	};
-
-	// keep player shortcuts scoped to the focused player surface so the rest of the app keeps normal typing behavior.
-	const handlePlayerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-		if (event.defaultPrevented || isSettingsMenuOpen) {
-			return;
-		}
-
-		if (event.altKey || event.ctrlKey || event.metaKey) {
-			return;
-		}
-
-		const target = event.target as HTMLElement | null;
-		if (target?.closest("[data-slot='dialog-content']") || target?.closest("[data-slot='dropdown-menu-content']")) {
-			return;
-		}
-
-		if (
-			target instanceof HTMLInputElement ||
-			target instanceof HTMLTextAreaElement ||
-			target instanceof HTMLSelectElement ||
-			target?.isContentEditable
-		) {
-			return;
-		}
-
-		if ((event.key === " " || event.key === "Enter") && target instanceof HTMLButtonElement) {
-			return;
-		}
-
-		if (event.key === "Enter" && target === event.currentTarget) {
-			event.preventDefault();
-			event.stopPropagation();
-			handleContainerClick();
-			return;
-		}
-
-		const key = event.key.toLowerCase();
-		const isNumber = NUMBER_REGEX.test(event.key);
-		let triggered = true;
-
-		if (key === "arrowleft") {
-			seekBy(-ARROW_SEEK_SECONDS);
-		} else if (key === "arrowright") {
-			seekBy(ARROW_SEEK_SECONDS);
-		} else if (key === "j") {
-			seekBy(-LETTER_SEEK_SECONDS);
-		} else if (key === "l") {
-			seekBy(LETTER_SEEK_SECONDS);
-		} else if (key === "f") {
-			togglePlayerFullscreen();
-		} else if (key === "m") {
-			onToggleMute();
-		} else if (key === " ") {
-			onTogglePlaying();
-		} else if (event.key === "Escape") {
-			togglePlayerFullscreen(false);
-		} else if (isNumber) {
-			const video = videoRef.current;
-			if (!video) {
-				return;
-			}
-
-			const seekTo = (Number.parseInt(event.key, 10) / 10) * duration;
-			if (seekTo) {
-				video.currentTime = seekTo;
-			}
-		} else {
-			triggered = false;
-		}
-
-		if (triggered) {
-			showControlsTemporarily();
-			event.preventDefault();
-			event.stopPropagation();
-		}
-	};
-
-	useEffect(() => {
-		// closing browser fullscreen will set the player to also not be fullscreen
-		const handleFullscreenChange = () => {
-			if (!document.fullscreenElement) {
-				togglePlayerFullscreen(false);
-			}
-		};
-
-		document.addEventListener("fullscreenchange", handleFullscreenChange);
-		return () => {
-			document.removeEventListener("fullscreenchange", handleFullscreenChange);
-		};
-	}, []);
-
-	useEffect(() => {
-		surfaceRef.current?.focus();
-	}, [currentMedia?.id]);
-
-	const onAudioTrackChange = (trackId: number | null) => {
-		const hls = hlsRef.current;
-		if (!hls) {
-			return;
-		}
-
-		if (trackId === null) {
-			// "Auto" — reset to first track and clear preference
-			hls.audioTrack = 0;
-			setSelectedAudioTrackId(0);
-			setPreferredAudio({ variables: { language: null, disposition: null } }).catch((err: unknown) => {
-				console.error("failed to save audio preference", err);
-			});
-			return;
-		}
-
-		if (Number.isNaN(trackId)) {
-			return;
-		}
-
-		hls.audioTrack = trackId;
-		setSelectedAudioTrackId(trackId);
-
-		// only persist preference when the track has a parseable language
-		const serverTrack = currentMedia?.file?.tracks?.find((t) => t.trackType === "AUDIO" && t.manifestIndex === trackId);
-		if (serverTrack?.language != null) {
-			setPreferredAudio({
-				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
-			}).catch((err: unknown) => {
-				console.error("failed to save audio preference", err);
-			});
-		}
-	};
-
-	const onSubtitleTrackChange = (trackId: number | null) => {
-		const hls = hlsRef.current;
-		if (!hls) {
-			return;
-		}
-
-		if (trackId === null || trackId < 0) {
-			// "Auto" / "Off" — disable subtitles and clear preference
-			hls.subtitleDisplay = false;
-			hls.subtitleTrack = -1;
-			setSelectedSubtitleTrackId(trackId === null ? null : -1);
-			setPreferredSubtitle({ variables: { language: null, disposition: null } }).catch((err: unknown) => {
-				console.error("failed to save subtitle preference", err);
-			});
-			return;
-		}
-
-		if (Number.isNaN(trackId)) {
-			return;
-		}
-
-		hls.subtitleDisplay = true;
-		hls.subtitleTrack = trackId;
-		setSelectedSubtitleTrackId(trackId);
-
-		// only persist preference when the track has a parseable language
-		const serverTrack = currentMedia?.file?.tracks?.find(
-			(t) => t.trackType === "SUBTITLE" && t.manifestIndex === trackId,
-		);
-		if (serverTrack?.language != null) {
-			setPreferredSubtitle({
-				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
-			}).catch((err: unknown) => {
-				console.error("failed to save subtitle preference", err);
-			});
-		}
-	};
-
-	const onSeek = (time: number) => {
-		if (videoRef.current) {
-			videoRef.current.currentTime = time;
-		}
-	};
-
-	const onSkipIntro = () => {
-		if (!videoRef.current || !introSegment) {
-			return;
-		}
-
-		videoRef.current.currentTime = introSegment.endMs / 1000;
-	};
+	const timelinePreviewSheets = Array.isArray(currentMedia?.file?.timelinePreview)
+		? currentMedia.file.timelinePreview
+		: [];
 
 	const onPreviousItem = () => {
 		const previousItemId = (currentMedia?.previousPlayable as { id: string } | null)?.id;
-		if (!previousItemId) {
-			return;
-		}
-
-		setPlayerMedia(previousItemId, true);
+		if (previousItemId) setPlayerMedia(previousItemId, true);
 	};
 
 	const onNextItem = () => {
 		const nextItemId = (currentMedia?.nextPlayable as { id: string } | null)?.id;
-		if (!nextItemId) {
-			return;
-		}
-
-		setPlayerMedia(nextItemId, true);
+		if (nextItemId) setPlayerMedia(nextItemId, true);
 	};
 
-	if (!currentMedia) {
-		return null;
-	}
-
-	const miniPlayerAspectRatio = Math.max(videoAspectRatio, 16 / 9);
-	const detailsPath = currentMedia?.libraryId ? getPathForNodeData(currentMedia) : null;
-	const timelinePreviewSheets = Array.isArray(currentMedia.file?.timelinePreview)
-		? currentMedia.file.timelinePreview
-		: [];
-
-	const containerClasses = cn(
-		isFullscreen
-			? "z-50 fixed inset-0 bg-black outline-none"
-			: "z-50 fixed bottom-4 right-4 rounded shadow-2xl bg-black outline-none",
-	);
-
+	// always render the container + video so videoRef.current is stable for useVideoEvents on mount.
+	// the overlay and controls are gated on currentMedia being resolved.
 	return (
 		<div
 			ref={containerRef}
-			className={containerClasses}
+			className={cn(
+				isFullscreen
+					? "z-50 fixed inset-0 bg-black outline-none"
+					: "z-50 fixed bottom-4 right-4 rounded shadow-2xl bg-black outline-none",
+			)}
 			style={
 				isFullscreen
 					? undefined
@@ -947,11 +118,7 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 						}
 			}
 			onMouseMove={handleMouseMove}
-			onMouseLeave={() => {
-				if (!isControlsPinned) {
-					setShowControls(false);
-				}
-			}}
+			onMouseLeave={handleMouseLeave}
 		>
 			<video
 				ref={videoRef}
@@ -961,212 +128,78 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 				disablePictureInPicture
 			/>
 
-			{/* Overlay controls */}
-			<div
-				ref={surfaceRef}
-				className={cn(
-					"absolute inset-0 cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
-					!isFullscreen && "rounded",
-				)}
-				role="button"
-				tabIndex={0}
-				onKeyDown={handlePlayerKeyDown}
-				onMouseDownCapture={(event) => {
-					const target = event.target as HTMLElement | null;
-					if (target?.closest("button, [role='slider']")) {
-						return;
-					}
-
-					surfaceRef.current?.focus();
-				}}
-				onClick={handleContainerClick}
-				aria-label="Toggle play/pause"
-			>
-				{/* Vignette overlay */}
+			{/* Overlay surface — only rendered once media is resolved */}
+			{currentMedia && (
 				<div
+					ref={surfaceRef}
 					className={cn(
-						"absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 transition-opacity duration-300 pointer-events-none",
-						showControls ? "opacity-100" : "opacity-0",
+						"absolute inset-0 cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
 						!isFullscreen && "rounded",
 					)}
-				/>
-				{/* Top section */}
-				<div
-					className={cn(
-						"absolute top-0 left-0 right-0 transition-opacity duration-300 flex justify-between items-center",
-						showControls ? "opacity-100" : "opacity-0",
-						isFullscreen ? "p-6" : "p-4",
-					)}
-				>
-					<div className="flex items-center gap-3 text-white">
-						{isFullscreen && (
-							<PlayerButton
-								aria-label="Go back"
-								onClick={(e) => {
-									e.stopPropagation();
-									togglePlayerFullscreen(false);
-								}}
-							>
-								<ChevronDown className="size-6" />
-							</PlayerButton>
-						)}
-						{currentMedia.root?.properties.displayName &&
-						currentMedia.properties.seasonNumber &&
-						currentMedia.properties.episodeNumber ? (
-							<button
-								type="button"
-								className={cn(
-									"text-left rounded-sm transition-colors",
-									detailsPath ? "cursor-pointer group" : "cursor-default",
-								)}
-								onClick={(event) => {
-									event.stopPropagation();
-									if (detailsPath) {
-										togglePlayerFullscreen(false);
-										navigate({ to: detailsPath });
-									}
-								}}
-							>
-								<h2 className="text-xl font-semibold group-hover:underline">
-									{currentMedia.root.properties.displayName}: Season {currentMedia.properties.seasonNumber}
-								</h2>
-								<p className="text-sm text-gray-300">
-									Episode {currentMedia.properties.episodeNumber}: {currentMedia.properties.displayName}
-								</p>
-							</button>
-						) : (
-							<button
-								type="button"
-								className={cn(
-									"text-left rounded-sm transition-colors",
-									detailsPath ? "cursor-pointer hover:underline" : "cursor-default",
-								)}
-								onClick={(event) => {
-									event.stopPropagation();
-									if (detailsPath) {
-										togglePlayerFullscreen(false);
-										navigate({ to: detailsPath });
-									}
-								}}
-							>
-								<h2 className="text-xl font-semibold">{currentMedia.properties.displayName}</h2>
-							</button>
-						)}
-					</div>
-					<div className="flex items-center gap-3 text-white">
-						<PlayerButton
-							aria-label="Close player"
-							onClick={(event) => {
-								event.stopPropagation();
-								clearPlayerMedia();
-							}}
-						>
-							<XIcon className="size-6" />
-						</PlayerButton>
-					</div>
-				</div>
-
-				{introSegment && isInsideIntroSegment && isFullscreen && (
-					<div className={cn("absolute right-0 flex justify-end px-4 pointer-events-none bottom-36")}>
-						<div className="pointer-events-auto">
-							<SkipIntroButton progressPercent={introProgressPercent} onSkip={onSkipIntro} />
-						</div>
-					</div>
-				)}
-
-				{/* Bottom controls */}
-				<PlayerControls
-					showControls={showControls}
-					isFullscreen={!!isFullscreen}
-					currentTime={currentTime}
-					duration={duration}
-					bufferedRanges={bufferedRanges}
-					timelinePreviewSheets={timelinePreviewSheets}
-					playing={playing}
-					volume={volume}
-					isMuted={isMuted}
-					onSeek={onSeek}
-					onTogglePlaying={onTogglePlaying}
-					hasPreviousItem={!!currentMedia.previousPlayable}
-					hasNextItem={!!currentMedia.nextPlayable}
-					onPreviousItem={onPreviousItem}
-					onNextItem={onNextItem}
-					onToggleMute={onToggleMute}
-					onVolumeChange={onVolumeChange}
-					onToggleFullscreen={() => togglePlayerFullscreen()}
-					audioTrackOptions={audioTrackOptions}
-					selectedAudioTrackId={selectedAudioTrackId}
-					onAudioTrackChange={onAudioTrackChange}
-					subtitleTrackOptions={subtitleTrackOptions}
-					selectedSubtitleTrackId={selectedSubtitleTrackId}
-					onSubtitleTrackChange={onSubtitleTrackChange}
-					isSettingsMenuOpen={isSettingsMenuOpen}
-					onSettingsMenuOpenChange={setIsSettingsMenuOpen}
-					onControlsInteractionStart={beginControlsInteraction}
-					onControlsInteractionEnd={endControlsInteraction}
-					onControlsActivity={showControlsTemporarily}
-					dropdownPortalContainer={containerRef.current}
-				/>
-			</div>
-
-			<Dialog
-				open={resumePromptPosition != null}
-				onOpenChange={(open) => {
-					if (open) {
-						return;
-					}
-
-					if (resumePromptDecisionRef.current) {
-						resumePromptDecisionRef.current = null;
-						return;
-					}
-
-					handleResumePromptCancel();
-				}}
-			>
-				<DialogContent
-					portalContainer={containerRef.current}
-					className="max-w-sm p-0 gap-0 overflow-hidden [&>button.absolute]:hidden"
-					onClick={(event) => {
-						event.stopPropagation();
+					role="button"
+					tabIndex={0}
+					onKeyDown={handlePlayerKeyDown}
+					onMouseDownCapture={(event) => {
+						const target = event.target as HTMLElement | null;
+						if (target?.closest("button, [role='slider']")) return;
+						surfaceRef.current?.focus();
 					}}
+					onClick={handleContainerClick}
+					aria-label="Toggle play/pause"
 				>
-					<DialogHeader className="sr-only">
-						<DialogTitle>Choose playback start</DialogTitle>
-					</DialogHeader>
-					<div className="flex flex-col">
-						<button
-							type="button"
-							className="w-full px-5 py-4 text-left text-sm font-semibold transition-colors bg-zinc-900/95 hover:bg-zinc-800/95 border-b border-zinc-700/80"
-							onClick={handleResumePromptConfirm}
-						>
-							Resume from {resumePromptPosition == null ? "0:00" : formatResumeTimestamp(resumePromptPosition)}
-						</button>
-						<button
-							type="button"
-							className="w-full px-5 py-4 text-left text-sm font-semibold transition-colors bg-zinc-900/95 hover:bg-zinc-800/95"
-							onClick={handleResumePromptCancel}
-						>
-							Start from the beginning
-						</button>
-					</div>
-				</DialogContent>
-			</Dialog>
+					{/* Vignette gradient — visible when controls are shown */}
+					<div
+						className={cn(
+							"absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 transition-opacity duration-300 pointer-events-none",
+							showControls ? "opacity-100" : "opacity-0",
+							!isFullscreen && "rounded",
+						)}
+					/>
 
-			{/* Loading indicator */}
-			{isLoading && (
-				<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-					<Loader2 className="size-12 text-white animate-spin" />
+					<PlayerLayout
+						top={<PlayerTopChrome media={currentMedia} />}
+						middle={<PlayerIntroOverlay media={currentMedia} />}
+						bottom={
+							<PlayerControls
+								timelinePreviewSheets={timelinePreviewSheets}
+								hasPreviousItem={!!currentMedia.previousPlayable}
+								hasNextItem={!!currentMedia.nextPlayable}
+								onPreviousItem={onPreviousItem}
+								onNextItem={onNextItem}
+								onAudioTrackChange={onAudioTrackChange}
+								onSubtitleTrackChange={onSubtitleTrackChange}
+								onControlsInteractionStart={beginControlsInteraction}
+								onControlsInteractionEnd={endControlsInteraction}
+								onControlsActivity={showControlsTemporarily}
+								dropdownPortalContainer={containerRef.current}
+							/>
+						}
+					/>
 				</div>
 			)}
 
-			{errorMessage && (
-				<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-					<div className="text-white text-center p-4 mt-24 pointer-events-auto">
-						<p>{errorMessage}</p>
-					</div>
-				</div>
-			)}
+			<ResumePromptDialog />
+			<PlayerLoadingIndicator />
+			<PlayerErrorOverlay />
 		</div>
+	);
+};
+
+// Player creates the shared refs and provides them via context so all hooks and child components
+// can access them. PlayerContent lives inside the provider so usePlayerContext() resolves correctly.
+export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume?: boolean }> = ({
+	itemId,
+	autoplay = false,
+	shouldPromptResume = false,
+}) => {
+	const videoRef = useRef<HTMLVideoElement>(null);
+	const engineRef = useRef<PlaybackEngine | null>(null);
+	const containerRef = useRef<HTMLDivElement>(null);
+	const surfaceRef = useRef<HTMLDivElement>(null);
+
+	return (
+		<PlayerContext.Provider value={{ videoRef, engineRef, containerRef, surfaceRef }}>
+			<PlayerContent itemId={itemId} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
+		</PlayerContext.Provider>
 	);
 };
