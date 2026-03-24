@@ -251,7 +251,7 @@ function NodeRoute() {
 		);
 	}
 
-	const hasSeasons = sortedChildren.some((c) => c.kind === "SEASON");
+	const hasSeasons = sortedChildren.filter((c) => c.kind === "SEASON").length > 1;
 	const seasonEntries: SeasonEntry[] = sortedChildren
 		.filter((c) => c.kind === "SEASON")
 		.map((c) => ({ id: c.id, seasonNumber: c.properties.seasonNumber }));
