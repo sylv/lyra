@@ -6,12 +6,12 @@ export const useControlsVisibility = () => {
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const isControlsPinned = useStore(
 		videoState,
-		(s) => s.isSettingsMenuOpen || s.isControlsInteracting || s.isUpNextActive || s.isItemCardOpen,
+		(s) => s.isSettingsMenuOpen || s.isControlsInteracting || s.isItemCardOpen,
 	);
 
 	const areControlsPinned = () => {
-		const { isSettingsMenuOpen, isControlsInteracting, isUpNextActive, isItemCardOpen } = videoState.getState();
-		return isSettingsMenuOpen || isControlsInteracting || isUpNextActive || isItemCardOpen;
+		const { isSettingsMenuOpen, isControlsInteracting, isItemCardOpen } = videoState.getState();
+		return isSettingsMenuOpen || isControlsInteracting || isItemCardOpen;
 	};
 
 	const showControlsTemporarily = () => {

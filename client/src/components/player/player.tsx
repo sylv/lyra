@@ -1,5 +1,6 @@
 /* oxlint-disable jsx_a11y/media-has-caption, jsx_a11y/prefer-tag-over-role */
 import { useQuery } from "@apollo/client/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, type FC } from "react";
 import { useStore } from "zustand/react";
 import { cn } from "../../lib/utils";
@@ -8,8 +9,10 @@ import { PlayerControls } from "./components/player-controls";
 import { PlayerIntroOverlay } from "./components/player-intro-overlay";
 import { PlayerLoadingIndicator } from "./components/player-loading-indicator";
 import { PlayerTopChrome } from "./components/player-top-chrome";
+import { UpNextCard } from "./components/up-next-card";
 import { ResumePromptDialog } from "./components/resume-prompt-dialog";
 import { useControlsVisibility } from "./hooks/use-controls-visibility";
+import { useUpNextState } from "./hooks/use-up-next-state";
 import { useFullscreen } from "./hooks/use-fullscreen";
 import { usePlaybackLifecycle } from "./hooks/use-playback-lifecycle";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
@@ -99,15 +102,70 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 		if (nextItemId) setPlayerMedia(nextItemId, true);
 	};
 
+	const upNextState = useUpNextState({ hasNextItem: !!currentMedia?.nextPlayable, onNextItem });
+	const hoveredCard = useStore(videoState, (s) => s.hoveredCard);
+
+	// which card to show: active up-next takes priority, hover-previous overrides it,
+	// hover-next shows a plain preview when the active card isn't already up.
+	const showPreviousCard = hoveredCard === "previous" && !!currentMedia?.previousPlayable;
+	const showActiveCard = upNextState.isUpNextActive && !showPreviousCard && !!currentMedia?.nextPlayable;
+	const showNextPreview = hoveredCard === "next" && !!currentMedia?.nextPlayable && !upNextState.isUpNextActive;
+	const cardNode = showPreviousCard ? currentMedia?.previousPlayable : currentMedia?.nextPlayable;
+	const cardVisible = showPreviousCard || showActiveCard || showNextPreview;
+
+	const cardElement =
+		cardVisible && cardNode ? (
+			<motion.div
+				key={showPreviousCard ? "prev-card" : "next-card"}
+				initial={{ opacity: 0, y: 8 }}
+				animate={{ opacity: 1, y: 0 }}
+				exit={{ opacity: 0, y: 8 }}
+				transition={{ duration: 0.2 }}
+			>
+				<UpNextCard
+					displayName={cardNode.properties.displayName}
+					description={cardNode.properties.description}
+					thumbnailImage={cardNode.properties.thumbnailImage}
+					seasonNumber={cardNode.properties.seasonNumber}
+					episodeNumber={cardNode.properties.episodeNumber}
+					onPlay={showActiveCard && upNextState.showActions ? onNextItem : undefined}
+					onCancel={
+						showActiveCard &&
+						upNextState.showActions &&
+						upNextState.autoplayNext &&
+						!upNextState.upNextCountdownCancelled
+							? () => videoState.setState({ upNextCountdownCancelled: true })
+							: undefined
+					}
+					progressPercent={showActiveCard && upNextState.showActions ? upNextState.upNextProgress : undefined}
+					countdownSeconds={showActiveCard && upNextState.showActions ? upNextState.countdownSeconds : undefined}
+				/>
+			</motion.div>
+		) : null;
+
+	const controls = currentMedia ? (
+		<PlayerControls
+			timelinePreviewSheets={timelinePreviewSheets}
+			previousPlayable={currentMedia.previousPlayable}
+			nextPlayable={currentMedia.nextPlayable}
+			onPreviousItem={onPreviousItem}
+			onNextItem={onNextItem}
+			onAudioTrackChange={onAudioTrackChange}
+			onSubtitleTrackChange={onSubtitleTrackChange}
+			onControlsInteractionStart={beginControlsInteraction}
+			onControlsInteractionEnd={endControlsInteraction}
+			onControlsActivity={showControlsTemporarily}
+			dropdownPortalContainer={containerRef.current}
+		/>
+	) : null;
+
 	// always render the container + video so videoRef.current is stable for useVideoEvents on mount.
 	// the overlay and controls are gated on currentMedia being resolved.
-	return (
+	const playerDiv = (
 		<div
 			ref={containerRef}
 			className={cn(
-				isFullscreen
-					? "z-50 fixed inset-0 bg-black outline-none"
-					: "z-50 fixed bottom-4 right-4 rounded shadow-2xl bg-black outline-none",
+				isFullscreen ? "z-50 fixed inset-0 bg-black outline-none" : "relative rounded shadow-2xl bg-black outline-none",
 			)}
 			style={
 				isFullscreen
@@ -160,19 +218,18 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 						top={<PlayerTopChrome media={currentMedia} />}
 						middle={<PlayerIntroOverlay media={currentMedia} />}
 						bottom={
-							<PlayerControls
-								timelinePreviewSheets={timelinePreviewSheets}
-								previousPlayable={currentMedia.previousPlayable}
-								nextPlayable={currentMedia.nextPlayable}
-								onPreviousItem={onPreviousItem}
-								onNextItem={onNextItem}
-								onAudioTrackChange={onAudioTrackChange}
-								onSubtitleTrackChange={onSubtitleTrackChange}
-								onControlsInteractionStart={beginControlsInteraction}
-								onControlsInteractionEnd={endControlsInteraction}
-								onControlsActivity={showControlsTemporarily}
-								dropdownPortalContainer={containerRef.current}
-							/>
+							isFullscreen ? (
+								// relative wrapper so the card can use bottom-full to sit just above the controls.
+								// the controls always occupy space (even when opacity-0) so the card never shifts.
+								<div className="relative">
+									<div className="absolute bottom-full left-6 mb-2 pointer-events-auto">
+										<AnimatePresence>{cardElement}</AnimatePresence>
+									</div>
+									{controls}
+								</div>
+							) : (
+								controls
+							)
 						}
 					/>
 				</div>
@@ -181,6 +238,19 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 			<ResumePromptDialog />
 			<PlayerLoadingIndicator />
 			<PlayerErrorOverlay />
+		</div>
+	);
+
+	if (isFullscreen) {
+		return playerDiv;
+	}
+
+	// in miniplayer mode, the card sits to the left of the player with a gap so it doesn't
+	// cover the video. flex-row-reverse keeps the player anchored to the right edge.
+	return (
+		<div className="z-50 fixed bottom-4 right-4 flex flex-row-reverse items-end gap-3">
+			{playerDiv}
+			<AnimatePresence mode="wait">{cardElement}</AnimatePresence>
 		</div>
 	);
 };

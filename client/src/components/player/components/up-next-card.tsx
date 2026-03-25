@@ -51,7 +51,7 @@ export const UpNextCard: FC<UpNextCardProps> = ({
 				className="h-32 shrink-0 rounded-r-none object-cover"
 			/>
 
-			<div className={cn("h-32 rounded-md rounded-l-none bg-zinc-950 p-3 pl-5 shadow-lg w-xl")}>
+			<div className={cn("h-32 rounded-md rounded-l-none bg-black p-3 pl-5 shadow-lg w-[20em]")}>
 				<div className="flex flex-col h-full gap-3">
 					<div className="flex-1 min-h-0 overflow-hidden">
 						<p className="truncate text-sm font-semibold text-white">{title}</p>

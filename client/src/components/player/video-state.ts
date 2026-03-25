@@ -22,6 +22,7 @@ interface VideoState {
 	upNextCountdownCancelled: boolean;
 	isUpNextActive: boolean;
 	isItemCardOpen: boolean;
+	hoveredCard: "previous" | "next" | null;
 
 	// non-null while the resume prompt is showing; cleared when a decision is made.
 	resumePromptPosition: number | null;
@@ -51,6 +52,7 @@ export const videoState = create<VideoState>()(() => ({
 	upNextCountdownCancelled: false,
 	isUpNextActive: false,
 	isItemCardOpen: false,
+	hoveredCard: null,
 
 	resumePromptPosition: null,
 	confirmResumePrompt: null,

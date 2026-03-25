@@ -48,6 +48,9 @@ export const useVideoEvents = () => {
 		const handleLoadStart = () => {
 			setPlayerLoading(true);
 			videoState.setState({
+				currentTime: 0,
+				duration: 0,
+				bufferedRanges: [],
 				ended: false,
 				upNextDismissed: false,
 				upNextCountdownCancelled: false,
