@@ -5,9 +5,11 @@ type ServerTracks = NonNullable<NonNullable<NonNullable<ItemPlaybackQuery["node"
 type Recommendations = NonNullable<NonNullable<NonNullable<ItemPlaybackQuery["node"]>["file"]>["recommendedTracks"]>;
 
 export interface ResumeConfig {
+	initialPositionSeconds: number | null;
 	watchProgressPercent: number | null | undefined;
 	runtimeDurationSeconds: number | null;
 	shouldPromptResume: boolean;
+	pauseAfterInitialSeek: boolean;
 	videoRef: React.RefObject<HTMLVideoElement | null>;
 }
 
@@ -33,7 +35,8 @@ export const createHlsPlayer = async (
 		return null;
 	}
 
-	const { watchProgressPercent, runtimeDurationSeconds, shouldPromptResume, videoRef } = resumeConfig;
+	const { initialPositionSeconds, watchProgressPercent, runtimeDurationSeconds, shouldPromptResume, pauseAfterInitialSeek, videoRef } =
+		resumeConfig;
 
 	const hasResumableWatchProgress =
 		typeof watchProgressPercent === "number" &&
@@ -83,7 +86,7 @@ export const createHlsPlayer = async (
 		});
 	};
 
-const applyRecommendations = () => {
+	const applyRecommendations = () => {
 		for (const recommendation of recommendations) {
 			if (recommendation.trackType === "AUDIO" && recommendation.enabled) {
 				hls.audioTrack = recommendation.manifestIndex;
@@ -116,6 +119,19 @@ const applyRecommendations = () => {
 		syncAudioTracks();
 		syncSubtitleTracks();
 		applyRecommendations();
+
+		if (
+			typeof initialPositionSeconds === "number" &&
+			Number.isFinite(initialPositionSeconds) &&
+			initialPositionSeconds >= 0
+		) {
+			if (videoRef.current) {
+				videoRef.current.currentTime = initialPositionSeconds;
+				if (pauseAfterInitialSeek) videoRef.current.pause();
+			}
+			startLoadAt(initialPositionSeconds);
+			return;
+		}
 
 		if (!hasResumableWatchProgress) {
 			startLoadAt(-1);

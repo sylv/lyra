@@ -11,6 +11,7 @@ import {
 	setPlayerActions,
 	setPlayerLoading,
 	setPlayerMuted,
+	setPlayerSnapshot,
 	setPlayerState,
 	setPlayerVolume,
 } from "./player-context";
@@ -31,10 +32,15 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 	const [updateWatchProgress] = useMutation(UpdateWatchState);
 	const currentMediaId = currentMedia?.id ?? null;
 	const currentFileId = currentMedia?.file?.id ?? null;
-	const watchProgressRef = useRef<{ mediaId: string | null; fileId: string | null; lastUpdate: number }>({
+	const snapshotUpdateRef = useRef<{ mediaId: string | null; lastPosition: number | null; lastUpdatedAt: number }>({
+		mediaId: null,
+		lastPosition: null,
+		lastUpdatedAt: 0,
+	});
+	const watchProgressRef = useRef<{ mediaId: string | null; fileId: string | null; lastProgressPercent: number | null }>({
 		mediaId: null,
 		fileId: null,
-		lastUpdate: 0,
+		lastProgressPercent: null,
 	});
 
 	useEffect(() => {
@@ -130,6 +136,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		setPlayerLoading(true);
 
 		const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/master.m3u8`;
+		const initialPositionSeconds = playerContext.getState().state.pendingInitialPosition;
 		const watchProgressPercent = currentMedia.watchProgress?.completed
 			? null
 			: currentMedia.watchProgress?.progressPercent;
@@ -142,9 +149,11 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		let active = true;
 
 		createHlsPlayer(video, hlsUrl, currentMedia.file.tracks ?? [], currentMedia.file.recommendedTracks ?? [], {
+			initialPositionSeconds,
 			watchProgressPercent,
 			runtimeDurationSeconds,
 			shouldPromptResume,
+			pauseAfterInitialSeek: initialPositionSeconds != null,
 			videoRef,
 		}).then((controller) => {
 			if (!active) {
@@ -152,6 +161,9 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 				return;
 			}
 			controllerRef.current = controller;
+			if (initialPositionSeconds != null) {
+				setPlayerState({ pendingInitialPosition: null, playing: false });
+			}
 		});
 
 		return () => {
@@ -171,6 +183,71 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		const video = videoRef.current;
 		if (!video) return;
 
+		// keep a persisted local snapshot of the active item so reloads can restore the exact position.
+		const syncPlayerSnapshot = (force = false) => {
+			if (!currentMedia) return;
+			if (playerContext.getState().currentItemId !== currentMedia.id) return;
+
+			const position = Number.isFinite(video.currentTime) && video.currentTime > 0 ? video.currentTime : 0;
+			const now = Date.now();
+			const snapshotState = snapshotUpdateRef.current;
+
+			if (snapshotState.mediaId !== currentMedia.id) {
+				snapshotUpdateRef.current = {
+					mediaId: currentMedia.id,
+					lastPosition: null,
+					lastUpdatedAt: 0,
+				};
+			}
+
+			const nextSnapshotState = snapshotUpdateRef.current;
+			if (!force) {
+				const positionDelta =
+					nextSnapshotState.lastPosition == null ? Number.POSITIVE_INFINITY : Math.abs(position - nextSnapshotState.lastPosition);
+				if (positionDelta < 1 && now - nextSnapshotState.lastUpdatedAt < 1_000) return;
+			}
+
+			setPlayerSnapshot({
+				currentItemId: currentMedia.id,
+				position,
+			});
+			snapshotUpdateRef.current = {
+				mediaId: currentMedia.id,
+				lastPosition: position,
+				lastUpdatedAt: now,
+			};
+		};
+
+		const syncWatchProgress = () => {
+			if (!currentMedia?.file || video.duration <= 0) return;
+
+			const progressPercent = video.currentTime / video.duration;
+			if (!Number.isFinite(progressPercent)) return;
+
+			if (
+				watchProgressRef.current.mediaId !== currentMedia.id ||
+				watchProgressRef.current.fileId !== currentMedia.file.id
+			) {
+				watchProgressRef.current = {
+					mediaId: currentMedia.id,
+					fileId: currentMedia.file.id,
+					lastProgressPercent: null,
+				};
+			}
+
+			if (watchProgressRef.current.lastProgressPercent === progressPercent) return;
+			watchProgressRef.current.lastProgressPercent = progressPercent;
+
+			updateWatchProgress({
+				variables: {
+					fileId: currentMedia.file.id,
+					progressPercent,
+				},
+			}).catch((err: unknown) => {
+				console.error("failed to update watch state", err);
+			});
+		};
+
 		const updateBufferedRanges = () => {
 			const ranges: Array<{ start: number; end: number }> = [];
 			for (let i = 0; i < video.buffered.length; i++) {
@@ -189,6 +266,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			setPlayerVolume(video.volume);
 			setPlayerMuted(video.muted);
 			updateBufferedRanges();
+			syncPlayerSnapshot();
 		};
 
 		const handleLoadedMetadata = () => {
@@ -226,27 +304,15 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 				lastUpdated = now;
 				updatePlaybackState();
 			}
-
-			if (!currentMedia?.file || video.duration <= 0) return;
-			if (watchProgressRef.current.mediaId !== currentMedia.id || watchProgressRef.current.fileId !== currentMedia.file.id) {
-				watchProgressRef.current = { mediaId: currentMedia.id, fileId: currentMedia.file.id, lastUpdate: now };
-				return;
-			}
-			if (now - watchProgressRef.current.lastUpdate < 10_000) return;
-			watchProgressRef.current.lastUpdate = now;
-			updateWatchProgress({
-				variables: {
-					fileId: currentMedia.file.id,
-					progressPercent: video.currentTime / video.duration,
-				},
-			}).catch((err: unknown) => {
-				console.error("failed to update watch state", err);
-			});
 		};
 
 		const handleSeeked = () => {
-			watchProgressRef.current.lastUpdate = Date.now();
+			updatePlaybackState();
+			syncPlayerSnapshot(true);
+			syncWatchProgress();
 		};
+
+		const watchProgressInterval = window.setInterval(syncWatchProgress, 5_000);
 
 		video.addEventListener("timeupdate", handleTimeUpdate);
 		video.addEventListener("play", updatePlaybackState);
@@ -262,6 +328,8 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		video.addEventListener("seeked", handleSeeked);
 
 		return () => {
+			syncPlayerSnapshot(true);
+			window.clearInterval(watchProgressInterval);
 			video.removeEventListener("timeupdate", handleTimeUpdate);
 			video.removeEventListener("play", updatePlaybackState);
 			video.removeEventListener("pause", updatePlaybackState);

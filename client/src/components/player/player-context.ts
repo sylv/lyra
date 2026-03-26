@@ -11,9 +11,15 @@ export interface PlayerPreferences {
 	autoplayNext: boolean;
 }
 
+export interface PlayerSnapshot {
+	currentItemId: string;
+	position: number;
+}
+
 export interface PlayerState {
 	autoplay: boolean;
 	shouldPromptResume: boolean;
+	pendingInitialPosition: number | null;
 	isFullscreen: boolean;
 	isLoading: boolean;
 	playing: boolean;
@@ -59,13 +65,14 @@ export interface PlayerActions {
 
 export interface PlayerContextStore {
 	currentItemId: string | null;
+	snapshot: PlayerSnapshot | null;
 	preferences: PlayerPreferences;
 	state: PlayerState;
 	controls: PlayerControlsState;
 	actions: PlayerActions;
 }
 
-type PersistedPlayerContext = Pick<PlayerContextStore, "currentItemId" | "preferences">;
+type PersistedPlayerContext = Pick<PlayerContextStore, "snapshot" | "preferences">;
 
 const noop = () => undefined;
 
@@ -78,6 +85,7 @@ const initialPreferences: PlayerPreferences = {
 const initialState: PlayerState = {
 	autoplay: false,
 	shouldPromptResume: false,
+	pendingInitialPosition: null,
 	isFullscreen: false,
 	isLoading: false,
 	playing: false,
@@ -124,8 +132,13 @@ const initialActions: PlayerActions = {
 const playerContextPersistOptions: PersistOptions<PlayerContextStore, PersistedPlayerContext> = {
 	name: "lyra.player",
 	storage: createJSONStorage(() => window.localStorage),
+	merge: (persistedState, currentState) => ({
+		...currentState,
+		...(persistedState as PersistedPlayerContext),
+		currentItemId: null,
+	}),
 	partialize: (context) => ({
-		currentItemId: context.currentItemId,
+		snapshot: context.snapshot,
 		preferences: context.preferences,
 	}),
 };
@@ -134,6 +147,7 @@ export const playerContext = create<PlayerContextStore>()(
 	persist(
 		() => ({
 			currentItemId: null,
+			snapshot: null,
 			preferences: initialPreferences,
 			state: initialState,
 			controls: initialControls,
@@ -209,10 +223,15 @@ export const setPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 	playerContext.setState((context) => ({
 		...context,
 		currentItemId: itemId,
+		snapshot: {
+			currentItemId: itemId,
+			position: 0,
+		},
 		state: {
 			...context.state,
 			autoplay: autoplay ?? context.state.autoplay,
 			shouldPromptResume: false,
+			pendingInitialPosition: null,
 		},
 	}));
 };
@@ -221,10 +240,15 @@ export const openPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 	playerContext.setState((context) => ({
 		...context,
 		currentItemId: itemId,
+		snapshot: {
+			currentItemId: itemId,
+			position: 0,
+		},
 		state: {
 			...context.state,
 			autoplay: autoplay ?? context.state.autoplay,
 			shouldPromptResume: true,
+			pendingInitialPosition: null,
 			isFullscreen: true,
 		},
 	}));
@@ -234,11 +258,36 @@ export const clearPlayerMedia = () => {
 	playerContext.setState((context) => ({
 		...context,
 		currentItemId: null,
+		snapshot: null,
 		state: {
 			...context.state,
 			shouldPromptResume: false,
+			pendingInitialPosition: null,
 			isFullscreen: false,
 		},
+	}));
+};
+
+export const hydratePlayerFromSnapshot = () => {
+	playerContext.setState((context) => {
+		if (!context.snapshot) return context;
+		return {
+			...context,
+			currentItemId: context.snapshot.currentItemId,
+			state: {
+				...context.state,
+				autoplay: false,
+				shouldPromptResume: false,
+				pendingInitialPosition: context.snapshot.position,
+			},
+		};
+	});
+};
+
+export const setPlayerSnapshot = (snapshot: PlayerSnapshot | null) => {
+	playerContext.setState((context) => ({
+		...context,
+		snapshot,
 	}));
 };
 
