@@ -1,22 +1,16 @@
-import { useMemo, type FC } from "react";
-import { useStore } from "zustand/react";
 import { AnimatePresence } from "motion/react";
+import { useMemo, type FC } from "react";
 import type { ItemPlaybackQuery } from "../../../@generated/gql/graphql";
-import { playerState } from "../player-state";
+import { usePlayerContext } from "../player-context";
 import { usePlayerActions } from "../hooks/use-player-actions";
-import { videoState } from "../video-state";
 import { SkipIntroButton } from "./skip-intro-button";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 
-interface PlayerIntroOverlayProps {
-	media: CurrentMedia;
-}
-
-export const PlayerIntroOverlay: FC<PlayerIntroOverlayProps> = ({ media }) => {
-	const currentTime = useStore(videoState, (s) => s.currentTime);
-	const isFullscreen = useStore(playerState, (s) => s.isFullscreen);
-	const { onSeek } = usePlayerActions();
+export const PlayerIntroOverlay: FC<{ media: CurrentMedia }> = ({ media }) => {
+	const currentTime = usePlayerContext((ctx) => ctx.state.currentTime);
+	const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
+	const { seekTo } = usePlayerActions();
 
 	const introSegment = useMemo(() => {
 		const segments = media.file?.segments;
@@ -46,19 +40,17 @@ export const PlayerIntroOverlay: FC<PlayerIntroOverlayProps> = ({ media }) => {
 		return positionMs >= introSegment.startMs && positionMs < introSegment.endMs;
 	}, [currentTime, introSegment]);
 
-	const showButton = !!introSegment && isInsideIntroSegment && !!isFullscreen;
-
 	return (
-		<div className="absolute right-0 flex justify-end px-4 pointer-events-none bottom-36">
+		<div className="pointer-events-none absolute bottom-36 right-0 flex justify-end px-4">
 			<div className="pointer-events-auto">
 				<AnimatePresence>
-					{showButton && introSegment && (
+					{introSegment && isInsideIntroSegment && isFullscreen ? (
 						<SkipIntroButton
 							key="skip-intro"
 							progressPercent={introProgressPercent}
-							onSkip={() => onSeek(introSegment.endMs / 1000)}
+							onSkip={() => seekTo(introSegment.endMs / 1000)}
 						/>
-					)}
+					) : null}
 				</AnimatePresence>
 			</div>
 		</div>

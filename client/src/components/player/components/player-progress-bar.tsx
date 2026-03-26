@@ -1,7 +1,8 @@
-import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import { useMemo, useState, type FC } from "react";
+import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import { formatPlayerTime } from "../../../lib/format-player-time";
 import { cn } from "../../../lib/utils";
+import { usePlayerContext } from "../player-context";
 
 const TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX = 380;
 const TIMELINE_TIME_TOOLTIP_WIDTH_PX = 56;
@@ -21,15 +22,9 @@ export const PlayerTimelinePreviewSheetFragment = graphql(`
 	}
 `);
 
-interface PlayerProcessBarProps {
-	duration: number;
-	currentTime: number;
-	bufferedRanges: { start: number; end: number }[];
+interface PlayerProgressBarProps {
 	timelinePreviewSheets: FragmentType<typeof PlayerTimelinePreviewSheetFragment>[];
-	onChange: (time: number) => void;
-	onInteractionStart: () => void;
-	onInteractionEnd: () => void;
-	onActivity: () => void;
+	compact?: boolean;
 }
 
 interface HoverPreviewFrame {
@@ -46,9 +41,7 @@ const getHoverPreviewFrame = (
 	hoverTimeSeconds: number,
 	sheets: Array<FragmentType<typeof PlayerTimelinePreviewSheetFragment>>,
 ): HoverPreviewFrame | null => {
-	if (!Number.isFinite(hoverTimeSeconds) || hoverTimeSeconds < 0) {
-		return null;
-	}
+	if (!Number.isFinite(hoverTimeSeconds) || hoverTimeSeconds < 0) return null;
 
 	const hoverMs = hoverTimeSeconds * 1000;
 
@@ -56,39 +49,28 @@ const getHoverPreviewFrame = (
 		const sheet = unmask(PlayerTimelinePreviewSheetFragment, sheetRef);
 		const sheetWidthPx = sheet.asset.width ?? 0;
 		const sheetHeightPx = sheet.asset.height ?? 0;
-		if (sheetWidthPx <= 0 || sheetHeightPx <= 0 || sheet.sheetGapSize < 0 || sheet.sheetIntervalMs <= 0) {
-			continue;
-		}
+		if (sheetWidthPx <= 0 || sheetHeightPx <= 0 || sheet.sheetGapSize < 0 || sheet.sheetIntervalMs <= 0) continue;
 
 		const frameCount = Math.floor((sheet.endMs - sheet.positionMs) / sheet.sheetIntervalMs);
-		if (frameCount <= 0) {
-			continue;
-		}
+		if (frameCount <= 0) continue;
 
-		// Timeline preview frames are offset by one interval (first frame is at +interval, not 0s).
-		// Use nearest-frame selection to avoid previews feeling delayed.
+		// timeline preview frames are offset by one interval (first frame is at +interval, not 0s).
 		const previewTimestampMs = Math.max(
 			sheet.sheetIntervalMs,
 			Math.round(hoverMs / sheet.sheetIntervalMs) * sheet.sheetIntervalMs,
 		);
-		if (previewTimestampMs <= sheet.positionMs || previewTimestampMs > sheet.endMs) {
-			continue;
-		}
+		if (previewTimestampMs <= sheet.positionMs || previewTimestampMs > sheet.endMs) continue;
 
 		const columns = Math.max(1, Math.ceil(Math.sqrt(frameCount)));
 		const rows = Math.max(1, Math.ceil(frameCount / columns));
 		const frameWidthPx = Math.floor((sheetWidthPx - (columns + 1) * sheet.sheetGapSize) / columns);
 		const frameHeightPx = Math.floor((sheetHeightPx - (rows + 1) * sheet.sheetGapSize) / rows);
-		if (frameWidthPx <= 0 || frameHeightPx <= 0) {
-			continue;
-		}
+		if (frameWidthPx <= 0 || frameHeightPx <= 0) continue;
 
 		const rawIndex = Math.floor((previewTimestampMs - sheet.positionMs) / sheet.sheetIntervalMs) - 1;
 		const frameIndex = Math.max(0, Math.min(frameCount - 1, rawIndex));
 		const columnIndex = frameIndex % columns;
 		const rowIndex = Math.floor(frameIndex / columns);
-		const offsetXPx = sheet.sheetGapSize + columnIndex * (frameWidthPx + sheet.sheetGapSize);
-		const offsetYPx = sheet.sheetGapSize + rowIndex * (frameHeightPx + sheet.sheetGapSize);
 
 		return {
 			assetSignedUrl: sheet.asset.signedUrl,
@@ -96,76 +78,58 @@ const getHoverPreviewFrame = (
 			sheetHeightPx,
 			frameWidthPx,
 			frameHeightPx,
-			offsetXPx,
-			offsetYPx,
+			offsetXPx: sheet.sheetGapSize + columnIndex * (frameWidthPx + sheet.sheetGapSize),
+			offsetYPx: sheet.sheetGapSize + rowIndex * (frameHeightPx + sheet.sheetGapSize),
 		};
 	}
 
 	return null;
 };
 
-export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
-	duration,
-	currentTime,
-	bufferedRanges,
-	timelinePreviewSheets,
-	onChange,
-	onInteractionStart,
-	onInteractionEnd,
-	onActivity,
-}) => {
-	const [hoverState, setHoverState] = useState<{
-		time: number;
-		xPx: number;
-		barWidthPx: number;
-	} | null>(null);
+export const PlayerProgressBar: FC<PlayerProgressBarProps> = ({ timelinePreviewSheets, compact = false }) => {
+	const currentTime = usePlayerContext((ctx) => ctx.state.currentTime);
+	const duration = usePlayerContext((ctx) => ctx.state.duration);
+	const bufferedRanges = usePlayerContext((ctx) => ctx.state.bufferedRanges);
+	const onSeek = usePlayerContext((ctx) => ctx.actions.seekTo);
+	const showControlsTemporarily = usePlayerContext((ctx) => ctx.actions.showControlsTemporarily);
+	const beginControlsInteraction = usePlayerContext((ctx) => ctx.actions.beginControlsInteraction);
+	const endControlsInteraction = usePlayerContext((ctx) => ctx.actions.endControlsInteraction);
+	const [hoverState, setHoverState] = useState<{ time: number; xPx: number; barWidthPx: number } | null>(null);
+
 	const sortedTimelinePreviewSheets = useMemo(() => {
 		return [...timelinePreviewSheets].sort((aRef, bRef) => {
 			const a = unmask(PlayerTimelinePreviewSheetFragment, aRef);
 			const b = unmask(PlayerTimelinePreviewSheetFragment, bRef);
-			if (a.positionMs !== b.positionMs) {
-				return a.positionMs - b.positionMs;
-			}
+			if (a.positionMs !== b.positionMs) return a.positionMs - b.positionMs;
 			return a.asset.id.localeCompare(b.asset.id);
 		});
 	}, [timelinePreviewSheets]);
+
 	const hoverPreviewFrame = useMemo(() => {
-		if (hoverState == null) {
-			return null;
-		}
+		if (!hoverState) return null;
 		return getHoverPreviewFrame(hoverState.time, sortedTimelinePreviewSheets);
 	}, [hoverState, sortedTimelinePreviewSheets]);
-	const renderedHoverPreviewFrame = useMemo(() => {
-		if (hoverPreviewFrame == null) {
-			return null;
-		}
 
+	const renderedHoverPreviewFrame = useMemo(() => {
+		if (!hoverPreviewFrame) return null;
 		const scale = TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX / hoverPreviewFrame.frameWidthPx;
 		return {
-			assetSignedUrl: hoverPreviewFrame.assetSignedUrl,
+			...hoverPreviewFrame,
 			frameWidthPx: Math.max(1, TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX),
 			frameHeightPx: Math.max(1, hoverPreviewFrame.frameHeightPx * scale),
 			scale,
-			offsetXPx: hoverPreviewFrame.offsetXPx,
-			offsetYPx: hoverPreviewFrame.offsetYPx,
-			sheetWidthPx: hoverPreviewFrame.sheetWidthPx,
-			sheetHeightPx: hoverPreviewFrame.sheetHeightPx,
 			sourceFrameWidthPx: hoverPreviewFrame.frameWidthPx,
 			sourceFrameHeightPx: hoverPreviewFrame.frameHeightPx,
 		};
 	}, [hoverPreviewFrame]);
-	const hoverMarkerPercent = useMemo(() => {
-		if (hoverState == null || hoverState.barWidthPx <= 0) {
-			return 0;
-		}
 
+	const hoverMarkerPercent = useMemo(() => {
+		if (!hoverState || hoverState.barWidthPx <= 0) return 0;
 		return (hoverState.xPx / hoverState.barWidthPx) * 100;
 	}, [hoverState]);
-	const clampedHoverOverlayPercent = useMemo(() => {
-		if (hoverState == null || hoverState.barWidthPx <= 0) {
-			return 0;
-		}
 
+	const clampedHoverOverlayPercent = useMemo(() => {
+		if (!hoverState || hoverState.barWidthPx <= 0) return 0;
 		const overlayWidthPx = renderedHoverPreviewFrame?.frameWidthPx ?? TIMELINE_TIME_TOOLTIP_WIDTH_PX;
 		const minCenterPx = overlayWidthPx / 2;
 		const maxCenterPx = hoverState.barWidthPx - overlayWidthPx / 2;
@@ -173,83 +137,71 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 			minCenterPx <= maxCenterPx
 				? Math.min(Math.max(hoverState.xPx, minCenterPx), maxCenterPx)
 				: hoverState.barWidthPx / 2;
-
 		return (clampedCenterPx / hoverState.barWidthPx) * 100;
 	}, [hoverState, renderedHoverPreviewFrame]);
 
+	const progressPercent = duration ? (currentTime / duration) * 100 : 0;
+
 	const handleProgressClick = (event: React.MouseEvent<HTMLDivElement>) => {
 		event.stopPropagation();
-		onActivity();
-
+		showControlsTemporarily();
 		const rect = event.currentTarget.getBoundingClientRect();
-		const clickX = event.clientX - rect.left;
-		const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-		const newTime = ratio * duration;
-		onChange(newTime);
+		const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+		onSeek(ratio * duration);
 	};
 
 	const handleProgressMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
 		if (!duration) return;
-		onActivity();
-
+		showControlsTemporarily();
 		const rect = event.currentTarget.getBoundingClientRect();
 		const hoverX = event.clientX - rect.left;
 		const ratio = Math.max(0, Math.min(1, hoverX / rect.width));
-		const hoverTimeValue = ratio * duration;
 		setHoverState({
-			time: Math.max(0, Math.min(duration, hoverTimeValue)),
+			time: Math.max(0, Math.min(duration, ratio * duration)),
 			xPx: Math.max(0, Math.min(rect.width, hoverX)),
 			barWidthPx: rect.width,
 		});
 	};
 
-	const onMouseLeave = () => {
-		setHoverState(null);
-	};
-
 	const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-		if (!duration) {
-			return;
-		}
+		if (!duration) return;
 
 		const step = 5;
 		if (event.key === "ArrowLeft") {
 			event.preventDefault();
-			onActivity();
-			onChange(Math.max(0, currentTime - step));
+			showControlsTemporarily();
+			onSeek(Math.max(0, currentTime - step));
 			return;
 		}
 		if (event.key === "ArrowRight") {
 			event.preventDefault();
-			onActivity();
-			onChange(Math.min(duration, currentTime + step));
+			showControlsTemporarily();
+			onSeek(Math.min(duration, currentTime + step));
 			return;
 		}
 		if (event.key === "Home") {
 			event.preventDefault();
-			onActivity();
-			onChange(0);
+			showControlsTemporarily();
+			onSeek(0);
 			return;
 		}
 		if (event.key === "End") {
 			event.preventDefault();
-			onActivity();
-			onChange(duration);
+			showControlsTemporarily();
+			onSeek(duration);
 		}
 	};
 
-	const progressPercent = duration ? (currentTime / duration) * 100 : 0;
-
 	return (
 		<div
-			className="py-2 my-2 cursor-pointer"
+			className={cn(compact ? "my-0 cursor-pointer py-1" : "my-2 cursor-pointer py-2")}
 			onClick={handleProgressClick}
 			onMouseMove={handleProgressMouseMove}
-			onMouseLeave={onMouseLeave}
+			onMouseLeave={() => setHoverState(null)}
 			onKeyDown={handleKeyDown}
-			onPointerDown={onInteractionStart}
-			onPointerUp={onInteractionEnd}
-			onPointerCancel={onInteractionEnd}
+			onPointerDown={beginControlsInteraction}
+			onPointerUp={endControlsInteraction}
+			onPointerCancel={endControlsInteraction}
 			role="slider"
 			tabIndex={0}
 			aria-label="Seek video"
@@ -257,9 +209,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 			aria-valuemax={duration || 100}
 			aria-valuenow={currentTime || 0}
 		>
-			<div className="relative h-1 bg-white/15 group-hover:h-2 transition-all rounded-md">
-				<div className="h-full bg-white/80 transition-all rounded-md" style={{ width: `${progressPercent}%` }} />
-				{/* Buffered ranges */}
+			<div className={cn("relative rounded-md bg-white/15 transition-all", compact ? "h-1.5 group-hover:h-2" : "h-1 group-hover:h-2")}>
 				{bufferedRanges.map((range) => {
 					if (!duration) return null;
 					const startPercent = (range.start / duration) * 100;
@@ -267,34 +217,22 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 					return (
 						<div
 							key={`${range.start}-${range.end}`}
-							className="h-full absolute top-0 bg-white/15 transition-all"
-							style={{
-								left: `${startPercent}%`,
-								width: `${widthPercent}%`,
-							}}
+							className="absolute top-0 h-full bg-white/15 transition-all"
+							style={{ left: `${startPercent}%`, width: `${widthPercent}%` }}
 						/>
 					);
 				})}
-				{/* Hover time tooltip */}
-				{hoverState != null && (
+				<div className="h-full rounded-md bg-white/80 transition-all" style={{ width: `${progressPercent}%` }} />
+
+				{hoverState && (
 					<>
-						<div
-							className="absolute top-0 bottom-0 pointer-events-none"
-							style={{
-								left: `${hoverMarkerPercent}%`,
-							}}
-						>
-							<div className={cn("absolute -top-1 bottom-0 w-0.5 shadow-lg z-20 bg-white/40 -translate-x-1/2")} />
+						<div className="pointer-events-none absolute inset-y-0" style={{ left: `${hoverMarkerPercent}%` }}>
+							<div className="absolute -top-1 bottom-0 z-20 w-0.5 -translate-x-1/2 bg-white/40 shadow-lg" />
 						</div>
-						<div
-							className="absolute top-0 bottom-0 pointer-events-none"
-							style={{
-								left: `${clampedHoverOverlayPercent}%`,
-							}}
-						>
+						<div className="pointer-events-none absolute inset-y-0" style={{ left: `${clampedHoverOverlayPercent}%` }}>
 							{renderedHoverPreviewFrame && (
 								<div
-									className="absolute left-1/2 -translate-x-1/2 bottom-4 rounded-md bg-black shadow-lg overflow-hidden"
+									className="absolute bottom-4 left-1/2 -translate-x-1/2 overflow-hidden rounded-md bg-black shadow-lg"
 									style={{
 										width: `${renderedHoverPreviewFrame.frameWidthPx}px`,
 										height: `${renderedHoverPreviewFrame.frameHeightPx}px`,
@@ -316,7 +254,7 @@ export const PlayerProgressBar: FC<PlayerProcessBarProps> = ({
 							)}
 							<div
 								className={cn(
-									"absolute bg-black/60 px-2 py-0.5 rounded text-sm left-1/2 -translate-x-1/2",
+									"absolute left-1/2 -translate-x-1/2 rounded bg-black/60 px-2 py-0.5 text-sm",
 									renderedHoverPreviewFrame ? "-top-10" : "-top-8",
 								)}
 							>

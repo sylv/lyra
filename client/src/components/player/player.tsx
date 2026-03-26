@@ -1,42 +1,39 @@
-/* oxlint-disable jsx_a11y/media-has-caption, jsx_a11y/prefer-tag-over-role */
+/* oxlint-disable jsx_a11y/prefer-tag-over-role */
 import { useQuery } from "@apollo/client/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, type FC } from "react";
-import { useStore } from "zustand/react";
 import { cn } from "../../lib/utils";
 import { PlayerErrorOverlay } from "./components/player-error-overlay";
 import { PlayerControls } from "./components/player-controls";
 import { PlayerIntroOverlay } from "./components/player-intro-overlay";
 import { PlayerLoadingIndicator } from "./components/player-loading-indicator";
 import { PlayerTopChrome } from "./components/player-top-chrome";
-import { UpNextCard } from "./components/up-next-card";
 import { ResumePromptDialog } from "./components/resume-prompt-dialog";
+import { UpNextCard } from "./components/up-next-card";
+import type { PlayerController } from "./hls";
 import { useControlsVisibility } from "./hooks/use-controls-visibility";
-import { useUpNextState } from "./hooks/use-up-next-state";
 import { useFullscreen } from "./hooks/use-fullscreen";
-import { usePlaybackLifecycle } from "./hooks/use-playback-lifecycle";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { usePlayerActions } from "./hooks/use-player-actions";
 import { useSurfaceInteraction } from "./hooks/use-surface-interaction";
 import { useTrackSelection } from "./hooks/use-track-selection";
-import { useVideoEvents } from "./hooks/use-video-events";
-import { useWatchProgress } from "./hooks/use-watch-progress";
-import { PlayerContext, usePlayerContext } from "./player-context";
+import { useUpNextState } from "./hooks/use-up-next-state";
+import { setPlayerControls, setPlayerMedia, setPlayerState, usePlayerContext } from "./player-context";
 import { PlayerLayout } from "./player-layout";
-import type { PlaybackEngine } from "./engines";
 import { ItemPlaybackQuery } from "./player-queries";
-import { playerState, setPlayerLoading, setPlayerMedia } from "./player-state";
-import { videoState } from "./video-state";
+import { PlayerRefsContext, usePlayerRefsContext } from "./player-refs-context";
+import { PlayerVideo, getTimelinePreviewSheets } from "./player-video";
 
-// PlayerContent runs inside PlayerContext.Provider so all hooks can access the shared refs.
 const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume: boolean }> = ({
 	itemId,
 	autoplay,
 	shouldPromptResume,
 }) => {
-	const { videoRef, containerRef, surfaceRef } = usePlayerContext();
-	const { isFullscreen, volume, isMuted } = useStore(playerState);
-	const showControls = useStore(videoState, (s) => s.showControls);
+	const { containerRef, surfaceRef } = usePlayerRefsContext();
+	const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
+	const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
+	const hoveredCard = usePlayerContext((ctx) => ctx.controls.hoveredCard);
+	const miniPlayerAspectRatio = usePlayerContext((ctx) => Math.max(ctx.state.videoAspectRatio, 16 / 9));
 
 	const {
 		data,
@@ -44,53 +41,29 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 		loading: isItemLoading,
 		error: itemLoadError,
 	} = useQuery(ItemPlaybackQuery, { variables: { itemId } });
-	// keep the previous item mounted while loading so browser fullscreen is preserved
+
 	const currentMedia = data?.node ?? (isItemLoading ? previousData?.node : null) ?? null;
-	// only treat query loading as player loading while we're still resolving a different item
 	const isResolvingRequestedMedia = isItemLoading && currentMedia?.id !== itemId;
 
 	useEffect(() => {
 		if (!isResolvingRequestedMedia) return;
-		videoState.setState({ errorMessage: null });
-		setPlayerLoading(true);
+		setPlayerState({ errorMessage: null, isLoading: true });
 	}, [isResolvingRequestedMedia]);
 
 	useEffect(() => {
 		if (!itemLoadError) return;
-		videoState.setState({ errorMessage: "Sorry, this item is unavailable" });
-		setPlayerLoading(false);
+		setPlayerState({ errorMessage: "Sorry, this item is unavailable", isLoading: false });
 	}, [itemLoadError]);
 
-	// sync volume/mute from playerState into the video element whenever they change
-	useEffect(() => {
-		if (!videoRef.current) return;
-		videoRef.current.volume = volume;
-		videoRef.current.muted = isMuted;
-	}, [volume, isMuted, videoRef]);
-
-	usePlaybackLifecycle(currentMedia, { shouldPromptResume, autoplay });
-	// useVideoEvents runs once with [] deps — the video element must be in the DOM on initial mount.
-	// we always render the container + video below (never return null before them) to guarantee this.
-	useVideoEvents();
 	useFullscreen();
-	useWatchProgress(currentMedia);
-
 	const actions = usePlayerActions();
-	const { showControlsTemporarily, beginControlsInteraction, endControlsInteraction, handleMouseLeave } =
-		useControlsVisibility();
+	const { showControlsTemporarily, handleMouseLeave } = useControlsVisibility();
 	const { handleContainerClick, handleMouseMove } = useSurfaceInteraction({
 		togglePlaying: actions.togglePlaying,
 		showControlsTemporarily,
 	});
-	const { handlePlayerKeyDown } = useKeyboardShortcuts({ actions, showControlsTemporarily, handleContainerClick });
+	const { handlePlayerKeyDown } = useKeyboardShortcuts({ actions, handleContainerClick });
 	const { onAudioTrackChange, onSubtitleTrackChange } = useTrackSelection(currentMedia, itemId);
-
-	// default to 16:9 until the video reports its actual dimensions
-	const miniPlayerAspectRatio = Math.max(videoState.getState().videoAspectRatio, 16 / 9);
-
-	const timelinePreviewSheets = Array.isArray(currentMedia?.file?.timelinePreview)
-		? currentMedia.file.timelinePreview
-		: [];
 
 	const onPreviousItem = () => {
 		const previousItemId = currentMedia?.previousPlayable?.id;
@@ -103,24 +76,21 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 	};
 
 	const upNextState = useUpNextState({ hasNextItem: !!currentMedia?.nextPlayable, onNextItem });
-	const hoveredCard = useStore(videoState, (s) => s.hoveredCard);
-
-	// which card to show: active up-next takes priority, hover-previous overrides it,
-	// hover-next shows a plain preview when the active card isn't already up.
 	const showPreviousCard = hoveredCard === "previous" && !!currentMedia?.previousPlayable;
-	const showActiveCard = upNextState.isUpNextActive && !showPreviousCard && !!currentMedia?.nextPlayable;
-	const showNextPreview = hoveredCard === "next" && !!currentMedia?.nextPlayable && !upNextState.isUpNextActive;
+	const showNextPreview = hoveredCard === "next" && !!currentMedia?.nextPlayable;
+	const showUpNextCard = isFullscreen && upNextState.isUpNextActive && !!currentMedia?.nextPlayable;
 	const cardNode = showPreviousCard ? currentMedia?.previousPlayable : currentMedia?.nextPlayable;
-	const cardVisible = showPreviousCard || showActiveCard || showNextPreview;
+	const cardVisible = showPreviousCard || showNextPreview || showUpNextCard;
+	const timelinePreviewSheets = getTimelinePreviewSheets(currentMedia);
 
 	const cardElement =
 		cardVisible && cardNode ? (
 			<motion.div
-				key={showPreviousCard ? "prev-card" : "next-card"}
-				initial={{ opacity: 0, y: 8 }}
-				animate={{ opacity: 1, y: 0 }}
-				exit={{ opacity: 0, y: 8 }}
-				transition={{ duration: 0.2 }}
+				key={showPreviousCard ? "prev-card" : showNextPreview ? "next-card" : "up-next-card"}
+				initial={{ opacity: 0, translateX: -12 }}
+				animate={{ opacity: 1, translateX: 0 }}
+				exit={{ opacity: 0, translateX: -12 }}
+				transition={{ duration: 0.1 }}
 			>
 				<UpNextCard
 					displayName={cardNode.properties.displayName}
@@ -128,23 +98,25 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 					thumbnailImage={cardNode.properties.thumbnailImage}
 					seasonNumber={cardNode.properties.seasonNumber}
 					episodeNumber={cardNode.properties.episodeNumber}
-					onPlay={showActiveCard && upNextState.showActions ? onNextItem : undefined}
+					onPlay={showUpNextCard ? onNextItem : undefined}
 					onCancel={
-						showActiveCard &&
-						upNextState.showActions &&
-						upNextState.autoplayNext &&
-						!upNextState.upNextCountdownCancelled
-							? () => videoState.setState({ upNextCountdownCancelled: true })
+						showUpNextCard
+							? () =>
+									setPlayerState({
+										upNextDismissed: true,
+										upNextCountdownCancelled: true,
+									})
 							: undefined
 					}
-					progressPercent={showActiveCard && upNextState.showActions ? upNextState.upNextProgress : undefined}
-					countdownSeconds={showActiveCard && upNextState.showActions ? upNextState.countdownSeconds : undefined}
+					progressPercent={showUpNextCard ? upNextState.upNextProgress : undefined}
+					countdownSeconds={showUpNextCard ? upNextState.countdownSeconds : undefined}
 				/>
 			</motion.div>
 		) : null;
 
 	const controls = currentMedia ? (
 		<PlayerControls
+			mode={isFullscreen ? "fullscreen" : "mini"}
 			timelinePreviewSheets={timelinePreviewSheets}
 			previousPlayable={currentMedia.previousPlayable}
 			nextPlayable={currentMedia.nextPlayable}
@@ -152,20 +124,17 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 			onNextItem={onNextItem}
 			onAudioTrackChange={onAudioTrackChange}
 			onSubtitleTrackChange={onSubtitleTrackChange}
-			onControlsInteractionStart={beginControlsInteraction}
-			onControlsInteractionEnd={endControlsInteraction}
-			onControlsActivity={showControlsTemporarily}
 			dropdownPortalContainer={containerRef.current}
 		/>
 	) : null;
 
-	// always render the container + video so videoRef.current is stable for useVideoEvents on mount.
-	// the overlay and controls are gated on currentMedia being resolved.
 	const playerDiv = (
 		<div
 			ref={containerRef}
 			className={cn(
-				isFullscreen ? "z-50 fixed inset-0 bg-black outline-none" : "relative rounded shadow-2xl bg-black outline-none",
+				isFullscreen
+					? "fixed inset-0 z-50 bg-black outline-none"
+					: "group/player relative rounded bg-black shadow-2xl outline-none",
 			)}
 			style={
 				isFullscreen
@@ -178,15 +147,8 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 			onMouseMove={handleMouseMove}
 			onMouseLeave={handleMouseLeave}
 		>
-			<video
-				ref={videoRef}
-				className={cn("block w-full h-full bg-black object-contain outline-none", !isFullscreen && "rounded")}
-				autoPlay={autoplay}
-				controls={false}
-				disablePictureInPicture
-			/>
+			<PlayerVideo currentMedia={currentMedia} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
 
-			{/* Overlay surface — only rendered once media is resolved */}
 			{currentMedia && (
 				<div
 					ref={surfaceRef}
@@ -205,11 +167,10 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 					onClick={handleContainerClick}
 					aria-label="Toggle play/pause"
 				>
-					{/* Vignette gradient — visible when controls are shown */}
 					<div
 						className={cn(
-							"absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 transition-opacity duration-300 pointer-events-none",
-							showControls ? "opacity-100" : "opacity-0",
+							"pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 transition-opacity duration-300",
+							isFullscreen ? (showControls ? "opacity-100" : "opacity-0") : "opacity-0 group-hover/player:opacity-100",
 							!isFullscreen && "rounded",
 						)}
 					/>
@@ -219,11 +180,9 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 						middle={<PlayerIntroOverlay media={currentMedia} />}
 						bottom={
 							isFullscreen ? (
-								// relative wrapper so the card can use bottom-full to sit just above the controls.
-								// the controls always occupy space (even when opacity-0) so the card never shifts.
 								<div className="relative">
-									<div className="absolute bottom-full left-6 mb-2 pointer-events-auto">
-										<AnimatePresence>{cardElement}</AnimatePresence>
+									<div className="pointer-events-auto absolute bottom-36 left-4">
+										<AnimatePresence mode="wait">{cardElement}</AnimatePresence>
 									</div>
 									{controls}
 								</div>
@@ -241,35 +200,26 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 		</div>
 	);
 
-	if (isFullscreen) {
-		return playerDiv;
-	}
-
-	// in miniplayer mode, the card sits to the left of the player with a gap so it doesn't
-	// cover the video. flex-row-reverse keeps the player anchored to the right edge.
-	return (
-		<div className="z-50 fixed bottom-4 right-4 flex flex-row-reverse items-end gap-3">
-			{playerDiv}
-			<AnimatePresence mode="wait">{cardElement}</AnimatePresence>
-		</div>
-	);
+	return <div className={cn(!isFullscreen && "fixed bottom-4 right-4 z-50")}>{playerDiv}</div>;
 };
 
-// Player creates the shared refs and provides them via context so all hooks and child components
-// can access them. PlayerContent lives inside the provider so usePlayerContext() resolves correctly.
 export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume?: boolean }> = ({
 	itemId,
 	autoplay = false,
 	shouldPromptResume = false,
 }) => {
 	const videoRef = useRef<HTMLVideoElement>(null);
-	const engineRef = useRef<PlaybackEngine | null>(null);
+	const controllerRef = useRef<PlayerController | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const surfaceRef = useRef<HTMLDivElement>(null);
 
+	useEffect(() => {
+		setPlayerControls({ showControls: true });
+	}, [itemId]);
+
 	return (
-		<PlayerContext.Provider value={{ videoRef, engineRef, containerRef, surfaceRef }}>
+		<PlayerRefsContext.Provider value={{ videoRef, controllerRef, containerRef, surfaceRef }}>
 			<PlayerContent itemId={itemId} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
-		</PlayerContext.Provider>
+		</PlayerRefsContext.Provider>
 	);
 };

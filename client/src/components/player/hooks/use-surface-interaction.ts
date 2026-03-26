@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { togglePlayerFullscreen } from "../player-state";
+import { togglePlayerFullscreen } from "../player-context";
 
 interface SurfaceInteractionOptions {
 	togglePlaying: () => void;
@@ -23,7 +23,6 @@ export const useSurfaceInteraction = ({ togglePlaying, showControlsTemporarily }
 	};
 
 	// on double click toggle fullscreen; on single click play/pause.
-	// the timeout prevents pausing on the first click of a double click.
 	const handleContainerClick = () => {
 		if (doubleClickTimeoutRef.current != null) {
 			clearTimeout(doubleClickTimeoutRef.current);

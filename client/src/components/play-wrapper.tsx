@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { CheckCheckIcon, FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { openPlayerMedia } from "./player/player-state";
+import { openPlayerMedia } from "./player/player-context";
 import { UnplayedItemsTab } from "./unplayed-items-tab";
 
 interface PlayWrapperProps {
@@ -20,16 +20,15 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 	const navigate = useNavigate();
 
 	return (
-		<div className="relative inline-block overflow-hidden group/play rounded-sm">
+		<div className="group/play relative inline-block overflow-hidden rounded-sm">
 			{itemId && (
 				<button
 					type="button"
 					className={cn(
-						"absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 opacity-0 cursor-pointer z-10",
-						"group-hover/play:opacity-100 transition-opacity duration-75",
+						"absolute left-0 top-0 z-10 flex h-full w-full cursor-pointer items-center justify-center bg-black/40 opacity-0",
+						"transition-opacity duration-75 group-hover/play:opacity-100",
 					)}
 					onClick={() => {
-						if (!itemId) return;
 						openPlayerMedia(itemId, true);
 						navigate({ to: path });
 					}}
@@ -39,13 +38,8 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 			)}
 			{watchProgress && !watchProgress.completed && (
 				<Fragment>
-					<div
-						className="z-10 absolute bottom-0 left-0 bg-white/80 h-1"
-						style={{
-							width: `${watchProgress.progressPercent * 100}%`,
-						}}
-					/>
-					<div className="z-10 absolute bottom-0 left-0 right-0 bg-white/20 h-1" />
+					<div className="absolute bottom-0 left-0 z-10 h-1 bg-white/80" style={{ width: `${watchProgress.progressPercent * 100}%` }} />
+					<div className="absolute bottom-0 left-0 right-0 z-10 h-1 bg-white/20" />
 				</Fragment>
 			)}
 			{watchProgress && watchProgress.completed && (
@@ -54,7 +48,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 				</UnplayedItemsTab>
 			)}
 			{!itemId && (
-				<div className="absolute top-0 left-0 w-full h-full flex items-center justify-center gap-2 p-3 bg-black/60 select-none">
+				<div className="absolute left-0 top-0 flex h-full w-full select-none items-center justify-center gap-2 bg-black/60 p-3">
 					<FileWarningIcon className="h-6 w-6 text-orange-500" />
 					<p className="text-sm font-semibold text-orange-100">Unavailable</p>
 				</div>

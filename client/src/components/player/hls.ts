@@ -1,21 +1,38 @@
-import type Hls from "hls.js";
-import type { ItemPlaybackQuery } from "../../../@generated/gql/graphql";
-import { setPlayerLoading } from "../player-state";
-import { videoState } from "../video-state";
-import type { PlaybackEngine, ResumeConfig } from ".";
+import type { ItemPlaybackQuery } from "../../@generated/gql/graphql";
+import { setPlayerControls, setPlayerLoading, setPlayerState } from "./player-context";
 
-type HlsConstructor = typeof Hls;
 type ServerTracks = NonNullable<NonNullable<NonNullable<ItemPlaybackQuery["node"]>["file"]>["tracks"]>;
 type Recommendations = NonNullable<NonNullable<NonNullable<ItemPlaybackQuery["node"]>["file"]>["recommendedTracks"]>;
 
-export const createHlsJsEngine = (
-	HlsClass: HlsConstructor,
+export interface ResumeConfig {
+	watchProgressPercent: number | null | undefined;
+	runtimeDurationSeconds: number | null;
+	shouldPromptResume: boolean;
+	videoRef: React.RefObject<HTMLVideoElement | null>;
+}
+
+export interface PlayerController {
+	setAudioTrack(id: number): void;
+	setSubtitleTrack(id: number): void;
+	setSubtitleDisplay(enabled: boolean): void;
+	destroy(): void;
+}
+
+export const createHlsPlayer = async (
 	video: HTMLVideoElement,
 	hlsUrl: string,
 	serverTracks: ServerTracks,
 	recommendations: Recommendations,
 	resumeConfig: ResumeConfig,
-): PlaybackEngine => {
+): Promise<PlayerController | null> => {
+	const { default: Hls } = await import("hls.js");
+
+	if (!Hls.isSupported()) {
+		setPlayerState({ errorMessage: "Sorry, your browser does not support this video." });
+		setPlayerLoading(false);
+		return null;
+	}
+
 	const { watchProgressPercent, runtimeDurationSeconds, shouldPromptResume, videoRef } = resumeConfig;
 
 	const hasResumableWatchProgress =
@@ -40,14 +57,15 @@ export const createHlsJsEngine = (
 	};
 
 	const serverTrackByManifestIndex = (type: "AUDIO" | "SUBTITLE", manifestIndex: number) =>
-		serverTracks.find((t) => t.trackType === type && t.manifestIndex === manifestIndex);
+		serverTracks.find((track) => track.trackType === type && track.manifestIndex === manifestIndex);
 
 	const syncAudioTracks = () => {
 		const tracks = hls.audioTracks.map((_track, id) => {
 			const serverTrack = serverTrackByManifestIndex("AUDIO", id);
 			return { id, label: serverTrack?.displayName ?? `Audio ${id + 1}` };
 		});
-		videoState.setState({
+
+		setPlayerState({
 			audioTrackOptions: tracks,
 			selectedAudioTrackId: hls.audioTrack >= 0 ? hls.audioTrack : null,
 		});
@@ -58,39 +76,43 @@ export const createHlsJsEngine = (
 			const serverTrack = serverTrackByManifestIndex("SUBTITLE", id);
 			return { id, label: serverTrack?.displayName ?? `Subtitle ${id + 1}` };
 		});
-		videoState.setState({
+
+		setPlayerState({
 			subtitleTrackOptions: tracks,
 			selectedSubtitleTrackId: tracks.length > 0 ? (hls.subtitleTrack >= 0 ? hls.subtitleTrack : -1) : null,
 		});
 	};
 
-	const applyRecommendations = () => {
-		for (const rec of recommendations) {
-			if (rec.trackType === "AUDIO" && rec.enabled) {
-				hls.audioTrack = rec.manifestIndex;
+const applyRecommendations = () => {
+		for (const recommendation of recommendations) {
+			if (recommendation.trackType === "AUDIO" && recommendation.enabled) {
+				hls.audioTrack = recommendation.manifestIndex;
 			}
 		}
-		const enabledSub = recommendations.find((r) => r.trackType === "SUBTITLE" && r.enabled);
-		if (enabledSub) {
+
+		const enabledSubtitles = recommendations.find(
+			(recommendation) => recommendation.trackType === "SUBTITLE" && recommendation.enabled,
+		);
+		if (enabledSubtitles) {
 			hls.subtitleDisplay = true;
-			hls.subtitleTrack = enabledSub.manifestIndex;
+			hls.subtitleTrack = enabledSubtitles.manifestIndex;
 		} else {
 			hls.subtitleDisplay = false;
 			hls.subtitleTrack = -1;
 		}
 	};
 
-	const hls = new HlsClass({ autoStartLoad: false });
+	const hls = new Hls({ autoStartLoad: false });
 
-	hls.on(HlsClass.Events.ERROR, (event, data) => {
+	hls.on(Hls.Events.ERROR, (event, data) => {
 		console.error("HLS error:", event, data);
 		if (data.fatal) {
-			videoState.setState({ errorMessage: `${data.type}: ${data.reason}` });
+			setPlayerState({ errorMessage: `${data.type}: ${data.reason}` });
 			setPlayerLoading(false);
 		}
 	});
 
-	hls.on(HlsClass.Events.MANIFEST_PARSED, () => {
+	hls.on(Hls.Events.MANIFEST_PARSED, () => {
 		syncAudioTracks();
 		syncSubtitleTracks();
 		applyRecommendations();
@@ -106,50 +128,49 @@ export const createHlsJsEngine = (
 		const durationSeconds = levelDurations[0] ?? runtimeDurationSeconds;
 		const resumePosition = durationSeconds == null ? null : clampResumePosition(durationSeconds);
 
-		if (resumePosition != null) {
-			if (shouldPromptResume) {
-				// store callbacks in videoState so ResumePromptDialog can call them without prop drilling.
-				// after either callback fires, it clears itself to prevent double-invocation via onOpenChange.
-				videoState.setState({
-					resumePromptPosition: resumePosition,
-					confirmResumePrompt: () => {
-						videoState.setState({ resumePromptPosition: null, confirmResumePrompt: null, cancelResumePrompt: null });
-						if (videoRef.current) videoRef.current.currentTime = resumePosition;
-						startLoadAt(resumePosition);
-					},
-					cancelResumePrompt: () => {
-						videoState.setState({ resumePromptPosition: null, confirmResumePrompt: null, cancelResumePrompt: null });
-						startLoadAt(-1);
-					},
-				});
-				return;
-			}
-
-			if (videoRef.current) videoRef.current.currentTime = resumePosition;
-			startLoadAt(resumePosition);
+		if (resumePosition == null) {
+			startLoadAt(-1);
 			return;
 		}
 
-		startLoadAt(-1);
+		if (shouldPromptResume) {
+			// keep the callbacks in controls state so the dialog can resolve the prompt without prop drilling.
+			setPlayerControls({
+				resumePromptPosition: resumePosition,
+				confirmResumePrompt: () => {
+					setPlayerControls({ resumePromptPosition: null, confirmResumePrompt: null, cancelResumePrompt: null });
+					if (videoRef.current) videoRef.current.currentTime = resumePosition;
+					startLoadAt(resumePosition);
+				},
+				cancelResumePrompt: () => {
+					setPlayerControls({ resumePromptPosition: null, confirmResumePrompt: null, cancelResumePrompt: null });
+					startLoadAt(-1);
+				},
+			});
+			return;
+		}
+
+		if (videoRef.current) videoRef.current.currentTime = resumePosition;
+		startLoadAt(resumePosition);
 	});
 
-	hls.on(HlsClass.Events.AUDIO_TRACKS_UPDATED, syncAudioTracks);
-	hls.on(HlsClass.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+	hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, syncAudioTracks);
+	hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
 		if (typeof data.id === "number") {
-			videoState.setState({ selectedAudioTrackId: data.id });
+			setPlayerState({ selectedAudioTrackId: data.id });
 		}
 	});
-	hls.on(HlsClass.Events.SUBTITLE_TRACKS_UPDATED, syncSubtitleTracks);
-	hls.on(HlsClass.Events.SUBTITLE_TRACKS_CLEARED, () => {
-		videoState.setState({ subtitleTrackOptions: [], selectedSubtitleTrackId: null });
+	hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, syncSubtitleTracks);
+	hls.on(Hls.Events.SUBTITLE_TRACKS_CLEARED, () => {
+		setPlayerState({ subtitleTrackOptions: [], selectedSubtitleTrackId: null });
 	});
-	hls.on(HlsClass.Events.SUBTITLE_TRACK_SWITCH, (_event, data) => {
+	hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (_event, data) => {
 		if (typeof data.id === "number") {
-			videoState.setState({ selectedSubtitleTrackId: data.id });
+			setPlayerState({ selectedSubtitleTrackId: data.id });
 		} else if (hls.subtitleTracks.length > 0) {
-			videoState.setState({ selectedSubtitleTrackId: -1 });
+			setPlayerState({ selectedSubtitleTrackId: -1 });
 		} else {
-			videoState.setState({ selectedSubtitleTrackId: null });
+			setPlayerState({ selectedSubtitleTrackId: null });
 		}
 	});
 

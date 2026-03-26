@@ -1,34 +1,32 @@
 import { useEffect, useRef } from "react";
-import { useStore } from "zustand/react";
-import { videoState } from "../video-state";
+import { playerContext, setPlayerActions, setPlayerControls, usePlayerContext } from "../player-context";
 
 export const useControlsVisibility = () => {
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-	const isControlsPinned = useStore(
-		videoState,
-		(s) => s.isSettingsMenuOpen || s.isControlsInteracting || s.isItemCardOpen,
+	const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
+	const isControlsPinned = usePlayerContext(
+		(ctx) => ctx.controls.isSettingsMenuOpen || ctx.controls.isControlsInteracting || ctx.controls.isItemCardOpen,
 	);
 
 	const areControlsPinned = () => {
-		const { isSettingsMenuOpen, isControlsInteracting, isItemCardOpen } = videoState.getState();
+		const { isSettingsMenuOpen, isControlsInteracting, isItemCardOpen } = playerContext.getState().controls;
 		return isSettingsMenuOpen || isControlsInteracting || isItemCardOpen;
 	};
 
 	const showControlsTemporarily = () => {
-		videoState.setState({ showControls: true });
+		setPlayerControls({ showControls: true });
 		if (controlsTimeoutRef.current) {
 			clearTimeout(controlsTimeoutRef.current);
 			controlsTimeoutRef.current = null;
 		}
 		if (areControlsPinned()) return;
 		controlsTimeoutRef.current = setTimeout(() => {
-			videoState.setState({ showControls: false });
+			setPlayerControls({ showControls: false });
 		}, 3000);
 	};
 
-	// keep controls visible while drag interactions (seek scrubbing, volume drag) are active.
 	const beginControlsInteraction = () => {
-		videoState.setState({ isControlsInteracting: true, showControls: true });
+		setPlayerControls({ isControlsInteracting: true, showControls: true });
 		if (controlsTimeoutRef.current) {
 			clearTimeout(controlsTimeoutRef.current);
 			controlsTimeoutRef.current = null;
@@ -36,20 +34,27 @@ export const useControlsVisibility = () => {
 	};
 
 	const endControlsInteraction = () => {
-		videoState.setState({ isControlsInteracting: false });
+		setPlayerControls({ isControlsInteracting: false });
 		showControlsTemporarily();
 	};
 
 	const handleMouseLeave = () => {
 		if (!areControlsPinned()) {
-			videoState.setState({ showControls: false });
+			setPlayerControls({ showControls: false });
 		}
 	};
 
-	// keep cards/settings/drag interactions pinned so the overlay can't disappear mid-action.
+	useEffect(() => {
+		setPlayerActions({
+			showControlsTemporarily,
+			beginControlsInteraction,
+			endControlsInteraction,
+		});
+	}, [isFullscreen]);
+
 	useEffect(() => {
 		if (!isControlsPinned) return;
-		videoState.setState({ showControls: true });
+		setPlayerControls({ showControls: true });
 		if (controlsTimeoutRef.current) {
 			clearTimeout(controlsTimeoutRef.current);
 			controlsTimeoutRef.current = null;
@@ -65,5 +70,5 @@ export const useControlsVisibility = () => {
 		};
 	}, []);
 
-	return { showControlsTemporarily, beginControlsInteraction, endControlsInteraction, handleMouseLeave };
+	return { handleMouseLeave, showControlsTemporarily };
 };

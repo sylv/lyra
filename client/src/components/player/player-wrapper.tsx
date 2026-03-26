@@ -1,14 +1,12 @@
 import type { FC } from "react";
-import { useStore } from "zustand";
+import { usePlayerContext } from "./player-context";
 import { Player } from "./player";
-import { playerState } from "./player-state";
 
 export const PlayerWrapper: FC = () => {
-	const { currentItemId, autoplay, shouldPromptResume } = useStore(playerState);
+	const currentItemId = usePlayerContext((ctx) => ctx.currentItemId);
+	const autoplay = usePlayerContext((ctx) => ctx.state.autoplay);
+	const shouldPromptResume = usePlayerContext((ctx) => ctx.state.shouldPromptResume);
 
-	if (!currentItemId) {
-		return null;
-	}
-
+	if (!currentItemId) return null;
 	return <Player itemId={currentItemId} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />;
 };

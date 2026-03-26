@@ -4,7 +4,7 @@ import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import { getPathForNode } from "../lib/getPathForMedia";
 import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
-import { openPlayerMedia } from "./player/player-state";
+import { openPlayerMedia } from "./player/player-context";
 
 interface EpisodeCardProps {
 	episode: FragmentType<typeof Fragment>;
@@ -56,37 +56,35 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	return (
 		<button
 			type="button"
-			className="group flex gap-4 group/play w-full text-left"
+			className="group/play flex w-full gap-4 text-left"
 			aria-label={`Play ${episode.properties.displayName}`}
 			onClick={() => {
 				openPlayerMedia(episode.id, true);
 				navigate({ to: path });
 			}}
 		>
-			<div className="relative overflow-hidden h-min rounded-sm shrink-0">
+			<div className="relative h-min shrink-0 overflow-hidden rounded-sm">
 				<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>
 					<Image
 						type={ImageType.Thumbnail}
 						asset={episode.properties.thumbnailImage}
 						alt={episode.properties.displayName}
-						className="h-20 md:h-36 aspect-[12:8]"
+						className="aspect-[12:8] h-20 md:h-36"
 					/>
 				</PlayWrapper>
 			</div>
 			<div>
-				<h3 className="font-semibold text-white flex gap-3">
+				<h3 className="flex gap-3 font-semibold text-white">
 					<div className="text-zinc-300">
 						S{episode.properties.seasonNumber}E{episode.properties.episodeNumber}
 					</div>
 					{episode.properties.displayName}
 				</h3>
-				<div className="flex items-center gap-3 text-zinc-400 mb-2 text-sm">
+				<div className="mb-2 flex items-center gap-3 text-sm text-zinc-400">
 					{releaseDate && <div>{releaseDate}</div>}
 					{episode.properties.runtimeMinutes && <div>{formatRuntime(episode.properties.runtimeMinutes)}</div>}
 				</div>
-				<p className="text-xs text-zinc-300 line-clamp-3">
-					{episode.properties.description || "No description available"}
-				</p>
+				<p className="line-clamp-3 text-xs text-zinc-300">{episode.properties.description || "No description available"}</p>
 			</div>
 		</button>
 	);

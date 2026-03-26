@@ -9,7 +9,6 @@ import {
 	SkipForwardIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FC } from "react";
-import { useStore } from "zustand/react";
 import type { FragmentType } from "../../../@generated/gql";
 import type { ItemPlaybackQuery } from "../../../@generated/gql/graphql";
 import { formatPlayerTime } from "../../../lib/format-player-time";
@@ -27,9 +26,8 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "../../ui/dropdown-menu";
+import { setPlayerControls, setPlayerPreferences, togglePlayerFullscreen, usePlayerContext } from "../player-context";
 import { usePlayerActions } from "../hooks/use-player-actions";
-import { playerState, togglePlayerFullscreen } from "../player-state";
-import { videoState } from "../video-state";
 import { PlayerButton } from "./player-button";
 import { PlayerProgressBar, PlayerTimelinePreviewSheetFragment } from "./player-progress-bar";
 import { PlayerVolumeControl } from "./player-volume-control";
@@ -38,136 +36,104 @@ type PlayableNode = NonNullable<NonNullable<ItemPlaybackQuery["node"]>["previous
 
 interface PlayerControlsProps {
 	timelinePreviewSheets: FragmentType<typeof PlayerTimelinePreviewSheetFragment>[];
+	mode?: "fullscreen" | "mini";
 	previousPlayable: PlayableNode | null | undefined;
 	nextPlayable: PlayableNode | null | undefined;
 	onPreviousItem: () => void;
 	onNextItem: () => void;
 	onAudioTrackChange: (trackId: number | null) => void;
 	onSubtitleTrackChange: (trackId: number | null) => void;
-	onControlsInteractionStart: () => void;
-	onControlsInteractionEnd: () => void;
-	onControlsActivity: () => void;
 	dropdownPortalContainer: HTMLElement | null;
 }
 
 export const PlayerControls: FC<PlayerControlsProps> = ({
 	timelinePreviewSheets,
+	mode = "fullscreen",
 	previousPlayable,
 	nextPlayable,
 	onPreviousItem,
 	onNextItem,
 	onAudioTrackChange,
 	onSubtitleTrackChange,
-	onControlsInteractionStart,
-	onControlsInteractionEnd,
-	onControlsActivity,
 	dropdownPortalContainer,
 }) => {
-	const currentTime = useStore(videoState, (s) => s.currentTime);
-	const duration = useStore(videoState, (s) => s.duration);
-	const bufferedRanges = useStore(videoState, (s) => s.bufferedRanges);
-	const playing = useStore(videoState, (s) => s.playing);
-	const audioTrackOptions = useStore(videoState, (s) => s.audioTrackOptions);
-	const selectedAudioTrackId = useStore(videoState, (s) => s.selectedAudioTrackId);
-	const subtitleTrackOptions = useStore(videoState, (s) => s.subtitleTrackOptions);
-	const selectedSubtitleTrackId = useStore(videoState, (s) => s.selectedSubtitleTrackId);
-	const showControls = useStore(videoState, (s) => s.showControls);
-	const isSettingsMenuOpen = useStore(videoState, (s) => s.isSettingsMenuOpen);
-	const { volume, isMuted, isFullscreen, autoplayNext } = useStore(playerState);
-	const { onSeek, togglePlaying, onToggleMute, onVolumeChange } = usePlayerActions();
+	const currentTime = usePlayerContext((ctx) => ctx.state.currentTime);
+	const duration = usePlayerContext((ctx) => ctx.state.duration);
+	const playing = usePlayerContext((ctx) => ctx.state.playing);
+	const audioTrackOptions = usePlayerContext((ctx) => ctx.state.audioTrackOptions);
+	const selectedAudioTrackId = usePlayerContext((ctx) => ctx.state.selectedAudioTrackId);
+	const subtitleTrackOptions = usePlayerContext((ctx) => ctx.state.subtitleTrackOptions);
+	const selectedSubtitleTrackId = usePlayerContext((ctx) => ctx.state.selectedSubtitleTrackId);
+	const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
+	const isSettingsMenuOpen = usePlayerContext((ctx) => ctx.controls.isSettingsMenuOpen);
+	const autoplayNext = usePlayerContext((ctx) => ctx.preferences.autoplayNext);
+	const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
+	const { togglePlaying } = usePlayerActions();
 	const [hoveredButton, setHoveredButton] = useState<"previous" | "next" | null>(null);
+	const isMini = mode === "mini";
 
-	const hasPreviousItem = !!previousPlayable;
-	const hasNextItem = !!nextPlayable;
+	const hasPreviousItem = !isMini && !!previousPlayable;
+	const hasNextItem = !isMini && !!nextPlayable;
 
-	// sync hovered button into videoState so player.tsx can render the card at the unified position
 	useEffect(() => {
-		videoState.setState({ hoveredCard: hoveredButton, isItemCardOpen: hoveredButton !== null });
+		setPlayerControls({ hoveredCard: hoveredButton, isItemCardOpen: hoveredButton !== null });
 	}, [hoveredButton]);
 
 	useEffect(() => {
 		return () => {
-			videoState.setState({ hoveredCard: null, isItemCardOpen: false });
+			setPlayerControls({ hoveredCard: null, isItemCardOpen: false });
 		};
 	}, []);
 
-	// eg, "6:33pm"
 	const finishTime = useMemo(() => {
 		if (!duration || !currentTime) return null;
 		const remainingTimeMs = (duration - currentTime) * 1000;
 		const finishDate = new Date(Date.now() + remainingTimeMs);
-		return finishDate.toLocaleTimeString([], {
-			hour: "2-digit",
-			minute: "2-digit",
-		});
-	}, [duration, currentTime]);
-	const showItemNavigation = hasPreviousItem || hasNextItem;
+		return finishDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+	}, [currentTime, duration]);
 
 	return (
 		<div
 			onClick={(event) => event.stopPropagation()}
 			className={cn(
-				"transition-opacity duration-300 group cursor-default !pt-1",
-				showControls ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
-				isFullscreen ? "p-6" : "p-4",
+				"group cursor-default !pt-1 transition-opacity duration-300",
+				showControls ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+				isMini ? "p-3" : "p-6",
 			)}
 		>
-			{/* Time indicators */}
-			<div className="flex justify-between text-sm text-white/80">
+			<div className={cn("flex justify-between text-white/80", isMini ? "text-xs" : "text-sm")}>
 				<span>{formatPlayerTime(currentTime)}</span>
 				<span>{formatPlayerTime(duration)}</span>
 			</div>
 
-			{/* Progress bar */}
-			<PlayerProgressBar
-				duration={duration}
-				currentTime={currentTime}
-				bufferedRanges={bufferedRanges}
-				timelinePreviewSheets={timelinePreviewSheets}
-				onChange={onSeek}
-				onInteractionStart={onControlsInteractionStart}
-				onInteractionEnd={onControlsInteractionEnd}
-				onActivity={onControlsActivity}
-			/>
+			<PlayerProgressBar compact={isMini} timelinePreviewSheets={timelinePreviewSheets} />
 
-			{/* Control buttons */}
 			<div className="flex items-center justify-between">
-				{/* Left side */}
 				<div className="flex items-center gap-2">
 					<PlayerButton aria-label={playing ? "Pause" : "Play"} onClick={togglePlaying}>
 						{playing ? <PauseIcon className="size-6 text-white" /> : <PlayIcon className="size-6 text-white" />}
 					</PlayerButton>
-					{showItemNavigation && (
+					{(hasPreviousItem || hasNextItem) && (
 						<>
-							<div
-								onMouseEnter={() => setHoveredButton("previous")}
-								onMouseLeave={() => setHoveredButton(null)}
-							>
+							<div onMouseEnter={() => setHoveredButton("previous")} onMouseLeave={() => setHoveredButton(null)}>
 								<PlayerButton
 									aria-label="Previous item"
 									disabled={!hasPreviousItem}
 									onClick={(event) => {
 										event.stopPropagation();
-										if (hasPreviousItem) {
-											onPreviousItem();
-										}
+										if (hasPreviousItem) onPreviousItem();
 									}}
 								>
 									<SkipBackIcon className="size-5" />
 								</PlayerButton>
 							</div>
-							<div
-								onMouseEnter={() => setHoveredButton("next")}
-								onMouseLeave={() => setHoveredButton(null)}
-							>
+							<div onMouseEnter={() => setHoveredButton("next")} onMouseLeave={() => setHoveredButton(null)}>
 								<PlayerButton
 									aria-label="Next item"
 									disabled={!hasNextItem}
 									onClick={(event) => {
 										event.stopPropagation();
-										if (hasNextItem) {
-											onNextItem();
-										}
+										if (hasNextItem) onNextItem();
 									}}
 								>
 									<SkipForwardIcon className="size-5" />
@@ -175,126 +141,115 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 							</div>
 						</>
 					)}
-					<PlayerVolumeControl
-						volume={volume}
-						isMuted={isMuted}
-						onVolumeChange={onVolumeChange}
-						onToggleMute={onToggleMute}
-						onInteractionStart={onControlsInteractionStart}
-						onInteractionEnd={onControlsInteractionEnd}
-						onActivity={onControlsActivity}
-					/>
+					<PlayerVolumeControl />
 				</div>
-				{/* Right side */}
 				<div className="flex items-center gap-4">
-					{finishTime && <span className="text-sm">Finishes at {finishTime}</span>}
-					<DropdownMenu
-						open={isSettingsMenuOpen}
-						onOpenChange={(open) => videoState.setState({ isSettingsMenuOpen: open })}
-					>
-						<DropdownMenuTrigger asChild>
-							<PlayerButton
-								aria-label="Open player settings"
-								onClick={(event) => {
-									event.stopPropagation();
-								}}
-							>
-								<SettingsIcon className="size-5" />
-							</PlayerButton>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent
-							align="end"
-							portalContainer={dropdownPortalContainer}
-							onClick={(event) => event.stopPropagation()}
-							className="z-[70] w-56 border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40"
+					{finishTime && !isMini && <span className="text-sm">Finishes at {finishTime}</span>}
+					{!isMini && (
+						<DropdownMenu
+							open={isSettingsMenuOpen}
+							onOpenChange={(open) => setPlayerControls({ isSettingsMenuOpen: open })}
 						>
-							<DropdownMenuSub>
-								<DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
-									Audio
-								</DropdownMenuSubTrigger>
-								<DropdownMenuSubContent className="z-[70] border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
-									{audioTrackOptions.length === 0 ? (
-										<DropdownMenuItem className="py-2.5" disabled>
-											No audio tracks
-										</DropdownMenuItem>
-									) : (
-										<DropdownMenuRadioGroup
-											value={selectedAudioTrackId?.toString() ?? "auto"}
-											onValueChange={(value) =>
-												value === "auto" ? onAudioTrackChange(null) : onAudioTrackChange(Number.parseInt(value, 10))
-											}
-										>
-											<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="auto">
-												Auto
-											</DropdownMenuRadioItem>
-											{audioTrackOptions.map((track) => (
-												<DropdownMenuRadioItem
-													className="py-2.5 focus:bg-zinc-800"
-													key={track.id}
-													value={track.id.toString()}
-												>
-													{track.label}
-												</DropdownMenuRadioItem>
-											))}
-										</DropdownMenuRadioGroup>
-									)}
-								</DropdownMenuSubContent>
-							</DropdownMenuSub>
-							<DropdownMenuSub>
-								<DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
-									Subtitles
-								</DropdownMenuSubTrigger>
-								<DropdownMenuSubContent className="z-[70] border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
-									{subtitleTrackOptions.length === 0 ? (
-										<DropdownMenuItem className="py-2.5" disabled>
-											No subtitles
-										</DropdownMenuItem>
-									) : (
-										<DropdownMenuRadioGroup
-											value={selectedSubtitleTrackId?.toString() ?? "auto"}
-											onValueChange={(value) => {
-												if (value === "auto") {
-													onSubtitleTrackChange(null);
-												} else if (value === "-1") {
-													onSubtitleTrackChange(-1);
-												} else {
-													onSubtitleTrackChange(Number.parseInt(value, 10));
-												}
-											}}
-										>
-											<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="auto">
-												Auto
-											</DropdownMenuRadioItem>
-											<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="-1">
-												Off
-											</DropdownMenuRadioItem>
-											{subtitleTrackOptions.map((track) => (
-												<DropdownMenuRadioItem
-													className="py-2.5 focus:bg-zinc-800"
-													key={track.id}
-													value={track.id.toString()}
-												>
-													{track.label}
-												</DropdownMenuRadioItem>
-											))}
-										</DropdownMenuRadioGroup>
-									)}
-								</DropdownMenuSubContent>
-							</DropdownMenuSub>
-							<DropdownMenuSeparator className="bg-zinc-700" />
-							<DropdownMenuCheckboxItem
-								className="py-2.5 focus:bg-zinc-800"
-								checked={autoplayNext}
-								onCheckedChange={(checked) => playerState.setState({ autoplayNext: !!checked })}
+							<DropdownMenuTrigger asChild>
+								<PlayerButton
+									aria-label="Open player settings"
+									onClick={(event) => {
+										event.stopPropagation();
+									}}
+								>
+									<SettingsIcon className="size-5" />
+								</PlayerButton>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent
+								align="end"
+								portalContainer={dropdownPortalContainer}
+								onClick={(event) => event.stopPropagation()}
+								className="z-[70] w-56 border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40"
 							>
-								Autoplay
-							</DropdownMenuCheckboxItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
+								<DropdownMenuSub>
+									<DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
+										Audio
+									</DropdownMenuSubTrigger>
+									<DropdownMenuSubContent className="z-[70] border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
+										{audioTrackOptions.length === 0 ? (
+											<DropdownMenuItem className="py-2.5" disabled>
+												No audio tracks
+											</DropdownMenuItem>
+										) : (
+											<DropdownMenuRadioGroup
+												value={selectedAudioTrackId?.toString() ?? "auto"}
+												onValueChange={(value) =>
+													value === "auto" ? onAudioTrackChange(null) : onAudioTrackChange(Number.parseInt(value, 10))
+												}
+											>
+												<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="auto">
+													Auto
+												</DropdownMenuRadioItem>
+												{audioTrackOptions.map((track) => (
+													<DropdownMenuRadioItem
+														className="py-2.5 focus:bg-zinc-800"
+														key={track.id}
+														value={track.id.toString()}
+													>
+														{track.label}
+													</DropdownMenuRadioItem>
+												))}
+											</DropdownMenuRadioGroup>
+										)}
+									</DropdownMenuSubContent>
+								</DropdownMenuSub>
+								<DropdownMenuSub>
+									<DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
+										Subtitles
+									</DropdownMenuSubTrigger>
+									<DropdownMenuSubContent className="z-[70] border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
+										{subtitleTrackOptions.length === 0 ? (
+											<DropdownMenuItem className="py-2.5" disabled>
+												No subtitles
+											</DropdownMenuItem>
+										) : (
+											<DropdownMenuRadioGroup
+												value={selectedSubtitleTrackId?.toString() ?? "auto"}
+												onValueChange={(value) => {
+													if (value === "auto") onSubtitleTrackChange(null);
+													else if (value === "-1") onSubtitleTrackChange(-1);
+													else onSubtitleTrackChange(Number.parseInt(value, 10));
+												}}
+											>
+												<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="auto">
+													Auto
+												</DropdownMenuRadioItem>
+												<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="-1">
+													Off
+												</DropdownMenuRadioItem>
+												{subtitleTrackOptions.map((track) => (
+													<DropdownMenuRadioItem
+														className="py-2.5 focus:bg-zinc-800"
+														key={track.id}
+														value={track.id.toString()}
+													>
+														{track.label}
+													</DropdownMenuRadioItem>
+												))}
+											</DropdownMenuRadioGroup>
+										)}
+									</DropdownMenuSubContent>
+								</DropdownMenuSub>
+								<DropdownMenuSeparator className="bg-zinc-700" />
+								<DropdownMenuCheckboxItem
+									className="py-2.5 focus:bg-zinc-800"
+									checked={autoplayNext}
+									onCheckedChange={(checked) => setPlayerPreferences({ autoplayNext: !!checked })}
+								>
+									Autoplay
+								</DropdownMenuCheckboxItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+					)}
 					<PlayerButton
 						aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-						onClick={(e) => {
-							e.stopPropagation();
+						onClick={(event) => {
+							event.stopPropagation();
 							togglePlayerFullscreen();
 						}}
 					>
