@@ -96,9 +96,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 		<div
 			onClick={(event) => event.stopPropagation()}
 			className={cn(
-				"group cursor-default !pt-1 transition-opacity duration-300",
+				"group cursor-default transition-opacity duration-300",
 				showControls ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
-				isMini ? "p-3" : "p-6",
+				isMini ? "p-2" : "p-6",
 			)}
 		>
 			<div className={cn("flex justify-between text-white/80", isMini ? "text-xs" : "text-sm")}>
