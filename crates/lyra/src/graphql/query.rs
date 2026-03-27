@@ -35,6 +35,7 @@ const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
     "library",
     "libraries",
 ];
+const SECONDS_PER_DAY: i64 = 86_400;
 
 fn directory_sort_key(name: &str) -> (u8, usize, String) {
     let lower = name.to_ascii_lowercase();
@@ -316,7 +317,14 @@ impl Query {
 
                 match order_by {
                     OrderBy::AddedAt => {
-                        qb = qb.order_by(nodes::Column::LastAddedAt, order_direction)
+                        // group by discovery day first so recent imports stay together, then
+                        // use release date to make same-day batches feel intentional.
+                        qb = qb
+                            .order_by(
+                                Expr::col(nodes::Column::LastAddedAt).div(SECONDS_PER_DAY),
+                                order_direction.clone(),
+                            )
+                            .order_by(node_metadata::Column::ReleasedAt, order_direction)
                     }
                     OrderBy::ReleasedAt => {
                         qb = qb.order_by(node_metadata::Column::ReleasedAt, order_direction)
