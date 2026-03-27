@@ -21,5 +21,6 @@
 	"typescript.enablePromptUseWorkspaceTsdk": true,
 	"files.readonlyInclude": {
 		"**/@generated/**": true
-	}
+	},
+	"js/ts.tsdk.path": "node_modules/typescript/lib"
 }

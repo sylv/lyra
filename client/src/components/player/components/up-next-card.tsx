@@ -36,7 +36,7 @@ export const UpNextCard: FC<UpNextCardProps> = ({
 		titleParts.push(`S${seasonNumber}E${episodeNumber}`);
 	}
 	titleParts.push(displayName);
-	const title = titleParts.join(" · ");
+	const title = titleParts.join(" ");
 
 	const clampedPercent = Math.max(0, Math.min(100, (progressPercent ?? 0) * 100));
 	const remainingLabel =

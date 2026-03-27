@@ -11,6 +11,8 @@ export const ItemPlaybackQuery = graphql(`
 				seasonNumber
 				episodeNumber
 				runtimeMinutes
+				releasedAt
+				endedAt
 			}
 			root {
 				libraryId
@@ -53,7 +55,9 @@ export const ItemPlaybackQuery = graphql(`
 				properties {
 					displayName
 					description
-					thumbnailImage { ...ImageAsset }
+					thumbnailImage {
+						...ImageAsset
+					}
 					seasonNumber
 					episodeNumber
 				}
@@ -63,7 +67,9 @@ export const ItemPlaybackQuery = graphql(`
 				properties {
 					displayName
 					description
-					thumbnailImage { ...ImageAsset }
+					thumbnailImage {
+						...ImageAsset
+					}
 					seasonNumber
 					episodeNumber
 				}

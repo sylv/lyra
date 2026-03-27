@@ -6,6 +6,7 @@ import { getPathForNodeData } from "../../../lib/getPathForMedia";
 import { cn } from "../../../lib/utils";
 import { clearPlayerMedia, togglePlayerFullscreen, usePlayerContext } from "../player-context";
 import { PlayerButton } from "./player-button";
+import { formatReleaseYear } from "../../../lib/format-release-year";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 
@@ -15,7 +16,9 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 	const navigate = useNavigate();
 	const detailsPath = media.libraryId ? getPathForNodeData(media) : null;
 	const hasEpisodeMetadata =
-		!!media.root?.properties.displayName && media.properties.seasonNumber != null && media.properties.episodeNumber != null;
+		!!media.root?.properties.displayName &&
+		media.properties.seasonNumber != null &&
+		media.properties.episodeNumber != null;
 
 	return (
 		<div
@@ -50,14 +53,21 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 					{hasEpisodeMetadata ? (
 						<>
 							<h2 className={cn("font-semibold", isFullscreen ? "text-xl" : "text-sm")}>
-								{media.root?.properties.displayName}: Season {media.properties.seasonNumber}
+								{media.root?.properties.displayName}
 							</h2>
 							<p className={cn("text-gray-300", isFullscreen ? "text-sm" : "text-xs")}>
-								Episode {media.properties.episodeNumber}: {media.properties.displayName}
+								S{media.properties.seasonNumber}E{media.properties.episodeNumber} {media.properties.displayName}
 							</p>
 						</>
 					) : (
-						<h2 className={cn("font-semibold", isFullscreen ? "text-xl" : "text-sm")}>{media.properties.displayName}</h2>
+						<>
+							<h2 className={cn("font-semibold", isFullscreen ? "text-xl" : "text-sm")}>
+								{media.properties.displayName}
+							</h2>
+							<p className={cn("text-gray-300", isFullscreen ? "text-sm" : "text-xs")}>
+								{formatReleaseYear(media.properties.releasedAt, media.properties.endedAt)}
+							</p>
+						</>
 					)}
 				</button>
 			</div>
