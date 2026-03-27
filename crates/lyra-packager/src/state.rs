@@ -196,9 +196,30 @@ pub fn streams_from_probe_output(
         }
 
         let fallback = match stream_type {
-            StreamType::Audio => format!("Audio {}", streams.iter().filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Audio).count() + 1),
-            StreamType::Subtitle => format!("Subtitle {}", streams.iter().filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Subtitle).count() + 1),
-            StreamType::Video => format!("Video {}", streams.iter().filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Video).count() + 1),
+            StreamType::Audio => format!(
+                "Audio {}",
+                streams
+                    .iter()
+                    .filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Audio)
+                    .count()
+                    + 1
+            ),
+            StreamType::Subtitle => format!(
+                "Subtitle {}",
+                streams
+                    .iter()
+                    .filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Subtitle)
+                    .count()
+                    + 1
+            ),
+            StreamType::Video => format!(
+                "Video {}",
+                streams
+                    .iter()
+                    .filter(|s: &&StreamDescriptor| s.stream_type == StreamType::Video)
+                    .count()
+                    + 1
+            ),
         };
         let display_name = build_track_display_name(
             stream.language.as_deref(),
@@ -487,7 +508,11 @@ pub fn build_master_playlist(
             "/stream/{}/{}/index.m3u8",
             stream.stream_id, "subtitle_webvtt"
         );
-        let forced_attr = if stream.is_forced { "FORCED=YES" } else { "FORCED=NO" };
+        let forced_attr = if stream.is_forced {
+            "FORCED=YES"
+        } else {
+            "FORCED=NO"
+        };
         let mut media_attrs = vec![
             "TYPE=SUBTITLES".to_string(),
             "GROUP-ID=\"subs\"".to_string(),

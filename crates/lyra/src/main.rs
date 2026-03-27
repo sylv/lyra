@@ -8,6 +8,7 @@ use crate::{
     },
     error::AppError,
     job_block::JobLock,
+    watch_session::WatchSessionRegistry,
 };
 use anyhow::Context;
 use async_graphql::Data;
@@ -54,6 +55,7 @@ mod metadata;
 mod scanner;
 mod segment_markers;
 mod signer;
+mod watch_session;
 
 type AppSchema = Schema<
     graphql::query::Query,
@@ -218,6 +220,8 @@ async fn main() {
     let job_wake_signal = Arc::new(Notify::new());
     let job_lock = JobLock::default();
     CONTENT_UPDATE.start();
+    let watch_session_registry = WatchSessionRegistry::new(pool.clone());
+    watch_session_registry.start();
     jobs::clear_locked_jobs_on_startup(&pool)
         .await
         .expect("Failed to clear stale job locks");
@@ -258,6 +262,7 @@ async fn main() {
     .data(pool.clone())
     .data(signer.clone())
     .data(job_activity_registry)
+    .data(watch_session_registry)
     .finish();
 
     // write the schema to a file in dev

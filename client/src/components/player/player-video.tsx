@@ -1,8 +1,12 @@
 /* oxlint-disable jsx_a11y/media-has-caption */
-import { useMutation } from "@apollo/client/react";
-import { useEffect, useRef, type FC } from "react";
-import { type FragmentType } from "../../@generated/gql";
-import type { ItemPlaybackQuery } from "../../@generated/gql/graphql";
+import { useMutation, useSubscription } from "@apollo/client/react";
+import { useEffect, useRef, useState, type FC } from "react";
+import { type FragmentType, unmask } from "../../@generated/gql";
+import {
+	type ItemPlaybackQuery,
+	WatchSessionActionKind,
+	WatchSessionIntent,
+} from "../../@generated/gql/graphql";
 import { createHlsPlayer } from "./hls";
 import {
 	playerContext,
@@ -10,14 +14,28 @@ import {
 	resetPlayerState,
 	setPlayerActions,
 	setPlayerLoading,
+	setPlayerMedia,
 	setPlayerMuted,
 	setPlayerSnapshot,
 	setPlayerState,
 	setPlayerVolume,
+	setPlayerWatchSession,
+	usePlayerContext,
 } from "./player-context";
-import { UpdateWatchState } from "./player-queries";
+import {
+	UpdateWatchState,
+	WatchSessionAction,
+	WatchSessionBeaconFragment,
+	WatchSessionBeacons,
+	WatchSessionHeartbeat,
+} from "./player-queries";
 import { PlayerTimelinePreviewSheetFragment } from "./components/player-progress-bar";
 import { usePlayerRefsContext } from "./player-refs-context";
+import {
+	applyWatchSessionBeacon,
+	createLocalWatchSessionId,
+	getWatchSessionState,
+} from "./watch-session";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 
@@ -30,8 +48,11 @@ interface PlayerVideoProps {
 export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shouldPromptResume }) => {
 	const { videoRef, controllerRef } = usePlayerRefsContext();
 	const [updateWatchProgress] = useMutation(UpdateWatchState);
+	const [watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
+	const [watchSessionAction] = useMutation(WatchSessionAction);
 	const currentMediaId = currentMedia?.id ?? null;
 	const currentFileId = currentMedia?.file?.id ?? null;
+	const watchSession = usePlayerContext((ctx) => ctx.watchSession);
 	const snapshotUpdateRef = useRef<{ mediaId: string | null; lastPosition: number | null; lastUpdatedAt: number }>({
 		mediaId: null,
 		lastPosition: null,
@@ -42,28 +63,111 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		fileId: null,
 		lastProgressPercent: null,
 	});
+	const sessionControlledSwitchRef = useRef<string | null>(null);
+	const pendingActionRef = useRef<Promise<unknown> | null>(null);
+	const heartbeatRef = useRef<(() => void) | null>(null);
+	const [isWatchSessionRegistered, setIsWatchSessionRegistered] = useState(false);
+
+	useSubscription(WatchSessionBeacons, {
+		variables: {
+			sessionId: watchSession.sessionId ?? "",
+			playerId: watchSession.playerId ?? "",
+		},
+		skip: !watchSession.sessionId || !watchSession.playerId || !isWatchSessionRegistered,
+		onData: ({ data }) => {
+			const beacon = data.data?.watchSessionBeacons;
+			if (!beacon) return;
+			applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
+		},
+	});
+
+	useEffect(() => {
+		setIsWatchSessionRegistered(false);
+	}, [watchSession.playerId, watchSession.sessionId]);
 
 	useEffect(() => {
 		const video = videoRef.current;
 		if (!video) return;
 
+		const sendAction = async (
+			kind: WatchSessionActionKind,
+			fields: Partial<{ positionMs: number; nodeId: string; targetPlayerId: string }> = {},
+		) => {
+			const sessionState = getWatchSessionState();
+			if (!sessionState.sessionId || !sessionState.playerId) return null;
+
+			const request = watchSessionAction({
+				variables: {
+					input: {
+						sessionId: sessionState.sessionId,
+						playerId: sessionState.playerId,
+						kind,
+						positionMs: fields.positionMs ?? null,
+						nodeId: fields.nodeId ?? null,
+						targetPlayerId: fields.targetPlayerId ?? null,
+					},
+				},
+			})
+				.then((result) => {
+					const beacon = result.data?.watchSessionAction;
+					if (beacon) {
+						applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
+					}
+					return beacon ?? null;
+				})
+				.catch((error: unknown) => {
+					const sessionMode = getWatchSessionState().mode;
+					if (sessionMode === "SYNCED") {
+						setPlayerWatchSession({ connectionWarning: "Watch session connection lost" });
+					}
+					throw error;
+				});
+			pendingActionRef.current = request;
+			return request;
+		};
+
 		const togglePlaying = () => {
+			const sessionState = getWatchSessionState();
+			const positionMs = Math.max(0, Math.round(video.currentTime * 1000));
+			if (sessionState.mode === "SYNCED") {
+				void sendAction(video.paused ? WatchSessionActionKind.Play : WatchSessionActionKind.Pause, { positionMs });
+				return;
+			}
+
 			if (video.paused) {
 				video.play().catch(() => undefined);
+				void sendAction(WatchSessionActionKind.Play, { positionMs });
 			} else {
 				video.pause();
+				void sendAction(WatchSessionActionKind.Pause, { positionMs });
 			}
 		};
 
 		const seekTo = (time: number) => {
-			video.currentTime = time;
+			const target = Math.max(0, time);
+			const targetMs = Math.round(target * 1000);
+			if (getWatchSessionState().mode === "SYNCED") {
+				void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
+				return;
+			}
+
+			video.currentTime = target;
+			void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
 		};
 
 		const seekBy = (deltaSeconds: number) => {
 			const cachedDuration = playerContext.getState().state.duration;
 			const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : cachedDuration;
 			const nextTime = video.currentTime + deltaSeconds;
-			video.currentTime = Math.max(0, duration > 0 ? Math.min(duration, nextTime) : nextTime);
+			const target = Math.max(0, duration > 0 ? Math.min(duration, nextTime) : nextTime);
+			const targetMs = Math.round(target * 1000);
+			if (getWatchSessionState().mode === "SYNCED") {
+				void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
+				return;
+			}
+
+			video.currentTime = target;
+			void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
 		};
 
 		const toggleMute = () => {
@@ -93,6 +197,17 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			controllerRef.current?.setSubtitleDisplay(enabled);
 		};
 
+		const switchItem = (itemId: string) => {
+			if (getWatchSessionState().mode === "SYNCED") {
+				void sendAction(WatchSessionActionKind.SwitchItem, { nodeId: itemId });
+				return;
+			}
+
+			sessionControlledSwitchRef.current = itemId;
+			setPlayerMedia(itemId, true);
+			void sendAction(WatchSessionActionKind.SwitchItem, { nodeId: itemId });
+		};
+
 		setPlayerActions({
 			togglePlaying,
 			seekBy,
@@ -102,8 +217,9 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			setAudioTrack,
 			setSubtitleTrack,
 			setSubtitleDisplay,
+			switchItem,
 		});
-	}, [videoRef, controllerRef]);
+	}, [controllerRef, videoRef, watchSessionAction]);
 
 	useEffect(() => {
 		if (!videoRef.current) return;
@@ -178,6 +294,214 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			controllerRef.current = null;
 		};
 	}, [autoplay, currentMediaId, currentFileId, controllerRef, shouldPromptResume, videoRef]);
+
+	useEffect(() => {
+		if (!currentMedia?.file) return;
+		if (watchSession.sessionId && watchSession.playerId) return;
+
+		const pendingSessionId = watchSession.pendingSessionId;
+		const pendingNodeId = watchSession.pendingNodeId;
+		const shouldJoin = pendingSessionId != null && pendingNodeId === currentMedia.id;
+		if (pendingSessionId && !shouldJoin) return;
+
+		setPlayerWatchSession({
+			sessionId: shouldJoin ? pendingSessionId : createLocalWatchSessionId(),
+			playerId: createLocalWatchSessionId(),
+			nodeId: currentMedia.id,
+			fileId: currentMedia.file.id,
+			mode: "ADVISORY",
+			intent: playerContext.getState().state.playing ? "PLAYING" : "PAUSED",
+			effectiveState: playerContext.getState().state.playing ? "PLAYING" : "PAUSED",
+			basePositionMs: Math.max(0, Math.round((videoRef.current?.currentTime ?? 0) * 1000)),
+			baseTimeMs: Date.now(),
+			players: [],
+			lastContactAt: null,
+			connectionWarning: null,
+			pendingSessionId: null,
+			pendingNodeId: null,
+		});
+	}, [
+		currentMedia?.file,
+		currentMedia?.id,
+		currentMedia?.file?.id,
+		videoRef,
+		watchSession.pendingNodeId,
+		watchSession.pendingSessionId,
+		watchSession.playerId,
+		watchSession.sessionId,
+	]);
+
+	useEffect(() => {
+		if (watchSession.mode === "SYNCED") return;
+		if (!currentMediaId || !watchSession.sessionId || !watchSession.playerId) return;
+		if (watchSession.pendingSessionId) return;
+		if (sessionControlledSwitchRef.current === currentMediaId) {
+			sessionControlledSwitchRef.current = null;
+			return;
+		}
+		if (!watchSession.nodeId || watchSession.nodeId === currentMediaId) return;
+
+		void watchSessionAction({
+			variables: {
+				input: {
+					sessionId: watchSession.sessionId,
+					playerId: watchSession.playerId,
+					kind: WatchSessionActionKind.SwitchItem,
+					positionMs: null,
+					nodeId: currentMediaId,
+					targetPlayerId: null,
+				},
+			},
+		})
+			.then((result) => {
+				const beacon = result.data?.watchSessionAction;
+				if (beacon) {
+					applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
+				}
+			})
+			.catch((error) => {
+				console.error("failed to switch watch session item", error);
+			});
+	}, [
+		currentMediaId,
+		watchSession.nodeId,
+		watchSession.pendingSessionId,
+		watchSession.playerId,
+		watchSession.sessionId,
+		watchSession.mode,
+		watchSessionAction,
+	]);
+
+	useEffect(() => {
+		const video = videoRef.current;
+		if (!video || watchSession.mode !== "SYNCED") {
+			if (video) {
+				video.playbackRate = 1;
+			}
+			return;
+		}
+		if (watchSession.basePositionMs == null || watchSession.baseTimeMs == null || !watchSession.nodeId) return;
+
+		if (watchSession.nodeId !== currentMediaId) {
+			sessionControlledSwitchRef.current = watchSession.nodeId;
+			setPlayerState({
+				pendingInitialPosition: watchSession.basePositionMs / 1000,
+				autoplay: false,
+				shouldPromptResume: false,
+			});
+			setPlayerMedia(watchSession.nodeId, false);
+			return;
+		}
+
+		const targetSeconds =
+			watchSession.effectiveState === "PLAYING"
+				? Math.max(0, (watchSession.basePositionMs + Math.max(0, Date.now() - watchSession.baseTimeMs)) / 1000)
+				: Math.max(0, watchSession.basePositionMs / 1000);
+		const driftSeconds = targetSeconds - video.currentTime;
+
+		if (Math.abs(driftSeconds) > 15) {
+			video.currentTime = targetSeconds;
+			video.playbackRate = 1;
+		} else if (driftSeconds > 0.75) {
+			video.playbackRate = driftSeconds > 5 ? 1.1 : 1.05;
+		} else if (driftSeconds < -0.75) {
+			video.playbackRate = driftSeconds < -5 ? 0.9 : 0.95;
+		} else {
+			video.playbackRate = 1;
+		}
+
+		if (watchSession.effectiveState === "PLAYING") {
+			video.play().catch(() => undefined);
+		} else {
+			video.pause();
+		}
+	}, [
+		currentMediaId,
+		videoRef,
+		watchSession.basePositionMs,
+		watchSession.baseTimeMs,
+		watchSession.effectiveState,
+		watchSession.mode,
+		watchSession.nodeId,
+	]);
+
+	useEffect(() => {
+		const video = videoRef.current;
+		if (!video || !currentMediaId || !currentFileId || !watchSession.sessionId || !watchSession.playerId) return;
+
+		const sendHeartbeat = () => {
+			const sessionState = getWatchSessionState();
+			if (!sessionState.sessionId || !sessionState.playerId) return;
+			const basePositionMs = Math.max(0, Math.round(video.currentTime * 1000));
+			const baseTimeMs = Date.now();
+			const isBuffering = playerContext.getState().state.isLoading && !video.paused;
+			const recoveryIntent =
+				sessionState.intent === "PLAYING"
+					? WatchSessionIntent.Playing
+					: sessionState.intent === "PAUSED"
+						? WatchSessionIntent.Paused
+						: video.paused
+							? WatchSessionIntent.Paused
+							: WatchSessionIntent.Playing;
+
+			void watchSessionHeartbeat({
+				variables: {
+					input: {
+						sessionId: sessionState.sessionId,
+						playerId: sessionState.playerId,
+						isBuffering,
+						basePositionMs,
+						baseTimeMs,
+						recovery: {
+							nodeId: sessionState.nodeId ?? currentMediaId,
+							fileId: sessionState.fileId ?? currentFileId,
+							intent: recoveryIntent,
+							basePositionMs: sessionState.basePositionMs ?? basePositionMs,
+							baseTimeMs: sessionState.baseTimeMs ?? baseTimeMs,
+						},
+					},
+				},
+			})
+				.then((result) => {
+					const beacon = result.data?.watchSessionHeartbeat;
+					if (beacon) {
+						if (beacon.players.some((player) => player.id === sessionState.playerId)) {
+							setIsWatchSessionRegistered(true);
+						}
+						applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
+					}
+				})
+				.catch((error) => {
+					console.error("failed to send watch session heartbeat", error);
+					if (sessionState.mode === "SYNCED") {
+						setPlayerWatchSession({ connectionWarning: "Watch session connection lost" });
+					}
+				});
+		};
+		heartbeatRef.current = sendHeartbeat;
+
+		sendHeartbeat();
+		const interval = window.setInterval(sendHeartbeat, 3_000);
+		return () => {
+			heartbeatRef.current = null;
+			window.clearInterval(interval);
+		};
+	}, [currentFileId, currentMediaId, videoRef, watchSession.playerId, watchSession.sessionId, watchSessionHeartbeat]);
+
+	useEffect(() => {
+		if (watchSession.mode !== "SYNCED" || watchSession.lastContactAt == null) return;
+		const video = videoRef.current;
+		if (!video) return;
+
+		const interval = window.setInterval(() => {
+			const stale = Date.now() - (playerContext.getState().watchSession.lastContactAt ?? 0) >= 12_000;
+			if (!stale) return;
+			video.pause();
+			setPlayerWatchSession({ connectionWarning: "Watch session connection lost" });
+		}, 1_000);
+
+		return () => window.clearInterval(interval);
+	}, [videoRef, watchSession.lastContactAt, watchSession.mode]);
 
 	useEffect(() => {
 		const video = videoRef.current;
@@ -290,12 +614,25 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 				upNextCountdownCancelled: false,
 				isUpNextActive: false,
 			});
+			heartbeatRef.current?.();
 		};
 
-		const handleCanPlay = () => setPlayerLoading(false);
-		const handleWaiting = () => setPlayerLoading(true);
-		const handlePlaying = () => setPlayerLoading(false);
-		const handleLoadedData = () => setPlayerLoading(false);
+		const handleCanPlay = () => {
+			setPlayerLoading(false);
+			heartbeatRef.current?.();
+		};
+		const handleWaiting = () => {
+			setPlayerLoading(true);
+			heartbeatRef.current?.();
+		};
+		const handlePlaying = () => {
+			setPlayerLoading(false);
+			heartbeatRef.current?.();
+		};
+		const handleLoadedData = () => {
+			setPlayerLoading(false);
+			heartbeatRef.current?.();
+		};
 
 		let lastUpdated = 0;
 		const handleTimeUpdate = () => {
@@ -310,6 +647,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			updatePlaybackState();
 			syncPlayerSnapshot(true);
 			syncWatchProgress();
+			heartbeatRef.current?.();
 		};
 
 		const watchProgressInterval = window.setInterval(syncWatchProgress, 5_000);
@@ -345,7 +683,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		};
 	}, [currentMediaId, currentFileId, updateWatchProgress, videoRef]);
 
-	const autoplayEnabled = playerContext.getState().state.autoplay;
+	const autoplayEnabled = playerContext.getState().state.autoplay && watchSession.mode !== "SYNCED";
 	const isFullscreen = playerContext.getState().state.isFullscreen;
 
 	return (

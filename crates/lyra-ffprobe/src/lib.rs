@@ -277,7 +277,9 @@ pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> 
 
             let disposition = stream.disposition.as_ref();
             let is_forced = disposition.map(|d| d.forced != 0).unwrap_or(false);
-            let is_hearing_impaired = disposition.map(|d| d.hearing_impaired != 0).unwrap_or(false);
+            let is_hearing_impaired = disposition
+                .map(|d| d.hearing_impaired != 0)
+                .unwrap_or(false);
             let is_commentary = disposition.map(|d| d.comment != 0).unwrap_or(false);
 
             Some(Stream {

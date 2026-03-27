@@ -13,13 +13,15 @@ export const useUpNextState = ({ hasNextItem, onNextItem }: { hasNextItem: boole
 	const upNextDismissed = usePlayerContext((ctx) => ctx.state.upNextDismissed);
 	const upNextCountdownCancelled = usePlayerContext((ctx) => ctx.state.upNextCountdownCancelled);
 	const autoplayNext = usePlayerContext((ctx) => ctx.preferences.autoplayNext);
+	const watchSessionMode = usePlayerContext((ctx) => ctx.watchSession.mode);
 	const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
+	const autoplayAllowed = autoplayNext && watchSessionMode !== "SYNCED";
 
 	const previewWindowSeconds =
 		duration > 0 ? Math.min(PREVIEW_WINDOW_SECONDS, duration * PREVIEW_WINDOW_FRACTION) : PREVIEW_WINDOW_SECONDS;
 	const isNearEnd = duration > 0 && duration - currentTime <= previewWindowSeconds;
 	const isUpNextActive = isFullscreen && hasNextItem && !upNextDismissed && (isNearEnd || ended);
-	const shouldCountdown = ended && isFullscreen && autoplayNext && !upNextCountdownCancelled && isUpNextActive;
+	const shouldCountdown = ended && isFullscreen && autoplayAllowed && !upNextCountdownCancelled && isUpNextActive;
 
 	const wasActiveRef = useRef(false);
 	useEffect(() => {
@@ -67,7 +69,7 @@ export const useUpNextState = ({ hasNextItem, onNextItem }: { hasNextItem: boole
 	}, [elapsedSinceEnd, onNextItem, shouldCountdown]);
 
 	const upNextProgress = useMemo(() => {
-		if (!isUpNextActive || !autoplayNext || upNextCountdownCancelled) return 0;
+		if (!isUpNextActive || !autoplayAllowed || upNextCountdownCancelled) return 0;
 		if (totalCountdownSeconds <= 0) return 0;
 		if (ended) {
 			const playbackPortion = previewWindowSeconds / totalCountdownSeconds;
@@ -76,7 +78,7 @@ export const useUpNextState = ({ hasNextItem, onNextItem }: { hasNextItem: boole
 		}
 		return Math.min(1, Math.max(0, (currentTime - previewStartTime) / totalCountdownSeconds));
 	}, [
-		autoplayNext,
+		autoplayAllowed,
 		currentTime,
 		elapsedSinceEnd,
 		ended,
@@ -88,17 +90,17 @@ export const useUpNextState = ({ hasNextItem, onNextItem }: { hasNextItem: boole
 	]);
 
 	const countdownSeconds = useMemo(() => {
-		if (!isUpNextActive || !autoplayNext || upNextCountdownCancelled) return 0;
+		if (!isUpNextActive || !autoplayAllowed || upNextCountdownCancelled) return 0;
 		if (ended) return Math.max(0, POST_END_COUNTDOWN_SECONDS - elapsedSinceEnd / 1000);
 		return Math.max(0, duration - currentTime + POST_END_COUNTDOWN_SECONDS);
-	}, [autoplayNext, currentTime, duration, elapsedSinceEnd, ended, isUpNextActive, upNextCountdownCancelled]);
+	}, [autoplayAllowed, currentTime, duration, elapsedSinceEnd, ended, isUpNextActive, upNextCountdownCancelled]);
 
 	return {
 		isUpNextActive,
 		showActions: isUpNextActive,
 		upNextProgress,
 		countdownSeconds,
-		autoplayNext,
+		autoplayNext: autoplayAllowed,
 		upNextCountdownCancelled,
 	};
 };

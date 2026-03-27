@@ -1,7 +1,7 @@
 use crate::RequestAuth;
 use crate::auth::{
-    PermissionGuard, accessible_library_ids, create_session_for_user, ensure_library_access,
-    find_pending_invite_user,
+    AuthenticatedGuard, PermissionGuard, accessible_library_ids, create_session_for_user,
+    ensure_library_access, find_pending_invite_user,
 };
 use crate::content_update::CONTENT_UPDATE;
 use crate::entities::users::UserPerms;
@@ -11,6 +11,9 @@ use crate::entities::{
 use crate::graphql::properties::TrackDispositionPreference;
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
+use crate::watch_session::{
+    WatchSessionActionInput, WatchSessionBeacon, WatchSessionHeartbeatInput, WatchSessionRegistry,
+};
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
@@ -69,7 +72,9 @@ where
             .await
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
         if found_library_count != library_ids.len() as u64 {
-            return Err(async_graphql::Error::new("One or more libraries were not found"));
+            return Err(async_graphql::Error::new(
+                "One or more libraries were not found",
+            ));
         }
     }
 
@@ -346,19 +351,20 @@ impl Mutation {
             .ok_or_else(|| async_graphql::Error::new("User not found".to_string()))?;
         let existing_library_ids = normalize_library_ids(
             library_users::Entity::find()
-            .filter(library_users::Column::UserId.eq(existing_user.id.clone()))
-            .select_only()
-            .column(library_users::Column::LibraryId)
-            .into_tuple::<String>()
-            .all(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?,
+                .filter(library_users::Column::UserId.eq(existing_user.id.clone()))
+                .select_only()
+                .column(library_users::Column::LibraryId)
+                .into_tuple::<String>()
+                .all(pool)
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?,
         );
 
         if auth
             .get_user()
             .is_some_and(|current_user| current_user.id == existing_user.id)
-            && (existing_user.permissions != permissions as i64 || existing_library_ids != library_ids)
+            && (existing_user.permissions != permissions as i64
+                || existing_library_ids != library_ids)
         {
             return Err(async_graphql::Error::new(
                 "You cannot edit your current account permissions or library access",
@@ -776,5 +782,39 @@ impl Mutation {
 
         CONTENT_UPDATE.emit();
         Ok(true)
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn leave_watch_session(
+        &self,
+        ctx: &Context<'_>,
+        session_id: String,
+        player_id: String,
+    ) -> Result<bool, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
+        let registry = ctx.data::<WatchSessionRegistry>()?;
+        registry.leave_session(auth, &session_id, &player_id).await
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn watch_session_heartbeat(
+        &self,
+        ctx: &Context<'_>,
+        input: WatchSessionHeartbeatInput,
+    ) -> Result<WatchSessionBeacon, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
+        let registry = ctx.data::<WatchSessionRegistry>()?;
+        registry.heartbeat(auth, input).await
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn watch_session_action(
+        &self,
+        ctx: &Context<'_>,
+        input: WatchSessionActionInput,
+    ) -> Result<WatchSessionBeacon, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
+        let registry = ctx.data::<WatchSessionRegistry>()?;
+        registry.apply_action(auth, input).await
     }
 }

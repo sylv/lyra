@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
+use lyra_ffprobe::{paths::get_ffprobe_path, probe_keyframes_pts_blocking, probe_output_blocking};
 use lyra_packager::{
     BuildOptions, build_package, canonicalize_input_path, profiles::VideoCopyProfile,
 };
-use lyra_ffprobe::{paths::get_ffprobe_path, probe_keyframes_pts_blocking, probe_output_blocking};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tracing::info;
 
@@ -35,8 +35,7 @@ async fn main() -> Result<()> {
     let keyframes = probe_keyframes_pts_blocking(&ffprobe_bin, &input)?;
 
     // only use the copy profile so we generate exactly what playback would use
-    let profiles: Vec<Arc<dyn lyra_packager::profiles::Profile>> =
-        vec![Arc::new(VideoCopyProfile)];
+    let profiles: Vec<Arc<dyn lyra_packager::profiles::Profile>> = vec![Arc::new(VideoCopyProfile)];
     let package = build_package(&input, &profiles, &options, &ffprobe_output, &keyframes)?;
 
     // find the video_copy session; it may be absent if the file has no keyframe data
@@ -56,9 +55,9 @@ async fn main() -> Result<()> {
         .wait_for_segment_file("init.mp4", Duration::from_secs(30))
         .await?;
     let dest = output_dir.join("init.mp4");
-    tokio::fs::copy(&init_path, &dest).await.with_context(|| {
-        format!("failed to copy init.mp4 to {}", dest.display())
-    })?;
+    tokio::fs::copy(&init_path, &dest)
+        .await
+        .with_context(|| format!("failed to copy init.mp4 to {}", dest.display()))?;
     info!("wrote init.mp4");
 
     // generate and copy every segment in order
@@ -71,9 +70,9 @@ async fn main() -> Result<()> {
             .with_context(|| format!("timed out waiting for segment {i}"))?;
 
         let dest = output_dir.join(&name);
-        tokio::fs::copy(&seg_path, &dest).await.with_context(|| {
-            format!("failed to copy {name} to {}", dest.display())
-        })?;
+        tokio::fs::copy(&seg_path, &dest)
+            .await
+            .with_context(|| format!("failed to copy {name} to {}", dest.display()))?;
 
         info!(segment = i, total = segment_count, "wrote {name}");
     }

@@ -106,3 +106,101 @@ export const SetPreferredSubtitle = graphql(`
 		}
 	}
 `);
+
+export const WatchSessionSummary = graphql(`
+	fragment WatchSessionSummary on WatchSession {
+		id
+		nodeId
+		fileId
+		mode
+		intent
+		effectiveState
+		currentPositionMs
+		basePositionMs
+		baseTimeMs
+		revision
+		players {
+			id
+			userId
+			user {
+				id
+				username
+			}
+			isBuffering
+			isInactive
+			canRemove
+		}
+	}
+`);
+
+export const WatchSessionBeaconFragment = graphql(`
+	fragment WatchSessionBeaconFragment on WatchSessionBeacon {
+		sessionId
+		nodeId
+		fileId
+		mode
+		intent
+		effectiveState
+		basePositionMs
+		baseTimeMs
+		revision
+		players {
+			id
+			userId
+			user {
+				id
+				username
+			}
+			isBuffering
+			isInactive
+			canRemove
+		}
+	}
+`);
+
+export const WatchSessionViewer = graphql(`
+	query WatchSessionViewer {
+		viewer {
+			id
+			permissions
+		}
+	}
+`);
+
+export const GetWatchSession = graphql(`
+	query GetWatchSession($sessionId: String!) {
+		watchSession(sessionId: $sessionId) {
+			...WatchSessionSummary
+		}
+	}
+`);
+
+export const LeaveWatchSession = graphql(`
+	mutation LeaveWatchSession($sessionId: String!, $playerId: String!) {
+		leaveWatchSession(sessionId: $sessionId, playerId: $playerId)
+	}
+`);
+
+export const WatchSessionHeartbeat = graphql(`
+	mutation WatchSessionHeartbeat($input: WatchSessionHeartbeatInput!) {
+		watchSessionHeartbeat(input: $input) {
+			...WatchSessionBeaconFragment
+		}
+	}
+`);
+
+export const WatchSessionAction = graphql(`
+	mutation WatchSessionAction($input: WatchSessionActionInput!) {
+		watchSessionAction(input: $input) {
+			...WatchSessionBeaconFragment
+		}
+	}
+`);
+
+export const WatchSessionBeacons = graphql(`
+	subscription WatchSessionBeacons($sessionId: String!, $playerId: String!) {
+		watchSessionBeacons(sessionId: $sessionId, playerId: $playerId) {
+			...WatchSessionBeaconFragment
+		}
+	}
+`);

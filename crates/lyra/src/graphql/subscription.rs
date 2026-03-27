@@ -1,4 +1,8 @@
-use crate::{auth::RequestAuth, content_update::CONTENT_UPDATE};
+use crate::{
+    auth::RequestAuth,
+    content_update::CONTENT_UPDATE,
+    watch_session::{WatchSessionBeacon, WatchSessionRegistry},
+};
 use async_graphql::{Context, Enum, Subscription};
 use futures_util::Stream;
 use tokio::sync::broadcast;
@@ -25,6 +29,30 @@ impl SubscriptionRoot {
                 loop {
                     match receiver.recv().await {
                         Ok(()) => return Some((ContentUpdateEvent::ContentUpdate, receiver)),
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => return None,
+                    }
+                }
+            },
+        ))
+    }
+
+    async fn watch_session_beacons(
+        &self,
+        ctx: &Context<'_>,
+        session_id: String,
+        player_id: String,
+    ) -> Result<impl Stream<Item = WatchSessionBeacon>, async_graphql::Error> {
+        let auth = ctx.data::<RequestAuth>()?;
+        let registry = ctx.data::<WatchSessionRegistry>()?;
+        Ok(futures_util::stream::unfold(
+            registry
+                .subscribe_for_player(auth, &session_id, &player_id)
+                .await?,
+            |mut receiver| async move {
+                loop {
+                    match receiver.recv().await {
+                        Ok(beacon) => return Some((beacon, receiver)),
                         Err(broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(broadcast::error::RecvError::Closed) => return None,
                     }

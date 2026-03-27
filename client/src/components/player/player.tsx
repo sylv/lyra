@@ -2,6 +2,7 @@
 import { useQuery } from "@apollo/client/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, type FC } from "react";
+import { getApolloClient } from "../../client";
 import { cn } from "../../lib/utils";
 import { PlayerErrorOverlay } from "./components/player-error-overlay";
 import { PlayerControls } from "./components/player-controls";
@@ -18,9 +19,9 @@ import { usePlayerActions } from "./hooks/use-player-actions";
 import { useSurfaceInteraction } from "./hooks/use-surface-interaction";
 import { useTrackSelection } from "./hooks/use-track-selection";
 import { useUpNextState } from "./hooks/use-up-next-state";
-import { setPlayerControls, setPlayerMedia, setPlayerState, usePlayerContext } from "./player-context";
+import { setPlayerControls, setPlayerState, usePlayerContext } from "./player-context";
 import { PlayerLayout } from "./player-layout";
-import { ItemPlaybackQuery } from "./player-queries";
+import { ItemPlaybackQuery, LeaveWatchSession } from "./player-queries";
 import { PlayerRefsContext, usePlayerRefsContext } from "./player-refs-context";
 import { PlayerVideo, getTimelinePreviewSheets } from "./player-video";
 
@@ -64,15 +65,16 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 	});
 	const { handlePlayerKeyDown } = useKeyboardShortcuts({ actions, handleContainerClick });
 	const { onAudioTrackChange, onSubtitleTrackChange } = useTrackSelection(currentMedia, itemId);
+	const { switchItem } = actions;
 
 	const onPreviousItem = () => {
 		const previousItemId = currentMedia?.previousPlayable?.id;
-		if (previousItemId) setPlayerMedia(previousItemId, true);
+		if (previousItemId) switchItem(previousItemId);
 	};
 
 	const onNextItem = () => {
 		const nextItemId = currentMedia?.nextPlayable?.id;
-		if (nextItemId) setPlayerMedia(nextItemId, true);
+		if (nextItemId) switchItem(nextItemId);
 	};
 
 	const upNextState = useUpNextState({ hasNextItem: !!currentMedia?.nextPlayable, onNextItem });
@@ -180,7 +182,7 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 						middle={<PlayerIntroOverlay media={currentMedia} />}
 						bottom={
 							isFullscreen ? (
-								<div className="relative">
+								<div className="relative z-10">
 									<div className="pointer-events-auto absolute bottom-36 left-4">
 										<AnimatePresence mode="wait">{cardElement}</AnimatePresence>
 									</div>
@@ -212,10 +214,26 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 	const controllerRef = useRef<PlayerController | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const surfaceRef = useRef<HTMLDivElement>(null);
+	const watchSession = usePlayerContext((ctx) => ctx.watchSession);
 
 	useEffect(() => {
 		setPlayerControls({ showControls: true });
 	}, [itemId]);
+
+	useEffect(() => {
+		return () => {
+			const sessionId = watchSession.sessionId;
+			const playerId = watchSession.playerId;
+			if (!sessionId || !playerId) return;
+			void getApolloClient().mutate({
+				mutation: LeaveWatchSession,
+				variables: {
+					sessionId,
+					playerId,
+				},
+			});
+		};
+	}, [watchSession.playerId, watchSession.sessionId]);
 
 	return (
 		<PlayerRefsContext.Provider value={{ videoRef, controllerRef, containerRef, surfaceRef }}>

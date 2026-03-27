@@ -325,7 +325,9 @@ impl files::Model {
         let mut tracks = Vec::new();
 
         for (manifest_index, stream) in audio_streams.iter().enumerate() {
-            let has_parseable_lang = stream.language.as_deref()
+            let has_parseable_lang = stream
+                .language
+                .as_deref()
                 .and_then(language_to_display_name)
                 .is_some();
 
@@ -364,7 +366,9 @@ impl files::Model {
         }
 
         for (manifest_index, stream) in subtitle_streams.iter().enumerate() {
-            let has_parseable_lang = stream.language.as_deref()
+            let has_parseable_lang = stream
+                .language
+                .as_deref()
                 .and_then(language_to_display_name)
                 .is_some();
 
@@ -452,11 +456,7 @@ impl files::Model {
             .collect();
         subtitle_streams.sort_by_key(|s| s.index);
 
-        let recommendations = compute_recommended_tracks(
-            &audio_streams,
-            &subtitle_streams,
-            user,
-        );
+        let recommendations = compute_recommended_tracks(&audio_streams, &subtitle_streams, user);
 
         Ok(recommendations)
     }
@@ -716,20 +716,27 @@ fn compute_recommended_tracks(
             Some(0usize)
         } else if let Some(disp) = pref_disp {
             // prefer exact disposition match, then fall through ordering
-            let exact = matching.iter().find(|(_, s)| {
-                match disp {
-                    TrackDispositionPreference::Commentary => s.is_commentary,
-                    TrackDispositionPreference::Sdh => s.is_hearing_impaired && !s.is_commentary,
-                    TrackDispositionPreference::Normal => !s.is_hearing_impaired && !s.is_commentary,
-                }
+            let exact = matching.iter().find(|(_, s)| match disp {
+                TrackDispositionPreference::Commentary => s.is_commentary,
+                TrackDispositionPreference::Sdh => s.is_hearing_impaired && !s.is_commentary,
+                TrackDispositionPreference::Normal => !s.is_hearing_impaired && !s.is_commentary,
             });
-            Some(exact.or_else(|| matching.first()).map(|(i, _)| *i).unwrap_or(0))
+            Some(
+                exact
+                    .or_else(|| matching.first())
+                    .map(|(i, _)| *i)
+                    .unwrap_or(0),
+            )
         } else {
             // prefer Normal > SDH > Commentary > other
             let pick = matching
                 .iter()
                 .find(|(_, s)| !s.is_hearing_impaired && !s.is_commentary)
-                .or_else(|| matching.iter().find(|(_, s)| s.is_hearing_impaired && !s.is_commentary))
+                .or_else(|| {
+                    matching
+                        .iter()
+                        .find(|(_, s)| s.is_hearing_impaired && !s.is_commentary)
+                })
                 .or_else(|| matching.iter().find(|(_, s)| s.is_commentary))
                 .or_else(|| matching.first());
             Some(pick.map(|(i, _)| *i).unwrap_or(0))
@@ -750,11 +757,7 @@ fn compute_recommended_tracks(
     let active_audio_lang: Option<String> = user
         .preferred_audio_language
         .clone()
-        .or_else(|| {
-            audio_streams
-                .first()
-                .and_then(|s| s.language.clone())
-        });
+        .or_else(|| audio_streams.first().and_then(|s| s.language.clone()));
 
     // --- subtitle recommendations ---
     // forced tracks whose language matches active audio are always enabled
@@ -810,7 +813,11 @@ fn compute_recommended_tracks(
             let pick = matching
                 .iter()
                 .find(|(_, s)| !s.is_hearing_impaired && !s.is_commentary)
-                .or_else(|| matching.iter().find(|(_, s)| s.is_hearing_impaired && !s.is_commentary))
+                .or_else(|| {
+                    matching
+                        .iter()
+                        .find(|(_, s)| s.is_hearing_impaired && !s.is_commentary)
+                })
                 .or_else(|| matching.iter().find(|(_, s)| s.is_commentary))
                 .or_else(|| matching.first());
             pick.map(|(i, _)| *i)

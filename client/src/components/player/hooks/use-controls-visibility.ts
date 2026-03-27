@@ -5,12 +5,17 @@ export const useControlsVisibility = () => {
 	const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
 	const isControlsPinned = usePlayerContext(
-		(ctx) => ctx.controls.isSettingsMenuOpen || ctx.controls.isControlsInteracting || ctx.controls.isItemCardOpen,
+		(ctx) =>
+			ctx.controls.isSettingsMenuOpen ||
+			ctx.controls.isWatchSessionMenuOpen ||
+			ctx.controls.isControlsInteracting ||
+			ctx.controls.isItemCardOpen,
 	);
 
 	const areControlsPinned = () => {
-		const { isSettingsMenuOpen, isControlsInteracting, isItemCardOpen } = playerContext.getState().controls;
-		return isSettingsMenuOpen || isControlsInteracting || isItemCardOpen;
+		const { isSettingsMenuOpen, isWatchSessionMenuOpen, isControlsInteracting, isItemCardOpen } =
+			playerContext.getState().controls;
+		return isSettingsMenuOpen || isWatchSessionMenuOpen || isControlsInteracting || isItemCardOpen;
 	};
 
 	const showControlsTemporarily = () => {

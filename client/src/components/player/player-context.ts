@@ -4,6 +4,36 @@ import { createJSONStorage, persist, type PersistOptions } from "zustand/middlew
 
 type TrackOption = { id: number; label: string };
 type HoveredCard = "previous" | "next" | null;
+export type PlayerWatchSessionMode = "ADVISORY" | "SYNCED" | null;
+export type PlayerWatchSessionEffectiveState = "PLAYING" | "PAUSED" | "BUFFERING" | "INACTIVE_PLAYERS" | null;
+export type PlayerWatchSessionIntent = "PLAYING" | "PAUSED" | null;
+
+export interface PlayerWatchSessionPlayer {
+	id: string;
+	userId: string;
+	username: string;
+	isBuffering: boolean;
+	isInactive: boolean;
+	canRemove: boolean;
+}
+
+export interface PlayerWatchSessionState {
+	pendingSessionId: string | null;
+	pendingNodeId: string | null;
+	sessionId: string | null;
+	playerId: string | null;
+	nodeId: string | null;
+	fileId: string | null;
+	mode: PlayerWatchSessionMode;
+	intent: PlayerWatchSessionIntent;
+	effectiveState: PlayerWatchSessionEffectiveState;
+	revision: number;
+	basePositionMs: number | null;
+	baseTimeMs: number | null;
+	players: PlayerWatchSessionPlayer[];
+	lastContactAt: number | null;
+	connectionWarning: string | null;
+}
 
 export interface PlayerPreferences {
 	volume: number;
@@ -41,6 +71,7 @@ export interface PlayerState {
 export interface PlayerControlsState {
 	showControls: boolean;
 	isSettingsMenuOpen: boolean;
+	isWatchSessionMenuOpen: boolean;
 	isControlsInteracting: boolean;
 	isItemCardOpen: boolean;
 	hoveredCard: HoveredCard;
@@ -61,6 +92,7 @@ export interface PlayerActions {
 	showControlsTemporarily: () => void;
 	beginControlsInteraction: () => void;
 	endControlsInteraction: () => void;
+	switchItem: (itemId: string) => void;
 }
 
 export interface PlayerContextStore {
@@ -69,6 +101,7 @@ export interface PlayerContextStore {
 	preferences: PlayerPreferences;
 	state: PlayerState;
 	controls: PlayerControlsState;
+	watchSession: PlayerWatchSessionState;
 	actions: PlayerActions;
 }
 
@@ -107,6 +140,7 @@ const initialState: PlayerState = {
 const initialControls: PlayerControlsState = {
 	showControls: true,
 	isSettingsMenuOpen: false,
+	isWatchSessionMenuOpen: false,
 	isControlsInteracting: false,
 	isItemCardOpen: false,
 	hoveredCard: null,
@@ -127,6 +161,25 @@ const initialActions: PlayerActions = {
 	showControlsTemporarily: noop,
 	beginControlsInteraction: noop,
 	endControlsInteraction: noop,
+	switchItem: noop,
+};
+
+const initialWatchSession: PlayerWatchSessionState = {
+	pendingSessionId: null,
+	pendingNodeId: null,
+	sessionId: null,
+	playerId: null,
+	nodeId: null,
+	fileId: null,
+	mode: null,
+	intent: null,
+	effectiveState: null,
+	revision: 0,
+	basePositionMs: null,
+	baseTimeMs: null,
+	players: [],
+	lastContactAt: null,
+	connectionWarning: null,
 };
 
 const playerContextPersistOptions: PersistOptions<PlayerContextStore, PersistedPlayerContext> = {
@@ -151,6 +204,7 @@ export const playerContext = create<PlayerContextStore>()(
 			preferences: initialPreferences,
 			state: initialState,
 			controls: initialControls,
+			watchSession: initialWatchSession,
 			actions: initialActions,
 		}),
 		playerContextPersistOptions,
@@ -195,6 +249,26 @@ export const setPlayerActions = (actions: Partial<PlayerActions>) => {
 		actions: {
 			...context.actions,
 			...actions,
+		},
+	}));
+};
+
+export const setPlayerWatchSession = (watchSession: Partial<PlayerWatchSessionState>) => {
+	playerContext.setState((context) => ({
+		...context,
+		watchSession: {
+			...context.watchSession,
+			...watchSession,
+		},
+	}));
+};
+
+export const resetPlayerWatchSession = (watchSession: Partial<PlayerWatchSessionState> = {}) => {
+	playerContext.setState((context) => ({
+		...context,
+		watchSession: {
+			...initialWatchSession,
+			...watchSession,
 		},
 	}));
 };
@@ -264,6 +338,9 @@ export const clearPlayerMedia = () => {
 			shouldPromptResume: false,
 			pendingInitialPosition: null,
 			isFullscreen: false,
+		},
+		watchSession: {
+			...initialWatchSession,
 		},
 	}));
 };

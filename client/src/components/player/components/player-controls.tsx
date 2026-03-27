@@ -67,6 +67,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 	const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
 	const isSettingsMenuOpen = usePlayerContext((ctx) => ctx.controls.isSettingsMenuOpen);
 	const autoplayNext = usePlayerContext((ctx) => ctx.preferences.autoplayNext);
+	const watchSessionMode = usePlayerContext((ctx) => ctx.watchSession.mode);
 	const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
 	const { togglePlaying } = usePlayerActions();
 	const [hoveredButton, setHoveredButton] = useState<"previous" | "next" | null>(null);
@@ -239,9 +240,10 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 								<DropdownMenuCheckboxItem
 									className="py-2.5 focus:bg-zinc-800"
 									checked={autoplayNext}
+									disabled={watchSessionMode === "SYNCED"}
 									onCheckedChange={(checked) => setPlayerPreferences({ autoplayNext: !!checked })}
 								>
-									Autoplay
+									{watchSessionMode === "SYNCED" ? "Autoplay (disabled in synced sessions)" : "Autoplay"}
 								</DropdownMenuCheckboxItem>
 							</DropdownMenuContent>
 						</DropdownMenu>

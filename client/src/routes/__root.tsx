@@ -8,6 +8,7 @@ import { AppErrorBoundary } from "../components/error-boundary";
 import { SuspenseBoundary } from "../components/fallback";
 import { ContentUpdateListener } from "../components/content-update-listener";
 import { PlayerWrapper } from "../components/player/player-wrapper";
+import { WatchSessionListener } from "../components/player/watch-session-listener";
 import { SetupWrapper } from "../components/settings/setup/setup-wrapper";
 import { Sidebar } from "../components/sidebar";
 import { Toaster } from "../components/ui/sonner";
@@ -29,6 +30,7 @@ function RootComponent() {
 				<AppErrorBoundary className="fixed inset-0">
 					<SetupWrapper>
 						<ContentUpdateListener />
+						<WatchSessionListener />
 						<AppErrorBoundary className="fixed inset-0">
 							<SuspenseBoundary className="fixed inset-0">
 								{isSetupRoute ? (

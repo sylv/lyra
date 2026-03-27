@@ -23,6 +23,13 @@ enum ContentUpdateEvent {
 	CONTENT_UPDATE
 }
 
+enum EffectiveWatchSessionState {
+	PLAYING
+	PAUSED
+	BUFFERING
+	INACTIVE_PLAYERS
+}
+
 type File {
 	id: String!
 	libraryId: String!
@@ -125,6 +132,9 @@ type Mutation {
 	setPreferredAudio(language: String, disposition: TrackDispositionPreference): User!
 	setPreferredSubtitle(language: String, disposition: TrackDispositionPreference): User!
 	deleteLibrary(libraryId: String!): Boolean!
+	leaveWatchSession(sessionId: String!, playerId: String!): Boolean!
+	watchSessionHeartbeat(input: WatchSessionHeartbeatInput!): WatchSessionBeacon!
+	watchSessionAction(input: WatchSessionActionInput!): WatchSessionBeacon!
 }
 
 type Node {
@@ -268,6 +278,7 @@ type Query {
 	library(libraryId: String!): Library!
 	libraries: [Library!]!
 	viewer: User
+	watchSession(sessionId: String!): WatchSession
 	users: [User!]!
 	activities: [Activity!]!
 }
@@ -285,6 +296,7 @@ type SearchResults {
 
 type SubscriptionRoot {
 	contentUpdates: ContentUpdateEvent!
+	watchSessionBeacons(sessionId: String!, playerId: String!): WatchSessionBeacon!
 }
 
 type TimelinePreviewSheet {
@@ -351,6 +363,96 @@ type WatchProgress {
 	updatedAt: Int!
 	progressPercent: Float!
 	completed: Boolean!
+}
+
+type WatchSession {
+	id: String!
+	nodeId: String!
+	fileId: String!
+	intent: WatchSessionIntent!
+	basePositionMs: Int!
+	revision: Int!
+	createdAt: Int!
+	updatedAt: Int!
+	players: [WatchSessionPlayer!]!
+	baseTimeMs: Float!
+	node: Node
+	file: File
+	mode: WatchSessionMode!
+	effectiveState: EffectiveWatchSessionState!
+	currentPositionMs: Int!
+}
+
+input WatchSessionActionInput {
+	sessionId: String!
+	playerId: String!
+	kind: WatchSessionActionKind!
+	positionMs: Int
+	nodeId: String
+	targetPlayerId: String
+}
+
+enum WatchSessionActionKind {
+	PLAY
+	PAUSE
+	SEEK
+	SWITCH_ITEM
+	REMOVE_PLAYER
+}
+
+type WatchSessionBeacon {
+	sessionId: String!
+	nodeId: String!
+	fileId: String!
+	mode: WatchSessionMode!
+	intent: WatchSessionIntent!
+	effectiveState: EffectiveWatchSessionState!
+	basePositionMs: Int!
+	revision: Int!
+	players: [WatchSessionPlayer!]!
+	baseTimeMs: Float!
+}
+
+input WatchSessionHeartbeatInput {
+	sessionId: String!
+	playerId: String!
+	isBuffering: Boolean!
+	basePositionMs: Int!
+	baseTimeMs: Float!
+	recovery: WatchSessionRecoveryInput!
+}
+
+enum WatchSessionIntent {
+	PLAYING
+	PAUSED
+}
+
+enum WatchSessionMode {
+	ADVISORY
+	SYNCED
+}
+
+type WatchSessionPlayer {
+	id: String!
+	sessionId: String!
+	userId: String!
+	basePositionMs: Int!
+	joinedAt: Int!
+	updatedAt: Int!
+	isBuffering: Boolean!
+	baseTimeMs: Float!
+	lastReportMs: Float!
+	user: User
+	isInactive: Boolean!
+	canRemove: Boolean!
+}
+
+input WatchSessionRecoveryInput {
+	nodeId: String!
+	fileId: String!
+	intent: WatchSessionIntent!
+	basePositionMs: Int!
+	baseTimeMs: Float!
 }
 
 """
