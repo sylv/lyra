@@ -2,6 +2,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
 import { router } from "./router";
 import "./globals.css";
+import "@fontsource-variable/inter/wght.css";
 
 const rootElement = document.getElementById("app");
 if (!rootElement) {

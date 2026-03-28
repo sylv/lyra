@@ -2,6 +2,12 @@
 FROM docker.io/oven/bun:1 AS frontend-builder
 WORKDIR /build
 
+ARG LYRA_BUILD_REVISION=unknown
+ARG LYRA_BUILD_BRANCH=unknown
+
+ENV LYRA_BUILD_REVISION=${LYRA_BUILD_REVISION}
+ENV LYRA_BUILD_BRANCH=${LYRA_BUILD_BRANCH}
+
 COPY package.json bun.lock ./
 COPY client/package.json ./client/
 COPY schema.gql ./schema.gql
@@ -46,6 +52,13 @@ FROM sylver/lyra-static-ffmpeg:latest AS ffmpeg-runtime
 
 FROM gcr.io/distroless/cc-debian13:nonroot
 WORKDIR /app
+
+ARG LYRA_BUILD_REVISION=unknown
+ARG LYRA_BUILD_BRANCH=unknown
+
+LABEL org.opencontainers.image.revision="${LYRA_BUILD_REVISION}"
+LABEL org.opencontainers.image.version="${LYRA_BUILD_REVISION}"
+LABEL org.opencontainers.image.ref.name="${LYRA_BUILD_BRANCH}"
 
 COPY --from=frontend-builder /build/client/dist ./dist
 COPY --from=builder /app/target/release/lyra ./lyra
