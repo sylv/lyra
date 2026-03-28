@@ -12,6 +12,7 @@ lyra is a self-hosted media server that lets you browse and watch your media wit
 - [x] Timeline previews
 - [x] Watch state tracking
 - [x] Plex watch state import
+- [x] A lot of bugs
 
 ## running
 
