@@ -43,14 +43,15 @@ COPY . .
 ENV DATABASE_URL=sqlite:///app/db.sqlite
 RUN sqlx database create && sqlx migrate run
 
-RUN cargo build --release --bin lyra --locked --features static
-RUN strip target/release/lyra
+RUN cargo build --release -p lyra --bin lyra --locked --features static
+RUN cargo build --release -p lyra-docker-init --bin lyra-docker-init --locked
+RUN strip target/release/lyra target/release/lyra-docker-init
 
 
 # Stage 4: Runtime
 FROM sylver/lyra-static-ffmpeg:latest AS ffmpeg-runtime
 
-FROM gcr.io/distroless/cc-debian13:nonroot
+FROM gcr.io/distroless/cc-debian13
 WORKDIR /app
 
 ARG LYRA_BUILD_REVISION=unknown
@@ -62,6 +63,7 @@ LABEL org.opencontainers.image.ref.name="${LYRA_BUILD_BRANCH}"
 
 COPY --from=frontend-builder /build/client/dist ./dist
 COPY --from=builder /app/target/release/lyra ./lyra
+COPY --from=builder /app/target/release/lyra-docker-init ./lyra-docker-init
 COPY --from=ffmpeg-runtime /lyra-ffmpeg /usr/local/bin/lyra-ffmpeg
 COPY --from=ffmpeg-runtime /lyra-ffprobe /usr/local/bin/lyra-ffprobe
 
@@ -72,4 +74,4 @@ ENV LYRA_FFMPEG_PATH=/usr/local/bin/lyra-ffmpeg
 ENV LYRA_FFPROBE_PATH=/usr/local/bin/lyra-ffprobe
 
 EXPOSE 8000
-CMD ["/app/lyra"]
+ENTRYPOINT ["/app/lyra-docker-init", "/app/lyra"]

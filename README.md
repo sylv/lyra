@@ -19,18 +19,18 @@ lyra only runs under docker for now. At some point that will change and this sec
 
 ```yaml
 services:
-  # you may have to start the container, stop it, fix permissions on the .lyra folder, then start it again for it to work properly
   lyra:
     container_name: lyra
-    # the docker image on docker hub may be out of date, so you can build it yourself with `docker build -t lyra .` from the repo root
     image: docker.io/sylver/lyra
     restart: unless-stopped
-    user: 1000:1000 # this is probably temporary until the docker container is improved
+    environment:
+      - PUID=1000
+      - GUID=1000
     ports:
       - 8000:8000
     volumes:
-      - /mnt/media/series:/mnt/media/series
-      - /mnt/media/movies:/mnt/media/movies
+      - /mnt/media/series:/mnt/media/series:ro
+      - /mnt/media/movies:/mnt/media/movies:ro
       - ./.lyra:/config
 ```
 

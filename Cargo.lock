@@ -2103,6 +2103,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-docker-init"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lyra-ffprobe"
 version = "0.1.0"
 dependencies = [
