@@ -537,6 +537,15 @@ impl Query {
     }
 
     #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]
+    async fn watch_sessions(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<crate::watch_session::WatchSession>, async_graphql::Error> {
+        let registry = ctx.data::<WatchSessionRegistry>()?;
+        Ok(registry.sessions_snapshot().await)
+    }
+
+    #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]
     async fn users(&self, ctx: &Context<'_>) -> Result<Vec<users::Model>, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         Ok(users::Entity::find()

@@ -3,11 +3,11 @@ import { useState, type FC, type FormEvent } from "react";
 import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
 import { Button, ButtonStyle } from "../../button";
 import { Input } from "../../input";
+import { LibraryIcon } from "../../library-icon";
 import { Modal, ModalBody, ModalHeader } from "../../modal";
 import { CheckboxCard } from "../checkbox-card";
 import { CreateUserInviteMutation, UpdateUserMutation, UsersManagementQuery } from "./queries";
 import { ADMIN_BIT, VIEW_ALL_LIBRARIES_BIT, permissionOptions } from "../../../lib/user-permissions";
-import { generateGradientIcon } from "../../../lib/generate-gradient-icon";
 
 interface UserFormModalProps {
 	activeForm:
@@ -175,7 +175,6 @@ const UserForm: FC<{
 						const checked = effectiveAllLibrariesEnabled || libraryIds.includes(library.id);
 						const disabled = submitting || isEditingCurrentUser || effectiveAllLibrariesEnabled;
 						const checkboxId = `${mode}-user-library-${library.id}`;
-						const icon = generateGradientIcon(library.createdAt.toString(), { size: 32 });
 
 						return (
 							<CheckboxCard
@@ -185,7 +184,7 @@ const UserForm: FC<{
 								disabled={disabled}
 								title={
 									<span className="flex items-center gap-2">
-										<img src={icon} alt="" className="size-5 rounded-full" />
+										<LibraryIcon createdAt={library.createdAt} className="size-5" size={32} />
 										<span>{library.name}</span>
 									</span>
 								}

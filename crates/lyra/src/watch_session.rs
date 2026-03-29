@@ -193,6 +193,29 @@ impl WatchSessionRegistry {
         Ok(Some(session))
     }
 
+    pub async fn sessions_snapshot(&self) -> Vec<WatchSession> {
+        let runtimes = self
+            .runtimes
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let mut sessions = Vec::with_capacity(runtimes.len());
+        for runtime in runtimes {
+            sessions.push(runtime.session.lock().await.clone());
+        }
+
+        sessions.sort_by(|a, b| {
+            b.updated_at
+                .cmp(&a.updated_at)
+                .then_with(|| b.created_at.cmp(&a.created_at))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        sessions
+    }
+
     pub async fn subscribe_for_player(
         &self,
         auth: &RequestAuth,

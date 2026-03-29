@@ -3,6 +3,7 @@ import { EllipsisVertical, KeyRound, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState, type FC } from "react";
 import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
+import { UserAvatar } from "../../user-avatar";
 import { describePermissions } from "../../../lib/describe-permissions";
 import { formatLastSeen } from "../../../lib/format-last-seen";
 import { ADMIN_BIT, VIEW_ALL_LIBRARIES_BIT } from "../../../lib/user-permissions";
@@ -17,7 +18,6 @@ import { ManagementCard } from "../management-card";
 import { ConfirmDeleteUserModal } from "./confirm-delete-user-modal";
 import { InviteLinkField } from "./invite-link-field";
 import { DeleteUserMutation, ResetUserInviteMutation, UsersManagementQuery } from "./queries";
-import { generateGradientIcon } from "../../../lib/generate-gradient-icon";
 
 interface UserCardProps {
 	user: FragmentType<typeof UserCardFragment>;
@@ -71,7 +71,6 @@ export const UserCard: FC<UserCardProps> = ({ user: userRaw, viewerId, totalUser
 	}, [user.libraries.length, user.permissions]);
 	const resetDisabled = resetting || totalUsers <= 1 || isViewer;
 	const deleteDisabled = deleting || totalUsers <= 1 || isViewer;
-	const icon = generateGradientIcon(user.createdAt.toString(), { size: 32 });
 
 	const handleReset = async () => {
 		setError(null);
@@ -113,7 +112,7 @@ export const UserCard: FC<UserCardProps> = ({ user: userRaw, viewerId, totalUser
 	return (
 		<>
 			<ManagementCard
-				icon={<img src={icon} alt="User Icon" className="size-6 rounded-full" />}
+				icon={<UserAvatar createdAt={user.createdAt} alt="User Icon" className="size-6" size={32} />}
 				title={user.username}
 				subtitle={subtext}
 				subtitleClassName="break-all"

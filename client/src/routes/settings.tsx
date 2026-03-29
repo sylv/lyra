@@ -7,6 +7,7 @@ import { ADMIN_BIT } from "../lib/user-permissions";
 
 const settingsTabs = {
 	users: "/settings/users",
+	sessions: "/settings/sessions",
 	libraries: "/settings/libraries",
 	about: "/settings/about",
 	import: "/settings/import",
@@ -35,9 +36,11 @@ function RouteComponent() {
 	const { data } = useSuspenseQuery(SettingsViewerQuery);
 	const viewerPermissions = data.viewer?.permissions ?? 0;
 	const canManageUsers = (viewerPermissions & ADMIN_BIT) !== 0;
+	const canViewSessions = (viewerPermissions & ADMIN_BIT) !== 0;
 	const canManageLibraries = (viewerPermissions & ADMIN_BIT) !== 0;
 	const visibleTabs = [
 		canManageUsers ? "users" : null,
+		canViewSessions ? "sessions" : null,
 		canManageLibraries ? "libraries" : null,
 		"about",
 		"import",
@@ -45,13 +48,21 @@ function RouteComponent() {
 	const fallbackTab = visibleTabs[0] ?? "about";
 	const activeTab: SettingsTab = pathname.startsWith(settingsTabs.users)
 		? "users"
+		: pathname.startsWith(settingsTabs.sessions)
+			? "sessions"
 		: pathname.startsWith(settingsTabs.libraries)
 			? "libraries"
 			: pathname.startsWith(settingsTabs.import)
 				? "import"
 				: "about";
 	const activeTabVisible =
-		activeTab === "users" ? canManageUsers : activeTab === "libraries" ? canManageLibraries : true;
+		activeTab === "users"
+			? canManageUsers
+			: activeTab === "sessions"
+				? canViewSessions
+				: activeTab === "libraries"
+					? canManageLibraries
+					: true;
 
 	useTitle("Settings");
 
@@ -75,6 +86,7 @@ function RouteComponent() {
 			>
 				<TabsList>
 					{canManageUsers ? <TabsTrigger value="users">Users</TabsTrigger> : null}
+					{canViewSessions ? <TabsTrigger value="sessions">Sessions</TabsTrigger> : null}
 					{canManageLibraries ? <TabsTrigger value="libraries">Libraries</TabsTrigger> : null}
 					<TabsTrigger value="about">About</TabsTrigger>
 					<TabsTrigger value="import">Import</TabsTrigger>

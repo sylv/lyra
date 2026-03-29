@@ -4,7 +4,7 @@ import { Activity, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon
 import { useState, type FC, type ReactNode } from "react";
 import BrandLogo from "../assets/logo.svg";
 import { graphql } from "../@generated/gql";
-import { generateGradientIcon } from "../lib/generate-gradient-icon";
+import { LibraryIcon } from "./library-icon";
 import { ADMIN_BIT } from "../lib/user-permissions";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
@@ -17,14 +17,14 @@ import { Spinner } from "./ui/spinner";
 const SidebarLink: FC<{
 	to: string;
 	icon?: LucideIcon;
-	image?: string;
+	media?: ReactNode;
 	active?: boolean;
 	children: ReactNode;
 	subtext?: ReactNode;
 	onClick?: () => void;
-}> = ({ to, icon: Icon, image, active = false, children, subtext, onClick }) => {
-	if (!Icon && !image) {
-		throw new Error("SidebarLink requires either an icon or an image");
+}> = ({ to, icon: Icon, media, active = false, children, subtext, onClick }) => {
+	if (!Icon && !media) {
+		throw new Error("SidebarLink requires either an icon or media");
 	}
 
 	return (
@@ -36,13 +36,7 @@ const SidebarLink: FC<{
 				)}
 			>
 				{Icon && <Icon className="size-4 text-zinc-400" />}
-				{image && (
-					<img
-						src={image}
-						className={cn("h-full w-full transition-all duration-500", active && "rotate-90 scale-175")}
-						alt=""
-					/>
-				)}
+				{media ? <div className={cn("h-full w-full transition-all duration-500", active && "rotate-90 scale-175")}>{media}</div> : null}
 			</div>
 			<div>
 				<div className="text-sm group-hover:underline">{children}</div>
@@ -185,9 +179,14 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 				{data?.libraries?.map((library) => {
 					const libraryPath = `/library/${library.id}`;
 					const isActive = pathname.startsWith(libraryPath);
-					const icon = generateGradientIcon(library.createdAt.toString(), { size: 32 });
 					return (
-						<SidebarLink to={libraryPath} image={icon} active={isActive} key={library.id} onClick={onNavigate}>
+						<SidebarLink
+							to={libraryPath}
+							media={<LibraryIcon createdAt={library.createdAt} className="h-full w-full" size={32} />}
+							active={isActive}
+							key={library.id}
+							onClick={onNavigate}
+						>
 							{library.name}
 						</SidebarLink>
 					);

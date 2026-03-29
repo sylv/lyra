@@ -1,6 +1,7 @@
 import { useMemo, useState, type FC } from "react";
 import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import { formatPlayerTime } from "../../../lib/format-player-time";
+import { getTimelinePreviewFrameAtMs, sortTimelinePreviewSheets } from "../../../lib/timeline-preview";
 import { cn } from "../../../lib/utils";
 import { usePlayerContext } from "../player-context";
 
@@ -37,55 +38,6 @@ interface HoverPreviewFrame {
 	offsetYPx: number;
 }
 
-const getHoverPreviewFrame = (
-	hoverTimeSeconds: number,
-	sheets: Array<FragmentType<typeof PlayerTimelinePreviewSheetFragment>>,
-): HoverPreviewFrame | null => {
-	if (!Number.isFinite(hoverTimeSeconds) || hoverTimeSeconds < 0) return null;
-
-	const hoverMs = hoverTimeSeconds * 1000;
-
-	for (const sheetRef of sheets) {
-		const sheet = unmask(PlayerTimelinePreviewSheetFragment, sheetRef);
-		const sheetWidthPx = sheet.asset.width ?? 0;
-		const sheetHeightPx = sheet.asset.height ?? 0;
-		if (sheetWidthPx <= 0 || sheetHeightPx <= 0 || sheet.sheetGapSize < 0 || sheet.sheetIntervalMs <= 0) continue;
-
-		const frameCount = Math.floor((sheet.endMs - sheet.positionMs) / sheet.sheetIntervalMs);
-		if (frameCount <= 0) continue;
-
-		// timeline preview frames are offset by one interval (first frame is at +interval, not 0s).
-		const previewTimestampMs = Math.max(
-			sheet.sheetIntervalMs,
-			Math.round(hoverMs / sheet.sheetIntervalMs) * sheet.sheetIntervalMs,
-		);
-		if (previewTimestampMs <= sheet.positionMs || previewTimestampMs > sheet.endMs) continue;
-
-		const columns = Math.max(1, Math.ceil(Math.sqrt(frameCount)));
-		const rows = Math.max(1, Math.ceil(frameCount / columns));
-		const frameWidthPx = Math.floor((sheetWidthPx - (columns + 1) * sheet.sheetGapSize) / columns);
-		const frameHeightPx = Math.floor((sheetHeightPx - (rows + 1) * sheet.sheetGapSize) / rows);
-		if (frameWidthPx <= 0 || frameHeightPx <= 0) continue;
-
-		const rawIndex = Math.floor((previewTimestampMs - sheet.positionMs) / sheet.sheetIntervalMs) - 1;
-		const frameIndex = Math.max(0, Math.min(frameCount - 1, rawIndex));
-		const columnIndex = frameIndex % columns;
-		const rowIndex = Math.floor(frameIndex / columns);
-
-		return {
-			assetSignedUrl: sheet.asset.signedUrl,
-			sheetWidthPx,
-			sheetHeightPx,
-			frameWidthPx,
-			frameHeightPx,
-			offsetXPx: sheet.sheetGapSize + columnIndex * (frameWidthPx + sheet.sheetGapSize),
-			offsetYPx: sheet.sheetGapSize + rowIndex * (frameHeightPx + sheet.sheetGapSize),
-		};
-	}
-
-	return null;
-};
-
 export const PlayerProgressBar: FC<PlayerProgressBarProps> = ({ timelinePreviewSheets, compact = false }) => {
 	const currentTime = usePlayerContext((ctx) => ctx.state.currentTime);
 	const duration = usePlayerContext((ctx) => ctx.state.duration);
@@ -97,17 +49,14 @@ export const PlayerProgressBar: FC<PlayerProgressBarProps> = ({ timelinePreviewS
 	const [hoverState, setHoverState] = useState<{ time: number; xPx: number; barWidthPx: number } | null>(null);
 
 	const sortedTimelinePreviewSheets = useMemo(() => {
-		return [...timelinePreviewSheets].sort((aRef, bRef) => {
-			const a = unmask(PlayerTimelinePreviewSheetFragment, aRef);
-			const b = unmask(PlayerTimelinePreviewSheetFragment, bRef);
-			if (a.positionMs !== b.positionMs) return a.positionMs - b.positionMs;
-			return a.asset.id.localeCompare(b.asset.id);
-		});
+		return sortTimelinePreviewSheets(
+			timelinePreviewSheets.map((sheetRef) => unmask(PlayerTimelinePreviewSheetFragment, sheetRef)),
+		);
 	}, [timelinePreviewSheets]);
 
-	const hoverPreviewFrame = useMemo(() => {
+	const hoverPreviewFrame: HoverPreviewFrame | null = useMemo(() => {
 		if (!hoverState) return null;
-		return getHoverPreviewFrame(hoverState.time, sortedTimelinePreviewSheets);
+		return getTimelinePreviewFrameAtMs(hoverState.time * 1000, sortedTimelinePreviewSheets);
 	}, [hoverState, sortedTimelinePreviewSheets]);
 
 	const renderedHoverPreviewFrame = useMemo(() => {

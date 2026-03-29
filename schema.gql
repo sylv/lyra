@@ -279,6 +279,7 @@ type Query {
 	libraries: [Library!]!
 	viewer: User
 	watchSession(sessionId: String!): WatchSession
+	watchSessions: [WatchSession!]!
 	users: [User!]!
 	activities: [Activity!]!
 }

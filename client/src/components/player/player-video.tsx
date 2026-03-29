@@ -465,10 +465,11 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 				.then((result) => {
 					const beacon = result.data?.watchSessionHeartbeat;
 					if (beacon) {
-						if (beacon.players.some((player) => player.id === sessionState.playerId)) {
+						const resolvedBeacon = unmask(WatchSessionBeaconFragment, beacon);
+						if (resolvedBeacon.players.some((player) => player.id === sessionState.playerId)) {
 							setIsWatchSessionRegistered(true);
 						}
-						applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
+						applyWatchSessionBeacon(resolvedBeacon);
 					}
 				})
 				.catch((error) => {

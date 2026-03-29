@@ -2,6 +2,7 @@ import { useApolloClient, useMutation } from "@apollo/client/react";
 import { EllipsisVertical, Pencil, Trash2 } from "lucide-react";
 import { useState, type FC } from "react";
 import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
+import { LibraryIcon } from "../../library-icon";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -13,7 +14,6 @@ import { ManagementCard } from "../management-card";
 import { ConfirmDeleteLibraryModal } from "./confirm-delete-library-modal";
 import { DeleteLibraryMutation, LibrariesQuery } from "./queries";
 import { formatLastScannedAt } from "../../../lib/format-last-scanned-at";
-import { generateGradientIcon } from "../../../lib/generate-gradient-icon";
 import type { LibraryCardFragment as LibraryCardData } from "../../../@generated/gql/graphql";
 
 interface LibraryCardProps {
@@ -40,7 +40,6 @@ export const LibraryCard: FC<LibraryCardProps> = ({ library: libraryRaw, onEdit 
 	});
 	const [error, setError] = useState<string | null>(null);
 	const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-	const icon = generateGradientIcon(library.createdAt.toString(), { size: 32 });
 
 	const handleDelete = async () => {
 		setError(null);
@@ -61,7 +60,7 @@ export const LibraryCard: FC<LibraryCardProps> = ({ library: libraryRaw, onEdit 
 	return (
 		<>
 			<ManagementCard
-				icon={<img src={icon} alt="Library Icon" className="size-6 rounded-full" />}
+				icon={<LibraryIcon createdAt={library.createdAt} alt="Library Icon" className="size-6" size={32} />}
 				title={library.name}
 				subtitle={library.path}
 				subtitleClassName="break-all"

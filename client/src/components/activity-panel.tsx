@@ -51,15 +51,22 @@ export const ActivityPanel: FC<{ data?: GetActivitiesQuery; open: boolean }> = (
 			)}
 			<div className="mt-1 space-y-2">
 				{data?.activities?.map((task) => {
+					const isIndeterminate = task.current == null || task.total == null;
+					const current = task.current ?? 0;
+					const total = task.total ?? 0;
 					return (
 						<div key={task.taskType} className="flex items-center gap-3 py-2">
 							<CircularProgress progress={task.progressPercent} />
 							<div className="flex-1">
 								<p className="text-sm font-semibold text-zinc-100">{task.title}</p>
-								<p className="text-[0.67rem] text-zinc-400">
-									{task.current < task.total ? "Processing" : "Processed"} {task.current.toLocaleString()} of{" "}
-									{task.total.toLocaleString()}
-								</p>
+								{isIndeterminate ? (
+									<p className="text-[0.67rem] text-zinc-400">Processing</p>
+								) : (
+									<p className="text-[0.67rem] text-zinc-400">
+										{current < total ? "Processing" : "Processed"} {current.toLocaleString()} of{" "}
+										{total.toLocaleString()}
+									</p>
+								)}
 							</div>
 						</div>
 					);
