@@ -1,9 +1,6 @@
 use crate::entities::metadata_source::MetadataSource;
 use crate::entities::{jobs as jobs_entity, node_metadata, nodes, nodes::NodeKind};
-use crate::jobs::{
-    JobExecutionPolicy, JobHandler, JobRunContext, JobRunResult, JobTarget, NODE_ID_COLUMN,
-    VERSION_KEY_COLUMN,
-};
+use crate::jobs::{Job, JobExecutionPolicy, JobLease, JobOutcome};
 use crate::json_encoding;
 use crate::metadata::METADATA_RETRY_BACKOFF_SECONDS;
 use crate::metadata::store::{
@@ -12,12 +9,12 @@ use crate::metadata::store::{
 use anyhow::Context;
 use chrono::Datelike;
 use lyra_metadata::{
-    MetadataProvider, MovieCandidate, MovieMetadata, MovieRootMatchRequest, RootMatchHint,
+    MetadataProvider, MovieCandidate, MovieMetadata, MovieRootMatchRequest, RootMatchHint, Scored,
     SeriesCandidate, SeriesMetadata, SeriesRootMatchRequest,
 };
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, sea_query::SelectStatement,
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Select,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -54,57 +51,42 @@ pub(crate) enum StoredRootMatchCandidate {
 }
 
 #[async_trait::async_trait]
-impl JobHandler for NodeMetadataMatchRootJob {
-    fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::NodeMatchMetadataRoot
-    }
+impl Job for NodeMetadataMatchRootJob {
+    type Entity = nodes::Entity;
+    type Model = nodes::Model;
 
-    fn is_heavy(&self) -> bool {
-        false
-    }
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::NodeMatchMetadataRoot;
 
     fn execution_policy(&self) -> JobExecutionPolicy {
         JobExecutionPolicy::with_backoff_seconds(METADATA_RETRY_BACKOFF_SECONDS)
     }
 
-    fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = nodes::Entity::find()
-            .select_only()
-            .column_as(nodes::Column::Id, NODE_ID_COLUMN)
-            .column_as(nodes::Column::LastAddedAt, VERSION_KEY_COLUMN)
+    fn query(&self) -> Select<Self::Entity> {
+        nodes::Entity::find()
             .filter(nodes::Column::ParentId.is_null())
             .filter(nodes::Column::Kind.is_in([NodeKind::Movie, NodeKind::Series]))
+            .filter(nodes::Column::MatchCandidatesJson.is_null())
             .order_by_asc(nodes::Column::LastAddedAt)
-            .order_by_asc(nodes::Column::Id);
-
-        (JobTarget::Node, QuerySelect::query(&mut query).to_owned())
+            .order_by_asc(nodes::Column::Id)
     }
 
-    async fn execute(
+    fn target_id(&self, target: &Self::Model) -> String {
+        target.id.clone()
+    }
+
+    async fn run(
         &self,
-        pool: &DatabaseConnection,
-        job: &jobs_entity::Model,
-        _ctx: &JobRunContext,
-    ) -> anyhow::Result<JobRunResult> {
-        let node_id = job
-            .node_id
-            .as_deref()
-            .with_context(|| format!("job {} missing node_id", job.id))?;
-
-        let Some(node) = nodes::Entity::find_by_id(node_id.to_string())
-            .one(pool)
-            .await?
-        else {
-            return Ok(JobRunResult::Complete);
-        };
-
+        db: &DatabaseConnection,
+        node: Self::Model,
+        _ctx: &JobLease,
+    ) -> anyhow::Result<JobOutcome> {
         let mut candidates = decode_root_candidates(node.match_candidates_json.as_deref())?;
         let mut failures = Vec::new();
         for provider in &self.providers {
-            match match_root(pool, provider.as_ref(), &node).await {
+            match match_root(db, provider.as_ref(), &node).await {
                 Ok(Some(matched_root)) => {
                     if let Err(error) =
-                        upsert_node_metadata_for_match(pool, provider.id(), &node.id, &matched_root)
+                        upsert_node_metadata_for_match(db, provider.id(), &node.id, &matched_root)
                             .await
                     {
                         failures.push(format!(
@@ -143,7 +125,7 @@ impl JobHandler for NodeMetadataMatchRootJob {
                 updated_at: Set(chrono::Utc::now().timestamp()),
                 ..Default::default()
             })
-            .exec(pool)
+            .exec(db)
             .await?;
         }
 
@@ -154,7 +136,7 @@ impl JobHandler for NodeMetadataMatchRootJob {
             );
         }
 
-        Ok(JobRunResult::Complete)
+        Ok(JobOutcome::Complete)
     }
 }
 
@@ -191,7 +173,7 @@ fn encode_root_candidates(
 }
 
 async fn upsert_node_metadata_for_match(
-    pool: &DatabaseConnection,
+    db: &DatabaseConnection,
     provider_id: &str,
     node_id: &str,
     matched_root: &MatchedRoot,
@@ -199,91 +181,85 @@ async fn upsert_node_metadata_for_match(
     let now = chrono::Utc::now().timestamp();
     match matched_root {
         MatchedRoot::Series { metadata, .. } => {
-            upsert_remote_node_metadata_from_series(pool, node_id, provider_id, metadata, now).await
+            upsert_remote_node_metadata_from_series(db, node_id, provider_id, metadata, now).await
         }
         MatchedRoot::Movie { metadata, .. } => {
-            upsert_remote_node_metadata_from_movie(pool, node_id, provider_id, metadata, now).await
+            upsert_remote_node_metadata_from_movie(db, node_id, provider_id, metadata, now).await
         }
     }
 }
 
 async fn match_root(
-    pool: &DatabaseConnection,
+    db: &DatabaseConnection,
     provider: &dyn MetadataProvider,
     node: &nodes::Model,
 ) -> anyhow::Result<Option<MatchedRoot>> {
-    let hint = load_root_match_hint(pool, node).await?;
+    let hint = load_root_match_hint(db, node).await?;
 
     match node.kind {
         NodeKind::Series => {
             let candidates = provider
                 .match_series_root(SeriesRootMatchRequest { hint })
                 .await?;
-            let Some(candidate) = candidates.first() else {
-                return Ok(None);
-            };
 
-            let metadata = provider.lookup_series_metadata(&candidate.value).await?;
-            Ok(Some(MatchedRoot::Series {
-                candidate: candidate.value.clone(),
-                metadata,
-            }))
+            if let Some(Scored {
+                value: candidate, ..
+            }) = candidates.into_iter().next()
+            {
+                let metadata = provider.lookup_series_metadata(&candidate).await?;
+                Ok(Some(MatchedRoot::Series {
+                    candidate,
+                    metadata,
+                }))
+            } else {
+                Ok(None)
+            }
         }
         NodeKind::Movie => {
             let candidates = provider
                 .match_movie_root(MovieRootMatchRequest { hint })
                 .await?;
-            let Some(candidate) = candidates.first() else {
-                return Ok(None);
-            };
 
-            let metadata = provider.lookup_movie_metadata(&candidate.value).await?;
-            Ok(Some(MatchedRoot::Movie {
-                candidate: candidate.value.clone(),
-                metadata,
-            }))
+            if let Some(Scored {
+                value: candidate, ..
+            }) = candidates.into_iter().next()
+            {
+                let metadata = provider.lookup_movie_metadata(&candidate).await?;
+                Ok(Some(MatchedRoot::Movie {
+                    candidate,
+                    metadata,
+                }))
+            } else {
+                Ok(None)
+            }
         }
         _ => Ok(None),
     }
 }
 
 async fn load_root_match_hint(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     node: &nodes::Model,
 ) -> anyhow::Result<RootMatchHint> {
-    let metadata_rows = node_metadata::Entity::find()
+    let local_metadata = node_metadata::Entity::find()
         .filter(node_metadata::Column::NodeId.eq(node.id.clone()))
-        .order_by_desc(node_metadata::Column::Source)
-        .all(pool)
-        .await?;
+        .filter(node_metadata::Column::Source.eq(MetadataSource::Local))
+        .one(db)
+        .await?
+        .with_context(|| format!("missing local metadata for node {}", node.id))?;
 
-    let years = if node.kind == NodeKind::Movie {
-        metadata_rows
-            .iter()
-            .find_map(|row| row.released_at)
-            .map(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0).map(|dt| dt.year()))
-            .flatten()
-    } else {
-        None
-    };
-
-    // prefer parser-derived ids from local metadata, but keep remote ids as a fallback.
-    let local_metadata = metadata_rows
-        .iter()
-        .find(|row| row.source == MetadataSource::Local);
+    let year = local_metadata
+        .released_at
+        .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
+        .map(|timestamp| timestamp.year());
 
     Ok(RootMatchHint {
-        title: local_metadata
-            .map(|row| row.name.clone())
-            .unwrap_or_else(|| node.name.clone()),
-        start_year: years,
-        end_year: None,
-        imdb_id: local_metadata
-            .and_then(|row| row.imdb_id.clone())
-            .or_else(|| local_metadata.and_then(|row| row.imdb_id.clone())),
+        title: local_metadata.name,
+        start_year: year,
+        end_year: year,
+        imdb_id: local_metadata.imdb_id,
         tmdb_id: local_metadata
-            .and_then(|row| row.tmdb_id)
-            .or_else(|| local_metadata.and_then(|row| row.tmdb_id))
+            .tmdb_id
             .and_then(|value| u64::try_from(value).ok()),
     })
 }

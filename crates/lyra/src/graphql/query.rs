@@ -1,10 +1,9 @@
 use crate::{
+    activity::ACTIVITY_REGISTRY,
     auth::{AuthenticatedGuard, PermissionGuard, RequestAuth, accessible_library_ids},
     entities::{
-        jobs as jobs_entity, libraries, metadata_source::MetadataSource, node_metadata, nodes,
-        users, watch_progress,
+        libraries, metadata_source::MetadataSource, node_metadata, nodes, users, watch_progress,
     },
-    jobs,
     watch_session::WatchSessionRegistry,
 };
 use async_graphql::{
@@ -20,6 +19,7 @@ use sea_orm::{
 };
 use tokio::task::spawn_blocking;
 
+const SECONDS_PER_DAY: i64 = 86_400;
 const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
     "mnt",
     "media",
@@ -36,7 +36,6 @@ const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
     "library",
     "libraries",
 ];
-const SECONDS_PER_DAY: i64 = 86_400;
 
 fn directory_sort_key(name: &str) -> (u8, usize, String) {
     let lower = name.to_ascii_lowercase();
@@ -110,9 +109,9 @@ impl OrderBy {
 pub struct Activity {
     pub task_type: String,
     pub title: String,
-    pub current: i64,
-    pub total: i64,
-    pub progress_percent: f64,
+    pub current: Option<i64>,
+    pub total: Option<i64>,
+    pub progress_percent: Option<f64>,
 }
 
 #[derive(Debug, Clone, SimpleObject)]
@@ -555,49 +554,17 @@ impl Query {
     }
 
     #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]
-    async fn activities(&self, ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
-        let pool = ctx.data::<DatabaseConnection>()?;
-        let activity_registry = ctx.data::<jobs::JobActivityRegistry>()?;
-        let now = chrono::Utc::now().timestamp();
-
-        let mut activities = Vec::new();
-        for job_kind in activity_registry.job_kinds() {
-            let Some(snapshot) = activity_registry.snapshot(job_kind) else {
-                continue;
-            };
-
-            let completed = jobs_entity::Entity::find()
-                .filter(jobs_entity::Column::JobKind.eq(job_kind))
-                .filter(jobs_entity::Column::RunAfter.is_null())
-                .filter(jobs_entity::Column::UpdatedAt.gte(snapshot.idle_at))
-                .count(pool)
-                .await? as i64;
-
-            let pending = jobs_entity::Entity::find()
-                .filter(jobs_entity::Column::JobKind.eq(job_kind))
-                .filter(jobs_entity::Column::RunAfter.is_not_null())
-                .filter(jobs_entity::Column::RunAfter.lte(now))
-                .count(pool)
-                .await? as i64;
-
-            let total = completed + pending;
-            if total == 0 {
-                continue;
-            }
-            if pending == 0 && now - snapshot.last_activity_at > jobs::ACTIVITY_STALE_AFTER_SECONDS
-            {
-                continue;
-            }
-
-            activities.push(Activity {
-                task_type: job_kind.code().to_string(),
-                title: job_kind.title().to_string(),
-                current: completed,
-                total,
-                progress_percent: completed as f64 / total as f64,
-            });
-        }
-
-        Ok(activities)
+    async fn activities(&self, _ctx: &Context<'_>) -> Result<Vec<Activity>, async_graphql::Error> {
+        Ok(ACTIVITY_REGISTRY
+            .snapshot()
+            .into_iter()
+            .map(|activity| Activity {
+                task_type: activity.task_type,
+                title: activity.title,
+                current: activity.current,
+                total: activity.total,
+                progress_percent: activity.progress_percent,
+            })
+            .collect())
     }
 }

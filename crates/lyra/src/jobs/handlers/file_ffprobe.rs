@@ -1,7 +1,7 @@
+use crate::jobs::handlers::shared::get_job_file_path;
+use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     entities::{file_probe, files, jobs as jobs_entity},
-    jobs::handlers::shared,
-    jobs::{JobHandler, JobRunContext, JobRunResult, JobTarget},
     json_encoding,
 };
 use anyhow::Context;
@@ -10,8 +10,8 @@ use lyra_ffprobe::{
 };
 use sea_orm::{
     ActiveValue::Set,
-    DatabaseConnection, EntityTrait,
-    sea_query::{Expr, OnConflict, Query, SelectStatement},
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
+    sea_query::{Expr, OnConflict, Query},
 };
 use std::path::Path;
 
@@ -19,71 +19,66 @@ use std::path::Path;
 pub struct FileFfprobeJob;
 
 #[async_trait::async_trait]
-impl JobHandler for FileFfprobeJob {
-    fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::FileExtractFfprobe
+impl Job for FileFfprobeJob {
+    type Entity = files::Entity;
+    type Model = files::Model;
+
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileExtractFfprobe;
+
+    fn query(&self) -> Select<Self::Entity> {
+        files::Entity::find()
+            .filter(files::Column::UnavailableAt.is_null())
+            .filter(
+                Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
+                    Query::select()
+                        .column(file_probe::Column::FileId)
+                        .from(file_probe::Entity)
+                        .to_owned(),
+                ),
+            )
+            .order_by_asc(files::Column::Id)
     }
 
-    fn is_heavy(&self) -> bool {
-        false
+    fn target_id(&self, target: &Self::Model) -> String {
+        target.id.clone()
     }
 
-    fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = shared::base_file_targets_query();
-        query.and_where(
-            Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
-                Query::select()
-                    .column(file_probe::Column::FileId)
-                    .from(file_probe::Entity)
-                    .to_owned(),
-            ),
-        );
-        (JobTarget::File, query)
-    }
-
-    async fn execute(
+    async fn run(
         &self,
-        pool: &DatabaseConnection,
-        job: &jobs_entity::Model,
-        ctx: &JobRunContext,
-    ) -> anyhow::Result<JobRunResult> {
-        let file_id = shared::expect_job_file_id(job)?;
-        let Some(file_ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
-        else {
-            return Ok(JobRunResult::Complete);
+        db: &DatabaseConnection,
+        file: Self::Model,
+        ctx: &JobLease,
+    ) -> anyhow::Result<JobOutcome> {
+        let Some(file_path) = get_job_file_path(db, &file, Self::JOB_KIND).await? else {
+            return Ok(JobOutcome::Complete);
         };
 
-        let Some(_) =
-            extract_and_store_ffprobe(pool, &file_ctx.file.id, &file_ctx.file_path, ctx).await?
-        else {
-            return Ok(JobRunResult::Cancelled);
+        let Some(_) = extract_and_store_ffprobe(db, &file.id, &file_path, ctx).await? else {
+            return Ok(JobOutcome::Cancelled);
         };
-        Ok(JobRunResult::Complete)
+
+        Ok(JobOutcome::Complete)
     }
 }
 
 pub(crate) async fn extract_and_store_ffprobe(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     file_id: &str,
     file_path: &Path,
-    ctx: &JobRunContext,
+    ctx: &JobLease,
 ) -> anyhow::Result<Option<FfprobeOutput>> {
-    let ffprobe_output = probe_output(
-        get_ffprobe_path()?,
-        file_path,
-        Some(ctx.cancellation_token()),
-    )
-    .await?;
+    let ffprobe_output =
+        probe_output(get_ffprobe_path()?, file_path, ctx.get_cancellation_token()).await?;
     let Some(ffprobe_output) = ffprobe_output else {
         return Ok(None);
     };
 
-    upsert_ffprobe_output(pool, file_id, &ffprobe_output).await?;
+    upsert_ffprobe_output(db, file_id, &ffprobe_output).await?;
     Ok(Some(ffprobe_output))
 }
 
 async fn upsert_ffprobe_output(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     file_id: &str,
     ffprobe_output: &FfprobeOutput,
 ) -> anyhow::Result<()> {
@@ -161,7 +156,7 @@ async fn upsert_ffprobe_output(
             ])
             .to_owned(),
     )
-    .exec(pool)
+    .exec(db)
     .await
     .with_context(|| {
         format!(

@@ -31,8 +31,6 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_one = "super::file_probe::Entity")]
     FileProbe,
-    #[sea_orm(has_many = "super::jobs::Entity")]
-    Jobs,
     #[sea_orm(
         belongs_to = "super::libraries::Entity",
         from = "Column::LibraryId",
@@ -50,12 +48,6 @@ pub enum Relation {
 impl Related<super::file_probe::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileProbe.def()
-    }
-}
-
-impl Related<super::jobs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Jobs.def()
     }
 }
 

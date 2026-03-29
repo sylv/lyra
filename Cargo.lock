@@ -2072,6 +2072,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "lyra-ffprobe",
+ "lyra-keyframe-extractor",
  "lyra-marker",
  "lyra-metadata",
  "lyra-metadata-tmdb",
@@ -2125,6 +2126,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-keyframe-extractor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lyra-ffprobe",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "lyra-marker"
 version = "0.1.0"
 dependencies = [
@@ -2170,6 +2184,7 @@ dependencies = [
  "isolang",
  "libc",
  "lyra-ffprobe",
+ "lyra-keyframe-extractor",
  "serde",
  "serde_json",
  "tokio",

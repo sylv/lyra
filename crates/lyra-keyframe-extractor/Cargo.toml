@@ -1,13 +1,13 @@
 [package]
-name = "lyra-timeline-preview"
+name = "lyra-keyframe-extractor"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 anyhow = "1.0"
-image = { version = "0.25", default-features = false, features = ["png"] }
-tempfile = "3.20"
+lyra-ffprobe = { version = "0.1.0", path = "../lyra-ffprobe" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.140"
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-tracing = "0.1.44"
-tracing-subscriber = "0.3.22"
+tracing = "0.1.41"

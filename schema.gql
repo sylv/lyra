@@ -1,9 +1,9 @@
 type Activity {
 	taskType: String!
 	title: String!
-	current: Int!
-	total: Int!
-	progressPercent: Float!
+	current: Int
+	total: Int
+	progressPercent: Float
 }
 
 type Asset {

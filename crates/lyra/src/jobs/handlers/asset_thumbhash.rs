@@ -1,60 +1,52 @@
+use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     assets::storage,
     entities::{assets, jobs as jobs_entity},
-    jobs::handlers::shared,
-    jobs::{ASSET_ID_COLUMN, JobHandler, JobRunContext, JobRunResult, JobTarget},
 };
 use anyhow::Context;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, sea_query::SelectStatement,
+    QueryFilter, QueryOrder, Select,
 };
 
 #[derive(Debug, Default)]
 pub struct AssetThumbhashJob;
 
 #[async_trait::async_trait]
-impl JobHandler for AssetThumbhashJob {
-    fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::AssetGenerateThumbhash
-    }
+impl Job for AssetThumbhashJob {
+    type Entity = assets::Entity;
+    type Model = assets::Model;
 
-    fn is_heavy(&self) -> bool {
-        false
-    }
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::AssetGenerateThumbhash;
 
-    fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = assets::Entity::find()
-            .select_only()
-            .column_as(assets::Column::Id, ASSET_ID_COLUMN)
+    fn query(&self) -> Select<Self::Entity> {
+        assets::Entity::find()
             .filter(assets::Column::HashSha256.is_not_null())
             .filter(
                 Condition::any()
                     .add(assets::Column::Thumbhash.is_null())
                     .add(assets::Column::Thumbhash.eq(Vec::<u8>::new())),
             )
-            .order_by_asc(assets::Column::Id);
-
-        (JobTarget::Asset, QuerySelect::query(&mut query).to_owned())
+            .order_by_asc(assets::Column::Id)
     }
 
-    async fn execute(
-        &self,
-        pool: &DatabaseConnection,
-        job: &jobs_entity::Model,
-        _ctx: &JobRunContext,
-    ) -> anyhow::Result<JobRunResult> {
-        let asset_id = shared::expect_job_asset_id(job)?;
-        let Some(asset) = assets::Entity::find_by_id(&asset_id).one(pool).await? else {
-            return Ok(JobRunResult::Complete);
-        };
+    fn target_id(&self, target: &Self::Model) -> String {
+        target.id.clone()
+    }
 
+    async fn run(
+        &self,
+        db: &DatabaseConnection,
+        asset: Self::Model,
+        _ctx: &JobLease,
+    ) -> anyhow::Result<JobOutcome> {
+        let asset_id = asset.id.clone();
         if asset
             .thumbhash
             .as_ref()
             .is_some_and(|thumbhash| !thumbhash.is_empty())
         {
-            return Ok(JobRunResult::Complete);
+            return Ok(JobOutcome::Complete);
         }
 
         let hash_sha256 = asset
@@ -81,8 +73,8 @@ impl JobHandler for AssetThumbhashJob {
 
         let mut updated: assets::ActiveModel = asset.into();
         updated.thumbhash = Set(Some(thumbhash));
-        updated.update(pool).await?;
+        updated.update(db).await?;
 
-        Ok(JobRunResult::Complete)
+        Ok(JobOutcome::Complete)
     }
 }

@@ -3,7 +3,7 @@ use crate::entities::{
 };
 use crate::ids;
 use crate::scanner::derive_nodes::{
-    RootMaterializationPlan, WantedNode, build_closure_rows, build_root_materialization_plans,
+    RootMaterializationPlan, build_closure_rows, build_root_materialization_plans,
     sort_nodes_topologically, verify_root_nodes,
 };
 use lyra_parser::{ParsedFile, parse_files};
@@ -380,7 +380,7 @@ async fn recompute_root_orders_with_sqlx(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::libraries;
+    use crate::{entities::libraries, scanner::derive_nodes::WantedNode};
     use sea_orm::{Database, QueryOrder};
 
     async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {

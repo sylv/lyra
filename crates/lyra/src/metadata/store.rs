@@ -135,7 +135,7 @@ pub async fn overwrite_remote_season_metadata_for_batch(
 ) -> anyhow::Result<()> {
     let season_ids = batch
         .iter()
-        .filter_map(|node| node.parent_id.clone())
+        .map(|node| node.id.clone())
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -341,4 +341,138 @@ async fn ensure_remote_asset(
     .await?;
 
     Ok(Some(asset.id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::{libraries, metadata_source::MetadataSource};
+    use sea_orm::{ActiveValue::Set, Database};
+
+    async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {
+        let pool = Database::connect("sqlite::memory:").await?;
+        sqlx::migrate!("../../migrations")
+            .run(pool.get_sqlite_connection_pool())
+            .await?;
+
+        Ok(pool)
+    }
+
+    async fn insert_library(pool: &DatabaseConnection) -> anyhow::Result<()> {
+        libraries::Entity::insert(libraries::ActiveModel {
+            id: Set("lib".to_owned()),
+            path: Set("/library".to_owned()),
+            name: Set("Library".to_owned()),
+            last_scanned_at: Set(None),
+            created_at: Set(0),
+        })
+        .exec(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn insert_node(
+        pool: &DatabaseConnection,
+        id: &str,
+        root_id: &str,
+        parent_id: Option<&str>,
+        kind: NodeKind,
+        name: &str,
+        season_number: Option<i64>,
+        order: i64,
+    ) -> anyhow::Result<nodes::Model> {
+        nodes::Entity::insert(nodes::ActiveModel {
+            id: Set(id.to_owned()),
+            library_id: Set("lib".to_owned()),
+            root_id: Set(root_id.to_owned()),
+            parent_id: Set(parent_id.map(str::to_owned)),
+            kind: Set(kind),
+            name: Set(name.to_owned()),
+            order: Set(order),
+            season_number: Set(season_number),
+            episode_number: Set(None),
+            match_candidates_json: Set(None),
+            last_added_at: Set(0),
+            created_at: Set(0),
+            updated_at: Set(0),
+        })
+        .exec(pool)
+        .await?;
+
+        Ok(nodes::Entity::find_by_id(id.to_owned()).one(pool).await?.unwrap())
+    }
+
+    #[tokio::test]
+    async fn overwrite_remote_season_metadata_keeps_root_remote_metadata() -> anyhow::Result<()> {
+        let pool = setup_test_db().await?;
+        insert_library(&pool).await?;
+        insert_node(&pool, "root", "root", None, NodeKind::Series, "Show", None, 0).await?;
+        let season = insert_node(
+            &pool,
+            "season-1",
+            "root",
+            Some("root"),
+            NodeKind::Season,
+            "Season 1",
+            Some(1),
+            1,
+        )
+        .await?;
+
+        upsert_remote_node_metadata_from_series(
+            &pool,
+            "root",
+            "tmdb",
+            &SeriesMetadata {
+                imdb_id: None,
+                tmdb_id: Some(1),
+                name: "Show".to_owned(),
+                description: Some("root description".to_owned()),
+                score_display: None,
+                score_normalized: None,
+                released_at: None,
+                ended_at: None,
+                images: ImageSet::default(),
+            },
+            1,
+        )
+        .await?;
+
+        overwrite_remote_season_metadata_for_batch(
+            &pool,
+            "tmdb",
+            &[season],
+            &[SeasonMetadata {
+                root_id: "root".to_owned(),
+                season_number: 1,
+                name: "Season 1".to_owned(),
+                description: Some("season description".to_owned()),
+                score_display: None,
+                score_normalized: None,
+                released_at: None,
+                ended_at: None,
+                images: ImageSet::default(),
+            }],
+            2,
+        )
+        .await?;
+
+        let root_remote = node_metadata::Entity::find()
+            .filter(node_metadata::Column::NodeId.eq("root"))
+            .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
+            .one(&pool)
+            .await?
+            .unwrap();
+        let season_remote = node_metadata::Entity::find()
+            .filter(node_metadata::Column::NodeId.eq("season-1"))
+            .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
+            .one(&pool)
+            .await?
+            .unwrap();
+
+        assert_eq!(root_remote.description.as_deref(), Some("root description"));
+        assert_eq!(season_remote.description.as_deref(), Some("season description"));
+
+        Ok(())
+    }
 }

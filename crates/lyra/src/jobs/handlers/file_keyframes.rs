@@ -1,80 +1,75 @@
+use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     entities::{files, jobs as jobs_entity},
     jobs::handlers::shared,
-    jobs::{JobHandler, JobRunContext, JobRunResult, JobTarget},
     json_encoding,
 };
 use anyhow::Context;
-use lyra_ffprobe::{paths::get_ffprobe_path, probe_keyframes_pts};
-use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait, sea_query::SelectStatement};
+use lyra_keyframe_extractor::extract_keyframes;
+use sea_orm::{
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Select,
+};
 use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct FileKeyframesJob;
 
 #[async_trait::async_trait]
-impl JobHandler for FileKeyframesJob {
-    fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::FileExtractKeyframes
+impl Job for FileKeyframesJob {
+    type Entity = files::Entity;
+    type Model = files::Model;
+
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileExtractKeyframes;
+    const IS_HEAVY: bool = true;
+
+    fn query(&self) -> Select<Self::Entity> {
+        files::Entity::find()
+            .filter(files::Column::UnavailableAt.is_null())
+            .filter(files::Column::KeyframesJson.eq(Vec::<u8>::new()))
+            .order_by_asc(files::Column::Id)
     }
 
-    fn is_heavy(&self) -> bool {
-        true
+    fn target_id(&self, target: &Self::Model) -> String {
+        target.id.clone()
     }
 
-    fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = shared::base_file_targets_query();
-        query.and_where(
-            sea_orm::sea_query::Expr::col((files::Entity, files::Column::KeyframesJson))
-                .eq(Vec::<u8>::new()),
-        );
-        (JobTarget::File, query)
-    }
-
-    async fn execute(
+    async fn run(
         &self,
-        pool: &DatabaseConnection,
-        job: &jobs_entity::Model,
-        ctx: &JobRunContext,
-    ) -> anyhow::Result<JobRunResult> {
-        let file_id = shared::expect_job_file_id(job)?;
-        let Some(file_ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
-        else {
-            return Ok(JobRunResult::Complete);
+        db: &DatabaseConnection,
+        file: Self::Model,
+        ctx: &JobLease,
+    ) -> anyhow::Result<JobOutcome> {
+        let Some(file_path) = shared::get_job_file_path(db, &file, Self::JOB_KIND).await? else {
+            return Ok(JobOutcome::Complete);
         };
 
-        let Some(_) =
-            extract_and_store_keyframes(pool, &file_ctx.file.id, &file_ctx.file_path, ctx).await?
-        else {
-            return Ok(JobRunResult::Cancelled);
+        println!("extracting");
+        let Some(_) = extract_and_store_keyframes(db, &file.id, &file_path, ctx).await? else {
+            return Ok(JobOutcome::Cancelled);
         };
 
-        Ok(JobRunResult::Complete)
+        Ok(JobOutcome::Complete)
     }
 }
 
 pub(crate) async fn extract_and_store_keyframes(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     file_id: &str,
     file_path: &Path,
-    ctx: &JobRunContext,
+    ctx: &JobLease,
 ) -> anyhow::Result<Option<Vec<i64>>> {
-    let keyframes = probe_keyframes_pts(
-        get_ffprobe_path()?,
-        file_path,
-        Some(ctx.cancellation_token()),
-    )
-    .await?;
+    let keyframes = extract_keyframes(file_path, ctx.get_cancellation_token()).await?;
     let Some(keyframes) = keyframes else {
         return Ok(None);
     };
 
-    upsert_keyframes(pool, file_id, &keyframes).await?;
+    upsert_keyframes(db, file_id, &keyframes).await?;
     Ok(Some(keyframes))
 }
 
 async fn upsert_keyframes(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     file_id: &str,
     keyframes: &[i64],
 ) -> anyhow::Result<()> {
@@ -86,7 +81,7 @@ async fn upsert_keyframes(
         keyframes_json: Set(payload),
         ..Default::default()
     })
-    .exec(pool)
+    .exec(db)
     .await?;
 
     Ok(())

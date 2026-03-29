@@ -10,6 +10,7 @@ members = [
     "crates/lyra-thumbnail",
     "crates/lyra-timeline-preview",
     "crates/lyra-marker",
+    "crates/lyra-keyframe-extractor",
 ]
 resolver = "3"
 default-members = ["crates/lyra"]

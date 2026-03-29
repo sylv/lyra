@@ -1,9 +1,9 @@
 use crate::{
     AppState, RequestAuth,
     assets::storage,
-    entities::{assets as assets_entity, jobs as jobs_entity},
+    entities::assets as assets_entity,
     error::AppError,
-    jobs::{self, TryRunJobFilter},
+    jobs::{self, AssetDownloadJob},
 };
 use axum::{
     Router,
@@ -58,9 +58,8 @@ async fn get_asset(
     if asset.hash_sha256.is_none() {
         jobs::try_run_job(
             &state.pool,
-            state.job_wake_signal.as_ref(),
-            jobs_entity::JobKind::AssetDownload,
-            TryRunJobFilter::AssetId(&asset.id),
+            &AssetDownloadJob,
+            asset.clone(),
             ON_DEMAND_JOB_TIMEOUT,
         )
         .await?;

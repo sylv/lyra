@@ -3,11 +3,11 @@ use crate::{
     config::get_config,
     content_update::CONTENT_UPDATE,
     entities::{
-        libraries,
+        jobs as jobs_entity, libraries,
         users::{self},
     },
     error::AppError,
-    job_block::JobLock,
+    jobs::{JobSemaphore, load_registered_jobs},
     watch_session::WatchSessionRegistry,
 };
 use anyhow::Context;
@@ -22,7 +22,7 @@ use axum::{
     routing::{get, post},
 };
 use lyra_packager::Package as PackagerState;
-use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::sqlite::{
@@ -37,6 +37,7 @@ use std::{
 use tokio::sync::{Mutex, Notify};
 use tokio::{signal, task::JoinSet};
 
+mod activity;
 mod assets;
 mod auth;
 mod config;
@@ -48,7 +49,6 @@ mod graphql;
 mod hls;
 mod ids;
 mod import;
-mod job_block;
 mod jobs;
 mod json_encoding;
 mod metadata;
@@ -66,13 +66,13 @@ type AppSchema = Schema<
 #[derive(Clone, FromRef)]
 struct AppState {
     signer: signer::Signer,
-    packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
     pool: DatabaseConnection,
     schema: Arc<AppSchema>,
     job_wake_signal: Arc<Notify>,
-    job_lock: JobLock,
+    job_semaphore: Arc<JobSemaphore>,
     setup_code: u32,
     last_setup_code_attempt: Arc<AtomicI64>,
+    packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
 }
 
 async fn get_graphql(_auth: RequestAuth) -> impl IntoResponse {
@@ -218,11 +218,13 @@ async fn main() {
 
     let pool = DatabaseConnection::from(pool);
     let job_wake_signal = Arc::new(Notify::new());
-    let job_lock = JobLock::default();
+
     CONTENT_UPDATE.start();
+
     let watch_session_registry = WatchSessionRegistry::new(pool.clone());
     watch_session_registry.start();
-    jobs::clear_locked_jobs_on_startup(&pool)
+
+    clear_locked_jobs(&pool)
         .await
         .expect("Failed to clear stale job locks");
 
@@ -238,14 +240,14 @@ async fn main() {
     background_workers
         .spawn(async move { scanner::start_scanner(scanner_pool, scanner_wake_signal).await });
 
+    let job_semaphore = Arc::new(JobSemaphore::new());
     let registered_jobs =
-        jobs::registry::get_registered_jobs(&pool, job_wake_signal.clone(), job_lock.clone());
-    let job_activity_registry = registered_jobs.activity_registry.clone();
-    for job in registered_jobs.managers {
-        let job_kind = job.job_kind();
+        load_registered_jobs(&pool, job_wake_signal.clone(), job_semaphore.clone());
+    for job in registered_jobs {
+        let job_kind = job.job_kind;
         background_workers.spawn(async move {
             tracing::info!(job_kind = ?job_kind, "starting job worker");
-            job.start_thread()
+            job.task
                 .await
                 .with_context(|| format!("job worker '{job_kind:?}' exited"))
         });
@@ -261,7 +263,6 @@ async fn main() {
     .limit_directives(5)
     .data(pool.clone())
     .data(signer.clone())
-    .data(job_activity_registry)
     .data(watch_session_registry)
     .finish();
 
@@ -297,7 +298,7 @@ async fn main() {
             pool: pool.clone(),
             schema: Arc::new(schema),
             job_wake_signal,
-            job_lock,
+            job_semaphore,
             setup_code,
             last_setup_code_attempt: Arc::new(AtomicI64::new(0)),
         });
@@ -371,4 +372,13 @@ async fn shutdown_signal(mut background_workers: JoinSet<anyhow::Result<()>>) {
     }
 
     background_workers.abort_all();
+}
+
+async fn clear_locked_jobs(database: &DatabaseConnection) -> anyhow::Result<()> {
+    jobs_entity::Entity::delete_many()
+        .filter(jobs_entity::Column::LockedAt.is_not_null())
+        .exec(database)
+        .await?;
+
+    Ok(())
 }

@@ -18,11 +18,11 @@ export type Scalars = {
 
 export type Activity = {
   __typename: 'Activity';
-  current: Scalars['Int']['output'];
-  progressPercent: Scalars['Float']['output'];
+  current: Maybe<Scalars['Int']['output']>;
+  progressPercent: Maybe<Scalars['Float']['output']>;
   taskType: Scalars['String']['output'];
   title: Scalars['String']['output'];
-  total: Scalars['Int']['output'];
+  total: Maybe<Scalars['Int']['output']>;
 };
 
 export type Asset = {
@@ -602,7 +602,7 @@ export type WatchSessionRecoveryInput = {
 export type GetActivitiesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetActivitiesQuery = { activities: Array<{ __typename: 'Activity', taskType: string, title: string, current: number, total: number, progressPercent: number }> };
+export type GetActivitiesQuery = { activities: Array<{ __typename: 'Activity', taskType: string, title: string, current: number | null, total: number | null, progressPercent: number | null }> };
 
 export type ContentUpdatesSubscriptionVariables = Exact<{ [key: string]: never; }>;
 

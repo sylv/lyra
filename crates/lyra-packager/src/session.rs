@@ -12,15 +12,15 @@ use crate::{
     },
 };
 use anyhow::{Context, Result, bail};
-use lyra_ffprobe::{
-    FfprobeOutput, paths::get_ffprobe_path, probe_keyframes_pts_blocking, probe_output_blocking,
-};
+use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_output_blocking};
+use lyra_keyframe_extractor::extract_keyframes;
 use std::{
     collections::HashMap,
     path::{Path as FsPath, PathBuf},
     sync::Arc,
     time::Duration,
 };
+use tokio::task::{block_in_place, spawn_blocking};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SessionKey {
@@ -135,8 +135,7 @@ pub fn build_package_with_defaults(input: &FsPath, options: &BuildOptions) -> Re
     let profiles = get_profiles();
     let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
     let ffprobe_output = probe_output_blocking(&ffprobe_bin, &input)?;
-    let keyframes = probe_keyframes_pts_blocking(&ffprobe_bin, &input)?;
-    build_package(&input, &profiles, options, &ffprobe_output, &keyframes)
+    unimplemented!()
 }
 
 impl Package {

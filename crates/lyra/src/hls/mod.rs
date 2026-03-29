@@ -2,9 +2,9 @@ use crate::{
     AppState,
     auth::{RequestAuth, ensure_library_access},
     config::get_config,
-    entities::{files, jobs as jobs_entity, libraries},
+    entities::{files, libraries},
     file_analysis,
-    jobs::{self, TryRunJobFilter},
+    jobs::{self, FileFfprobeJob, FileKeyframesJob},
 };
 use axum::{
     Router,
@@ -24,6 +24,7 @@ use tokio_util::io::ReaderStream;
 use tower_http::cors::CorsLayer;
 
 const ON_DEMAND_JOB_TIMEOUT: Duration = Duration::from_secs(120);
+const JOB_LOCK_GRACE: Duration = Duration::from_mins(5);
 
 #[derive(Deserialize)]
 struct SegmentQuery {
@@ -56,7 +57,7 @@ async fn get_master_playlist(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let _job_lock = state.job_lock.take_block();
+    let _guard = state.job_semaphore.push_lock(JOB_LOCK_GRACE).await;
     let packager_state = get_or_build_packager_state(&state, &auth, file_id.clone()).await?;
     let playlist = rewrite_playlist_for_file(packager_state.master_playlist(), &file_id);
 
@@ -73,7 +74,7 @@ async fn get_stream_playlist(
     State(state): State<AppState>,
     Path((file_id, stream_id, profile_id)): Path<(String, u32, String)>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let _job_lock = state.job_lock.take_block();
+    let _guard = state.job_semaphore.push_lock(JOB_LOCK_GRACE).await;
     let packager_state = get_or_build_packager_state(&state, &auth, file_id.clone()).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
@@ -94,7 +95,7 @@ async fn get_segment(
     Path((file_id, stream_id, profile_id, name)): Path<(String, u32, String, String)>,
     Query(query): Query<SegmentQuery>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let _job_lock = state.job_lock.take_block();
+    let _guard = state.job_semaphore.push_lock(JOB_LOCK_GRACE).await;
     let packager_state = get_or_build_packager_state(&state, &auth, file_id).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
@@ -178,25 +179,37 @@ async fn get_or_build_packager_state(
         Some(output) => output,
         None => {
             generated_probe = true;
-            jobs::try_run_job(
-                &state.pool,
-                state.job_wake_signal.as_ref(),
-                jobs_entity::JobKind::FileExtractFfprobe,
-                TryRunJobFilter::FileId(&file_id),
-                ON_DEMAND_JOB_TIMEOUT,
-            )
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                    file_id,
-                    error = %err,
-                    "failed to generate ffprobe data on-demand"
-                );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to prepare stream metadata",
-                )
-            })?;
+            let file = files::Entity::find_by_id(file_id.clone())
+                .one(&state.pool)
+                .await
+                .map_err(|err| {
+                    tracing::error!(file_id, error = %err, "failed to load file before ffprobe job");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
+                .ok_or_else(|| {
+                    tracing::error!(file_id, "file disappeared before ffprobe job");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?;
+
+            jobs::try_run_job(&state.pool, &FileFfprobeJob, file, ON_DEMAND_JOB_TIMEOUT)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        file_id,
+                        error = %err,
+                        "failed to generate ffprobe data on-demand"
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?;
 
             file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
                 .await
@@ -238,25 +251,37 @@ async fn get_or_build_packager_state(
         Some(keyframes) => keyframes,
         None => {
             generated_keyframes = true;
-            jobs::try_run_job(
-                &state.pool,
-                state.job_wake_signal.as_ref(),
-                jobs_entity::JobKind::FileExtractKeyframes,
-                TryRunJobFilter::FileId(&file_id),
-                ON_DEMAND_JOB_TIMEOUT,
-            )
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                    file_id,
-                    error = %err,
-                    "failed to generate keyframe data on-demand"
-                );
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to prepare stream metadata",
-                )
-            })?;
+            let file = files::Entity::find_by_id(file_id.clone())
+                .one(&state.pool)
+                .await
+                .map_err(|err| {
+                    tracing::error!(file_id, error = %err, "failed to load file before keyframe job");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?
+                .ok_or_else(|| {
+                    tracing::error!(file_id, "file disappeared before keyframe job");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?;
+
+            jobs::try_run_job(&state.pool, &FileKeyframesJob, file, ON_DEMAND_JOB_TIMEOUT)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        file_id,
+                        error = %err,
+                        "failed to generate keyframe data on-demand"
+                    );
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to prepare stream metadata",
+                    )
+                })?;
 
             file_analysis::load_cached_keyframes(&state.pool, &file_id)
                 .await

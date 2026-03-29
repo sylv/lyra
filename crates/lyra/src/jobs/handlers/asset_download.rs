@@ -1,54 +1,42 @@
+use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     assets::download_asset_to_local,
     entities::{assets, jobs as jobs_entity},
-    jobs::handlers::shared,
-    jobs::{ASSET_ID_COLUMN, JobHandler, JobRunContext, JobRunResult, JobTarget},
 };
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    sea_query::SelectStatement,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select};
 
 #[derive(Debug, Default)]
 pub struct AssetDownloadJob;
 
 #[async_trait::async_trait]
-impl JobHandler for AssetDownloadJob {
-    fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::AssetDownload
-    }
+impl Job for AssetDownloadJob {
+    type Entity = assets::Entity;
+    type Model = assets::Model;
 
-    fn is_heavy(&self) -> bool {
-        false
-    }
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::AssetDownload;
 
-    fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = assets::Entity::find()
-            .select_only()
-            .column_as(assets::Column::Id, ASSET_ID_COLUMN)
+    fn query(&self) -> Select<Self::Entity> {
+        assets::Entity::find()
             .filter(assets::Column::SourceUrl.is_not_null())
             .filter(assets::Column::HashSha256.is_null())
-            .order_by_asc(assets::Column::Id);
-
-        (JobTarget::Asset, QuerySelect::query(&mut query).to_owned())
+            .order_by_asc(assets::Column::Id)
     }
 
-    async fn execute(
-        &self,
-        pool: &DatabaseConnection,
-        job: &jobs_entity::Model,
-        _ctx: &JobRunContext,
-    ) -> anyhow::Result<JobRunResult> {
-        let asset_id = shared::expect_job_asset_id(job)?;
-        let Some(asset) = assets::Entity::find_by_id(asset_id).one(pool).await? else {
-            return Ok(JobRunResult::Complete);
-        };
+    fn target_id(&self, target: &Self::Model) -> String {
+        target.id.clone()
+    }
 
+    async fn run(
+        &self,
+        db: &DatabaseConnection,
+        asset: Self::Model,
+        _ctx: &JobLease,
+    ) -> anyhow::Result<JobOutcome> {
         if asset.hash_sha256.is_some() {
-            return Ok(JobRunResult::Complete);
+            return Ok(JobOutcome::Complete);
         }
 
-        download_asset_to_local(pool, &asset).await?;
-        Ok(JobRunResult::Complete)
+        download_asset_to_local(db, &asset).await?;
+        Ok(JobOutcome::Complete)
     }
 }

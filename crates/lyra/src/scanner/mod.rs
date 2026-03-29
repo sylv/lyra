@@ -1,6 +1,7 @@
 pub mod derive_nodes;
 pub mod reconcile;
 
+use crate::activity::{ActivityHandle, ActivityKind};
 use crate::config::get_config;
 use crate::content_update::CONTENT_UPDATE;
 use crate::entities::{files, libraries};
@@ -76,6 +77,7 @@ async fn scan_library(
     library: &libraries::Model,
     wake_signal: &Arc<Notify>,
 ) -> anyhow::Result<()> {
+    let mut activity = ActivityHandle::new(ActivityKind::LibraryScan);
     let scan_start_time = chrono::Utc::now().timestamp();
     let library_path = PathBuf::from(&library.path);
     let mut new_file_ids = HashSet::new();
@@ -124,6 +126,14 @@ async fn scan_library(
             .await?;
         let parsed_new_rows = parse_file_rows(&new_rows).await;
         parsed_new_files_by_root = group_parsed_files_by_root(&library_path, &parsed_new_rows);
+
+        let total_import_files = parsed_new_files_by_root
+            .values()
+            .map(|rows| rows.len() as i64)
+            .sum::<i64>();
+        if total_import_files > 0 {
+            activity.set_total(total_import_files);
+        }
     }
 
     let mut touched_root_ids = parsed_new_files_by_root
@@ -136,11 +146,13 @@ async fn scan_library(
             .into_iter(),
     );
 
+    let mut processed_import_files = 0_i64;
     for root_id in touched_root_ids {
         let extra_rows = parsed_new_files_by_root
             .get(root_id.as_str())
             .cloned()
             .unwrap_or_default();
+        let imported_file_count = extra_rows.len() as i64;
 
         if let Err(error) =
             reconcile_root(pool, &library.id, &library_path, &root_id, extra_rows).await
@@ -151,6 +163,11 @@ async fn scan_library(
                 error = ?error,
                 "failed to reconcile touched root"
             );
+        }
+
+        if imported_file_count > 0 {
+            processed_import_files += imported_file_count;
+            activity.set_progress(processed_import_files);
         }
     }
 

@@ -26,8 +26,6 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::jobs::Entity")]
-    Jobs,
     #[sea_orm(
         belongs_to = "super::libraries::Entity",
         from = "Column::LibraryId",
@@ -58,12 +56,6 @@ pub enum Relation {
     SelfRef1,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
-}
-
-impl Related<super::jobs::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Jobs.def()
-    }
 }
 
 impl Related<super::libraries::Entity> for Entity {

@@ -73,7 +73,7 @@ const SidebarHeader: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 	const { data: viewerData } = useSuspenseQuery(SidebarViewerQuery);
 	const isAdmin = ((viewerData.viewer?.permissions ?? 0) & ADMIN_BIT) !== 0;
 	const { data: activityData } = useQuery(ActivityPanelQuery, { skip: !isAdmin });
-	const activitiesRunning = activityData?.activities.some((activity) => activity.current < activity.total) ?? false;
+	const activitiesRunning = (activityData?.activities.length ?? 0) > 0;
 
 	return (
 		<div className="flex items-center justify-between gap-1">

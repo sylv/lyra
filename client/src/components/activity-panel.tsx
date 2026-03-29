@@ -1,6 +1,7 @@
 import type { FC } from "react";
 import { graphql } from "../@generated/gql";
 import type { GetActivitiesQuery } from "../@generated/gql/graphql";
+import { Spinner } from "./ui/spinner";
 
 export const ActivityPanelQuery = graphql(`
 	query GetActivities {
@@ -40,6 +41,18 @@ const CircularProgress: FC<{ progress: number }> = ({ progress }) => {
 	);
 };
 
+const ActivityIndicator: FC<{ progress: number | null | undefined }> = ({ progress }) => {
+	if (progress == null) {
+		return (
+			<div className="relative h-10 w-10 shrink-0 flex items-center justify-center">
+				<Spinner className="size-5" />
+			</div>
+		);
+	}
+
+	return <CircularProgress progress={progress} />;
+};
+
 export const ActivityPanel: FC<{ data?: GetActivitiesQuery; open: boolean }> = ({ data }) => {
 	// todo: animations when activities enter/leave so the modal doesn't jump around as much
 	return (
@@ -56,7 +69,7 @@ export const ActivityPanel: FC<{ data?: GetActivitiesQuery; open: boolean }> = (
 					const total = task.total ?? 0;
 					return (
 						<div key={task.taskType} className="flex items-center gap-3 py-2">
-							<CircularProgress progress={task.progressPercent} />
+							<ActivityIndicator progress={task.progressPercent} />
 							<div className="flex-1">
 								<p className="text-sm font-semibold text-zinc-100">{task.title}</p>
 								{isIndeterminate ? (

@@ -160,17 +160,6 @@ pub struct FfprobeFormat {
     pub bit_rate: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct ProbeFrames {
-    frames: Vec<ProbeFrame>,
-}
-
-#[derive(Deserialize)]
-struct ProbeFrame {
-    best_effort_timestamp: Option<i64>,
-    pkt_pts: Option<i64>,
-}
-
 pub fn probe_streams(ffprobe_bin: &Path, input: &Path) -> Result<ProbeResult> {
     let parsed = probe_output_blocking(ffprobe_bin, input)?;
     probe_streams_from_output(&parsed)
@@ -325,110 +314,18 @@ pub fn probe_streams_from_output(parsed: &FfprobeOutput) -> Result<ProbeResult> 
     })
 }
 
-pub fn probe_keyframes_pts_blocking(ffprobe_bin: &Path, input: &Path) -> Result<Vec<i64>> {
-    let output = StdCommand::new(ffprobe_bin)
-        .args([
-            "-fflags",
-            "+genpts",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-skip_frame",
-            "nokey",
-            "-show_frames",
-            "-show_entries",
-            "frame=best_effort_timestamp,pkt_pts",
-            "-of",
-            "json",
-        ])
-        .arg(input)
-        .output()
-        .with_context(|| {
-            format!(
-                "failed to run ffprobe for keyframes with {}",
-                ffprobe_bin.display()
-            )
-        })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("ffprobe keyframe scan failed: {stderr}");
-    }
-
-    let frames: ProbeFrames =
-        serde_json::from_slice(&output.stdout).context("failed to parse ffprobe keyframes JSON")?;
-
-    let mut times = Vec::new();
-    for frame in frames.frames {
-        if let Some(value) = frame.best_effort_timestamp.or(frame.pkt_pts) {
-            times.push(value);
-        }
-    }
-
-    times.sort_unstable();
-    times.dedup();
-    Ok(times)
-}
-
-pub async fn probe_keyframes_pts(
-    ffprobe_bin: impl AsRef<Path>,
-    input: impl AsRef<Path>,
-    cancellation_token: Option<&CancellationToken>,
-) -> Result<Option<Vec<i64>>> {
-    let ffprobe_bin = ffprobe_bin.as_ref().to_path_buf();
-    let input = input.as_ref().to_path_buf();
-    let output = run_ffprobe_command(
-        &ffprobe_bin,
-        &[
-            "-fflags",
-            "+genpts",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-skip_frame",
-            "nokey",
-            "-show_frames",
-            "-show_entries",
-            "frame=best_effort_timestamp,pkt_pts",
-            "-of",
-            "json",
-        ],
-        &input,
-        cancellation_token,
-    )
-    .await?;
-    let Some(output) = output else {
-        return Ok(None);
-    };
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("ffprobe keyframe scan failed: {stderr}");
-    }
-
-    let frames: ProbeFrames =
-        serde_json::from_slice(&output.stdout).context("failed to parse ffprobe keyframes JSON")?;
-
-    let mut times = Vec::new();
-    for frame in frames.frames {
-        if let Some(value) = frame.best_effort_timestamp.or(frame.pkt_pts) {
-            times.push(value);
-        }
-    }
-
-    times.sort_unstable();
-    times.dedup();
-    Ok(Some(times))
-}
-
 async fn run_ffprobe_command(
     ffprobe_bin: &PathBuf,
     args: &[&str],
     input: &Path,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<Option<Output>> {
+    println!(
+        "running ffprobe command: {} {} {}",
+        ffprobe_bin.display(),
+        args.join(" "),
+        input.display()
+    );
     let mut child = Command::new(ffprobe_bin);
     child.kill_on_drop(true);
     child

@@ -1,9 +1,6 @@
+use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     entities::{files, jobs as jobs_entity, libraries, node_files, nodes, nodes::NodeKind},
-    jobs::{
-        JobHandler, JobRunContext, JobRunResult, JobTarget, NODE_ID_COLUMN, VERSION_KEY_COLUMN,
-        handlers::shared,
-    },
     json_encoding,
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
 };
@@ -13,8 +10,10 @@ use lyra_marker::{
     detect_intros,
 };
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait, sea_query::SelectStatement,
+    ActiveValue::Set,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
+    sea_query::{Expr, Query},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -47,57 +46,71 @@ struct RootFileQueryRow {
 }
 
 #[async_trait::async_trait]
-impl JobHandler for RootIntroSegmentsJob {
-    fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::NodeGenerateIntroSegments
+impl Job for RootIntroSegmentsJob {
+    type Entity = nodes::Entity;
+    type Model = nodes::Model;
+
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::NodeGenerateIntroSegments;
+    const IS_HEAVY: bool = true;
+
+    fn query(&self) -> Select<Self::Entity> {
+        nodes::Entity::find()
+            .filter(nodes::Column::ParentId.is_null())
+            .filter(nodes::Column::Kind.eq(NodeKind::Series))
+            .filter(
+                Expr::col(nodes::Column::Id).in_subquery(
+                    Query::select()
+                        .column(nodes::Column::RootId)
+                        .from(node_files::Entity)
+                        .inner_join(
+                            nodes::Entity,
+                            Expr::col((node_files::Entity, node_files::Column::NodeId))
+                                .equals((nodes::Entity, nodes::Column::Id)),
+                        )
+                        .inner_join(
+                            files::Entity,
+                            Expr::col((node_files::Entity, node_files::Column::FileId))
+                                .equals((files::Entity, files::Column::Id)),
+                        )
+                        .and_where(
+                            Expr::col((nodes::Entity, nodes::Column::Kind)).eq(NodeKind::Episode),
+                        )
+                        .and_where(
+                            Expr::col((files::Entity, files::Column::UnavailableAt)).is_null(),
+                        )
+                        .and_where(
+                            Expr::col((files::Entity, files::Column::SegmentsJson))
+                                .eq(Vec::<u8>::new()),
+                        )
+                        .to_owned(),
+                ),
+            )
+            .order_by_asc(nodes::Column::Id)
     }
 
-    fn is_heavy(&self) -> bool {
-        true
+    fn target_id(&self, target: &Self::Model) -> String {
+        target.id.clone()
     }
 
-    fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = node_files::Entity::find()
-            .join(JoinType::InnerJoin, node_files::Relation::Nodes.def())
-            .join(JoinType::InnerJoin, node_files::Relation::Files.def())
-            .filter(nodes::Column::Kind.eq(NodeKind::Episode))
-            .filter(files::Column::UnavailableAt.is_null())
-            .filter(files::Column::SegmentsJson.eq(Vec::<u8>::new()))
-            .select_only()
-            .column_as(nodes::Column::RootId, NODE_ID_COLUMN)
-            .column_as(nodes::Column::LastAddedAt, VERSION_KEY_COLUMN)
-            .distinct()
-            .order_by_asc(nodes::Column::RootId);
-        (JobTarget::Node, QuerySelect::query(&mut query).to_owned())
-    }
-
-    async fn execute(
+    async fn run(
         &self,
-        pool: &DatabaseConnection,
-        job: &jobs_entity::Model,
-        ctx: &JobRunContext,
-    ) -> anyhow::Result<JobRunResult> {
-        let root_id = shared::expect_job_node_id(job)?;
-
-        let mut root_files = load_root_files(pool, root_id).await?;
+        db: &DatabaseConnection,
+        root: Self::Model,
+        ctx: &JobLease,
+    ) -> anyhow::Result<JobOutcome> {
+        let mut root_files = load_root_files(db, &root.id).await?;
         if root_files.len() < INTRO_DETECTION_BATCH_MIN_FILES {
-            return Ok(JobRunResult::Complete);
+            return Ok(JobOutcome::Complete);
         }
 
         let mut pending_file_ids = root_files
             .iter()
-            .filter_map(|file| {
-                if file.pending_segments {
-                    Some(file.file_id.clone())
-                } else {
-                    None
-                }
-            })
+            .filter_map(|file| file.pending_segments.then(|| file.file_id.clone()))
             .collect::<HashSet<_>>();
 
         while !pending_file_ids.is_empty() {
             if ctx.is_cancelled() {
-                return Ok(JobRunResult::Cancelled);
+                return Ok(JobOutcome::Cancelled);
             }
 
             let Some(seed) = root_files
@@ -117,11 +130,9 @@ impl JobHandler for RootIntroSegmentsJob {
             let target_file_ids = batch
                 .iter()
                 .filter_map(|file| {
-                    if pending_file_ids.contains(&file.file_id) {
-                        Some(file.file_id.clone())
-                    } else {
-                        None
-                    }
+                    pending_file_ids
+                        .contains(&file.file_id)
+                        .then(|| file.file_id.clone())
                 })
                 .collect::<Vec<_>>();
 
@@ -131,7 +142,6 @@ impl JobHandler for RootIntroSegmentsJob {
             }
 
             let target_file_id_set = target_file_ids.iter().cloned().collect::<HashSet<_>>();
-
             let detection_inputs = batch
                 .iter()
                 .map(|file| IntroDetectionInputFile {
@@ -145,9 +155,9 @@ impl JobHandler for RootIntroSegmentsJob {
                 .collect::<Vec<_>>();
 
             let Some(detections) =
-                detect_intros(&detection_inputs, Some(ctx.cancellation_token())).await?
+                detect_intros(&detection_inputs, ctx.get_cancellation_token()).await?
             else {
-                return Ok(JobRunResult::Cancelled);
+                return Ok(JobOutcome::Cancelled);
             };
 
             let detections_by_path = detections
@@ -161,12 +171,8 @@ impl JobHandler for RootIntroSegmentsJob {
                 };
 
                 if batch_file.audio_fingerprint != detection.fingerprint_cache {
-                    store_audio_fingerprint(
-                        pool,
-                        &batch_file.file_id,
-                        &detection.fingerprint_cache,
-                    )
-                    .await?;
+                    store_audio_fingerprint(db, &batch_file.file_id, &detection.fingerprint_cache)
+                        .await?;
                     if let Some(file) = root_files
                         .iter_mut()
                         .find(|file| file.file_id == batch_file.file_id)
@@ -185,7 +191,7 @@ impl JobHandler for RootIntroSegmentsJob {
                     .into_iter()
                     .collect::<Vec<_>>();
 
-                store_segments(pool, &batch_file.file_id, &segments).await?;
+                store_segments(db, &batch_file.file_id, &segments).await?;
 
                 if let Some(file) = root_files
                     .iter_mut()
@@ -203,12 +209,12 @@ impl JobHandler for RootIntroSegmentsJob {
             }
         }
 
-        Ok(JobRunResult::Complete)
+        Ok(JobOutcome::Complete)
     }
 }
 
 async fn load_root_files(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     root_id: &str,
 ) -> anyhow::Result<Vec<RootFile>> {
     let rows = node_files::Entity::find()
@@ -229,7 +235,7 @@ async fn load_root_files(
         .order_by_asc(nodes::Column::Order)
         .order_by_asc(files::Column::Id)
         .into_model::<RootFileQueryRow>()
-        .all(pool)
+        .all(db)
         .await?;
 
     let mut unique_rows = Vec::new();
@@ -343,7 +349,7 @@ fn decode_segments_payload(payload: &[u8], file_id: &str) -> Option<Vec<StoredFi
 }
 
 async fn store_segments(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     file_id: &str,
     segments: &[StoredFileSegment],
 ) -> anyhow::Result<()> {
@@ -355,14 +361,14 @@ async fn store_segments(
         segments_json: Set(payload),
         ..Default::default()
     })
-    .exec(pool)
+    .exec(db)
     .await?;
 
     Ok(())
 }
 
 async fn store_audio_fingerprint(
-    pool: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     file_id: &str,
     fingerprint: &[u8],
 ) -> anyhow::Result<()> {
@@ -371,7 +377,7 @@ async fn store_audio_fingerprint(
         audio_fingerprint: Set(fingerprint.to_vec()),
         ..Default::default()
     })
-    .exec(pool)
+    .exec(db)
     .await?;
 
     Ok(())

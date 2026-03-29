@@ -1,3 +1,5 @@
+use crate::jobs::handlers::shared::get_job_file_path;
+use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     assets as assets_api,
     entities::{
@@ -7,15 +9,14 @@ use crate::{
         metadata_source::MetadataSource,
         node_files, node_metadata,
     },
-    jobs::handlers::shared,
-    jobs::{JobHandler, JobRunContext, JobRunResult, JobTarget},
 };
 use lyra_ffprobe::paths::get_ffmpeg_path;
 use lyra_thumbnail::{ThumbnailOptions, generate_thumbnail};
 use sea_orm::{
     ActiveValue::Set,
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
-    sea_query::{Expr, Query, SelectStatement},
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
+    TransactionTrait,
+    sea_query::{Expr, Query},
 };
 use std::path::PathBuf;
 
@@ -23,91 +24,91 @@ use std::path::PathBuf;
 pub struct FileThumbnailJob;
 
 #[async_trait::async_trait]
-impl JobHandler for FileThumbnailJob {
-    fn job_kind(&self) -> jobs_entity::JobKind {
-        jobs_entity::JobKind::FileGenerateThumbnail
+impl Job for FileThumbnailJob {
+    type Entity = files::Entity;
+    type Model = files::Model;
+
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileGenerateThumbnail;
+    const IS_HEAVY: bool = true;
+
+    fn query(&self) -> Select<Self::Entity> {
+        files::Entity::find()
+            .filter(files::Column::UnavailableAt.is_null())
+            .filter(
+                Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
+                    Query::select()
+                        .column(file_assets::Column::FileId)
+                        .from(file_assets::Entity)
+                        .and_where(
+                            Expr::col((file_assets::Entity, file_assets::Column::Role))
+                                .eq(FileAssetRole::Thumbnail),
+                        )
+                        .to_owned(),
+                ),
+            )
+            .filter(
+                Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
+                    Query::select()
+                        .column(node_files::Column::FileId)
+                        .from(node_files::Entity)
+                        .and_where(
+                            Expr::col((node_files::Entity, node_files::Column::NodeId))
+                                .in_subquery(
+                                    Query::select()
+                                        .column(node_metadata::Column::NodeId)
+                                        .from(node_metadata::Entity)
+                                        .and_where(
+                                            Expr::col((
+                                                node_metadata::Entity,
+                                                node_metadata::Column::Source,
+                                            ))
+                                            .eq(MetadataSource::Remote),
+                                        )
+                                        .and_where(
+                                            Expr::col((
+                                                node_metadata::Entity,
+                                                node_metadata::Column::ThumbnailAssetId,
+                                            ))
+                                            .is_not_null(),
+                                        )
+                                        .to_owned(),
+                                ),
+                        )
+                        .to_owned(),
+                ),
+            )
+            .order_by_asc(files::Column::Id)
     }
 
-    fn is_heavy(&self) -> bool {
-        true
+    fn target_id(&self, target: &Self::Model) -> String {
+        target.id.clone()
     }
 
-    fn targets(&self) -> (JobTarget, SelectStatement) {
-        let mut query = shared::base_file_targets_query();
-        query.and_where(
-            Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
-                Query::select()
-                    .column(file_assets::Column::FileId)
-                    .from(file_assets::Entity)
-                    .and_where(
-                        Expr::col((file_assets::Entity, file_assets::Column::Role))
-                            .eq(FileAssetRole::Thumbnail),
-                    )
-                    .to_owned(),
-            ),
-        );
-        query.and_where(
-            Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
-                Query::select()
-                    .column(node_files::Column::FileId)
-                    .from(node_files::Entity)
-                    .and_where(
-                        Expr::col((node_files::Entity, node_files::Column::NodeId)).in_subquery(
-                            Query::select()
-                                .column(node_metadata::Column::NodeId)
-                                .from(node_metadata::Entity)
-                                .and_where(
-                                    Expr::col((
-                                        node_metadata::Entity,
-                                        node_metadata::Column::Source,
-                                    ))
-                                    .eq(MetadataSource::Remote),
-                                )
-                                .and_where(
-                                    Expr::col((
-                                        node_metadata::Entity,
-                                        node_metadata::Column::ThumbnailAssetId,
-                                    ))
-                                    .is_not_null(),
-                                )
-                                .to_owned(),
-                        ),
-                    )
-                    .to_owned(),
-            ),
-        );
-        (JobTarget::File, query)
-    }
-
-    async fn execute(
+    async fn run(
         &self,
-        pool: &DatabaseConnection,
-        job: &jobs_entity::Model,
-        ctx: &JobRunContext,
-    ) -> anyhow::Result<JobRunResult> {
-        let file_id = shared::expect_job_file_id(job)?;
-        let Some(file_ctx) = shared::load_job_file_context(pool, &file_id, self.job_kind()).await?
-        else {
-            return Ok(JobRunResult::Complete);
+        db: &DatabaseConnection,
+        file: Self::Model,
+        ctx: &JobLease,
+    ) -> anyhow::Result<JobOutcome> {
+        let Some(file_path) = get_job_file_path(db, &file, Self::JOB_KIND).await? else {
+            return Ok(JobOutcome::Complete);
         };
 
         let thumbnail_options = ThumbnailOptions {
             ffmpeg_bin: PathBuf::from(get_ffmpeg_path()?),
             ..ThumbnailOptions::default()
         };
-        let Some(thumbnail) = generate_thumbnail(
-            &file_ctx.file_path,
-            &thumbnail_options,
-            Some(ctx.cancellation_token()),
-        )
-        .await?
-        else {
-            return Ok(JobRunResult::Cancelled);
-        };
-        let file_id = file_ctx.file.id.clone();
 
-        // todo: we could skip this with a smarter query
-        let mut tx = pool.begin().await?;
+        let Some(thumbnail) =
+            generate_thumbnail(&file_path, &thumbnail_options, ctx.get_cancellation_token())
+                .await?
+        else {
+            return Ok(JobOutcome::Cancelled);
+        };
+        let file_id = file.id.clone();
+
+        let mut tx = db.begin().await?;
+        // Existing thumbnails are replaced atomically so retries do not accumulate stale assets.
         let stale_asset_ids = file_assets::Entity::find()
             .filter(file_assets::Column::FileId.eq(file_id.clone()))
             .filter(file_assets::Column::Role.eq(FileAssetRole::Thumbnail))
@@ -148,6 +149,6 @@ impl JobHandler for FileThumbnailJob {
         .await?;
 
         tx.commit().await?;
-        Ok(JobRunResult::Complete)
+        Ok(JobOutcome::Complete)
     }
 }
