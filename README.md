@@ -44,7 +44,7 @@ lyra uses rust + async-graphql + sqlx + sea-orm for the server and bun + react +
 For dev you'll need rust, bun, docker, and the custom ffmpeg binaries. The easiest way to get the ffmpeg binaries is:
 
 ```sh
-./export-ffmpeg.sh
+./scripts/export-ffmpeg.sh
 ```
 
 That copies `lyra-ffmpeg` and `lyra-ffprobe` into `./bin`, which is where debug builds look for them by default.
