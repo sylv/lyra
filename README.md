@@ -7,6 +7,7 @@ lyra is a self-hosted media server that lets you browse and watch your media wit
 
 ## features
 
+- [x] Smart library import
 - [x] Automatically skip intros
 - [x] Synced watch sessions
 - [x] Timeline previews
