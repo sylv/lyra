@@ -8,10 +8,7 @@ use crate::jobs::{
         root_intro_segments::RootIntroSegmentsJob,
     },
 };
-use crate::metadata::{
-    build_metadata_providers, job_item_batch::NodeMetadataMatchGroupsJob,
-    job_root::NodeMetadataMatchRootJob,
-};
+use crate::metadata::{build_metadata_providers, job_root_sync::NodeMetadataSyncRootJob};
 use sea_orm::DatabaseConnection;
 use std::future::Future;
 use std::pin::Pin;
@@ -74,13 +71,7 @@ pub fn load_registered_jobs(
             job_semaphore.clone(),
         ),
         build_registered_job(
-            Arc::new(NodeMetadataMatchRootJob::new(metadata_providers.clone())),
-            pool,
-            wake_signal.clone(),
-            job_semaphore.clone(),
-        ),
-        build_registered_job(
-            Arc::new(NodeMetadataMatchGroupsJob::new(metadata_providers)),
+            Arc::new(NodeMetadataSyncRootJob::new(metadata_providers)),
             pool,
             wake_signal,
             job_semaphore,

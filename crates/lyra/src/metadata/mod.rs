@@ -2,9 +2,12 @@ use lyra_metadata::MetadataProvider;
 use lyra_metadata_tmdb::TmdbMetadataProvider;
 use std::sync::Arc;
 
-pub mod job_item_batch;
-pub mod job_root;
-mod store;
+pub mod job_root_sync;
+pub mod local;
+pub mod read;
+pub mod remote;
+pub mod store;
+pub mod sync;
 
 pub(crate) const METADATA_RETRY_BACKOFF_SECONDS: &[i64] = &[
     48 * 60 * 60,

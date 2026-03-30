@@ -21,8 +21,7 @@ pub enum ActivityKind {
     AssetDownload,
     AssetGenerateThumbhash,
     NodeGenerateIntroSegments,
-    NodeMatchMetadataRoot,
-    NodeMatchMetadataGroups,
+    NodeSyncMetadataRoot,
 }
 
 impl ActivityKind {
@@ -36,8 +35,7 @@ impl ActivityKind {
             ActivityKind::AssetDownload => "Asset Download",
             ActivityKind::AssetGenerateThumbhash => "Asset Preview Generation",
             ActivityKind::NodeGenerateIntroSegments => "Intro Detection",
-            ActivityKind::NodeMatchMetadataRoot => "Match Root Metadata",
-            ActivityKind::NodeMatchMetadataGroups => "Match Grouped Node Metadata",
+            ActivityKind::NodeSyncMetadataRoot => "Metadata Sync",
         }
     }
 
@@ -51,8 +49,7 @@ impl ActivityKind {
             ActivityKind::AssetDownload => "download",
             ActivityKind::AssetGenerateThumbhash => "thumbhash",
             ActivityKind::NodeGenerateIntroSegments => "intro_segments",
-            ActivityKind::NodeMatchMetadataRoot => "metadata_match_root",
-            ActivityKind::NodeMatchMetadataGroups => "metadata_match_groups",
+            ActivityKind::NodeSyncMetadataRoot => "metadata_sync",
         }
     }
 }
@@ -67,8 +64,7 @@ impl From<JobKind> for ActivityKind {
             JobKind::AssetDownload => ActivityKind::AssetDownload,
             JobKind::AssetGenerateThumbhash => ActivityKind::AssetGenerateThumbhash,
             JobKind::NodeGenerateIntroSegments => ActivityKind::NodeGenerateIntroSegments,
-            JobKind::NodeMatchMetadataRoot => ActivityKind::NodeMatchMetadataRoot,
-            JobKind::NodeMatchMetadataGroups => ActivityKind::NodeMatchMetadataGroups,
+            JobKind::NodeSyncMetadataRoot => ActivityKind::NodeSyncMetadataRoot,
         }
     }
 }

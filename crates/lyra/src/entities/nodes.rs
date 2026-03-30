@@ -17,8 +17,6 @@ pub struct Model {
     pub order: i64,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
-    #[graphql(skip)]
-    pub match_candidates_json: Option<Vec<u8>>,
     pub last_added_at: i64,
     pub created_at: i64,
     pub updated_at: i64,

@@ -1,9 +1,10 @@
-use crate::entities::{
-    files, metadata_source::MetadataSource, node_closure, node_files, node_metadata, nodes,
+use crate::entities::{files, node_closure, node_files, node_metadata, nodes};
+use crate::metadata::{
+    local::{self, LocalMetadataPlan, NodeLocalMetadataInput},
+    sync,
 };
-use crate::ids;
 use crate::scanner::derive_nodes::{
-    RootMaterializationPlan, build_closure_rows, build_root_materialization_plans,
+    RootMaterializationPlan, build_closure_rows, build_root_derivation_plans,
     sort_nodes_topologically, verify_root_nodes,
 };
 use lyra_parser::{ParsedFile, parse_files};
@@ -64,7 +65,7 @@ pub(crate) async fn reconcile_root(
     let existing_file_rows = load_root_file_rows(pool, library_id, root_id).await?;
     let parsed_existing_rows = parse_file_rows(&existing_file_rows).await;
     let parsed_rows = merge_parsed_file_rows(parsed_existing_rows, extra_rows);
-    let root_plans = build_root_materialization_plans(library_root, &parsed_rows);
+    let root_plans = build_root_derivation_plans(library_root, &parsed_rows);
     let Some(plan) = root_plans.get(root_id) else {
         tracing::warn!(
             root_id,
@@ -73,7 +74,13 @@ pub(crate) async fn reconcile_root(
         return Ok(());
     };
 
-    materialize_touched_root(pool, library_id, plan).await
+    materialize_touched_root(
+        pool,
+        library_id,
+        &plan.materialization,
+        &plan.local_metadata,
+    )
+    .await
 }
 
 async fn load_root_file_rows(
@@ -156,6 +163,7 @@ pub(crate) async fn materialize_touched_root(
     pool: &DatabaseConnection,
     library_id: &str,
     plan: &RootMaterializationPlan,
+    local_plan: &LocalMetadataPlan,
 ) -> anyhow::Result<()> {
     verify_root_nodes(&plan.wanted_nodes.values().cloned().collect::<Vec<_>>())?;
 
@@ -191,7 +199,6 @@ pub(crate) async fn materialize_touched_root(
             order: Set(TEMP_NODE_ORDER_OFFSET + temp_order as i64),
             season_number: Set(wanted.season_number),
             episode_number: Set(wanted.episode_number),
-            match_candidates_json: Set(None),
             last_added_at: Set(wanted.last_added_at),
             created_at: Set(now),
             updated_at: Set(now),
@@ -227,12 +234,6 @@ pub(crate) async fn materialize_touched_root(
 
         node_files::Entity::delete_many()
             .filter(node_files::Column::NodeId.is_in(existing_node_ids.iter().cloned()))
-            .exec(&txn)
-            .await?;
-
-        node_metadata::Entity::delete_many()
-            .filter(node_metadata::Column::NodeId.is_in(existing_node_ids.iter().cloned()))
-            .filter(node_metadata::Column::Source.eq(MetadataSource::Local))
             .exec(&txn)
             .await?;
     }
@@ -277,33 +278,8 @@ pub(crate) async fn materialize_touched_root(
             .await?;
     }
 
-    let local_rows = sorted_wanted_nodes
-        .iter()
-        .map(|node| node_metadata::ActiveModel {
-            id: Set(ids::generate_ulid()),
-            node_id: Set(node.id.clone()),
-            source: Set(MetadataSource::Local),
-            provider_id: Set("local".to_owned()),
-            imdb_id: Set(node.imdb_id.clone()),
-            tmdb_id: Set(node.tmdb_id),
-            name: Set(node.name.clone()),
-            description: Set(None),
-            score_display: Set(None),
-            score_normalized: Set(None),
-            released_at: Set(None),
-            ended_at: Set(None),
-            poster_asset_id: Set(None),
-            thumbnail_asset_id: Set(None),
-            background_asset_id: Set(None),
-            created_at: Set(now),
-            updated_at: Set(now),
-        })
-        .collect::<Vec<_>>();
-    if !local_rows.is_empty() {
-        node_metadata::Entity::insert_many(local_rows)
-            .exec(&txn)
-            .await?;
-    }
+    local::replace_local_metadata_for_root(&txn, local_plan, now).await?;
+    sync::mark_root_dirty(&txn, &plan.root_id).await?;
 
     let obsolete_node_ids = existing_node_ids
         .difference(&desired_node_ids)
@@ -412,8 +388,11 @@ async fn recompute_root_orders_with_sqlx(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{entities::libraries, scanner::derive_nodes::WantedNode};
-    use sea_orm::{Database, QueryOrder};
+    use crate::{
+        entities::{jobs, libraries, metadata_source::MetadataSource},
+        scanner::derive_nodes::WantedNode,
+    };
+    use sea_orm::{ActiveEnum, Database, QueryOrder};
 
     async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {
         let pool = Database::connect("sqlite::memory:").await?;
@@ -462,6 +441,29 @@ mod tests {
         Ok(())
     }
 
+    fn local_plan(
+        root_id: &str,
+        rows: &[(&str, &str, Option<&str>, Option<i64>)],
+    ) -> LocalMetadataPlan {
+        LocalMetadataPlan {
+            root_id: root_id.to_owned(),
+            nodes: rows
+                .iter()
+                .map(|(node_id, name, imdb_id, tmdb_id)| {
+                    (
+                        (*node_id).to_owned(),
+                        NodeLocalMetadataInput {
+                            node_id: (*node_id).to_owned(),
+                            name: (*name).to_owned(),
+                            imdb_id: imdb_id.map(str::to_owned),
+                            tmdb_id: *tmdb_id,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
     #[tokio::test]
     async fn materialize_touched_root_recomputes_orders() -> anyhow::Result<()> {
         let pool = setup_test_db().await?;
@@ -485,8 +487,6 @@ mod tests {
                         name: "Show".to_owned(),
                         season_number: None,
                         episode_number: None,
-                        imdb_id: Some("tt1234567".to_owned()),
-                        tmdb_id: Some(42),
                         last_added_at: 11,
                         attached_file_ids: Vec::new(),
                     },
@@ -501,8 +501,6 @@ mod tests {
                         name: "Season 1".to_owned(),
                         season_number: Some(1),
                         episode_number: None,
-                        imdb_id: None,
-                        tmdb_id: None,
                         last_added_at: 11,
                         attached_file_ids: Vec::new(),
                     },
@@ -517,16 +515,22 @@ mod tests {
                         name: "Episode 1".to_owned(),
                         season_number: Some(1),
                         episode_number: Some(1),
-                        imdb_id: None,
-                        tmdb_id: None,
                         last_added_at: 11,
                         attached_file_ids: vec!["file-small".to_owned(), "file-large".to_owned()],
                     },
                 ),
             ]),
         };
+        let local_plan = local_plan(
+            &root_id,
+            &[
+                ("root", "Show", Some("tt1234567"), Some(42)),
+                ("season-1", "Season 1", None, None),
+                ("episode-1", "Episode 1", None, None),
+            ],
+        );
 
-        materialize_touched_root(&pool, "lib", &plan).await?;
+        materialize_touched_root(&pool, "lib", &plan, &local_plan).await?;
 
         let rows = nodes::Entity::find()
             .filter(nodes::Column::RootId.eq(root_id.clone()))
@@ -566,7 +570,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn materialize_touched_root_preserves_match_candidates_and_local_row_count()
+    async fn materialize_touched_root_replaces_local_rows_without_duplicates_and_clears_retry()
     -> anyhow::Result<()> {
         let pool = setup_test_db().await?;
         insert_library(&pool).await?;
@@ -582,10 +586,25 @@ mod tests {
             order: Set(0),
             season_number: Set(None),
             episode_number: Set(None),
-            match_candidates_json: Set(Some(vec![1, 2, 3])),
             last_added_at: Set(1),
             created_at: Set(1),
             updated_at: Set(1),
+        })
+        .exec(&pool)
+        .await?;
+
+        jobs::Entity::insert(jobs::ActiveModel {
+            job_kind: Set(jobs::JobKind::NodeSyncMetadataRoot.code()),
+            target_id: Set("movie-root".to_owned()),
+            state: Set(jobs::JobState::Errored.into_value()),
+            locked_at: Set(None),
+            retry_after: Set(Some(999)),
+            last_run_at: Set(1),
+            last_error_message: Set(Some("old error".to_owned())),
+            attempt_count: Set(1),
+            created_at: Set(1),
+            updated_at: Set(1),
+            ..Default::default()
         })
         .exec(&pool)
         .await?;
@@ -602,22 +621,24 @@ mod tests {
                     name: "New Movie".to_owned(),
                     season_number: None,
                     episode_number: None,
-                    imdb_id: Some("tt7654321".to_owned()),
-                    tmdb_id: Some(7),
                     last_added_at: 20,
                     attached_file_ids: vec!["movie-file".to_owned()],
                 },
             )]),
         };
+        let local_plan = local_plan(
+            "movie-root",
+            &[("movie-root", "New Movie", Some("tt7654321"), Some(7))],
+        );
 
-        materialize_touched_root(&pool, "lib", &plan).await?;
-        materialize_touched_root(&pool, "lib", &plan).await?;
+        materialize_touched_root(&pool, "lib", &plan, &local_plan).await?;
+        materialize_touched_root(&pool, "lib", &plan, &local_plan).await?;
 
         let row = nodes::Entity::find_by_id("movie-root")
             .one(&pool)
             .await?
             .expect("movie root missing");
-        assert_eq!(row.match_candidates_json, Some(vec![1, 2, 3]));
+        assert_eq!(row.name, "New Movie");
 
         let metadata_rows = node_metadata::Entity::find()
             .filter(node_metadata::Column::NodeId.eq("movie-root"))
@@ -633,6 +654,13 @@ mod tests {
             .all(&pool)
             .await?;
         assert_eq!(links.len(), 1);
+
+        let job_row = jobs::Entity::find()
+            .filter(jobs::Column::JobKind.eq(jobs::JobKind::NodeSyncMetadataRoot.code()))
+            .filter(jobs::Column::TargetId.eq("movie-root"))
+            .one(&pool)
+            .await?;
+        assert!(job_row.is_none());
 
         Ok(())
     }
@@ -654,7 +682,6 @@ mod tests {
                 order: Set(0),
                 season_number: Set(None),
                 episode_number: Set(None),
-                match_candidates_json: Set(None),
                 last_added_at: Set(1),
                 created_at: Set(1),
                 updated_at: Set(1),
@@ -669,7 +696,6 @@ mod tests {
                 order: Set(1),
                 season_number: Set(None),
                 episode_number: Set(Some(1)),
-                match_candidates_json: Set(None),
                 last_added_at: Set(1),
                 created_at: Set(1),
                 updated_at: Set(1),
@@ -691,8 +717,6 @@ mod tests {
                         name: "Show".to_owned(),
                         season_number: None,
                         episode_number: None,
-                        imdb_id: None,
-                        tmdb_id: None,
                         last_added_at: 30,
                         attached_file_ids: Vec::new(),
                     },
@@ -707,8 +731,6 @@ mod tests {
                         name: "Season 1".to_owned(),
                         season_number: Some(1),
                         episode_number: None,
-                        imdb_id: None,
-                        tmdb_id: None,
                         last_added_at: 30,
                         attached_file_ids: Vec::new(),
                     },
@@ -723,16 +745,22 @@ mod tests {
                         name: "Episode 2".to_owned(),
                         season_number: Some(1),
                         episode_number: Some(2),
-                        imdb_id: None,
-                        tmdb_id: None,
                         last_added_at: 30,
                         attached_file_ids: vec!["new-file".to_owned()],
                     },
                 ),
             ]),
         };
+        let local_plan = local_plan(
+            "root",
+            &[
+                ("root", "Show", None, None),
+                ("season-1", "Season 1", None, None),
+                ("episode-2", "Episode 2", None, None),
+            ],
+        );
 
-        materialize_touched_root(&pool, "lib", &plan).await?;
+        materialize_touched_root(&pool, "lib", &plan, &local_plan).await?;
 
         let season = nodes::Entity::find_by_id("season-1")
             .one(&pool)

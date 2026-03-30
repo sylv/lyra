@@ -1,5 +1,8 @@
 use crate::entities::{files, node_closure, nodes};
 use crate::ids;
+use crate::metadata::local::{
+    LocalMetadataPlan, NodeLocalMetadataInput, upsert_node_local_metadata_input,
+};
 use lyra_parser::ParsedFile;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Component, Path as StdPath};
@@ -13,8 +16,6 @@ pub struct WantedNode {
     pub name: String,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
-    pub imdb_id: Option<String>,
-    pub tmdb_id: Option<i64>,
     pub last_added_at: i64,
     pub attached_file_ids: Vec<String>,
 }
@@ -23,6 +24,12 @@ pub struct WantedNode {
 pub struct RootMaterializationPlan {
     pub root_id: String,
     pub wanted_nodes: HashMap<String, WantedNode>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RootDerivationPlan {
+    pub materialization: RootMaterializationPlan,
+    pub local_metadata: LocalMetadataPlan,
 }
 
 struct FileRecommendation {
@@ -35,10 +42,10 @@ struct FileRecommendation {
     episodes: Vec<(String, i64, String)>,
 }
 
-pub fn build_root_materialization_plans(
+pub fn build_root_derivation_plans(
     library_root: &StdPath,
     input: &[(files::Model, ParsedFile)],
-) -> HashMap<String, RootMaterializationPlan> {
+) -> HashMap<String, RootDerivationPlan> {
     let mut plans = HashMap::new();
 
     for (file, parsed) in input {
@@ -49,13 +56,19 @@ pub fn build_root_materialization_plans(
 
         let plan = plans
             .entry(rec.root_id.clone())
-            .or_insert_with(|| RootMaterializationPlan {
-                root_id: rec.root_id.clone(),
-                wanted_nodes: HashMap::new(),
+            .or_insert_with(|| RootDerivationPlan {
+                materialization: RootMaterializationPlan {
+                    root_id: rec.root_id.clone(),
+                    wanted_nodes: HashMap::new(),
+                },
+                local_metadata: LocalMetadataPlan {
+                    root_id: rec.root_id.clone(),
+                    nodes: HashMap::new(),
+                },
             });
 
-        ensure_node(
-            &mut plan.wanted_nodes,
+        ensure_materialized_node(
+            &mut plan.materialization.wanted_nodes,
             WantedNode {
                 id: rec.root_id.clone(),
                 root_id: rec.root_id.clone(),
@@ -64,21 +77,32 @@ pub fn build_root_materialization_plans(
                 name: rec.root_name.clone(),
                 season_number: None,
                 episode_number: None,
-                imdb_id: rec.root_imdb_id.clone(),
-                tmdb_id: rec.root_tmdb_id,
                 last_added_at: file.discovered_at,
                 attached_file_ids: Vec::new(),
             },
         );
+        upsert_node_local_metadata_input(
+            &mut plan.local_metadata,
+            NodeLocalMetadataInput {
+                node_id: rec.root_id.clone(),
+                name: rec.root_name.clone(),
+                imdb_id: rec.root_imdb_id.clone(),
+                tmdb_id: rec.root_tmdb_id,
+            },
+        );
 
         if rec.root_kind == nodes::NodeKind::Movie {
-            attach_file(&mut plan.wanted_nodes, &rec.root_id, &file.id);
+            attach_file(
+                &mut plan.materialization.wanted_nodes,
+                &rec.root_id,
+                &file.id,
+            );
             continue;
         }
 
         if let Some((season_id, season_number, season_name)) = &rec.season {
-            ensure_node(
-                &mut plan.wanted_nodes,
+            ensure_materialized_node(
+                &mut plan.materialization.wanted_nodes,
                 WantedNode {
                     id: season_id.clone(),
                     root_id: rec.root_id.clone(),
@@ -87,29 +111,43 @@ pub fn build_root_materialization_plans(
                     name: season_name.clone(),
                     season_number: Some(*season_number),
                     episode_number: None,
-                    imdb_id: None,
-                    tmdb_id: None,
                     last_added_at: file.discovered_at,
                     attached_file_ids: Vec::new(),
+                },
+            );
+            upsert_node_local_metadata_input(
+                &mut plan.local_metadata,
+                NodeLocalMetadataInput {
+                    node_id: season_id.clone(),
+                    name: season_name.clone(),
+                    imdb_id: None,
+                    tmdb_id: None,
                 },
             );
         }
 
         for (episode_id, episode_number, episode_name) in rec.episodes {
-            ensure_node(
-                &mut plan.wanted_nodes,
+            ensure_materialized_node(
+                &mut plan.materialization.wanted_nodes,
                 WantedNode {
                     id: episode_id.clone(),
                     root_id: rec.root_id.clone(),
                     parent_id: rec.season.as_ref().map(|(id, _, _)| id.clone()),
                     kind: nodes::NodeKind::Episode,
-                    name: episode_name,
+                    name: episode_name.clone(),
                     season_number: rec.season.as_ref().map(|(_, number, _)| *number),
                     episode_number: Some(episode_number),
-                    imdb_id: None,
-                    tmdb_id: None,
                     last_added_at: file.discovered_at,
                     attached_file_ids: vec![file.id.clone()],
+                },
+            );
+            upsert_node_local_metadata_input(
+                &mut plan.local_metadata,
+                NodeLocalMetadataInput {
+                    node_id: episode_id,
+                    name: episode_name,
+                    imdb_id: None,
+                    tmdb_id: None,
                 },
             );
         }
@@ -139,7 +177,7 @@ pub fn group_parsed_files_by_root(
     grouped
 }
 
-fn ensure_node(nodes_by_id: &mut HashMap<String, WantedNode>, next: WantedNode) {
+fn ensure_materialized_node(nodes_by_id: &mut HashMap<String, WantedNode>, next: WantedNode) {
     if let Some(existing) = nodes_by_id.get_mut(&next.id) {
         existing.name = next.name;
         existing.parent_id = next.parent_id;
@@ -147,12 +185,6 @@ fn ensure_node(nodes_by_id: &mut HashMap<String, WantedNode>, next: WantedNode) 
         existing.season_number = next.season_number;
         existing.episode_number = next.episode_number;
         existing.last_added_at = existing.last_added_at.max(next.last_added_at);
-        if existing.imdb_id.is_none() {
-            existing.imdb_id = next.imdb_id;
-        }
-        if existing.tmdb_id.is_none() {
-            existing.tmdb_id = next.tmdb_id;
-        }
         for file_id in next.attached_file_ids {
             if !existing.attached_file_ids.contains(&file_id) {
                 existing.attached_file_ids.push(file_id);

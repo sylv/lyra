@@ -42,9 +42,7 @@ pub enum JobKind {
     #[sea_orm(num_value = 6)]
     NodeGenerateIntroSegments,
     #[sea_orm(num_value = 7)]
-    NodeMatchMetadataRoot,
-    #[sea_orm(num_value = 8)]
-    NodeMatchMetadataGroups,
+    NodeSyncMetadataRoot,
 }
 
 impl JobKind {
@@ -57,8 +55,7 @@ impl JobKind {
             JobKind::AssetDownload => 4,
             JobKind::AssetGenerateThumbhash => 5,
             JobKind::NodeGenerateIntroSegments => 6,
-            JobKind::NodeMatchMetadataRoot => 7,
-            JobKind::NodeMatchMetadataGroups => 8,
+            JobKind::NodeSyncMetadataRoot => 7,
         }
     }
 }

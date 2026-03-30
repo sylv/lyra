@@ -1,23 +1,12 @@
 use crate::auth::RequestAuth;
-use crate::entities::{node_closure, node_files, node_metadata, nodes, watch_progress};
+use crate::entities::{node_closure, node_files, nodes, watch_progress};
 use crate::graphql::properties::NodeProperties;
+use crate::metadata::read;
 use async_graphql::{ComplexObject, Context};
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, RelationTrait,
 };
-
-async fn preferred_node_metadata(
-    pool: &DatabaseConnection,
-    node_id: &str,
-) -> Result<Option<node_metadata::Model>, sea_orm::DbErr> {
-    node_metadata::Entity::find()
-        .filter(node_metadata::Column::NodeId.eq(node_id))
-        .order_by_desc(node_metadata::Column::Source)
-        .order_by_desc(node_metadata::Column::UpdatedAt)
-        .one(pool)
-        .await
-}
 
 async fn previous_or_next_playable(
     pool: &DatabaseConnection,
@@ -117,7 +106,7 @@ impl nodes::Model {
 
     pub async fn properties(&self, ctx: &Context<'_>) -> Result<NodeProperties, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let metadata = preferred_node_metadata(pool, &self.id).await?;
+        let metadata = read::preferred_node_metadata(pool, &self.id).await?;
         NodeProperties::from_node(pool, self, metadata).await
     }
 

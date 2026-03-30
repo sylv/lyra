@@ -1,9 +1,8 @@
 use crate::{
     activity::ACTIVITY_REGISTRY,
     auth::{AuthenticatedGuard, PermissionGuard, RequestAuth, accessible_library_ids},
-    entities::{
-        libraries, metadata_source::MetadataSource, node_metadata, nodes, users, watch_progress,
-    },
+    entities::{libraries, node_metadata, nodes, users, watch_progress},
+    metadata::read,
     watch_session::WatchSessionRegistry,
 };
 use async_graphql::{
@@ -13,9 +12,8 @@ use async_graphql::{
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ActiveEnum, ColumnTrait, Condition, DatabaseConnection, DbBackend, EntityTrait, JoinType,
-    Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement, Value,
-    prelude::Expr,
+    ActiveEnum, ColumnTrait, DatabaseConnection, DbBackend, EntityTrait, Order, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Statement, Value, prelude::Expr,
 };
 use tokio::task::spawn_blocking;
 
@@ -234,25 +232,7 @@ impl Query {
                 let visible_library_ids = accessible_library_ids(pool, auth)
                     .await
                     .map_err(async_graphql::Error::from)?;
-                let mut qb = nodes::Entity::find()
-                    .join(JoinType::LeftJoin, nodes::Relation::NodeMetadata.def())
-                    .filter(
-                        Condition::any()
-                            .add(node_metadata::Column::Id.is_null())
-                            .add(node_metadata::Column::Source.eq(MetadataSource::Remote))
-                            .add(
-                                Condition::all()
-                                    .add(node_metadata::Column::Source.eq(MetadataSource::Local))
-                                    .add(Expr::cust(
-                                        "NOT EXISTS (
-                                        SELECT 1
-                                        FROM node_metadata nm2
-                                        WHERE nm2.node_id = node_metadata.node_id
-                                          AND nm2.source = 1
-                                    )",
-                                    )),
-                            ),
-                    );
+                let mut qb = read::join_preferred_node_metadata(nodes::Entity::find());
 
                 if let Some(library_id) = filter.library_id {
                     if let Some(visible_library_ids) = visible_library_ids.as_ref() {

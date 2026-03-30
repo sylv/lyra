@@ -11,6 +11,7 @@ pub use handlers::{
 };
 pub use job::{Job, JobExecutionPolicy, JobOutcome};
 pub use manager::JobManager;
+pub(crate) use manager::delete_job_row;
 pub use on_demand::try_run_job;
-pub use registry::{ load_registered_jobs};
+pub use registry::load_registered_jobs;
 pub use semaphore::{JobLease, JobSemaphore};
