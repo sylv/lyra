@@ -591,19 +591,30 @@ impl NodeProperties {
         pool: &DatabaseConnection,
         node_id: &str,
     ) -> Result<Option<files::Model>, sea_orm::DbErr> {
-        let link = node_files::Entity::find()
+        node_files::Entity::find()
+            .join(
+                sea_orm::JoinType::InnerJoin,
+                node_files::Relation::Files.def(),
+            )
             .filter(node_files::Column::NodeId.eq(node_id))
+            .filter(files::Column::UnavailableAt.is_null())
             .order_by_asc(node_files::Column::Order)
             .order_by_asc(node_files::Column::FileId)
-            .one(pool)
-            .await?;
-
-        let Some(link) = link else {
-            return Ok(None);
-        };
-
-        files::Entity::find_by_id(link.file_id)
-            .filter(files::Column::UnavailableAt.is_null())
+            .select_only()
+            .column_as(files::Column::Id, "id")
+            .column_as(files::Column::LibraryId, "library_id")
+            .column_as(files::Column::RelativePath, "relative_path")
+            .column_as(files::Column::SizeBytes, "size_bytes")
+            .column_as(files::Column::Height, "height")
+            .column_as(files::Column::Width, "width")
+            .column_as(files::Column::EditionName, "edition_name")
+            .column_as(files::Column::AudioFingerprint, "audio_fingerprint")
+            .column_as(files::Column::SegmentsJson, "segments_json")
+            .column_as(files::Column::KeyframesJson, "keyframes_json")
+            .column_as(files::Column::UnavailableAt, "unavailable_at")
+            .column_as(files::Column::ScannedAt, "scanned_at")
+            .column_as(files::Column::DiscoveredAt, "discovered_at")
+            .into_model::<files::Model>()
             .one(pool)
             .await
     }

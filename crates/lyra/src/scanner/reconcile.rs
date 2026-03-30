@@ -115,9 +115,41 @@ fn merge_parsed_file_rows(
         rows_by_file_id.insert(file.id.clone(), (file, parsed));
     }
 
-    let mut rows = rows_by_file_id.into_values().collect::<Vec<_>>();
+    let rows = rows_by_file_id.into_values().collect::<Vec<_>>();
+    let mut rows = dedupe_file_versions_by_path(rows);
     rows.sort_by(|a, b| a.0.id.cmp(&b.0.id));
     rows
+}
+
+// Multiple file rows may now exist for the same library path across content changes. When that
+// happens, materialization should keep only the best current version attached to nodes.
+fn dedupe_file_versions_by_path(rows: Vec<ParsedFileRow>) -> Vec<ParsedFileRow> {
+    let mut rows_by_relative_path = HashMap::new();
+
+    for row in rows {
+        let relative_path = row.0.relative_path.clone();
+        match rows_by_relative_path.entry(relative_path) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(row);
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if file_row_sort_key(&row.0) > file_row_sort_key(&entry.get().0) {
+                    entry.insert(row);
+                }
+            }
+        }
+    }
+
+    rows_by_relative_path.into_values().collect()
+}
+
+fn file_row_sort_key(file: &files::Model) -> (bool, Option<i64>, i64, &str) {
+    (
+        file.unavailable_at.is_none(),
+        file.scanned_at,
+        file.discovered_at,
+        file.id.as_str(),
+    )
 }
 
 pub(crate) async fn materialize_touched_root(
@@ -712,5 +744,59 @@ mod tests {
         assert!(old_episode.is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn merge_parsed_file_rows_prefers_available_newer_version_for_same_path() {
+        let parsed = ParsedFile {
+            name: Some("Episode".to_owned()),
+            episode_title: None,
+            season_numbers: vec![1],
+            episode_numbers: vec![1],
+            start_year: None,
+            end_year: None,
+            edition: None,
+            imdb_id: None,
+            tmdb_id: None,
+            tvdb_id: None,
+            anidb_id: None,
+            trakt_id: None,
+        };
+        let old_file = files::Model {
+            id: "old".to_owned(),
+            library_id: "lib".to_owned(),
+            relative_path: "show/episode.mkv".to_owned(),
+            size_bytes: 100,
+            height: None,
+            width: None,
+            edition_name: None,
+            audio_fingerprint: Vec::new(),
+            segments_json: Vec::new(),
+            keyframes_json: Vec::new(),
+            unavailable_at: Some(10),
+            scanned_at: Some(10),
+            discovered_at: 1,
+        };
+        let new_file = files::Model {
+            id: "new".to_owned(),
+            library_id: "lib".to_owned(),
+            relative_path: "show/episode.mkv".to_owned(),
+            size_bytes: 200,
+            height: None,
+            width: None,
+            edition_name: None,
+            audio_fingerprint: Vec::new(),
+            segments_json: Vec::new(),
+            keyframes_json: Vec::new(),
+            unavailable_at: None,
+            scanned_at: Some(20),
+            discovered_at: 20,
+        };
+
+        let rows =
+            merge_parsed_file_rows(vec![(old_file, parsed.clone())], vec![(new_file, parsed)]);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0.id, "new");
     }
 }

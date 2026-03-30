@@ -8,10 +8,6 @@ name = "lyra-packager"
 path = "src/main.rs"
 required-features = ["debug-http"]
 
-[[bin]]
-name = "dump-segments"
-path = "src/bin/dump_segments.rs"
-
 [features]
 default = []
 debug-http = ["dep:axum", "dep:tokio-util", "dep:tower-http"]

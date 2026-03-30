@@ -253,15 +253,16 @@ async fn scan_file_candidate(
         .to_string_lossy()
         .to_string();
 
+    let size_bytes = metadata.len();
     Ok(Some(ScannedFileCandidate {
-        id: file_id_for(&library.id, &relative_path),
+        id: file_id_for(&library.id, &relative_path, size_bytes),
         relative_path,
-        size_bytes: metadata.len() as i64,
+        size_bytes: size_bytes as i64,
     }))
 }
 
-fn file_id_for(library_id: &str, relative_path: &str) -> String {
-    ids::generate_hashid([library_id, relative_path])
+fn file_id_for(library_id: &str, relative_path: &str, file_size: u64) -> String {
+    ids::generate_hashid([library_id, relative_path, &file_size.to_string()])
 }
 
 async fn flush_scan_batch(
@@ -308,8 +309,9 @@ async fn flush_scan_batch(
     let txn = pool.begin().await?;
     files::Entity::insert_many(file_rows)
         .on_conflict(
-            OnConflict::columns([files::Column::LibraryId, files::Column::RelativePath])
+            OnConflict::column(files::Column::Id)
                 .update_columns([
+                    files::Column::RelativePath,
                     files::Column::SizeBytes,
                     files::Column::ScannedAt,
                     files::Column::UnavailableAt,
@@ -381,14 +383,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn flush_scan_batch_heartbeats_existing_files_without_materializing() -> anyhow::Result<()>
-    {
+    async fn flush_scan_batch_keeps_previous_version_for_same_path() -> anyhow::Result<()> {
         let pool = setup_test_db().await?;
         insert_library(&pool).await?;
         insert_file(&pool, "existing-file", "show/existing.mkv", 111, 1).await?;
 
         let mut pending = vec![ScannedFileCandidate {
-            id: "existing-file".to_owned(),
+            id: "replacement-file".to_owned(),
             relative_path: "show/existing.mkv".to_owned(),
             size_bytes: 222,
         }];
@@ -403,18 +404,37 @@ mod tests {
             &mut pending,
         )
         .await?;
-        assert!(new_ids.is_empty());
+        assert_eq!(new_ids, vec!["replacement-file".to_owned()]);
 
-        let file = files::Entity::find_by_id("existing-file")
+        let existing = files::Entity::find_by_id("existing-file")
             .one(&pool)
             .await?
-            .expect("file missing");
-        assert_eq!(file.size_bytes, 222);
-        assert_eq!(file.scanned_at, Some(99));
+            .expect("existing file missing");
+        assert_eq!(existing.size_bytes, 111);
+        assert_eq!(existing.scanned_at, Some(1));
+
+        let replacement = files::Entity::find_by_id("replacement-file")
+            .one(&pool)
+            .await?
+            .expect("replacement file missing");
+        assert_eq!(replacement.size_bytes, 222);
+        assert_eq!(replacement.scanned_at, Some(99));
 
         let node_count = nodes::Entity::find().count(&pool).await?;
         assert_eq!(node_count, 0);
 
         Ok(())
+    }
+
+    #[test]
+    fn file_ids() {
+        assert_eq!(
+            file_id_for("lib", "Show/Episode.mkv", 111),
+            file_id_for("lib", "show/episode.mkv", 111)
+        );
+        assert_ne!(
+            file_id_for("lib", "Show/episode.mkv", 111),
+            file_id_for("lib", "show/episode.mkv", 222)
+        );
     }
 }
