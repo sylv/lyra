@@ -20,6 +20,29 @@ export interface PlayerController {
 	destroy(): void;
 }
 
+// the initial playlist load can take quite a bit of time (mainly because we may have to extract
+// probe data on demand before we can respond to the manifest request), so we need to increase timeouts
+// or else clients can time out before we finish.
+const HLS_TIMEOUT_MS = 15_000; // each attempt can take up to 15s
+const HLS_MAX_RETRY_TIME = 300_000; // retry for up to 5min
+const HLS_RETRY_COUNT = Math.ceil(HLS_MAX_RETRY_TIME / HLS_TIMEOUT_MS);
+
+const retryPolicy = {
+	maxNumRetry: HLS_RETRY_COUNT,
+	retryDelayMs: HLS_TIMEOUT_MS,
+	maxRetryDelayMs: HLS_TIMEOUT_MS,
+	backoff: "linear" as const,
+};
+
+const loaderPolicy = {
+	default: {
+		maxTimeToFirstByteMs: HLS_TIMEOUT_MS,
+		maxLoadTimeMs: HLS_TIMEOUT_MS,
+		timeoutRetry: retryPolicy,
+		errorRetry: retryPolicy,
+	},
+};
+
 export const createHlsPlayer = async (
 	video: HTMLVideoElement,
 	hlsUrl: string,
@@ -35,8 +58,14 @@ export const createHlsPlayer = async (
 		return null;
 	}
 
-	const { initialPositionSeconds, watchProgressPercent, runtimeDurationSeconds, shouldPromptResume, pauseAfterInitialSeek, videoRef } =
-		resumeConfig;
+	const {
+		initialPositionSeconds,
+		watchProgressPercent,
+		runtimeDurationSeconds,
+		shouldPromptResume,
+		pauseAfterInitialSeek,
+		videoRef,
+	} = resumeConfig;
 
 	const hasResumableWatchProgress =
 		typeof watchProgressPercent === "number" &&
@@ -105,7 +134,12 @@ export const createHlsPlayer = async (
 		}
 	};
 
-	const hls = new Hls({ autoStartLoad: false });
+	const hls = new Hls({
+		autoStartLoad: false,
+		manifestLoadPolicy: loaderPolicy,
+		playlistLoadPolicy: loaderPolicy,
+		fragLoadPolicy: loaderPolicy,
+	});
 
 	hls.on(Hls.Events.ERROR, (event, data) => {
 		console.error("HLS error:", event, data);
