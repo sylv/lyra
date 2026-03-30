@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::path::{Path as StdPath, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, RwLock};
 use tokio::time::{Duration, sleep};
 
 const MIN_FILE_SIZE_MB: u64 = 25 * 1024 * 1024;
@@ -34,7 +34,27 @@ struct ScannedFileCandidate {
 pub async fn start_scanner(
     pool: DatabaseConnection,
     wake_signal: Arc<Notify>,
+    job_startup_lock: Arc<RwLock<()>>,
 ) -> anyhow::Result<()> {
+    let startup_guard = job_startup_lock.write().await;
+    let libraries = libraries::Entity::find()
+        .order_by_asc(libraries::Column::CreatedAt)
+        .all(&pool)
+        .await?;
+
+    // The first full pass establishes which files are still available before any jobs can run.
+    for library in libraries {
+        tracing::info!(
+            library_id = %library.id,
+            path = %library.path,
+            "running startup library scan"
+        );
+        scan_library(&pool, &library, &wake_signal).await?;
+    }
+
+    tracing::info!("startup scans complete");
+    drop(startup_guard);
+
     loop {
         let config = get_config();
         let scan_ago_filter = chrono::Utc::now().timestamp() - config.library_scan_interval;
@@ -53,23 +73,6 @@ pub async fn start_scanner(
             sleep(Duration::from_secs(5)).await;
         }
     }
-}
-
-pub async fn run_startup_scan(
-    pool: &DatabaseConnection,
-    wake_signal: &Arc<Notify>,
-) -> anyhow::Result<()> {
-    let libraries = libraries::Entity::find()
-        .order_by_asc(libraries::Column::CreatedAt)
-        .all(pool)
-        .await?;
-
-    for library in libraries {
-        tracing::info!(library_id = %library.id, path = %library.path, "running startup library scan");
-        scan_library(pool, &library, wake_signal).await?;
-    }
-
-    Ok(())
 }
 
 async fn scan_library(

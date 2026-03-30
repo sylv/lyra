@@ -1,6 +1,6 @@
-use crate::entities::{files, node_closure, node_files, node_metadata, nodes};
+use crate::entities::{files, node_closure, node_files, nodes};
 use crate::metadata::{
-    local::{self, LocalMetadataPlan, NodeLocalMetadataInput},
+    local::{self, LocalMetadataPlan},
     sync,
 };
 use crate::scanner::derive_nodes::{
@@ -389,7 +389,8 @@ async fn recompute_root_orders_with_sqlx(
 mod tests {
     use super::*;
     use crate::{
-        entities::{jobs, libraries, metadata_source::MetadataSource},
+        entities::{jobs, libraries, metadata_source::MetadataSource, node_metadata},
+        metadata::local::NodeLocalMetadataInput,
         scanner::derive_nodes::WantedNode,
     };
     use sea_orm::{ActiveEnum, Database, QueryOrder};

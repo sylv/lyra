@@ -13,7 +13,7 @@ use sea_orm::DatabaseConnection;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, RwLock};
 
 pub struct RegisteredJob {
     pub job_kind: crate::entities::jobs::JobKind,
@@ -24,6 +24,7 @@ pub fn load_registered_jobs(
     pool: &DatabaseConnection,
     wake_signal: Arc<Notify>,
     job_semaphore: Arc<JobSemaphore>,
+    job_startup_lock: Arc<RwLock<()>>,
 ) -> Vec<RegisteredJob> {
     let metadata_providers = build_metadata_providers();
 
@@ -33,48 +34,56 @@ pub fn load_registered_jobs(
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),
+            job_startup_lock.clone(),
         ),
         build_registered_job(
             Arc::new(AssetThumbhashJob),
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),
+            job_startup_lock.clone(),
         ),
         build_registered_job(
             Arc::new(FileFfprobeJob),
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),
+            job_startup_lock.clone(),
         ),
         build_registered_job(
             Arc::new(FileKeyframesJob),
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),
+            job_startup_lock.clone(),
         ),
         build_registered_job(
             Arc::new(FileTimelinePreviewJob),
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),
+            job_startup_lock.clone(),
         ),
         build_registered_job(
             Arc::new(FileThumbnailJob),
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),
+            job_startup_lock.clone(),
         ),
         build_registered_job(
             Arc::new(RootIntroSegmentsJob),
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),
+            job_startup_lock.clone(),
         ),
         build_registered_job(
             Arc::new(NodeMetadataSyncRootJob::new(metadata_providers)),
             pool,
             wake_signal,
             job_semaphore,
+            job_startup_lock,
         ),
     ]
 }
@@ -84,8 +93,15 @@ fn build_registered_job<J: crate::jobs::Job>(
     pool: &DatabaseConnection,
     wake_signal: Arc<Notify>,
     job_semaphore: Arc<JobSemaphore>,
+    job_startup_lock: Arc<RwLock<()>>,
 ) -> RegisteredJob {
-    let manager = JobManager::new(job.clone(), pool.clone(), wake_signal, job_semaphore);
+    let manager = JobManager::new(
+        job.clone(),
+        pool.clone(),
+        wake_signal,
+        job_semaphore,
+        job_startup_lock,
+    );
 
     RegisteredJob {
         job_kind: manager.job_kind(),

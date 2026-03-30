@@ -34,7 +34,7 @@ use std::{
     sync::{Arc, atomic::AtomicI64},
     time::Duration,
 };
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, Notify, RwLock};
 use tokio::{signal, task::JoinSet};
 
 mod activity;
@@ -218,6 +218,8 @@ async fn main() {
 
     let pool = DatabaseConnection::from(pool);
     let job_wake_signal = Arc::new(Notify::new());
+    let job_semaphore = Arc::new(JobSemaphore::new());
+    let job_startup_lock = Arc::new(RwLock::new(()));
 
     CONTENT_UPDATE.start();
 
@@ -228,25 +230,24 @@ async fn main() {
         .await
         .expect("Failed to clear stale job locks");
 
-    tracing::info!("running startup library scan");
-    scanner::run_startup_scan(&pool, &job_wake_signal)
-        .await
-        .expect("Failed to complete startup library scan");
-
     let mut background_workers: JoinSet<anyhow::Result<()>> = JoinSet::new();
 
     let scanner_pool = pool.clone();
     let scanner_wake_signal = job_wake_signal.clone();
-    background_workers
-        .spawn(async move { scanner::start_scanner(scanner_pool, scanner_wake_signal).await });
+    let scanner_job_startup_lock = job_startup_lock.clone();
+    background_workers.spawn(async move {
+        scanner::start_scanner(scanner_pool, scanner_wake_signal, scanner_job_startup_lock).await
+    });
 
-    let job_semaphore = Arc::new(JobSemaphore::new());
-    let registered_jobs =
-        load_registered_jobs(&pool, job_wake_signal.clone(), job_semaphore.clone());
+    let registered_jobs = load_registered_jobs(
+        &pool,
+        job_wake_signal.clone(),
+        job_semaphore.clone(),
+        job_startup_lock.clone(),
+    );
     for job in registered_jobs {
         let job_kind = job.job_kind;
         background_workers.spawn(async move {
-            tracing::info!(job_kind = ?job_kind, "starting job worker");
             job.task
                 .await
                 .with_context(|| format!("job worker '{job_kind:?}' exited"))
