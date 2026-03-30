@@ -3,9 +3,8 @@ use crate::jobs::{
     JobManager,
     handlers::{
         asset_download::AssetDownloadJob, asset_thumbhash::AssetThumbhashJob,
-        file_ffprobe::FileFfprobeJob, file_keyframes::FileKeyframesJob,
-        file_thumbnail::FileThumbnailJob, file_timeline_preview::FileTimelinePreviewJob,
-        root_intro_segments::RootIntroSegmentsJob,
+        file_probe::FileProbeJob, file_thumbnail::FileThumbnailJob,
+        file_timeline_preview::FileTimelinePreviewJob, root_intro_segments::RootIntroSegmentsJob,
     },
 };
 use crate::metadata::{build_metadata_providers, job_root_sync::NodeMetadataSyncRootJob};
@@ -44,14 +43,7 @@ pub fn load_registered_jobs(
             job_startup_lock.clone(),
         ),
         build_registered_job(
-            Arc::new(FileFfprobeJob),
-            pool,
-            wake_signal.clone(),
-            job_semaphore.clone(),
-            job_startup_lock.clone(),
-        ),
-        build_registered_job(
-            Arc::new(FileKeyframesJob),
+            Arc::new(FileProbeJob),
             pool,
             wake_signal.clone(),
             job_semaphore.clone(),

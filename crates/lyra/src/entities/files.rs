@@ -17,11 +17,11 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub edition_name: Option<String>,
     #[graphql(skip)]
-    pub audio_fingerprint: Vec<u8>,
+    pub audio_fingerprint: Option<Vec<u8>>,
     #[graphql(skip)]
-    pub segments_json: Vec<u8>,
+    pub segments_json: Option<Vec<u8>>,
     #[graphql(skip)]
-    pub keyframes_json: Vec<u8>,
+    pub keyframes_json: Option<Vec<u8>>,
     pub unavailable_at: Option<i64>,
     pub scanned_at: Option<i64>,
     pub discovered_at: i64,
@@ -82,10 +82,18 @@ impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
     pub fn decode_keyframes(&self) -> anyhow::Result<Vec<i64>> {
-        json_encoding::decode_json_zstd(&self.keyframes_json)
+        json_encoding::decode_json_zstd(
+            self.keyframes_json
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("keyframes payload missing"))?,
+        )
     }
 
     pub fn decode_segments(&self) -> anyhow::Result<Vec<StoredFileSegment>> {
-        json_encoding::decode_json_zstd(&self.segments_json)
+        json_encoding::decode_json_zstd(
+            self.segments_json
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("segments payload missing"))?,
+        )
     }
 }

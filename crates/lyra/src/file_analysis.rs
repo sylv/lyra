@@ -33,7 +33,7 @@ pub async fn load_cached_keyframes(
     let Some(row) = maybe_row else {
         return Ok(None);
     };
-    if row.keyframes_json.is_empty() {
+    if row.keyframes_json.is_none() {
         return Ok(None);
     }
 

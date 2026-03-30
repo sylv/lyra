@@ -5,10 +5,7 @@ mod on_demand;
 mod registry;
 mod semaphore;
 
-pub use handlers::{
-    asset_download::AssetDownloadJob, file_ffprobe::FileFfprobeJob,
-    file_keyframes::FileKeyframesJob,
-};
+pub use handlers::{asset_download::AssetDownloadJob, file_probe::FileProbeJob};
 pub use job::{Job, JobExecutionPolicy, JobOutcome};
 pub use manager::JobManager;
 pub(crate) use manager::delete_job_row;

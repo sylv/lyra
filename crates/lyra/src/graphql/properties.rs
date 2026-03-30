@@ -462,7 +462,7 @@ impl files::Model {
     }
 
     pub async fn segments(&self, _ctx: &Context<'_>) -> Result<Vec<FileSegment>, sea_orm::DbErr> {
-        if self.segments_json.is_empty() {
+        if self.segments_json.is_none() {
             return Ok(Vec::new());
         }
 

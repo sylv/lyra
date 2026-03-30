@@ -27,7 +27,7 @@ pub struct RootIntroSegmentsJob;
 struct RootFile {
     file_id: String,
     file_path: PathBuf,
-    audio_fingerprint: Vec<u8>,
+    audio_fingerprint: Option<Vec<u8>>,
     season_id: Option<String>,
     item_order: i64,
     has_intro_marker: bool,
@@ -41,8 +41,8 @@ struct RootFileQueryRow {
     library_path: String,
     season_id: Option<String>,
     item_order: i64,
-    audio_fingerprint: Vec<u8>,
-    segments_json: Vec<u8>,
+    audio_fingerprint: Option<Vec<u8>>,
+    segments_json: Option<Vec<u8>>,
 }
 
 #[async_trait::async_trait]
@@ -80,7 +80,7 @@ impl Job for RootIntroSegmentsJob {
                         )
                         .and_where(
                             Expr::col((files::Entity, files::Column::SegmentsJson))
-                                .eq(Vec::<u8>::new()),
+                                .is_null(),
                         )
                         .to_owned(),
                 ),
@@ -146,11 +146,7 @@ impl Job for RootIntroSegmentsJob {
                 .iter()
                 .map(|file| IntroDetectionInputFile {
                     path: file.file_path.clone(),
-                    fingerprint_cache: if file.audio_fingerprint.is_empty() {
-                        None
-                    } else {
-                        Some(file.audio_fingerprint.clone())
-                    },
+                    fingerprint_cache: file.audio_fingerprint.clone(),
                 })
                 .collect::<Vec<_>>();
 
@@ -170,14 +166,16 @@ impl Job for RootIntroSegmentsJob {
                     continue;
                 };
 
-                if batch_file.audio_fingerprint != detection.fingerprint_cache {
-                    store_audio_fingerprint(db, &batch_file.file_id, &detection.fingerprint_cache)
+                let next_fingerprint = (!detection.fingerprint_cache.is_empty())
+                    .then_some(detection.fingerprint_cache.clone());
+                if batch_file.audio_fingerprint != next_fingerprint {
+                    store_audio_fingerprint(db, &batch_file.file_id, next_fingerprint.as_deref())
                         .await?;
                     if let Some(file) = root_files
                         .iter_mut()
                         .find(|file| file.file_id == batch_file.file_id)
                     {
-                        file.audio_fingerprint = detection.fingerprint_cache.clone();
+                        file.audio_fingerprint = next_fingerprint;
                     }
                 }
 
@@ -249,7 +247,7 @@ async fn load_root_files(
     let mut output = Vec::with_capacity(unique_rows.len());
     for row in unique_rows {
         let file_path = PathBuf::from(row.library_path).join(row.relative_path);
-        let segments = decode_segments_payload(&row.segments_json, &row.file_id);
+        let segments = decode_segments_payload(row.segments_json.as_deref(), &row.file_id);
         let has_intro_marker = segments.as_ref().is_some_and(|segments| {
             segments
                 .iter()
@@ -263,7 +261,7 @@ async fn load_root_files(
             season_id: row.season_id,
             item_order: row.item_order,
             has_intro_marker,
-            pending_segments: row.segments_json.is_empty() || segments.is_none(),
+            pending_segments: row.segments_json.is_none(),
         });
     }
 
@@ -334,10 +332,8 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
     batch
 }
 
-fn decode_segments_payload(payload: &[u8], file_id: &str) -> Option<Vec<StoredFileSegment>> {
-    if payload.is_empty() {
-        return None;
-    }
+fn decode_segments_payload(payload: Option<&[u8]>, file_id: &str) -> Option<Vec<StoredFileSegment>> {
+    let payload = payload?;
 
     match json_encoding::decode_json_zstd::<Vec<StoredFileSegment>>(payload) {
         Ok(segments) => Some(segments),
@@ -358,7 +354,7 @@ async fn store_segments(
 
     files::Entity::update(files::ActiveModel {
         id: Set(file_id.to_string()),
-        segments_json: Set(payload),
+        segments_json: Set(Some(payload)),
         ..Default::default()
     })
     .exec(db)
@@ -370,11 +366,11 @@ async fn store_segments(
 async fn store_audio_fingerprint(
     db: &impl ConnectionTrait,
     file_id: &str,
-    fingerprint: &[u8],
+    fingerprint: Option<&[u8]>,
 ) -> anyhow::Result<()> {
     files::Entity::update(files::ActiveModel {
         id: Set(file_id.to_string()),
-        audio_fingerprint: Set(fingerprint.to_vec()),
+        audio_fingerprint: Set(fingerprint.map(ToOwned::to_owned)),
         ..Default::default()
     })
     .exec(db)

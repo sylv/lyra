@@ -4,7 +4,7 @@ use crate::{
     config::get_config,
     entities::{files, libraries},
     file_analysis,
-    jobs::{self, FileFfprobeJob, FileKeyframesJob},
+    jobs::{self, FileProbeJob},
 };
 use axum::{
     Router,
@@ -163,7 +163,8 @@ async fn get_or_build_packager_state(
         return Ok(existing);
     }
     let mut generated_probe = false;
-    let ffprobe_output = match file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
+    let mut generated_keyframes = false;
+    let mut ffprobe_output = file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
         .await
         .map_err(|err| {
             tracing::error!(
@@ -175,67 +176,8 @@ async fn get_or_build_packager_state(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to prepare stream metadata",
             )
-        })? {
-        Some(output) => output,
-        None => {
-            generated_probe = true;
-            let file = files::Entity::find_by_id(file_id.clone())
-                .one(&state.pool)
-                .await
-                .map_err(|err| {
-                    tracing::error!(file_id, error = %err, "failed to load file before ffprobe job");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
-                .ok_or_else(|| {
-                    tracing::error!(file_id, "file disappeared before ffprobe job");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?;
-
-            jobs::try_run_job(&state.pool, &FileFfprobeJob, file, ON_DEMAND_JOB_TIMEOUT)
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                        file_id,
-                        error = %err,
-                        "failed to generate ffprobe data on-demand"
-                    );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?;
-
-            file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                        file_id,
-                        error = %err,
-                        "failed to load cached ffprobe data after on-demand job"
-                    );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
-                .ok_or_else(|| {
-                    tracing::error!(file_id, "ffprobe job finished without storing probe data");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
-        }
-    };
-
-    let mut generated_keyframes = false;
-    let keyframes_pts = match file_analysis::load_cached_keyframes(&state.pool, &file_id)
+        })?;
+    let mut keyframes_pts = file_analysis::load_cached_keyframes(&state.pool, &file_id)
         .await
         .map_err(|err| {
             tracing::error!(
@@ -247,71 +189,104 @@ async fn get_or_build_packager_state(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to prepare stream metadata",
             )
-        })? {
-        Some(keyframes) => keyframes,
-        None => {
-            generated_keyframes = true;
-            let file = files::Entity::find_by_id(file_id.clone())
-                .one(&state.pool)
-                .await
-                .map_err(|err| {
-                    tracing::error!(file_id, error = %err, "failed to load file before keyframe job");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
-                .ok_or_else(|| {
-                    tracing::error!(file_id, "file disappeared before keyframe job");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?;
+        })?;
 
-            jobs::try_run_job(&state.pool, &FileKeyframesJob, file, ON_DEMAND_JOB_TIMEOUT)
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                        file_id,
-                        error = %err,
-                        "failed to generate keyframe data on-demand"
-                    );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?;
+    if ffprobe_output.is_none() || keyframes_pts.is_none() {
+        generated_probe = ffprobe_output.is_none();
+        generated_keyframes = keyframes_pts.is_none();
 
-            file_analysis::load_cached_keyframes(&state.pool, &file_id)
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                        file_id,
-                        error = %err,
-                        "failed to load cached keyframe data after on-demand job"
-                    );
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
-                .ok_or_else(|| {
-                    tracing::error!(file_id, "keyframe job finished without storing keyframes");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to prepare stream metadata",
-                    )
-                })?
-        }
-    };
+        let file = files::Entity::find_by_id(file_id.clone())
+            .one(&state.pool)
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    file_id,
+                    error = %err,
+                    "failed to load file before playback analysis job"
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare stream metadata",
+                )
+            })?
+            .ok_or_else(|| {
+                tracing::error!(file_id, "file disappeared before playback analysis job");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare stream metadata",
+                )
+            })?;
+
+        jobs::try_run_job(&state.pool, &FileProbeJob, file, ON_DEMAND_JOB_TIMEOUT)
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    file_id,
+                    error = %err,
+                    "failed to generate playback analysis on-demand"
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare stream metadata",
+                )
+            })?;
+
+        ffprobe_output = file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    file_id,
+                    error = %err,
+                    "failed to load cached ffprobe data after playback analysis job"
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare stream metadata",
+                )
+            })?;
+        keyframes_pts = file_analysis::load_cached_keyframes(&state.pool, &file_id)
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    file_id,
+                    error = %err,
+                    "failed to load cached keyframe data after playback analysis job"
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare stream metadata",
+                )
+            })?;
+    }
+
+    let ffprobe_output = ffprobe_output.ok_or_else(|| {
+        tracing::error!(
+            file_id,
+            "playback analysis finished without storing probe data"
+        );
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to prepare stream metadata",
+        )
+    })?;
+
+    let keyframes_pts = keyframes_pts.ok_or_else(|| {
+        tracing::error!(
+            file_id,
+            "playback analysis finished without storing keyframes"
+        );
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to prepare stream metadata",
+        )
+    })?;
 
     if generated_probe || generated_keyframes {
         tracing::warn!(
             file_id,
             generated_probe,
             generated_keyframes,
-            "playback requested before background media analysis completed; generating missing probe data on-demand"
+            "playback requested before background media analysis completed; generating missing playback analysis on-demand"
         );
     }
 
