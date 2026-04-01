@@ -74,6 +74,7 @@ export const ItemPlaybackQuery = graphql(`
 					episodeNumber
 				}
 			}
+			...GetPathForNode
 		}
 	}
 `);

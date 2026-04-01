@@ -10,7 +10,7 @@ import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import { useTitle } from "../hooks/use-title";
 import { formatReleaseYear } from "../lib/format-release-year";
-import { getPathForNodeData } from "../lib/getPathForMedia";
+import { getPathForNode } from "../lib/getPathForMedia";
 
 const Query = graphql(`
 	query GetNodeById($nodeId: String!) {
@@ -20,12 +20,16 @@ const Query = graphql(`
 			kind
 			seasonNumber
 			episodeNumber
+			unplayedCount
+			episodeCount
+			...GetPathForNode
 			parent {
 				id
 				libraryId
 				properties {
 					displayName
 				}
+				...GetPathForNode
 			}
 			root {
 				id
@@ -74,8 +78,6 @@ const Query = graphql(`
 			previousPlayable {
 				id
 			}
-			unplayedCount
-			episodeCount
 		}
 	}
 `);
@@ -102,14 +104,8 @@ export function LibraryNodeRoute() {
 	const playableItemId = node.nextPlayable?.id ?? (node.kind === "MOVIE" || node.kind === "EPISODE" ? node.id : null);
 	const playableWatchProgress =
 		node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
-	const nodePath = getPathForNodeData({ id: node.id, libraryId: node.libraryId, __typename: "Node" });
-	const parentPath = node.parent
-		? getPathForNodeData({
-				id: node.parent.id,
-				libraryId: node.parent.libraryId,
-				__typename: "Node",
-			})
-		: null;
+	const nodePath = getPathForNode(node);
+	const parentPath = node.parent ? getPathForNode(node.parent) : null;
 	const releaseYear = formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null);
 	const sortedChildren = [...node.children].sort((a, b) => {
 		if (a.kind !== b.kind) {
@@ -120,7 +116,7 @@ export function LibraryNodeRoute() {
 	});
 
 	if (node.kind === "EPISODE" && node.parent) {
-		const path = getPathForNodeData({ id: node.parent.id, libraryId: node.parent.libraryId, __typename: "Node" });
+		const path = getPathForNode(node.parent);
 		return <Navigate to={path} replace={true} />;
 	}
 

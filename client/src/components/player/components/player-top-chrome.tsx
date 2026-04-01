@@ -4,7 +4,6 @@ import { useNavigate } from "react-router";
 import { useMutation } from "urql";
 import { unmask } from "../../../@generated/gql";
 import { type ItemPlaybackQuery, WatchSessionActionKind } from "../../../@generated/gql/graphql";
-import { getPathForNodeData } from "../../../lib/getPathForMedia";
 import { cn } from "../../../lib/utils";
 import { clearPlayerMedia, setPlayerControls, togglePlayerFullscreen, usePlayerContext } from "../player-context";
 import { usePlayerRefsContext } from "../player-refs-context";
@@ -13,6 +12,7 @@ import { PlayerButton } from "./player-button";
 import { formatReleaseYear } from "../../../lib/format-release-year";
 import { WatchSessionAction, WatchSessionBeaconFragment } from "../player-queries";
 import { applyWatchSessionBeacon } from "../watch-session";
+import { getPathForNode } from "../../../lib/getPathForMedia";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 
@@ -24,7 +24,7 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 	const { containerRef } = usePlayerRefsContext();
 	const navigate = useNavigate();
 	const [{ fetching: removingPlayer }, watchSessionAction] = useMutation(WatchSessionAction);
-	const detailsPath = media.libraryId ? getPathForNodeData(media) : null;
+	const detailsPath = media.libraryId ? getPathForNode(media) : null;
 	const hasEpisodeMetadata =
 		!!media.root?.properties.displayName &&
 		media.properties.seasonNumber != null &&
@@ -104,7 +104,7 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 							align="end"
 							portalContainer={containerRef.current}
 							onClick={(event) => event.stopPropagation()}
-							className="z-[80] w-80 border-zinc-700 bg-black/95 p-3 text-zinc-100 shadow-xl shadow-black/40"
+							className="z-80 w-80 border-zinc-700 bg-black/95 p-3 text-zinc-100 shadow-xl shadow-black/40"
 						>
 							<div className="space-y-3">
 								<div className="space-y-1">
