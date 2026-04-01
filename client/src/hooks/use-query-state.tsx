@@ -7,7 +7,6 @@ import { useCurrentValue } from "./use-current-value";
 
 interface UseQueryArgs<T extends z.ZodObject> {
 	schema: T;
-	overrides?: Partial<{ [K in keyof z.infer<T>]: z.infer<T>[K] | null | undefined }>;
 }
 
 export type UseQueryResult<T extends z.ZodObject> = [z.infer<T>, (producer: (prev: Draft<z.infer<T>>) => void) => void];
@@ -34,7 +33,6 @@ export const useQueryState = <T extends z.ZodObject>(props: UseQueryArgs<T>): Us
 	const location = useLocation();
 	const navigate = useNavigate();
 	const schema = useCurrentValue(() => adaptQuerySchema(props.schema));
-	const overrides = useCurrentValue(props.overrides);
 	const parseSearch = useCallback((search: string) => {
 		const searchParams = new URLSearchParams(search);
 		const parts: Record<string, unknown> = {};
@@ -47,7 +45,7 @@ export const useQueryState = <T extends z.ZodObject>(props: UseQueryArgs<T>): Us
 			}
 		}
 
-		const parsed = schema.current.safeParse({ ...parts, ...overrides });
+		const parsed = schema.current.safeParse(parts);
 		if (parsed.error) {
 			console.error(parsed.error);
 			throw new Error("Invalid useQueryState schema, it must be infallible");

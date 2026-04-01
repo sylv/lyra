@@ -148,7 +148,7 @@ export function LibraryNodeRoute() {
 							<p className="text-sm text-zinc-400">{node.properties.description}</p>
 						</div>
 						<div className="pb-16">
-							<NodeList type="episodes" filterOverride={{ parentId: nodeId }} />
+							<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
 						</div>
 					</div>
 				</div>
@@ -184,7 +184,7 @@ export function LibraryNodeRoute() {
 							<h1 className="text-2xl font-bold">All Episodes</h1>
 						</div>
 						<div className="pb-16">
-							<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
+							<NodeList type="episodes" filterOverride={{ rootId: node.id }} />
 						</div>
 					</div>
 				</div>
@@ -220,7 +220,7 @@ export function LibraryNodeRoute() {
 			</div>
 			{hasEpisodeChildren && seasonEntries.length === 0 ? (
 				<div className="container py-6">
-					<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
+					<NodeList type="episodes" filterOverride={{ rootId: node.id }} />
 				</div>
 			) : null}
 			{sortedChildren.length > 0 && seasonEntries.length > 0 && (

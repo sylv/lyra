@@ -64,7 +64,7 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 
 		return FilterSchema;
 	}, [variant.type]);
-	const [filter, setFilter] = useQueryState({ schema, overrides: filterOverride });
+	const [queryFilter, setFilter] = useQueryState({ schema });
 	const [selectedKinds, setSelectedKinds] = useState<NodeKind[]>([]);
 	const [pageVariables, setPageVariables] = useState<PageVariables[]>([
 		{
@@ -72,6 +72,7 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 		},
 	]);
 
+	const filter: NodeFilter = { ...queryFilter, ...filterOverride };
 	const updateFilter = (change: Omit<Partial<NodeFilter>, "kinds"> & { kinds?: NodeKind[] }) => {
 		setFilter((prev) => ({ ...prev, ...change }));
 		setPageVariables([
@@ -98,13 +99,13 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 						<>
 							<FilterButton
 								active={filter.watched === true}
-								onClick={() => updateFilter({ watched: filter.watched != null ? null : true })}
+								onClick={() => updateFilter({ watched: filter.watched === true ? null : true })}
 							>
 								Watched
 							</FilterButton>
 							<FilterButton
 								active={filter.watched === false}
-								onClick={() => updateFilter({ watched: filter.watched != null ? null : false })}
+								onClick={() => updateFilter({ watched: filter.watched === false ? null : false })}
 							>
 								Unwatched
 							</FilterButton>
@@ -122,7 +123,7 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 					{(!filterOverride || filterOverride.orderBy == null) && (
 						<FilterSelect
 							label="Order By"
-							value={filter.orderBy || OrderBy.Alphabetical}
+							value={queryFilter.orderBy || OrderBy.Alphabetical}
 							options={[
 								{ value: OrderBy.Alphabetical, label: "Alphabetical", icon: SortAscIcon },
 								{ value: OrderBy.Rating, label: "Rating", icon: StarIcon },
