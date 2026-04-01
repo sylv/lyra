@@ -56,7 +56,12 @@ export const NodePoster: FC<NodePosterProps> = ({ node: nodeRaw, className, styl
 				path={path}
 				watchProgress={node.nextPlayable?.watchProgress ?? null}
 			>
-				<Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.properties.displayName} className="w-full" />
+				<Image
+					type={ImageType.Poster}
+					asset={node.properties.posterImage}
+					alt={node.properties.displayName}
+					className="w-full"
+				/>
 				<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 			</PlayWrapper>
 			<Link to={path} className="block w-full truncate text-sm group">

@@ -84,7 +84,9 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					{releaseDate && <div>{releaseDate}</div>}
 					{episode.properties.runtimeMinutes && <div>{formatRuntime(episode.properties.runtimeMinutes)}</div>}
 				</div>
-				<p className="line-clamp-3 text-xs text-zinc-300">{episode.properties.description || "No description available"}</p>
+				<p className="line-clamp-3 text-xs text-zinc-300">
+					{episode.properties.description || "No description available"}
+				</p>
 			</div>
 		</button>
 	);

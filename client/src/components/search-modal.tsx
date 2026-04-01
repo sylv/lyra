@@ -103,7 +103,9 @@ const SearchNodeCard: FC<{ node: FragmentType<typeof SearchNodeResultFragment>; 
 					/>
 				</div>
 				<div className="min-w-0 flex-1">
-					<h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">{node.properties.displayName}</h3>
+					<h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">
+						{node.properties.displayName}
+					</h3>
 					<p className="mt-0.5 text-xs text-zinc-500">
 						{node.root?.properties.displayName} {index} {runtime}
 					</p>
@@ -118,10 +120,17 @@ const SearchNodeCard: FC<{ node: FragmentType<typeof SearchNodeResultFragment>; 
 	return (
 		<Link to={path} onClick={onSelect} className="group block rounded-md p-2 transition hover:bg-zinc-900">
 			<div className="overflow-hidden rounded-sm">
-				<Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.properties.displayName} className="w-full" />
+				<Image
+					type={ImageType.Poster}
+					asset={node.properties.posterImage}
+					alt={node.properties.displayName}
+					className="w-full"
+				/>
 			</div>
 			<div className="mt-2">
-				<h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">{node.properties.displayName}</h3>
+				<h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:underline">
+					{node.properties.displayName}
+				</h3>
 				<p className="text-xs text-zinc-500">{getRootDetail(node)}</p>
 			</div>
 		</Link>

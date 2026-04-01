@@ -1,7 +1,5 @@
-import { EpisodeCard } from "@/components/episode-card";
-import { FilterButton } from "@/components/filter-button";
 import { Image, ImageType } from "@/components/image";
-import { NodeFilterList } from "@/components/nodes/node-filter-list";
+import { NodeList } from "@/components/nodes/node-list";
 import { PlayWrapper } from "@/components/play-wrapper";
 import { SeasonCard } from "@/components/season-card";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
@@ -10,11 +8,10 @@ import { useSuspenseQuery } from "@apollo/client/react";
 import { Link, createFileRoute, redirect } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
 import { graphql } from "../@generated/gql";
-import { NodeKind, OrderBy, type NodeFilter } from "../@generated/gql/graphql";
 import { getApolloClient } from "../client";
-import { getPathForNodeData } from "../lib/getPathForMedia";
 import { useTitle } from "../hooks/use-title";
 import { formatReleaseYear } from "../lib/format-release-year";
+import { getPathForNodeData } from "../lib/getPathForMedia";
 
 const Query = graphql(`
 	query GetNodeById($nodeId: String!) {
@@ -45,7 +42,6 @@ const Query = graphql(`
 					seasonNumber
 				}
 				...SeasonCard
-				...EpisodeCard
 			}
 			properties {
 				displayName
@@ -85,19 +81,6 @@ const Query = graphql(`
 	}
 `);
 
-const EpisodesQuery = graphql(`
-	query GetEpisodes($filter: NodeFilter!, $first: Int) {
-		nodeList(filter: $filter, first: $first) {
-			edges {
-				node {
-					id
-					...EpisodeCard
-				}
-			}
-		}
-	}
-`);
-
 export const Route = createFileRoute("/library_/$libraryId/node_/$nodeId")({
 	component: NodeRoute,
 	loader: async ({ params }) => {
@@ -123,67 +106,6 @@ export const Route = createFileRoute("/library_/$libraryId/node_/$nodeId")({
 });
 
 type SeasonEntry = { id: string; seasonNumber: number | null };
-
-// episode list with NodeFilterList controls and an optional season filter.
-// for season view: pass parentId only.
-// for all-episodes view: pass rootId + seasons; season filter overrides to parentId when active.
-function EpisodeListView({
-	rootId,
-	parentId,
-	seasons,
-}: {
-	rootId?: string;
-	parentId?: string;
-	seasons?: SeasonEntry[];
-}) {
-	const [orderBy, setOrderBy] = useState<OrderBy | undefined>();
-	const [watched, setWatched] = useState<boolean | null>(null);
-	const [season, setSeason] = useState<string | undefined>();
-
-	const filter: NodeFilter =
-		parentId != null
-			? { parentId, kinds: [NodeKind.Episode], orderBy, watched }
-			: season != null
-				? { parentId: season, kinds: [NodeKind.Episode], orderBy, watched }
-				: { rootId, kinds: [NodeKind.Episode], orderBy, watched };
-
-	const { data } = useSuspenseQuery(EpisodesQuery, { variables: { filter, first: 500 } });
-	const episodes = data.nodeList.edges.map((e) => e.node);
-
-	const handleFilterChange = (newFilter: NodeFilter) => {
-		setOrderBy(newFilter.orderBy ?? undefined);
-		setWatched(newFilter.watched ?? null);
-	};
-
-	return (
-		<div className="space-y-4">
-			<div className="flex flex-wrap gap-2">
-				<NodeFilterList value={{ orderBy: orderBy ?? OrderBy.Order, watched }} onChange={handleFilterChange} />
-				{seasons && seasons.length > 1 && (
-					<>
-						<FilterButton active={season == null} onClick={() => setSeason(undefined)}>
-							All seasons
-						</FilterButton>
-						{seasons.map((entry) => (
-							<FilterButton key={entry.id} active={season === entry.id} onClick={() => setSeason(entry.id)}>
-								Season {entry.seasonNumber}
-							</FilterButton>
-						))}
-					</>
-				)}
-			</div>
-			{episodes.length > 0 ? (
-				<div className="space-y-6">
-					{episodes.map((episode) => (
-						<EpisodeCard key={episode.id} episode={episode} />
-					))}
-				</div>
-			) : (
-				<div className="py-12 text-center text-zinc-400">No episodes found.</div>
-			)}
-		</div>
-	);
-}
 
 function NodeRoute() {
 	const { nodeId } = Route.useParams();
@@ -242,7 +164,7 @@ function NodeRoute() {
 						</div>
 						<div className="pb-16">
 							<Suspense>
-								<EpisodeListView parentId={nodeId} />
+								<NodeList type="episodes" filterOverride={{ parentId: nodeId }} />
 							</Suspense>
 						</div>
 					</div>
@@ -255,6 +177,7 @@ function NodeRoute() {
 	const seasonEntries: SeasonEntry[] = sortedChildren
 		.filter((c) => c.kind === "SEASON")
 		.map((c) => ({ id: c.id, seasonNumber: c.properties.seasonNumber }));
+	const hasEpisodeChildren = sortedChildren.some((child) => child.kind === "EPISODE");
 
 	if (view === "episodes") {
 		return (
@@ -279,7 +202,7 @@ function NodeRoute() {
 						</div>
 						<div className="pb-16">
 							<Suspense>
-								<EpisodeListView rootId={node.id} seasons={seasonEntries} />
+								<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
 							</Suspense>
 						</div>
 					</div>
@@ -314,7 +237,14 @@ function NodeRoute() {
 					</div>
 				</div>
 			</div>
-			{sortedChildren.length > 0 && (
+			{hasEpisodeChildren && seasonEntries.length === 0 ? (
+				<div className="container py-6">
+					<Suspense>
+						<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
+					</Suspense>
+				</div>
+			) : null}
+			{sortedChildren.length > 0 && seasonEntries.length > 0 && (
 				<div className="container py-6">
 					<div className="flex flex-wrap gap-4">
 						{hasSeasons && (
@@ -338,13 +268,7 @@ function NodeRoute() {
 							</div>
 						)}
 						{sortedChildren.map((child) =>
-							child.kind === "SEASON" ? (
-								<SeasonCard key={child.id} season={child} />
-							) : (
-								<div key={child.id} className="w-full">
-									<EpisodeCard episode={child} />
-								</div>
-							),
+							child.kind === "SEASON" ? <SeasonCard key={child.id} season={child} /> : null,
 						)}
 					</div>
 				</div>

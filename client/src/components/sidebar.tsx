@@ -36,7 +36,11 @@ const SidebarLink: FC<{
 				)}
 			>
 				{Icon && <Icon className="size-4 text-zinc-400" />}
-				{media ? <div className={cn("h-full w-full transition-all duration-500", active && "rotate-90 scale-175")}>{media}</div> : null}
+				{media ? (
+					<div className={cn("h-full w-full transition-all duration-500", active && "rotate-90 scale-175")}>
+						{media}
+					</div>
+				) : null}
 			</div>
 			<div>
 				<div className="text-sm group-hover:underline">{children}</div>

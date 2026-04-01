@@ -56,7 +56,9 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw }) => {
 				<UnplayedItemsTab>{season.unplayedCount}</UnplayedItemsTab>
 			</PlayWrapper>
 			<Link to={path} className="block w-full truncate text-sm group">
-				<span className="group-hover:underline">{season.properties.displayName || `Season ${season.properties.seasonNumber}`}</span>
+				<span className="group-hover:underline">
+					{season.properties.displayName || `Season ${season.properties.seasonNumber}`}
+				</span>
 				{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
 			</Link>
 		</div>

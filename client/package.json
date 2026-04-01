@@ -31,6 +31,7 @@
 		"graphql": "^16.13.1",
 		"graphql-ws": "^6.0.7",
 		"hls.js": "^1.6.15",
+		"immer": "^11.1.4",
 		"input-otp": "^1.4.2",
 		"lucide-react": "^0.577.0",
 		"motion": "^12.36.0",
@@ -44,6 +45,7 @@
 		"tailwind-merge": "^3.5.0",
 		"thumbhash": "^0.1.1",
 		"vaul": "^1.1.2",
+		"zod": "^4.3.6",
 		"zustand": "^5.0.11"
 	},
 	"devDependencies": {

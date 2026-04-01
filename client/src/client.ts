@@ -25,15 +25,7 @@ const createApolloClient = () => {
 
 	return new ApolloClient({
 		link,
-		cache: new InMemoryCache({
-			typePolicies: {
-				Query: {
-					fields: {
-						nodeList: relayStylePagination(["filter"]),
-					},
-				},
-			},
-		}),
+		cache: new InMemoryCache(),
 	});
 };
 

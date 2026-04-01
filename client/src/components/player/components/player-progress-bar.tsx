@@ -158,7 +158,12 @@ export const PlayerProgressBar: FC<PlayerProgressBarProps> = ({ timelinePreviewS
 			aria-valuemax={duration || 100}
 			aria-valuenow={currentTime || 0}
 		>
-			<div className={cn("relative rounded-md bg-white/15 transition-all", compact ? "h-1.5 group-hover:h-2" : "h-1 group-hover:h-2")}>
+			<div
+				className={cn(
+					"relative rounded-md bg-white/15 transition-all",
+					compact ? "h-1.5 group-hover:h-2" : "h-1 group-hover:h-2",
+				)}
+			>
 				{bufferedRanges.map((range) => {
 					if (!duration) return null;
 					const startPercent = (range.start / duration) * 100;

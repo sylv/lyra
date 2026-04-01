@@ -28,7 +28,9 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 		setAudioTrack(trackId);
 		setPlayerState({ selectedAudioTrackId: trackId });
 
-		const serverTrack = currentMedia?.file?.tracks?.find((track) => track.trackType === "AUDIO" && track.manifestIndex === trackId);
+		const serverTrack = currentMedia?.file?.tracks?.find(
+			(track) => track.trackType === "AUDIO" && track.manifestIndex === trackId,
+		);
 		if (serverTrack?.language != null) {
 			setPreferredAudio({
 				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
@@ -55,7 +57,9 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 		setSubtitleTrack(trackId);
 		setPlayerState({ selectedSubtitleTrackId: trackId });
 
-		const serverTrack = currentMedia?.file?.tracks?.find((track) => track.trackType === "SUBTITLE" && track.manifestIndex === trackId);
+		const serverTrack = currentMedia?.file?.tracks?.find(
+			(track) => track.trackType === "SUBTITLE" && track.manifestIndex === trackId,
+		);
 		if (serverTrack?.language != null) {
 			setPreferredSubtitle({
 				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },

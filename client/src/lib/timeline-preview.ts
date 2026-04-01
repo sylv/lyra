@@ -24,9 +24,7 @@ export interface TimelinePreviewFrame {
 	offsetYPx: number;
 }
 
-export const sortTimelinePreviewSheets = <TSheet extends TimelinePreviewSheetLike>(
-	sheets: TSheet[],
-): TSheet[] => {
+export const sortTimelinePreviewSheets = <TSheet extends TimelinePreviewSheetLike>(sheets: TSheet[]): TSheet[] => {
 	return [...sheets].sort((a, b) => {
 		if (a.positionMs !== b.positionMs) return a.positionMs - b.positionMs;
 		return (a.asset.id ?? a.asset.signedUrl).localeCompare(b.asset.id ?? b.asset.signedUrl);

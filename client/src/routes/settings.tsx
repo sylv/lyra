@@ -50,11 +50,11 @@ function RouteComponent() {
 		? "users"
 		: pathname.startsWith(settingsTabs.sessions)
 			? "sessions"
-		: pathname.startsWith(settingsTabs.libraries)
-			? "libraries"
-			: pathname.startsWith(settingsTabs.import)
-				? "import"
-				: "about";
+			: pathname.startsWith(settingsTabs.libraries)
+				? "libraries"
+				: pathname.startsWith(settingsTabs.import)
+					? "import"
+					: "about";
 	const activeTabVisible =
 		activeTab === "users"
 			? canManageUsers

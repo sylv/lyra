@@ -17,7 +17,9 @@ const isEditableTarget = (event: KeyboardEvent) => {
 	const candidate = activeElement ?? target;
 	if (!candidate) return false;
 	if (candidate.closest("[data-slot='dialog-content'], [data-slot='dropdown-menu-content']")) return true;
-	return !!candidate.closest("input, textarea, select, [contenteditable=''], [contenteditable='true'], [role='textbox']");
+	return !!candidate.closest(
+		"input, textarea, select, [contenteditable=''], [contenteditable='true'], [role='textbox']",
+	);
 };
 
 export const useKeyboardShortcuts = ({ actions, handleContainerClick }: KeyboardShortcutsOptions) => {

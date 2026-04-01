@@ -2,11 +2,7 @@
 import { useMutation, useSubscription } from "@apollo/client/react";
 import { useEffect, useRef, useState, type FC } from "react";
 import { type FragmentType, unmask } from "../../@generated/gql";
-import {
-	type ItemPlaybackQuery,
-	WatchSessionActionKind,
-	WatchSessionIntent,
-} from "../../@generated/gql/graphql";
+import { type ItemPlaybackQuery, WatchSessionActionKind, WatchSessionIntent } from "../../@generated/gql/graphql";
 import { createHlsPlayer } from "./hls";
 import {
 	playerContext,
@@ -31,11 +27,7 @@ import {
 } from "./player-queries";
 import { PlayerTimelinePreviewSheetFragment } from "./components/player-progress-bar";
 import { usePlayerRefsContext } from "./player-refs-context";
-import {
-	applyWatchSessionBeacon,
-	createLocalWatchSessionId,
-	getWatchSessionState,
-} from "./watch-session";
+import { applyWatchSessionBeacon, createLocalWatchSessionId, getWatchSessionState } from "./watch-session";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 
@@ -58,7 +50,11 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		lastPosition: null,
 		lastUpdatedAt: 0,
 	});
-	const watchProgressRef = useRef<{ mediaId: string | null; fileId: string | null; lastProgressPercent: number | null }>({
+	const watchProgressRef = useRef<{
+		mediaId: string | null;
+		fileId: string | null;
+		lastProgressPercent: number | null;
+	}>({
 		mediaId: null,
 		fileId: null,
 		lastProgressPercent: null,
@@ -528,7 +524,9 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			const nextSnapshotState = snapshotUpdateRef.current;
 			if (!force) {
 				const positionDelta =
-					nextSnapshotState.lastPosition == null ? Number.POSITIVE_INFINITY : Math.abs(position - nextSnapshotState.lastPosition);
+					nextSnapshotState.lastPosition == null
+						? Number.POSITIVE_INFINITY
+						: Math.abs(position - nextSnapshotState.lastPosition);
 				if (positionDelta < 1 && now - nextSnapshotState.lastUpdatedAt < 1_000) return;
 			}
 
@@ -690,7 +688,11 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 	return (
 		<video
 			ref={videoRef}
-			className={isFullscreen ? "block h-full w-full bg-black object-contain outline-none" : "block h-full w-full rounded bg-black object-contain outline-none"}
+			className={
+				isFullscreen
+					? "block h-full w-full bg-black object-contain outline-none"
+					: "block h-full w-full rounded bg-black object-contain outline-none"
+			}
 			autoPlay={autoplayEnabled}
 			controls={false}
 			disablePictureInPicture
