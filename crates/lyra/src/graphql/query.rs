@@ -88,7 +88,8 @@ impl OrderDirection {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Enum, serde::Deserialize)]
 pub enum OrderBy {
     AddedAt,
-    ReleasedAt,
+    FirstAired,
+    LastAired,
     Alphabetical,
     Rating,
     Order,
@@ -97,7 +98,9 @@ pub enum OrderBy {
 impl OrderBy {
     pub fn default_direction(self) -> OrderDirection {
         match self {
-            OrderBy::AddedAt | OrderBy::ReleasedAt | OrderBy::Rating => OrderDirection::Desc,
+            OrderBy::AddedAt | OrderBy::FirstAired | OrderBy::LastAired | OrderBy::Rating => {
+                OrderDirection::Desc
+            }
             OrderBy::Alphabetical | OrderBy::Order => OrderDirection::Asc,
         }
     }
@@ -304,10 +307,13 @@ impl Query {
                                 Expr::col(nodes::Column::LastAddedAt).div(SECONDS_PER_DAY),
                                 order_direction.clone(),
                             )
-                            .order_by(node_metadata::Column::ReleasedAt, order_direction)
+                            .order_by(node_metadata::Column::LastAired, order_direction)
                     }
-                    OrderBy::ReleasedAt => {
-                        qb = qb.order_by(node_metadata::Column::ReleasedAt, order_direction)
+                    OrderBy::FirstAired => {
+                        qb = qb.order_by(node_metadata::Column::FirstAired, order_direction)
+                    }
+                    OrderBy::LastAired => {
+                        qb = qb.order_by(node_metadata::Column::LastAired, order_direction)
                     }
                     OrderBy::Alphabetical => {
                         qb = qb.order_by(node_metadata::Column::Name, order_direction)

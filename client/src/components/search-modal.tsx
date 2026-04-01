@@ -38,8 +38,8 @@ const SearchNodeResultFragment = graphql(`
 			description
 			seasonNumber
 			episodeNumber
-			releasedAt
-			endedAt
+			firstAired
+			lastAired
 			runtimeMinutes
 		}
 		...GetPathForNode
@@ -72,7 +72,7 @@ const getRootDetail = (node: SearchNodeResultData) => {
 		if (node.episodeCount > 0) return `${node.episodeCount} ${node.episodeCount === 1 ? "episode" : "episodes"}`;
 	}
 
-	return formatReleaseYear(node.properties.releasedAt, node.properties.endedAt ?? null) ?? null;
+	return formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null) ?? null;
 };
 
 const SearchNodeCard: FC<{ node: FragmentType<typeof SearchNodeResultFragment>; onSelect: () => void }> = ({

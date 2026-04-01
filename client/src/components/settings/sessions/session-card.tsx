@@ -26,7 +26,7 @@ export const SessionCard: FC<{ session: FragmentType<typeof SessionCardFragment>
 	);
 	const previewFrame = getTimelinePreviewFrameAtMs(session.currentPositionMs, timelinePreviewSheets);
 	const previewStyle = getPreviewStyle(previewFrame, previewUrlByAssetId.current);
-	const releaseYear = node ? formatReleaseYear(node.properties.releasedAt, node.properties.endedAt ?? null) : null;
+	const releaseYear = node ? formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null) : null;
 	const title = hasEpisodeMetadata
 		? (node?.root?.properties.displayName ?? "Unavailable item")
 		: (node?.properties.displayName ?? "Unavailable item");

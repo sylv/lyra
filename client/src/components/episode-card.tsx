@@ -28,7 +28,7 @@ const Fragment = graphql(`
 			}
 			seasonNumber
 			episodeNumber
-			releasedAt
+			firstAired
 			runtimeMinutes
 		}
 		watchProgress {
@@ -45,13 +45,13 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const navigate = useNavigate();
 	const path = getPathForNode(episode);
 	const releaseDate = useMemo(() => {
-		if (!episode.properties.releasedAt) return null;
-		return new Date(episode.properties.releasedAt * 1000).toLocaleDateString(undefined, {
+		if (!episode.properties.firstAired) return null;
+		return new Date(episode.properties.firstAired * 1000).toLocaleDateString(undefined, {
 			year: "numeric",
 			month: "short",
 			day: "numeric",
 		});
-	}, [episode.properties.releasedAt]);
+	}, [episode.properties.firstAired]);
 
 	return (
 		<button

@@ -78,7 +78,7 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 								{media.properties.displayName}
 							</h2>
 							<p className={cn("text-gray-300", isFullscreen ? "text-sm" : "text-xs")}>
-								{formatReleaseYear(media.properties.releasedAt, media.properties.endedAt)}
+								{formatReleaseYear(media.properties.firstAired, media.properties.lastAired)}
 							</p>
 						</>
 					)}

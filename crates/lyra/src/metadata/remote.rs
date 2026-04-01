@@ -104,7 +104,7 @@ async fn load_root_match_hint(
         .with_context(|| format!("missing local metadata for node {}", node.id))?;
 
     let year = local_metadata
-        .released_at
+        .first_aired
         .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0))
         .map(|timestamp| timestamp.year());
 

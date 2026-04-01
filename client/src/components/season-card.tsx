@@ -23,8 +23,8 @@ const Fragment = graphql(`
 			thumbnailImage {
 				...ImageAsset
 			}
-			releasedAt
-			endedAt
+			firstAired
+			lastAired
 		}
 		nextPlayable {
 			id
@@ -47,7 +47,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw }) => {
 	const detail =
 		season.episodeCount > 0
 			? `${season.episodeCount} ${season.episodeCount === 1 ? "episode" : "episodes"}`
-			: formatReleaseYear(season.properties.releasedAt, season.properties.endedAt ?? null);
+			: formatReleaseYear(season.properties.firstAired, season.properties.lastAired ?? null);
 
 	return (
 		<div className="flex flex-col gap-2 overflow-hidden w-38">

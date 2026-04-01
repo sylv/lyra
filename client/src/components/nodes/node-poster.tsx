@@ -26,8 +26,8 @@ const Fragment = graphql(`
 			posterImage {
 				...ImageAsset
 			}
-			releasedAt
-			endedAt
+			firstAired
+			lastAired
 		}
 		nextPlayable {
 			id
@@ -78,6 +78,6 @@ const getPosterDetail = (node: NodePosterFragment): string | number | null => {
 		if (node.episodeCount > 0) return `${node.episodeCount} ${node.episodeCount === 1 ? "episode" : "episodes"}`;
 	}
 
-	if (!node.properties.releasedAt) return null;
-	return formatReleaseYear(node.properties.releasedAt, node.properties.endedAt ?? null) ?? null;
+	if (!node.properties.firstAired && !node.properties.lastAired) return null;
+	return formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null) ?? null;
 };

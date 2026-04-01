@@ -56,8 +56,8 @@ pub struct SeriesMetadata {
     pub description: Option<String>,
     pub score_display: Option<String>,
     pub score_normalized: Option<i64>,
-    pub released_at: Option<i64>,
-    pub ended_at: Option<i64>,
+    pub first_aired: Option<i64>,
+    pub last_aired: Option<i64>,
     pub images: ImageSet,
 }
 
@@ -69,8 +69,8 @@ pub struct MovieMetadata {
     pub description: Option<String>,
     pub score_display: Option<String>,
     pub score_normalized: Option<i64>,
-    pub released_at: Option<i64>,
-    pub ended_at: Option<i64>,
+    pub first_aired: Option<i64>,
+    pub last_aired: Option<i64>,
     pub images: ImageSet,
 }
 
@@ -97,8 +97,8 @@ pub struct SeasonMetadata {
     pub description: Option<String>,
     pub score_display: Option<String>,
     pub score_normalized: Option<i64>,
-    pub released_at: Option<i64>,
-    pub ended_at: Option<i64>,
+    pub first_aired: Option<i64>,
+    pub last_aired: Option<i64>,
     pub images: ImageSet,
 }
 
@@ -109,7 +109,8 @@ pub struct EpisodeMetadata {
     pub description: Option<String>,
     pub score_display: Option<String>,
     pub score_normalized: Option<i64>,
-    pub released_at: Option<i64>,
+    pub first_aired: Option<i64>,
+    pub last_aired: Option<i64>,
     pub images: ImageSet,
 }
 

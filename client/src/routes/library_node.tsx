@@ -53,8 +53,8 @@ const Query = graphql(`
 				thumbnailImage {
 					...ImageAsset
 				}
-				releasedAt
-				endedAt
+				firstAired
+				lastAired
 				runtimeMinutes
 				description
 			}
@@ -110,7 +110,7 @@ export function LibraryNodeRoute() {
 				__typename: "Node",
 			})
 		: null;
-	const releaseYear = formatReleaseYear(node.properties.releasedAt, node.properties.endedAt ?? null);
+	const releaseYear = formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null);
 	const sortedChildren = [...node.children].sort((a, b) => {
 		if (a.kind !== b.kind) {
 			return a.kind === "SEASON" ? -1 : 1;

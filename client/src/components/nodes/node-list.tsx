@@ -58,7 +58,7 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 		const FilterSchema = z.object({
 			kinds: z.array(z.enum(NodeKind)).default(possibleKinds),
 			watched: z.boolean().nullable(),
-			orderBy: z.enum(OrderBy).default(OrderBy.ReleasedAt),
+			orderBy: z.enum(OrderBy).default(OrderBy.LastAired),
 			orderDirection: z.enum(OrderDirection).nullable(),
 		});
 
@@ -123,11 +123,12 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 					{(!filterOverride || filterOverride.orderBy == null) && (
 						<FilterSelect
 							label="Order By"
-							value={queryFilter.orderBy || OrderBy.Alphabetical}
+							value={queryFilter.orderBy || OrderBy.LastAired}
 							options={[
 								{ value: OrderBy.Alphabetical, label: "Alphabetical", icon: SortAscIcon },
 								{ value: OrderBy.Rating, label: "Rating", icon: StarIcon },
-								{ value: OrderBy.ReleasedAt, label: "Release Date", icon: CalendarClockIcon },
+								{ value: OrderBy.FirstAired, label: "First Aired", icon: CalendarClockIcon },
+								{ value: OrderBy.LastAired, label: "Last Aired", icon: CalendarClockIcon },
 								{ value: OrderBy.AddedAt, label: "Added Date", icon: CalendarPlusIcon },
 								{ value: OrderBy.Order, label: "Canonical Order", icon: ListOrderedIcon },
 							]}

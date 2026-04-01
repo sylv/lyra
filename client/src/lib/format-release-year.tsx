@@ -1,12 +1,10 @@
-export const formatReleaseYear = (releasedAt: number | null, endedAt: number | null) => {
-	const start = releasedAt ? new Date(releasedAt * 1000).getFullYear() : null;
-	const end = endedAt ? new Date(endedAt * 1000).getFullYear() : null;
+export const formatReleaseYear = (firstAired: number | null, lastAired: number | null) => {
+	const start = firstAired ? new Date(firstAired * 1000).getFullYear() : null;
+	const end = lastAired ? new Date(lastAired * 1000).getFullYear() : null;
 
-	if (start && end) {
+	if (start && end && start !== end) {
 		return `${start} - ${end}`;
 	}
 
-	if (start) {
-		return start;
-	}
+	return start ?? end ?? undefined;
 };

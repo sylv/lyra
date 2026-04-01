@@ -197,8 +197,8 @@ impl MetadataProvider for TmdbMetadataProvider {
             description: empty_to_none(details.overview),
             score_display: score_display(details.vote_average),
             score_normalized: score_normalized(details.vote_average),
-            released_at: parse_date(details.first_air_date.as_deref()),
-            ended_at: parse_date(details.last_air_date.as_deref()),
+            first_aired: parse_date(details.first_air_date.as_deref()),
+            last_aired: parse_date(details.last_air_date.as_deref()),
             images: ImageSet {
                 poster_url: image_url(details.poster_path.as_deref(), "w780"),
                 thumbnail_url: image_url(details.poster_path.as_deref(), "w342"),
@@ -231,8 +231,8 @@ impl MetadataProvider for TmdbMetadataProvider {
                 description: empty_to_none(season_details.overview),
                 score_display: None,
                 score_normalized: None,
-                released_at: parse_date(season_details.air_date.as_deref()),
-                ended_at: None,
+                first_aired: parse_date(season_details.air_date.as_deref()),
+                last_aired: parse_date(season_details.air_date.as_deref()),
                 images: ImageSet {
                     poster_url: image_url(season_details.poster_path.as_deref(), "w780"),
                     thumbnail_url: image_url(season_details.poster_path.as_deref(), "w342"),
@@ -324,8 +324,8 @@ impl MetadataProvider for TmdbMetadataProvider {
             description: empty_to_none(details.overview),
             score_display: score_display(details.vote_average),
             score_normalized: score_normalized(details.vote_average),
-            released_at: parse_date(details.release_date.as_deref()),
-            ended_at: None,
+            first_aired: parse_date(details.release_date.as_deref()),
+            last_aired: parse_date(details.release_date.as_deref()),
             images: ImageSet {
                 poster_url: image_url(details.poster_path.as_deref(), "w780"),
                 thumbnail_url: image_url(details.poster_path.as_deref(), "w342"),
@@ -342,7 +342,8 @@ fn episode_metadata_from_item(item: &SeriesItem, episode: &TvEpisodeDetails) -> 
         description: empty_to_none(episode.overview.clone()),
         score_display: score_display(episode.vote_average),
         score_normalized: score_normalized(episode.vote_average),
-        released_at: parse_date(episode.air_date.as_deref()),
+        first_aired: parse_date(episode.air_date.as_deref()),
+        last_aired: parse_date(episode.air_date.as_deref()),
         images: ImageSet {
             poster_url: image_url(episode.still_path.as_deref(), "w780"),
             thumbnail_url: image_url(episode.still_path.as_deref(), "w300"),

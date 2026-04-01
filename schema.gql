@@ -226,8 +226,8 @@ type NodeProperties {
 	audioChannels: Int
 	hasSubtitles: Boolean
 	fileSizeBytes: Int
-	releasedAt: Int
-	endedAt: Int
+	firstAired: Int
+	lastAired: Int
 	createdAt: Int
 	updatedAt: Int
 	backgroundImage: Asset
@@ -237,7 +237,8 @@ type NodeProperties {
 
 enum OrderBy {
 	ADDED_AT
-	RELEASED_AT
+	FIRST_AIRED
+	LAST_AIRED
 	ALPHABETICAL
 	RATING
 	ORDER

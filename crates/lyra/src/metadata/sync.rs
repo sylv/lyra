@@ -1,4 +1,6 @@
-use crate::entities::{jobs::JobKind, nodes, nodes::NodeKind};
+use crate::entities::{
+    jobs::JobKind, metadata_source::MetadataSource, node_metadata, nodes, nodes::NodeKind,
+};
 use crate::jobs::delete_job_row;
 use crate::metadata::remote::{MatchedRoot, lookup_series_items, match_root};
 use crate::metadata::store::{
@@ -8,9 +10,10 @@ use crate::metadata::store::{
 };
 use lyra_metadata::MetadataProvider;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 pub async fn mark_root_dirty(pool: &impl ConnectionTrait, root_id: &str) -> anyhow::Result<()> {
     delete_job_row(pool, JobKind::NodeSyncMetadataRoot, root_id).await
@@ -92,6 +95,15 @@ pub async fn sync_root(
                     )
                     .await?,
                 );
+                reconcile_series_air_dates(
+                    pool,
+                    provider.id(),
+                    root,
+                    &season_nodes,
+                    &episode_nodes,
+                    now,
+                )
+                .await?;
 
                 clear_remote_node_metadata_for_root_except(pool, &root.id, &matched_node_ids)
                     .await?;
@@ -125,6 +137,142 @@ async fn load_root_nodes(
         .order_by_asc(nodes::Column::Id)
         .all(pool)
         .await?)
+}
+
+// TMDb's root and season air dates are useful fallbacks, but once we have child metadata we want
+// parent bounds to reflect the actual matched episodes we expose in the UI.
+async fn reconcile_series_air_dates(
+    pool: &DatabaseConnection,
+    provider_id: &str,
+    root: &nodes::Model,
+    season_nodes: &[nodes::Model],
+    episode_nodes: &[nodes::Model],
+    now: i64,
+) -> anyhow::Result<()> {
+    let mut remote_metadata = load_remote_metadata_map(
+        pool,
+        provider_id,
+        std::iter::once(root.id.as_str())
+            .chain(season_nodes.iter().map(|node| node.id.as_str()))
+            .chain(episode_nodes.iter().map(|node| node.id.as_str()))
+            .collect(),
+    )
+    .await?;
+
+    let mut updated_season_bounds = HashMap::new();
+    for season in season_nodes {
+        let child_bounds = aggregate_air_dates(
+            episode_nodes
+                .iter()
+                .filter(|node| node.parent_id.as_deref() == Some(season.id.as_str()))
+                .filter_map(|node| {
+                    remote_metadata
+                        .get(&node.id)
+                        .map(|metadata| (metadata.first_aired, metadata.last_aired))
+                }),
+        );
+        let fallback = remote_metadata
+            .get(&season.id)
+            .map(|metadata| (metadata.first_aired, metadata.last_aired))
+            .unwrap_or((None, None));
+        let season_bounds = prefer_primary_air_dates(child_bounds, fallback);
+        updated_season_bounds.insert(season.id.clone(), season_bounds);
+        update_remote_air_dates(pool, &mut remote_metadata, &season.id, season_bounds, now).await?;
+    }
+
+    let episode_bounds = aggregate_air_dates(episode_nodes.iter().filter_map(|node| {
+        remote_metadata
+            .get(&node.id)
+            .map(|metadata| (metadata.first_aired, metadata.last_aired))
+    }));
+    let season_bounds = aggregate_air_dates(updated_season_bounds.values().copied());
+    let root_fallback = remote_metadata
+        .get(&root.id)
+        .map(|metadata| (metadata.first_aired, metadata.last_aired))
+        .unwrap_or((None, None));
+    let root_bounds = prefer_primary_air_dates(
+        merge_air_dates(episode_bounds, season_bounds),
+        root_fallback,
+    );
+    update_remote_air_dates(pool, &mut remote_metadata, &root.id, root_bounds, now).await?;
+
+    Ok(())
+}
+
+async fn load_remote_metadata_map(
+    pool: &DatabaseConnection,
+    provider_id: &str,
+    node_ids: Vec<&str>,
+) -> anyhow::Result<HashMap<String, node_metadata::Model>> {
+    if node_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    Ok(node_metadata::Entity::find()
+        .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
+        .filter(node_metadata::Column::ProviderId.eq(provider_id))
+        .filter(node_metadata::Column::NodeId.is_in(node_ids))
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(|metadata| (metadata.node_id.clone(), metadata))
+        .collect())
+}
+
+fn aggregate_air_dates(
+    rows: impl IntoIterator<Item = (Option<i64>, Option<i64>)>,
+) -> (Option<i64>, Option<i64>) {
+    rows.into_iter().fold((None, None), merge_air_dates)
+}
+
+fn merge_air_dates(
+    left: (Option<i64>, Option<i64>),
+    right: (Option<i64>, Option<i64>),
+) -> (Option<i64>, Option<i64>) {
+    let first = match (left.0.or(left.1), right.0.or(right.1)) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    };
+    let last = match (left.1.or(left.0), right.1.or(right.0)) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    };
+
+    (first, last)
+}
+
+fn prefer_primary_air_dates(
+    primary: (Option<i64>, Option<i64>),
+    fallback: (Option<i64>, Option<i64>),
+) -> (Option<i64>, Option<i64>) {
+    (primary.0.or(fallback.0), primary.1.or(fallback.1))
+}
+
+async fn update_remote_air_dates(
+    pool: &DatabaseConnection,
+    metadata_by_node_id: &mut HashMap<String, node_metadata::Model>,
+    node_id: &str,
+    air_dates: (Option<i64>, Option<i64>),
+    now: i64,
+) -> anyhow::Result<()> {
+    let Some(existing) = metadata_by_node_id.get(node_id).cloned() else {
+        return Ok(());
+    };
+    if (existing.first_aired, existing.last_aired) == air_dates {
+        return Ok(());
+    }
+
+    let mut active: node_metadata::ActiveModel = existing.into();
+    active.first_aired = Set(air_dates.0);
+    active.last_aired = Set(air_dates.1);
+    active.updated_at = Set(now);
+    let updated = active.update(pool).await?;
+    metadata_by_node_id.insert(updated.node_id.clone(), updated);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -263,8 +411,8 @@ mod tests {
                 description: Some(format!("series from {}", self.id)),
                 score_display: None,
                 score_normalized: None,
-                released_at: None,
-                ended_at: None,
+                first_aired: None,
+                last_aired: None,
                 images: ImageSet::default(),
             })
         }
@@ -283,8 +431,8 @@ mod tests {
                     description: Some(format!("season from {}", self.id)),
                     score_display: None,
                     score_normalized: None,
-                    released_at: None,
-                    ended_at: None,
+                    first_aired: None,
+                    last_aired: None,
                     images: ImageSet::default(),
                 }],
                 episodes: req
@@ -297,7 +445,8 @@ mod tests {
                         description: Some(format!("episode from {}", self.id)),
                         score_display: None,
                         score_normalized: None,
-                        released_at: None,
+                        first_aired: None,
+                        last_aired: None,
                         images: ImageSet::default(),
                     })
                     .collect(),
@@ -467,6 +616,139 @@ mod tests {
             .all(&pool)
             .await?;
         assert!(remote_rows.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reconcile_series_air_dates_prefers_episode_bounds_for_parents() -> anyhow::Result<()> {
+        let pool = setup_test_db().await?;
+        insert_library(&pool).await?;
+        let root = insert_node(
+            &pool,
+            "root",
+            "root",
+            None,
+            NodeKind::Series,
+            "Show",
+            None,
+            None,
+            0,
+        )
+        .await?;
+        let season = insert_node(
+            &pool,
+            "season-1",
+            "root",
+            Some("root"),
+            NodeKind::Season,
+            "Season 1",
+            Some(1),
+            None,
+            1,
+        )
+        .await?;
+        let episode_one = insert_node(
+            &pool,
+            "episode-1",
+            "root",
+            Some("season-1"),
+            NodeKind::Episode,
+            "Episode 1",
+            Some(1),
+            Some(1),
+            2,
+        )
+        .await?;
+        let episode_two = insert_node(
+            &pool,
+            "episode-2",
+            "root",
+            Some("season-1"),
+            NodeKind::Episode,
+            "Episode 2",
+            Some(1),
+            Some(2),
+            3,
+        )
+        .await?;
+
+        node_metadata::Entity::insert_many([
+            node_metadata::ActiveModel {
+                id: Set("remote-root".to_owned()),
+                node_id: Set("root".to_owned()),
+                source: Set(MetadataSource::Remote),
+                provider_id: Set("tmdb".to_owned()),
+                name: Set("Show".to_owned()),
+                first_aired: Set(Some(10)),
+                last_aired: Set(Some(20)),
+                created_at: Set(0),
+                updated_at: Set(0),
+                ..Default::default()
+            },
+            node_metadata::ActiveModel {
+                id: Set("remote-season-1".to_owned()),
+                node_id: Set("season-1".to_owned()),
+                source: Set(MetadataSource::Remote),
+                provider_id: Set("tmdb".to_owned()),
+                name: Set("Season 1".to_owned()),
+                first_aired: Set(Some(11)),
+                last_aired: Set(Some(19)),
+                created_at: Set(0),
+                updated_at: Set(0),
+                ..Default::default()
+            },
+            node_metadata::ActiveModel {
+                id: Set("remote-episode-1".to_owned()),
+                node_id: Set("episode-1".to_owned()),
+                source: Set(MetadataSource::Remote),
+                provider_id: Set("tmdb".to_owned()),
+                name: Set("Episode 1".to_owned()),
+                first_aired: Set(Some(12)),
+                last_aired: Set(Some(12)),
+                created_at: Set(0),
+                updated_at: Set(0),
+                ..Default::default()
+            },
+            node_metadata::ActiveModel {
+                id: Set("remote-episode-2".to_owned()),
+                node_id: Set("episode-2".to_owned()),
+                source: Set(MetadataSource::Remote),
+                provider_id: Set("tmdb".to_owned()),
+                name: Set("Episode 2".to_owned()),
+                first_aired: Set(Some(15)),
+                last_aired: Set(Some(18)),
+                created_at: Set(0),
+                updated_at: Set(0),
+                ..Default::default()
+            },
+        ])
+        .exec(&pool)
+        .await?;
+
+        reconcile_series_air_dates(
+            &pool,
+            "tmdb",
+            &root,
+            &[season],
+            &[episode_one, episode_two],
+            42,
+        )
+        .await?;
+
+        let root_remote = node_metadata::Entity::find_by_id("remote-root")
+            .one(&pool)
+            .await?
+            .unwrap();
+        let season_remote = node_metadata::Entity::find_by_id("remote-season-1")
+            .one(&pool)
+            .await?
+            .unwrap();
+
+        assert_eq!(root_remote.first_aired, Some(12));
+        assert_eq!(root_remote.last_aired, Some(18));
+        assert_eq!(season_remote.first_aired, Some(12));
+        assert_eq!(season_remote.last_aired, Some(18));
 
         Ok(())
     }

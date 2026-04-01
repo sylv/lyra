@@ -23,8 +23,8 @@ export const SessionCardFragment = graphql(`
 				seasonNumber
 				episodeNumber
 				runtimeMinutes
-				releasedAt
-				endedAt
+				firstAired
+				lastAired
 				posterImage {
 					...ImageAsset
 				}

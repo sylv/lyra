@@ -18,8 +18,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub score_display: Option<String>,
     pub score_normalized: Option<i64>,
-    pub released_at: Option<i64>,
-    pub ended_at: Option<i64>,
+    pub first_aired: Option<i64>,
+    pub last_aired: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub poster_asset_id: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]

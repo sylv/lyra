@@ -11,8 +11,8 @@ export const ItemPlaybackQuery = graphql(`
 				seasonNumber
 				episodeNumber
 				runtimeMinutes
-				releasedAt
-				endedAt
+				firstAired
+				lastAired
 			}
 			root {
 				libraryId
