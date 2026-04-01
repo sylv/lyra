@@ -1,8 +1,7 @@
-import { useSuspenseQuery } from "@apollo/client/react";
-import { graphql } from "../@generated/gql";
-import { createFileRoute } from "@tanstack/react-router";
-import { Navigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { Navigate } from "react-router";
+import { useQuery } from "urql";
+import { graphql } from "../@generated/gql";
 import { DirectoryPicker } from "@/components/directory-picker";
 import { useTitle } from "../hooks/use-title";
 import { ADMIN_BIT } from "../lib/user-permissions";
@@ -16,17 +15,13 @@ const PlaygroundViewerQuery = graphql(`
 	}
 `);
 
-export const Route = createFileRoute("/playground")({
-	component: PlaygroundRoute,
-});
-
-function PlaygroundRoute() {
+export function PlaygroundRoute() {
 	const [, setPath] = useState<string | null>("/");
-	const { data } = useSuspenseQuery(PlaygroundViewerQuery);
+	const [{ data }] = useQuery({ query: PlaygroundViewerQuery, context: { suspense: true } });
 
 	useTitle("Playground");
 
-	if ((data.viewer?.permissions ?? 0) & ADMIN_BIT) {
+	if ((data?.viewer?.permissions ?? 0) & ADMIN_BIT) {
 		return (
 			<div className="p-6">
 				<DirectoryPicker onPathChange={setPath} />

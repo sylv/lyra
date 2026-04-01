@@ -1,7 +1,6 @@
 import { babelOptimizerPlugin } from "@graphql-codegen/client-preset";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
-import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import codegen from "vite-plugin-graphql-codegen";
@@ -18,11 +17,6 @@ const buildTime = new Date().toISOString();
 export default defineConfig({
 	plugins: [
 		codegen(),
-		tanstackRouter({
-			target: "react",
-			autoCodeSplitting: true,
-			generatedRouteTree: "src/@generated/routeTree.tsx",
-		}),
 		react(),
 		babel({
 			plugins: [[babelOptimizerPlugin, { artifactDirectory: "./src/@generated/gql/", gqlTagName: "graphql" }]],
@@ -38,6 +32,16 @@ export default defineConfig({
 		sourcemap: true,
 	},
 	server: {
+		port: 3000,
+		proxy: {
+			"/api": {
+				target: "http://localhost:8000",
+				changeOrigin: true,
+				ws: true,
+			},
+		},
+	},
+	preview: {
 		port: 3000,
 		proxy: {
 			"/api": {

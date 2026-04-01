@@ -1,4 +1,5 @@
 import { useEffect, useRef, type FC } from "react";
+import { useCurrentValue } from "../hooks/use-current-value";
 
 interface ViewLoaderProps {
 	onLoadMore?: () => void;
@@ -6,14 +7,15 @@ interface ViewLoaderProps {
 
 export const ViewLoader: FC<ViewLoaderProps> = ({ onLoadMore }) => {
 	const loaderRef = useRef<HTMLDivElement>(null);
+	const loadMoreRef = useCurrentValue(() => onLoadMore);
 
 	useEffect(() => {
-		if (!onLoadMore || !loaderRef.current) return;
+		if (!loaderRef.current) return;
 
 		const observer = new IntersectionObserver((entries) => {
 			entries.forEach((entry) => {
 				if (entry.isIntersecting) {
-					onLoadMore();
+					loadMoreRef.current?.();
 				}
 			});
 		});
@@ -22,7 +24,7 @@ export const ViewLoader: FC<ViewLoaderProps> = ({ onLoadMore }) => {
 		return () => {
 			observer.disconnect();
 		};
-	}, [onLoadMore]);
+	}, [loaderRef.current]);
 
 	return (
 		<div className="relative w-full">

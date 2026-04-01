@@ -4,11 +4,10 @@ import { PlayWrapper } from "@/components/play-wrapper";
 import { SeasonCard } from "@/components/season-card";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
 import { useDynamicBackground } from "@/hooks/use-background";
-import { useSuspenseQuery } from "@apollo/client/react";
-import { Link, createFileRoute, redirect } from "@tanstack/react-router";
-import { Suspense, useState } from "react";
+import { useState } from "react";
+import { Link, Navigate, useParams } from "react-router";
+import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
-import { getApolloClient } from "../client";
 import { useTitle } from "../hooks/use-title";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForNodeData } from "../lib/getPathForMedia";
@@ -81,44 +80,28 @@ const Query = graphql(`
 	}
 `);
 
-export const Route = createFileRoute("/library_/$libraryId/node_/$nodeId")({
-	component: NodeRoute,
-	loader: async ({ params }) => {
-		const { data } = await getApolloClient().query({
-			query: Query,
-			variables: { nodeId: params.nodeId },
-		});
-
-		const node = data?.node;
-		if (node?.kind === "EPISODE" && node.parent) {
-			const path = getPathForNodeData({
-				id: node.parent.id,
-				libraryId: node.parent.libraryId,
-				__typename: "Node",
-			});
-
-			throw redirect({
-				to: path,
-				replace: true,
-			});
-		}
-	},
-});
-
 type SeasonEntry = { id: string; seasonNumber: number | null };
 
-function NodeRoute() {
-	const { nodeId } = Route.useParams();
-	const { data } = useSuspenseQuery(Query, { variables: { nodeId } });
+export function LibraryNodeRoute() {
+	const { nodeId } = useParams<{ nodeId: string }>();
+	const [{ data }] = useQuery({
+		query: Query,
+		variables: { nodeId: nodeId! },
+		context: { suspense: true },
+	});
+
 	const [view, setView] = useState<"episodes" | undefined>();
-	const node = data.node;
-	if (node == null) {
-		return null;
-	}
+	const node = data?.node;
+
+	const poster = node?.properties.posterImage ?? node?.properties.thumbnailImage;
+	useDynamicBackground((node?.properties.backgroundImage ?? poster) || null);
+	useTitle(node?.root?.properties.displayName ?? node?.properties.displayName);
+
+	if (!node) return null;
+
 	const playableItemId = node.nextPlayable?.id ?? (node.kind === "MOVIE" || node.kind === "EPISODE" ? node.id : null);
 	const playableWatchProgress =
 		node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
-	const poster = node.properties.posterImage ?? node.properties.thumbnailImage;
 	const nodePath = getPathForNodeData({ id: node.id, libraryId: node.libraryId, __typename: "Node" });
 	const parentPath = node.parent
 		? getPathForNodeData({
@@ -136,8 +119,10 @@ function NodeRoute() {
 		return a.order - b.order;
 	});
 
-	useDynamicBackground(node.properties.backgroundImage ?? poster);
-	useTitle(node.root?.properties.displayName ?? node.properties.displayName);
+	if (node.kind === "EPISODE" && node.parent) {
+		const path = getPathForNodeData({ id: node.parent.id, libraryId: node.parent.libraryId, __typename: "Node" });
+		return <Navigate to={path} replace={true} />;
+	}
 
 	if (node.kind === "SEASON") {
 		return (
@@ -163,9 +148,7 @@ function NodeRoute() {
 							<p className="text-sm text-zinc-400">{node.properties.description}</p>
 						</div>
 						<div className="pb-16">
-							<Suspense>
-								<NodeList type="episodes" filterOverride={{ parentId: nodeId }} />
-							</Suspense>
+							<NodeList type="episodes" filterOverride={{ parentId: nodeId }} />
 						</div>
 					</div>
 				</div>
@@ -194,16 +177,14 @@ function NodeRoute() {
 							<button
 								type="button"
 								onClick={() => setView(undefined)}
-								className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline text-left"
+								className="-mb-2 text-left text-sm text-zinc-400 hover:text-zinc-200 hover:underline"
 							>
 								{node.properties.displayName}
 							</button>
 							<h1 className="text-2xl font-bold">All Episodes</h1>
 						</div>
 						<div className="pb-16">
-							<Suspense>
-								<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
-							</Suspense>
+							<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
 						</div>
 					</div>
 				</div>
@@ -239,16 +220,14 @@ function NodeRoute() {
 			</div>
 			{hasEpisodeChildren && seasonEntries.length === 0 ? (
 				<div className="container py-6">
-					<Suspense>
-						<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
-					</Suspense>
+					<NodeList type="episodes" filterOverride={{ parentId: node.id }} />
 				</div>
 			) : null}
 			{sortedChildren.length > 0 && seasonEntries.length > 0 && (
 				<div className="container py-6">
 					<div className="flex flex-wrap gap-4">
 						{hasSeasons && (
-							<div className="flex flex-col gap-2 overflow-hidden w-38">
+							<div className="flex w-38 flex-col gap-2 overflow-hidden">
 								<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
 									<Image type={ImageType.Poster} asset={poster} alt="All Episodes" className="w-full" />
 									<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
@@ -256,11 +235,11 @@ function NodeRoute() {
 								<button
 									type="button"
 									onClick={() => setView("episodes")}
-									className="block w-full truncate text-sm group text-left"
+									className="block w-full truncate text-left text-sm group"
 								>
 									<span className="group-hover:underline">All Episodes</span>
 									{node.episodeCount > 0 && (
-										<p className="text-xs text-zinc-500 -mt-0.5">
+										<p className="-mt-0.5 text-xs text-zinc-500">
 											{node.episodeCount} {node.episodeCount === 1 ? "episode" : "episodes"}
 										</p>
 									)}

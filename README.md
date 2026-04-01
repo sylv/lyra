@@ -40,7 +40,7 @@ There is no hardware transcoding for the time being, it adds a lot of complexity
 
 ## development
 
-lyra uses rust + async-graphql + sqlx + sea-orm for the server and bun + react + apollo for the client.
+lyra uses rust + async-graphql + sqlx + sea-orm for the server and bun + react + urql for the client.
 
 For dev you'll need rust, bun, docker, and the custom ffmpeg binaries. The easiest way to get the ffmpeg binaries is:
 

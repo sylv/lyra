@@ -1,7 +1,7 @@
 import { CircleAlert } from "lucide-react";
 import type { FC, ReactNode } from "react";
 import { ErrorBoundary as ReactErrorBoundary } from "react-error-boundary";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation } from "react-router";
 import { cn } from "../lib/utils";
 import { IconText } from "./icon-text";
 
@@ -28,13 +28,12 @@ type AppErrorBoundaryProps = {
 };
 
 export const AppErrorBoundary: FC<AppErrorBoundaryProps> = ({ children, className, resetKeys = [] }) => {
-	const locationResetKeys = useLocation({
-		select: (location) => [location.pathname, location.searchStr, location.hash],
-	});
+	const location = useLocation();
+	const { pathname, search, hash } = location;
 
 	return (
 		<ReactErrorBoundary
-			resetKeys={[...locationResetKeys, ...resetKeys]}
+			resetKeys={[pathname, search, hash, ...resetKeys]}
 			FallbackComponent={({ error }) => <ErrorFallback error={error} className={className} />}
 		>
 			{children}

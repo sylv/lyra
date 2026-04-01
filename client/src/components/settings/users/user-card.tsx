@@ -1,9 +1,8 @@
-import { useMutation } from "@apollo/client/react";
 import { EllipsisVertical, KeyRound, Pencil, Trash2 } from "lucide-react";
 import { useMemo, useState, type FC } from "react";
+import { useMutation } from "urql";
 import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
-import { UserAvatar } from "../../user-avatar";
 import { describePermissions } from "../../../lib/describe-permissions";
 import { formatLastSeen } from "../../../lib/format-last-seen";
 import { ADMIN_BIT, VIEW_ALL_LIBRARIES_BIT } from "../../../lib/user-permissions";
@@ -14,10 +13,11 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "../../ui/dropdown-menu";
+import { UserAvatar } from "../../user-avatar";
 import { ManagementCard } from "../management-card";
 import { ConfirmDeleteUserModal } from "./confirm-delete-user-modal";
 import { InviteLinkField } from "./invite-link-field";
-import { DeleteUserMutation, ResetUserInviteMutation, UsersManagementQuery } from "./queries";
+import { DeleteUserMutation, ResetUserInviteMutation } from "./queries";
 
 interface UserCardProps {
 	user: FragmentType<typeof UserCardFragment>;
@@ -42,14 +42,8 @@ export const UserCardFragment = graphql(`
 
 export const UserCard: FC<UserCardProps> = ({ user: userRaw, viewerId, totalUsers, onEdit }) => {
 	const user = unmask(UserCardFragment, userRaw);
-	const [resetUserInvite, { loading: resetting }] = useMutation(ResetUserInviteMutation, {
-		refetchQueries: [UsersManagementQuery],
-		awaitRefetchQueries: true,
-	});
-	const [deleteUser, { loading: deleting }] = useMutation(DeleteUserMutation, {
-		refetchQueries: [UsersManagementQuery],
-		awaitRefetchQueries: true,
-	});
+	const [{ fetching: resetting }, resetUserInvite] = useMutation(ResetUserInviteMutation);
+	const [{ fetching: deleting }, deleteUser] = useMutation(DeleteUserMutation);
 	const [error, setError] = useState<string | null>(null);
 	const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 	const isViewer = user.id === viewerId;
@@ -76,11 +70,12 @@ export const UserCard: FC<UserCardProps> = ({ user: userRaw, viewerId, totalUser
 		setError(null);
 
 		try {
-			await resetUserInvite({
-				variables: {
-					userId: user.id,
-				},
+			const result = await resetUserInvite({
+				userId: user.id,
 			});
+			if (result.error) {
+				throw result.error;
+			}
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Failed to reset account");
 		}
@@ -90,11 +85,12 @@ export const UserCard: FC<UserCardProps> = ({ user: userRaw, viewerId, totalUser
 		setError(null);
 
 		try {
-			await deleteUser({
-				variables: {
-					userId: user.id,
-				},
+			const result = await deleteUser({
+				userId: user.id,
 			});
+			if (result.error) {
+				throw result.error;
+			}
 			setIsDeleteConfirmOpen(false);
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Failed to delete account");

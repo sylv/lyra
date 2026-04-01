@@ -1,7 +1,9 @@
-import { useApolloClient, useMutation } from "@apollo/client/react";
 import { EllipsisVertical, Pencil, Trash2 } from "lucide-react";
 import { useState, type FC } from "react";
+import { useMutation } from "urql";
 import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
+import type { LibraryCardFragment as LibraryCardData } from "../../../@generated/gql/graphql";
+import { formatLastScannedAt } from "../../../lib/format-last-scanned-at";
 import { LibraryIcon } from "../../library-icon";
 import {
 	DropdownMenu,
@@ -12,9 +14,7 @@ import {
 } from "../../ui/dropdown-menu";
 import { ManagementCard } from "../management-card";
 import { ConfirmDeleteLibraryModal } from "./confirm-delete-library-modal";
-import { DeleteLibraryMutation, LibrariesQuery } from "./queries";
-import { formatLastScannedAt } from "../../../lib/format-last-scanned-at";
-import type { LibraryCardFragment as LibraryCardData } from "../../../@generated/gql/graphql";
+import { DeleteLibraryMutation } from "./queries";
 
 interface LibraryCardProps {
 	library: FragmentType<typeof LibraryCardFragment>;
@@ -33,11 +33,7 @@ export const LibraryCardFragment = graphql(`
 
 export const LibraryCard: FC<LibraryCardProps> = ({ library: libraryRaw, onEdit }) => {
 	const library = unmask(LibraryCardFragment, libraryRaw);
-	const client = useApolloClient();
-	const [deleteLibrary, { loading: deleting }] = useMutation(DeleteLibraryMutation, {
-		refetchQueries: [LibrariesQuery],
-		awaitRefetchQueries: true,
-	});
+	const [{ fetching: deleting }, deleteLibrary] = useMutation(DeleteLibraryMutation);
 	const [error, setError] = useState<string | null>(null);
 	const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
@@ -45,12 +41,12 @@ export const LibraryCard: FC<LibraryCardProps> = ({ library: libraryRaw, onEdit 
 		setError(null);
 
 		try {
-			await deleteLibrary({
-				variables: {
-					libraryId: library.id,
-				},
+			const result = await deleteLibrary({
+				libraryId: library.id,
 			});
-			await client.refetchQueries({ include: "active" });
+			if (result.error) {
+				throw result.error;
+			}
 			setIsDeleteConfirmOpen(false);
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Failed to delete library");

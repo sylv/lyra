@@ -1,6 +1,6 @@
-import { Link } from "@tanstack/react-router";
 import type React from "react";
 import type { FC } from "react";
+import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../../@generated/gql";
 import type { NodePosterFragment } from "../../@generated/gql/graphql";
 import { formatReleaseYear } from "../../lib/format-release-year";

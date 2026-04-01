@@ -1,11 +1,11 @@
-import { useApolloClient, useMutation } from "@apollo/client/react";
 import { useState, type FC, type FormEvent } from "react";
+import { useMutation } from "urql";
 import type { LibraryCardFragment as LibraryCardData } from "../../../@generated/gql/graphql";
 import { Button, ButtonStyle } from "../../button";
 import { DirectoryPicker } from "../../directory-picker";
 import { Input } from "../../input";
 import { Modal, ModalBody, ModalHeader } from "../../modal";
-import { CreateLibraryMutation, LibrariesQuery, UpdateLibraryMutation } from "./queries";
+import { CreateLibraryMutation, UpdateLibraryMutation } from "./queries";
 
 interface LibraryFormModalProps {
 	activeForm:
@@ -48,15 +48,8 @@ const LibraryForm: FC<{
 	onClose: () => void;
 	library?: LibraryCardData;
 }> = ({ mode, onClose, library }) => {
-	const client = useApolloClient();
-	const [createLibrary, { loading: creating }] = useMutation(CreateLibraryMutation, {
-		refetchQueries: [LibrariesQuery],
-		awaitRefetchQueries: true,
-	});
-	const [updateLibrary, { loading: updating }] = useMutation(UpdateLibraryMutation, {
-		refetchQueries: [LibrariesQuery],
-		awaitRefetchQueries: true,
-	});
+	const [{ fetching: creating }, createLibrary] = useMutation(CreateLibraryMutation);
+	const [{ fetching: updating }, updateLibrary] = useMutation(UpdateLibraryMutation);
 	const [libraryName, setLibraryName] = useState(library?.name ?? "");
 	const [selectedPath, setSelectedPath] = useState<string | null>(library?.path ?? null);
 	const [error, setError] = useState<string | null>(null);
@@ -73,23 +66,24 @@ const LibraryForm: FC<{
 
 		try {
 			if (mode === "edit" && library) {
-				await updateLibrary({
-					variables: {
-						libraryId: library.id,
-						name: libraryName.trim(),
-						path: selectedPath,
-					},
+				const result = await updateLibrary({
+					libraryId: library.id,
+					name: libraryName.trim(),
+					path: selectedPath,
 				});
+				if (result.error) {
+					throw result.error;
+				}
 			} else {
-				await createLibrary({
-					variables: {
-						name: libraryName.trim(),
-						path: selectedPath,
-					},
+				const result = await createLibrary({
+					name: libraryName.trim(),
+					path: selectedPath,
 				});
+				if (result.error) {
+					throw result.error;
+				}
 			}
 
-			await client.refetchQueries({ include: "active" });
 			setLibraryName("");
 			setSelectedPath(null);
 			onClose();

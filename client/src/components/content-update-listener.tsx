@@ -1,8 +1,9 @@
-import { useApolloClient, useSubscription } from "@apollo/client/react";
-import { graphql } from "../@generated/gql";
-import { useSetup } from "./settings/setup/setup-wrapper";
-import { isSetupReady } from "./settings/setup/setup-state";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSubscription } from "urql";
+import { graphql } from "../@generated/gql";
+import { refreshActiveQueries } from "../client";
+import { isSetupReady } from "./settings/setup/setup-state";
+import { useSetup } from "./settings/setup/setup-wrapper";
 
 const ContentUpdatesSubscription = graphql(`
 	subscription ContentUpdates {
@@ -11,16 +12,15 @@ const ContentUpdatesSubscription = graphql(`
 `);
 
 export const ContentUpdateListener = () => {
-	const client = useApolloClient();
-	const { refresh, state } = useSetup();
+	const { recheckSetup, state } = useSetup();
 	const [focused, setFocused] = useState(document.hasFocus());
 	const unfocusedAt = useRef<number | null>(null);
 	const shouldSubscribe = state != null && isSetupReady(state) && focused;
 
 	const refreshAll = useCallback(async () => {
-		await client.refetchQueries({ include: "active" });
-		await refresh().catch(() => {});
-	}, [client, refresh]);
+		await refreshActiveQueries();
+		await recheckSetup().catch(() => {});
+	}, [recheckSetup]);
 
 	useEffect(() => {
 		const handleChange = (focused: boolean) => {
@@ -49,12 +49,18 @@ export const ContentUpdateListener = () => {
 		};
 	}, [refreshAll]);
 
-	useSubscription(ContentUpdatesSubscription, {
-		skip: !shouldSubscribe,
-		onData: () => {
-			void refreshAll();
-		},
+	const [subscriptionResult] = useSubscription({
+		query: ContentUpdatesSubscription,
+		pause: !shouldSubscribe,
 	});
+
+	useEffect(() => {
+		if (!subscriptionResult.data?.contentUpdates) {
+			return;
+		}
+
+		void refreshAll();
+	}, [refreshAll, subscriptionResult.data?.contentUpdates]);
 
 	return null;
 };

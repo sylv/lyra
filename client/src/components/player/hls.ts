@@ -24,13 +24,14 @@ export interface PlayerController {
 // probe data on demand before we can respond to the manifest request), so we need to increase timeouts
 // or else clients can time out before we finish.
 const HLS_TIMEOUT_MS = 15_000; // each attempt can take up to 15s
+const HLS_RETRY_DELAY_MS = 1000;
 const HLS_MAX_RETRY_TIME = 300_000; // retry for up to 5min
 const HLS_RETRY_COUNT = Math.ceil(HLS_MAX_RETRY_TIME / HLS_TIMEOUT_MS);
 
 const retryPolicy = {
 	maxNumRetry: HLS_RETRY_COUNT,
-	retryDelayMs: HLS_TIMEOUT_MS,
-	maxRetryDelayMs: HLS_TIMEOUT_MS,
+	retryDelayMs: HLS_RETRY_DELAY_MS,
+	maxRetryDelayMs: HLS_RETRY_DELAY_MS,
 	backoff: "linear" as const,
 };
 

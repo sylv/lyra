@@ -1,6 +1,5 @@
-import { useMutation } from "@apollo/client/react";
-import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useMutation } from "urql";
 import { graphql } from "../@generated/gql";
 import { Button, ButtonStyle } from "../components/button";
 import { Input } from "../components/input";
@@ -19,11 +18,7 @@ const SIGNUP_MUTATION = graphql(`
 	}
 `);
 
-export const Route = createFileRoute("/setup/create-account")({
-	component: SetupCreateAccountRoute,
-});
-
-function SetupCreateAccountRoute() {
+export function SetupCreateAccountRoute() {
 	const { state } = useSetup();
 
 	if (state?.state !== "create_first_user" && state?.state !== "create_invited_user") {
@@ -56,7 +51,7 @@ function CreateAccountForm({
 	initialUsername: string;
 	inviteCode: string | null;
 }) {
-	const { refresh } = useSetup();
+	const { recheckSetup } = useSetup();
 	const isInviteFlow = mode === "create_invited_user";
 	const [username, setUsername] = useState(initialUsername);
 	const [password, setPassword] = useState("");
@@ -67,7 +62,7 @@ function CreateAccountForm({
 	const [waitingForCode, setWaitingForCode] = useState(!isInviteFlow);
 	const [setupCode, setSetupCode] = useState<number | null>(null);
 
-	const [signup] = useMutation(SIGNUP_MUTATION, {});
+	const [, signup] = useMutation(SIGNUP_MUTATION);
 
 	useEffect(() => {
 		setUsername(initialUsername);
@@ -107,23 +102,27 @@ function CreateAccountForm({
 
 		try {
 			setLoading(true);
-			await signup({
-				variables: {
+			const result = await signup(
+				{
 					username: username.trim(),
 					password,
 					inviteCode: inviteCode,
 				},
-				context: isInviteFlow
+				isInviteFlow
 					? undefined
 					: {
-							headers: {
-								"x-setup-code": setupCode!.toString(),
+							fetchOptions: {
+								headers: {
+									"x-setup-code": setupCode!.toString(),
+								},
 							},
 						},
-			});
+			);
+			if (result.error) {
+				throw result.error;
+			}
 
-			await refresh();
-			setLoading(false);
+			await recheckSetup();
 		} catch (error: any) {
 			// todo: handle 401s
 			setError(error.message);
@@ -149,7 +148,7 @@ function CreateAccountForm({
 			{waitingForCode ? (
 				<fieldset>
 					<InputOtp onChange={setSetupCode} />
-					<p className="text-zinc-600 text-xs mt-3 text-center">Enter the code from Lyra's startup logs.</p>
+					<p className="mt-3 text-center text-xs text-zinc-600">Enter the code from Lyra's startup logs.</p>
 				</fieldset>
 			) : (
 				<form

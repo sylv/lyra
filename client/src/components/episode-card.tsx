@@ -1,5 +1,5 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useMemo, type FC } from "react";
+import { useNavigate } from "react-router";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import { getPathForNode } from "../lib/getPathForMedia";
 import { Image, ImageType } from "./image";
@@ -60,7 +60,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 			aria-label={`Play ${episode.properties.displayName}`}
 			onClick={() => {
 				openPlayerMedia(episode.id, true);
-				navigate({ to: path });
+				navigate(path);
 			}}
 		>
 			<div className="relative h-min shrink-0 overflow-hidden rounded-sm">

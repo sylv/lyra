@@ -1,5 +1,5 @@
-import { useQuery } from "@apollo/client/react";
-import { type FC } from "react";
+import { useEffect, useState, type FC } from "react";
+import { useQuery } from "urql";
 import { graphql } from "../../@generated/gql";
 import type { NodeFilter } from "../../@generated/gql/graphql";
 import { EpisodeCard } from "../episode-card";
@@ -14,6 +14,7 @@ interface NodePageProps {
 	perPage: number;
 	variables: PageVariables;
 	isLast: boolean;
+	isFirst: boolean;
 	onLoadMore: (after: string) => void;
 }
 
@@ -35,10 +36,25 @@ const Query = graphql(`
 	}
 `);
 
-export const NodePage: FC<NodePageProps> = ({ displayKind, perPage, filter, variables, isLast, onLoadMore }) => {
-	const { data } = useQuery(Query, {
+export const NodePage: FC<NodePageProps> = ({
+	displayKind,
+	perPage,
+	filter,
+	variables,
+	isFirst,
+	isLast,
+	onLoadMore,
+}) => {
+	const [firstLoad, setFirstLoad] = useState(isFirst);
+	const [{ data }] = useQuery({
+		query: Query,
+		context: { suspense: firstLoad },
 		variables: { after: variables.after, first: perPage, filter },
 	});
+
+	useEffect(() => {
+		if (data) setFirstLoad(false);
+	}, [data]);
 
 	return (
 		<>

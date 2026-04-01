@@ -1,7 +1,7 @@
-import { useQuery } from "@apollo/client/react";
-import { Link } from "@tanstack/react-router";
 import { SearchAlertIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
+import { Link } from "react-router";
+import { useQuery } from "urql";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import type { SearchNodeResultFragment as SearchNodeResultData } from "../@generated/gql/graphql";
 import { useDebounce } from "../hooks/use-debounce";
@@ -146,16 +146,12 @@ export const SearchModal: FC<{ open: boolean; onOpenChange: (open: boolean) => v
 	};
 	const [deferredQuery] = useDebounce(query.trim(), 200, 1000);
 	const shouldSearch = open && deferredQuery.length > 0;
-	const {
-		data: rawData,
-		previousData,
-		loading,
-		error,
-	} = useQuery(SearchMediaQuery, {
-		skip: !shouldSearch,
+	const [{ data: rawData, fetching: loading, error }] = useQuery({
+		query: SearchMediaQuery,
+		pause: !shouldSearch,
 		variables: { query: deferredQuery, limit: 6 },
 	});
-	const displayData = deferredQuery && !error ? rawData || previousData : rawData;
+	const displayData = error ? undefined : rawData;
 	const roots = displayData?.search.roots ?? [];
 	const episodes = displayData?.search.episodes ?? [];
 	const hasResults = roots.length > 0 || episodes.length > 0;

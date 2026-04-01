@@ -1,8 +1,9 @@
-import { useNavigate } from "@tanstack/react-router";
 import { produce, type Draft } from "immer";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import z from "zod";
 import { adaptQuerySchema } from "../lib/zod-forgiving";
+import { useCurrentValue } from "./use-current-value";
 
 interface UseQueryArgs<T extends z.ZodObject> {
 	schema: T;
@@ -29,32 +30,13 @@ const deserialize = (value: string): unknown => {
 	return value;
 };
 
-export const useQueryState = <T extends z.ZodObject>({ schema, overrides }: UseQueryArgs<T>): UseQueryResult<T> => {
-	const navigate = useNavigate<any>();
-	const adaptedSchema = useMemo(() => adaptQuerySchema(schema), [schema]);
-
-	const writeState = useCallback(
-		(state: z.infer<T>) => {
-			const data: Record<string, string | string[]> = {};
-			for (const [key, value] of Object.entries(state)) {
-				if (value == null) continue;
-				data[key] = serialize(value);
-			}
-
-			console.log({ data });
-			navigate({
-				search: (old) =>
-					({
-						...old,
-						...data,
-					}) as any,
-			});
-		},
-		[navigate, adaptedSchema],
-	);
-
-	const [state, setState] = useState(() => {
-		const searchParams = new URLSearchParams(window.location.search);
+export const useQueryState = <T extends z.ZodObject>(props: UseQueryArgs<T>): UseQueryResult<T> => {
+	const location = useLocation();
+	const navigate = useNavigate();
+	const schema = useCurrentValue(() => adaptQuerySchema(props.schema));
+	const overrides = useCurrentValue(props.overrides);
+	const parseSearch = useCallback((search: string) => {
+		const searchParams = new URLSearchParams(search);
 		const parts: Record<string, unknown> = {};
 		for (const [key, value] of searchParams.entries()) {
 			if (parts[key]) {
@@ -65,15 +47,43 @@ export const useQueryState = <T extends z.ZodObject>({ schema, overrides }: UseQ
 			}
 		}
 
-		const parsed = adaptedSchema.safeParse({ ...parts, ...overrides });
+		const parsed = schema.current.safeParse({ ...parts, ...overrides });
 		if (parsed.error) {
 			console.error(parsed.error);
 			throw new Error("Invalid useQueryState schema, it must be infallible");
 		}
 
-		writeState(parsed.data);
 		return parsed.data;
-	});
+	}, []);
+
+	const [state, setState] = useState(() => parseSearch(location.search));
+
+	useEffect(() => {
+		setState(parseSearch(location.search));
+	}, [location.search, parseSearch]);
+
+	const writeState = useCallback(
+		(state: z.infer<T>) => {
+			const data = new URLSearchParams();
+			for (const [key, value] of Object.entries(state)) {
+				if (value == null) continue;
+				const values = Array.isArray(value) ? value.map(serialize) : [serialize(value)];
+				for (const item of values) {
+					data.append(key, item);
+				}
+			}
+
+			navigate(
+				{
+					pathname: location.pathname,
+					search: data.toString() ? `?${data.toString()}` : "",
+					hash: location.hash,
+				},
+				{ replace: true },
+			);
+		},
+		[location.hash, location.pathname, navigate],
+	);
 
 	const mutate = (producer: (prev: Draft<z.infer<T>>) => void) => {
 		const nextState = produce(state, producer);

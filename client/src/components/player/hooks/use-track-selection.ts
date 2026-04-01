@@ -1,26 +1,33 @@
-import { useMutation } from "@apollo/client/react";
 import type { ItemPlaybackQuery } from "../../../@generated/gql/graphql";
+import { useClient, useMutation } from "urql";
 import { playerContext, setPlayerState } from "../player-context";
 import { ItemPlaybackQuery as ItemPlaybackQueryDoc, SetPreferredAudio, SetPreferredSubtitle } from "../player-queries";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 
 export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: string) => {
-	const [setPreferredAudio] = useMutation(SetPreferredAudio, {
-		refetchQueries: [{ query: ItemPlaybackQueryDoc, variables: { itemId } }],
-	});
-	const [setPreferredSubtitle] = useMutation(SetPreferredSubtitle, {
-		refetchQueries: [{ query: ItemPlaybackQueryDoc, variables: { itemId } }],
-	});
+	const client = useClient();
+	const [, setPreferredAudio] = useMutation(SetPreferredAudio);
+	const [, setPreferredSubtitle] = useMutation(SetPreferredSubtitle);
+
+	const refreshPlaybackQuery = () =>
+		client.query(ItemPlaybackQueryDoc, { itemId }, { requestPolicy: "network-only" }).toPromise();
 
 	const onAudioTrackChange = (trackId: number | null) => {
 		const setAudioTrack = playerContext.getState().actions.setAudioTrack;
 		if (trackId === null) {
 			setAudioTrack(0);
 			setPlayerState({ selectedAudioTrackId: 0 });
-			setPreferredAudio({ variables: { language: null, disposition: null } }).catch((err: unknown) => {
-				console.error("failed to save audio preference", err);
-			});
+			setPreferredAudio({ language: null, disposition: null })
+				.then((result) => {
+					if (result.error) {
+						throw result.error;
+					}
+					return refreshPlaybackQuery();
+				})
+				.catch((err: unknown) => {
+					console.error("failed to save audio preference", err);
+				});
 			return;
 		}
 
@@ -32,11 +39,16 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 			(track) => track.trackType === "AUDIO" && track.manifestIndex === trackId,
 		);
 		if (serverTrack?.language != null) {
-			setPreferredAudio({
-				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
-			}).catch((err: unknown) => {
-				console.error("failed to save audio preference", err);
-			});
+			setPreferredAudio({ language: serverTrack.language, disposition: serverTrack.disposition ?? null })
+				.then((result) => {
+					if (result.error) {
+						throw result.error;
+					}
+					return refreshPlaybackQuery();
+				})
+				.catch((err: unknown) => {
+					console.error("failed to save audio preference", err);
+				});
 		}
 	};
 
@@ -46,9 +58,16 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 			setSubtitleDisplay(false);
 			setSubtitleTrack(-1);
 			setPlayerState({ selectedSubtitleTrackId: trackId === null ? null : -1 });
-			setPreferredSubtitle({ variables: { language: null, disposition: null } }).catch((err: unknown) => {
-				console.error("failed to save subtitle preference", err);
-			});
+			setPreferredSubtitle({ language: null, disposition: null })
+				.then((result) => {
+					if (result.error) {
+						throw result.error;
+					}
+					return refreshPlaybackQuery();
+				})
+				.catch((err: unknown) => {
+					console.error("failed to save subtitle preference", err);
+				});
 			return;
 		}
 
@@ -61,11 +80,16 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 			(track) => track.trackType === "SUBTITLE" && track.manifestIndex === trackId,
 		);
 		if (serverTrack?.language != null) {
-			setPreferredSubtitle({
-				variables: { language: serverTrack.language, disposition: serverTrack.disposition ?? null },
-			}).catch((err: unknown) => {
-				console.error("failed to save subtitle preference", err);
-			});
+			setPreferredSubtitle({ language: serverTrack.language, disposition: serverTrack.disposition ?? null })
+				.then((result) => {
+					if (result.error) {
+						throw result.error;
+					}
+					return refreshPlaybackQuery();
+				})
+				.catch((err: unknown) => {
+					console.error("failed to save subtitle preference", err);
+				});
 		}
 	};
 

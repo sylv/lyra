@@ -13,11 +13,10 @@ interface UserManagerProps {
 		createdAt: number;
 	}>;
 	viewerId?: string | null;
-	loading?: boolean;
 	error?: string | null;
 }
 
-export const UserManager: FC<UserManagerProps> = ({ users, libraries, viewerId, loading = false, error }) => {
+export const UserManager: FC<UserManagerProps> = ({ users, libraries, viewerId, error }) => {
 	const [activeForm, setActiveForm] = useState<
 		| { mode: "create" }
 		| {
@@ -55,7 +54,6 @@ export const UserManager: FC<UserManagerProps> = ({ users, libraries, viewerId, 
 					title="New Account"
 					description="Create a new account with an invite link"
 					onClick={() => setActiveForm({ mode: "create" })}
-					loading={loading}
 				/>
 			</div>
 		</div>

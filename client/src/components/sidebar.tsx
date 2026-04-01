@@ -1,14 +1,13 @@
-import { useQuery, useSuspenseQuery } from "@apollo/client/react";
-import { Link, useLocation } from "@tanstack/react-router";
 import { Activity, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
-import BrandLogo from "../assets/logo.svg";
+import { Link, useLocation } from "react-router";
+import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
-import { LibraryIcon } from "./library-icon";
+import BrandLogo from "../assets/logo.svg";
 import { ADMIN_BIT } from "../lib/user-permissions";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
-import { SuspenseBoundary } from "./fallback";
+import { LibraryIcon } from "./library-icon";
 import { SearchModal } from "./search-modal";
 import { Drawer, DrawerContent } from "./ui/drawer";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
@@ -71,12 +70,13 @@ const SidebarViewerQuery = graphql(`
 
 // rendered in the mobile navbar and the desktop sidebar header — owns activity/settings state
 const SidebarHeader: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
-	const pathname = useLocation({ select: (location) => location.pathname });
+	const location = useLocation();
+	const pathname = location.pathname;
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
-	const { data: viewerData } = useSuspenseQuery(SidebarViewerQuery);
-	const isAdmin = ((viewerData.viewer?.permissions ?? 0) & ADMIN_BIT) !== 0;
-	const { data: activityData } = useQuery(ActivityPanelQuery, { skip: !isAdmin });
+	const [{ data: viewerData }] = useQuery({ query: SidebarViewerQuery, context: { suspense: true } });
+	const isAdmin = ((viewerData?.viewer?.permissions ?? 0) & ADMIN_BIT) !== 0;
+	const [{ data: activityData }] = useQuery({ query: ActivityPanelQuery, pause: !isAdmin });
 	const activitiesRunning = (activityData?.activities.length ?? 0) > 0;
 
 	return (
@@ -154,11 +154,10 @@ const MobileNavbar: FC<{ onMenuClick: () => void }> = ({ onMenuClick }) => {
 };
 
 const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
-	const pathname = useLocation({
-		select: (location) => location.pathname,
-	});
+	const location = useLocation();
+	const pathname = location.pathname;
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
-	const { data } = useSuspenseQuery(LibrariesQuery);
+	const [{ data }] = useQuery({ query: LibrariesQuery, context: { suspense: true } });
 
 	return (
 		<>
@@ -222,9 +221,7 @@ export const Sidebar: FC<{ children: ReactNode }> = ({ children }) => {
 				</DrawerContent>
 			</Drawer>
 
-			<main className="flex-1 overflow-auto z-10 px-6 md:pl-0">
-				<SuspenseBoundary>{children}</SuspenseBoundary>
-			</main>
+			<main className="flex-1 overflow-auto z-10 px-6 md:pl-0">{children}</main>
 		</div>
 	);
 };

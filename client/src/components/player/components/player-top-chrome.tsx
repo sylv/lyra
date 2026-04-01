@@ -1,7 +1,7 @@
-import { useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@apollo/client/react";
 import { ChevronDown, LoaderCircle, UserX2, Users, XIcon } from "lucide-react";
 import type { FC } from "react";
+import { useNavigate } from "react-router";
+import { useMutation } from "urql";
 import { unmask } from "../../../@generated/gql";
 import { type ItemPlaybackQuery, WatchSessionActionKind } from "../../../@generated/gql/graphql";
 import { getPathForNodeData } from "../../../lib/getPathForMedia";
@@ -23,7 +23,7 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 	const watchSession = usePlayerContext((ctx) => ctx.watchSession);
 	const { containerRef } = usePlayerRefsContext();
 	const navigate = useNavigate();
-	const [watchSessionAction, { loading: removingPlayer }] = useMutation(WatchSessionAction);
+	const [{ fetching: removingPlayer }, watchSessionAction] = useMutation(WatchSessionAction);
 	const detailsPath = media.libraryId ? getPathForNodeData(media) : null;
 	const hasEpisodeMetadata =
 		!!media.root?.properties.displayName &&
@@ -60,7 +60,7 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 						event.stopPropagation();
 						if (!detailsPath) return;
 						togglePlayerFullscreen(false);
-						navigate({ to: detailsPath });
+						navigate(detailsPath);
 					}}
 				>
 					{hasEpisodeMetadata ? (
@@ -151,17 +151,18 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
 														onClick={() => {
 															if (!watchSession.sessionId || !watchSession.playerId) return;
 															void watchSessionAction({
-																variables: {
-																	input: {
-																		sessionId: watchSession.sessionId,
-																		playerId: watchSession.playerId,
-																		kind: WatchSessionActionKind.RemovePlayer,
-																		positionMs: null,
-																		nodeId: null,
-																		targetPlayerId: player.id,
-																	},
+																input: {
+																	sessionId: watchSession.sessionId,
+																	playerId: watchSession.playerId,
+																	kind: WatchSessionActionKind.RemovePlayer,
+																	positionMs: null,
+																	nodeId: null,
+																	targetPlayerId: player.id,
 																},
 															}).then((result) => {
+																if (result.error) {
+																	throw result.error;
+																}
 																const beacon = result.data?.watchSessionAction;
 																if (beacon) {
 																	applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));

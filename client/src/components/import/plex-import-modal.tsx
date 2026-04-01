@@ -1,6 +1,6 @@
-import { useApolloClient, useMutation } from "@apollo/client/react";
 import { AlertCircle, ArrowRight, CheckCircle2, Server, TriangleAlert } from "lucide-react";
 import { useCallback, useMemo, useState, type FC } from "react";
+import { useMutation } from "urql";
 import { graphql } from "../../@generated/gql";
 import type { RunImportWatchStatesMutation } from "../../@generated/gql/graphql";
 import { Button, ButtonStyle } from "../button";
@@ -61,11 +61,10 @@ const toCompatibility = (result: RunImportWatchStatesMutation["importWatchStates
 });
 
 export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }) => {
-	const apolloClient = useApolloClient();
 	const [state, setState] = useState<PlexImportState>(INITIAL_PLEX_IMPORT_STATE);
 	const [dryRunResult, setDryRunResult] = useState<RunImportWatchStatesMutation["importWatchStates"] | null>(null);
 	const [finalResult, setFinalResult] = useState<RunImportWatchStatesMutation["importWatchStates"] | null>(null);
-	const [runImportWatchStates] = useMutation(RunImportWatchStates);
+	const [, runImportWatchStates] = useMutation(RunImportWatchStates);
 
 	const resetState = useCallback(() => {
 		setState(INITIAL_PLEX_IMPORT_STATE);
@@ -90,14 +89,15 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 			}));
 
 			const response = await runImportWatchStates({
-				variables: {
-					input: {
-						dryRun: true,
-						overwriteConflicts: false,
-						rows,
-					},
+				input: {
+					dryRun: true,
+					overwriteConflicts: false,
+					rows,
 				},
 			});
+			if (response.error) {
+				throw response.error;
+			}
 
 			const result = response.data?.importWatchStates;
 			if (!result) {
@@ -220,20 +220,20 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 
 		try {
 			const response = await runImportWatchStates({
-				variables: {
-					input: {
-						dryRun: false,
-						overwriteConflicts: state.overwriteConflicts,
-						rows: state.rows,
-					},
+				input: {
+					dryRun: false,
+					overwriteConflicts: state.overwriteConflicts,
+					rows: state.rows,
 				},
 			});
+			if (response.error) {
+				throw response.error;
+			}
 			const result = response.data?.importWatchStates;
 			if (!result) {
 				throw new Error("Import mutation returned no result");
 			}
 
-			await apolloClient.refetchQueries({ include: "active" });
 			setFinalResult(result);
 			setState((previous) => ({
 				...previous,
@@ -247,7 +247,7 @@ export const PlexImportModal: FC<PlexImportModalProps> = ({ open, onOpenChange }
 		} catch (error) {
 			setError(error instanceof Error ? error.message : "Plex import failed");
 		}
-	}, [apolloClient, runImportWatchStates, setError, state.overwriteConflicts, state.rows]);
+	}, [runImportWatchStates, setError, state.overwriteConflicts, state.rows]);
 
 	const handleOpenChange = useCallback(
 		(nextOpen: boolean) => {

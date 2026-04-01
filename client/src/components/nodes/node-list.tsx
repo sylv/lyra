@@ -1,10 +1,10 @@
 import { CalendarClockIcon, CalendarPlusIcon, ListOrderedIcon, SortAscIcon, StarIcon } from "lucide-react";
-import { useCallback, useMemo, useState, type FC } from "react";
+import { useMemo, useState, type FC } from "react";
+import z from "zod";
 import { NodeKind, OrderBy, OrderDirection, type NodeFilter } from "../../@generated/gql/graphql";
+import { useQueryState } from "../../hooks/use-query-state";
 import { FilterButton, FilterSelect } from "../filter-button";
 import { NodePage } from "./node-page";
-import z from "zod";
-import { useQueryState } from "../../hooks/use-query-state";
 
 const POSTER_WIDTH = 185;
 const GAP_SIZE = 16;
@@ -66,33 +66,29 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 	}, [variant.type]);
 	const [filter, setFilter] = useQueryState({ schema, overrides: filterOverride });
 	const [selectedKinds, setSelectedKinds] = useState<NodeKind[]>([]);
-
 	const [pageVariables, setPageVariables] = useState<PageVariables[]>([
 		{
 			after: null,
 		},
 	]);
 
-	const updateFilter = useCallback((change: Omit<Partial<NodeFilter>, "kinds"> & { kinds?: NodeKind[] }) => {
+	const updateFilter = (change: Omit<Partial<NodeFilter>, "kinds"> & { kinds?: NodeKind[] }) => {
 		setFilter((prev) => ({ ...prev, ...change }));
 		setPageVariables([
 			{
 				after: null,
 			},
 		]);
-	}, []);
+	};
 
-	const toggleKind = useCallback(
-		(kind: NodeKind) => {
-			let nextSelectedKinds: NodeKind[];
-			if (selectedKinds.includes(kind)) nextSelectedKinds = selectedKinds.filter((k) => k !== kind);
-			else nextSelectedKinds = [...selectedKinds, kind];
+	const toggleKind = (kind: NodeKind) => {
+		let nextSelectedKinds: NodeKind[];
+		if (selectedKinds.includes(kind)) nextSelectedKinds = selectedKinds.filter((k) => k !== kind);
+		else nextSelectedKinds = [...selectedKinds, kind];
 
-			setSelectedKinds(nextSelectedKinds);
-			updateFilter({ kinds: nextSelectedKinds.length > 0 ? nextSelectedKinds : possibleKinds });
-		},
-		[selectedKinds, possibleKinds],
-	);
+		setSelectedKinds(nextSelectedKinds);
+		updateFilter({ kinds: nextSelectedKinds.length > 0 ? nextSelectedKinds : possibleKinds });
+	};
 
 	return (
 		<>
@@ -159,9 +155,11 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 								displayKind={displayKind}
 								filter={filter}
 								variables={variables}
+								isFirst={index === 0}
 								isLast={index === pageVariables.length - 1}
 								perPage={perPage || PER_PAGE}
 								onLoadMore={(after) => {
+									console.log({ after });
 									setPageVariables((prev) => {
 										return [...prev, { after }];
 									});

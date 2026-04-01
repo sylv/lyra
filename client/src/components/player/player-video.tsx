@@ -1,6 +1,6 @@
 /* oxlint-disable jsx_a11y/media-has-caption */
-import { useMutation, useSubscription } from "@apollo/client/react";
 import { useEffect, useRef, useState, type FC } from "react";
+import { useMutation, useSubscription } from "urql";
 import { type FragmentType, unmask } from "../../@generated/gql";
 import { type ItemPlaybackQuery, WatchSessionActionKind, WatchSessionIntent } from "../../@generated/gql/graphql";
 import { createHlsPlayer } from "./hls";
@@ -39,9 +39,9 @@ interface PlayerVideoProps {
 
 export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shouldPromptResume }) => {
 	const { videoRef, controllerRef } = usePlayerRefsContext();
-	const [updateWatchProgress] = useMutation(UpdateWatchState);
-	const [watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
-	const [watchSessionAction] = useMutation(WatchSessionAction);
+	const [, updateWatchProgress] = useMutation(UpdateWatchState);
+	const [, watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
+	const [, watchSessionAction] = useMutation(WatchSessionAction);
 	const currentMediaId = currentMedia?.id ?? null;
 	const currentFileId = currentMedia?.file?.id ?? null;
 	const watchSession = usePlayerContext((ctx) => ctx.watchSession);
@@ -64,18 +64,20 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 	const heartbeatRef = useRef<(() => void) | null>(null);
 	const [isWatchSessionRegistered, setIsWatchSessionRegistered] = useState(false);
 
-	useSubscription(WatchSessionBeacons, {
+	const [watchSessionBeaconsResult] = useSubscription({
+		query: WatchSessionBeacons,
 		variables: {
 			sessionId: watchSession.sessionId ?? "",
 			playerId: watchSession.playerId ?? "",
 		},
-		skip: !watchSession.sessionId || !watchSession.playerId || !isWatchSessionRegistered,
-		onData: ({ data }) => {
-			const beacon = data.data?.watchSessionBeacons;
-			if (!beacon) return;
-			applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
-		},
+		pause: !watchSession.sessionId || !watchSession.playerId || !isWatchSessionRegistered,
 	});
+
+	useEffect(() => {
+		const beacon = watchSessionBeaconsResult.data?.watchSessionBeacons;
+		if (!beacon) return;
+		applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
+	}, [watchSessionBeaconsResult.data?.watchSessionBeacons]);
 
 	useEffect(() => {
 		setIsWatchSessionRegistered(false);
@@ -93,18 +95,19 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			if (!sessionState.sessionId || !sessionState.playerId) return null;
 
 			const request = watchSessionAction({
-				variables: {
-					input: {
-						sessionId: sessionState.sessionId,
-						playerId: sessionState.playerId,
-						kind,
-						positionMs: fields.positionMs ?? null,
-						nodeId: fields.nodeId ?? null,
-						targetPlayerId: fields.targetPlayerId ?? null,
-					},
+				input: {
+					sessionId: sessionState.sessionId,
+					playerId: sessionState.playerId,
+					kind,
+					positionMs: fields.positionMs ?? null,
+					nodeId: fields.nodeId ?? null,
+					targetPlayerId: fields.targetPlayerId ?? null,
 				},
 			})
 				.then((result) => {
+					if (result.error) {
+						throw result.error;
+					}
 					const beacon = result.data?.watchSessionAction;
 					if (beacon) {
 						applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
@@ -338,18 +341,19 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		if (!watchSession.nodeId || watchSession.nodeId === currentMediaId) return;
 
 		void watchSessionAction({
-			variables: {
-				input: {
-					sessionId: watchSession.sessionId,
-					playerId: watchSession.playerId,
-					kind: WatchSessionActionKind.SwitchItem,
-					positionMs: null,
-					nodeId: currentMediaId,
-					targetPlayerId: null,
-				},
+			input: {
+				sessionId: watchSession.sessionId,
+				playerId: watchSession.playerId,
+				kind: WatchSessionActionKind.SwitchItem,
+				positionMs: null,
+				nodeId: currentMediaId,
+				targetPlayerId: null,
 			},
 		})
 			.then((result) => {
+				if (result.error) {
+					throw result.error;
+				}
 				const beacon = result.data?.watchSessionAction;
 				if (beacon) {
 					applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
@@ -441,24 +445,25 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 							: WatchSessionIntent.Playing;
 
 			void watchSessionHeartbeat({
-				variables: {
-					input: {
-						sessionId: sessionState.sessionId,
-						playerId: sessionState.playerId,
-						isBuffering,
-						basePositionMs,
-						baseTimeMs,
-						recovery: {
-							nodeId: sessionState.nodeId ?? currentMediaId,
-							fileId: sessionState.fileId ?? currentFileId,
-							intent: recoveryIntent,
-							basePositionMs: sessionState.basePositionMs ?? basePositionMs,
-							baseTimeMs: sessionState.baseTimeMs ?? baseTimeMs,
-						},
+				input: {
+					sessionId: sessionState.sessionId,
+					playerId: sessionState.playerId,
+					isBuffering,
+					basePositionMs,
+					baseTimeMs,
+					recovery: {
+						nodeId: sessionState.nodeId ?? currentMediaId,
+						fileId: sessionState.fileId ?? currentFileId,
+						intent: recoveryIntent,
+						basePositionMs: sessionState.basePositionMs ?? basePositionMs,
+						baseTimeMs: sessionState.baseTimeMs ?? baseTimeMs,
 					},
 				},
 			})
 				.then((result) => {
+					if (result.error) {
+						throw result.error;
+					}
 					const beacon = result.data?.watchSessionHeartbeat;
 					if (beacon) {
 						const resolvedBeacon = unmask(WatchSessionBeaconFragment, beacon);
@@ -562,13 +567,17 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			watchProgressRef.current.lastProgressPercent = progressPercent;
 
 			updateWatchProgress({
-				variables: {
-					fileId: currentMedia.file.id,
-					progressPercent,
-				},
-			}).catch((err: unknown) => {
-				console.error("failed to update watch state", err);
-			});
+				fileId: currentMedia.file.id,
+				progressPercent,
+			})
+				.then((result) => {
+					if (result.error) {
+						throw result.error;
+					}
+				})
+				.catch((err: unknown) => {
+					console.error("failed to update watch state", err);
+				});
 		};
 
 		const updateBufferedRanges = () => {

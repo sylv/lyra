@@ -1,4 +1,3 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Input } from "../components/input";
 import { SetupPage } from "../components/settings/setup/setup-page";
@@ -6,11 +5,7 @@ import { SetupStep } from "../components/settings/setup/setup-step";
 import { useSetup } from "../components/settings/setup/setup-wrapper";
 import { useTitle } from "../hooks/use-title";
 
-export const Route = createFileRoute("/setup/login")({
-	component: SetupLoginRoute,
-});
-
-function SetupLoginRoute() {
+export function SetupLoginRoute() {
 	const { state } = useSetup();
 
 	if (state?.state !== "login") {
@@ -25,7 +20,7 @@ function SetupLoginRoute() {
 }
 
 function LoginForm() {
-	const { refresh } = useSetup();
+	const { recheckSetup } = useSetup();
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -63,8 +58,7 @@ function LoginForm() {
 				throw new Error(errorBody?.error_message ?? `Login failed (${response.status})`);
 			}
 
-			await refresh();
-			setLoading(false);
+			await recheckSetup();
 		} catch (error: any) {
 			// todo: handle 401s
 			setError(error.message);

@@ -1,13 +1,8 @@
-import { useQuery } from "@apollo/client/react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "urql";
 import { UserManager, UsersManagementQuery } from "../components/settings/users";
 
-export const Route = createFileRoute("/settings/users")({
-	component: RouteComponent,
-});
-
-function RouteComponent() {
-	const { data, loading, error } = useQuery(UsersManagementQuery);
+export function SettingsUsersRoute() {
+	const [{ data, error }] = useQuery({ query: UsersManagementQuery, context: { suspense: true } });
 
 	return (
 		<section className="space-y-4">
@@ -21,7 +16,6 @@ function RouteComponent() {
 				users={data?.users ?? []}
 				libraries={data?.libraries ?? []}
 				viewerId={data?.viewer?.id ?? null}
-				loading={loading}
 				error={error?.message ?? null}
 			/>
 		</section>

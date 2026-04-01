@@ -1,6 +1,6 @@
-import { RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
-import { router } from "./router";
+import { BrowserRouter } from "react-router";
+import { App } from "./app";
 import "./globals.css";
 import "@fontsource-variable/inter/wght.css";
 
@@ -9,4 +9,8 @@ if (!rootElement) {
 	throw new Error("Missing #app root element");
 }
 
-createRoot(rootElement).render(<RouterProvider router={router} />);
+createRoot(rootElement).render(
+	<BrowserRouter>
+		<App />
+	</BrowserRouter>,
+);

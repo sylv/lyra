@@ -1,6 +1,6 @@
-import { useLocation, useNavigate } from "@tanstack/react-router";
-import { createContext, useContext, useEffect, useRef, useState, type FC, type ReactNode } from "react";
-import { resetApolloClient } from "../../../client";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type FC, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { refreshActiveQueries } from "../../../client";
 import {
 	fetchInitState,
 	getPreviousSetupRoute,
@@ -13,7 +13,8 @@ import {
 
 interface SetupContextValue {
 	state: InitState | null;
-	refresh: () => Promise<InitState>;
+	recheckSetup: () => Promise<void>;
+	isRechecking: boolean;
 }
 
 const SetupContext = createContext<SetupContextValue | null>(null);
@@ -29,29 +30,25 @@ export const useSetup = () => {
 };
 
 export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
+	const location = useLocation();
 	const navigate = useNavigate();
-	const pathname = useLocation({
-		select: (location) => location.pathname,
-	});
-	const searchStr = useLocation({
-		select: (location) => location.searchStr,
-	});
-	const hash = useLocation({
-		select: (location) => location.hash,
-	});
-	const request = useRef<Promise<InitState> | null>(null);
+	const { pathname, search: searchStr, hash } = location;
+	const request = useRef<Promise<void> | null>(null);
 	const [data, setData] = useState<InitState | null>(null);
 	const [error, setError] = useState<Error | null>(null);
+	const [isRechecking, setIsRechecking] = useState(false);
 
 	const pathnameRef = useRef(pathname);
 	const searchStrRef = useRef(searchStr);
 	const hashRef = useRef(hash);
+	const dataRef = useRef<InitState | null>(null);
 
 	pathnameRef.current = pathname;
 	searchStrRef.current = searchStr;
 	hashRef.current = hash;
+	dataRef.current = data;
 
-	const syncRoute = (nextState: InitState) => {
+	const syncRoute = useCallback((nextState: InitState) => {
 		const currentPathname = pathnameRef.current;
 		const currentSearchStr = searchStrRef.current;
 		const currentHash = hashRef.current;
@@ -61,7 +58,7 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 				return;
 			}
 
-			void navigate({ to: getPreviousSetupRoute(currentSearchStr), replace: true });
+			navigate(getPreviousSetupRoute(currentSearchStr), { replace: true });
 			return;
 		}
 
@@ -83,26 +80,36 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 			return;
 		}
 
-		void navigate({ to: target, replace: true });
-	};
+		navigate(target, { replace: true });
+	}, [navigate]);
 
-	const refresh = async () => {
+	const syncSetupState = useCallback(async ({ recheck = false }: { recheck?: boolean } = {}) => {
 		if (request.current) {
 			return request.current;
 		}
 
+		if (recheck) {
+			setIsRechecking(true);
+		}
+
 		request.current = fetchInitState(searchStrRef.current)
-			.then((nextState) => {
+			.then(async (nextState) => {
 				setError(null);
 
-				if (isSetupReady(nextState) && isSetupPath(pathnameRef.current)) {
-					// Recreate the Apollo client so any suspense/error state from the signed-out session is dropped.
-					resetApolloClient();
+				const previousState = dataRef.current;
+				const becameReady =
+					recheck &&
+					previousState != null &&
+					!isSetupReady(previousState) &&
+					isSetupReady(nextState) &&
+					isSetupPath(pathnameRef.current);
+
+				if (becameReady) {
+					await refreshActiveQueries();
 				}
 
-				setData(nextState);
 				syncRoute(nextState);
-				return nextState;
+				setData(nextState);
 			})
 			.catch((nextError) => {
 				const error = nextError instanceof Error ? nextError : new Error("Failed to load setup state");
@@ -111,23 +118,27 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 			})
 			.finally(() => {
 				request.current = null;
+				setIsRechecking(false);
 			});
 
 		return request.current;
-	};
+	}, [syncRoute]);
+
+	const recheckSetup = useCallback(() => syncSetupState({ recheck: true }), [syncSetupState]);
 
 	useEffect(() => {
-		void refresh().catch(() => {});
-	}, []);
+		void syncSetupState().catch(() => {});
+	}, [syncSetupState]);
 
 	useEffect(() => {
 		if (!data) return;
 		syncRoute(data);
-	}, [data, hash, pathname, searchStr]);
+	}, [data, hash, navigate, pathname, searchStr]);
 
 	const value = {
 		state: data,
-		refresh,
+		recheckSetup,
+		isRechecking,
 	};
 
 	if (error) {

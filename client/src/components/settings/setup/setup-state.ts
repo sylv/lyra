@@ -61,7 +61,7 @@ export const getPreviousSetupRoute = (searchStr: string) => {
 		return "/";
 	}
 
-	if (previous === "/setup" || previous.startsWith("/setup?")) {
+	if (previous === "/setup" || previous.startsWith("/setup/") || previous.startsWith("/setup?")) {
 		return "/";
 	}
 

@@ -1,6 +1,6 @@
-import { useNavigate } from "@tanstack/react-router";
 import { CheckCheckIcon, FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
+import { useNavigate } from "react-router";
 import { cn } from "../lib/utils";
 import { openPlayerMedia } from "./player/player-context";
 import { UnplayedItemsTab } from "./unplayed-items-tab";
@@ -30,7 +30,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					)}
 					onClick={() => {
 						openPlayerMedia(itemId, true);
-						navigate({ to: path });
+						navigate(path);
 					}}
 				>
 					<PlayIcon className="h-10 w-10 text-white" />

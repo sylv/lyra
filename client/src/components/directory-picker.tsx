@@ -1,6 +1,6 @@
-import { useQuery } from "@apollo/client/react";
 import { CornerUpLeft, Folder } from "lucide-react";
 import { useEffect, useState, type FC } from "react";
+import { useQuery } from "urql";
 import { IconText } from "./icon-text";
 import { Spinner } from "./ui/spinner";
 import { graphql } from "../@generated/gql";
@@ -21,7 +21,8 @@ export const DirectoryPicker: FC<DirectoryPickerProps> = ({ onPathChange, initia
 	const [currentPath, setCurrentPath] = useState<string>(initialPath);
 	const [pathInput, setPathInput] = useState<string>(initialPath);
 
-	const { data, loading, error } = useQuery(GetFiles, {
+	const [{ data, fetching: loading, error }] = useQuery({
+		query: GetFiles,
 		variables: {
 			path: currentPath,
 		},

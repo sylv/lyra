@@ -1,5 +1,5 @@
-import { Link } from "@tanstack/react-router";
 import type { FC } from "react";
+import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForNode } from "../lib/getPathForMedia";

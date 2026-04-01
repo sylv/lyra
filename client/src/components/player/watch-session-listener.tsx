@@ -1,6 +1,6 @@
-import { useApolloClient } from "@apollo/client/react";
-import { useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { useClient } from "urql";
 import { unmask } from "../../@generated/gql";
 import { useSetup } from "../settings/setup/setup-wrapper";
 import { isSetupReady } from "../settings/setup/setup-state";
@@ -9,17 +9,11 @@ import { GetWatchSession, WatchSessionSummary } from "./player-queries";
 import { setPendingWatchSession } from "./watch-session";
 
 export const WatchSessionListener = () => {
-	const client = useApolloClient();
+	const client = useClient();
 	const { state: setupState } = useSetup();
-	const pathname = useLocation({
-		select: (location) => location.pathname,
-	});
-	const searchStr = useLocation({
-		select: (location) => location.searchStr,
-	});
-	const hash = useLocation({
-		select: (location) => location.hash,
-	});
+	const location = useLocation();
+	const navigate = useNavigate();
+	const { pathname, search: searchStr, hash } = location;
 	const sessionId = usePlayerContext((ctx) => ctx.watchSession.sessionId);
 	const pendingSessionId = usePlayerContext((ctx) => ctx.watchSession.pendingSessionId);
 
@@ -33,11 +27,8 @@ export const WatchSessionListener = () => {
 
 		let cancelled = false;
 		void client
-			.query({
-				query: GetWatchSession,
-				variables: { sessionId: linkSessionId },
-				fetchPolicy: "network-only",
-			})
+			.query(GetWatchSession, { sessionId: linkSessionId }, { requestPolicy: "network-only" })
+			.toPromise()
 			.then(({ data }) => {
 				const session = data?.watchSession ? unmask(WatchSessionSummary, data.watchSession) : null;
 				if (!session || cancelled) return;
@@ -51,8 +42,14 @@ export const WatchSessionListener = () => {
 
 				params.delete("watchSession");
 				const nextSearch = params.toString();
-				const nextUrl = `${pathname}${nextSearch ? `?${nextSearch}` : ""}${hash}`;
-				window.history.replaceState({}, "", nextUrl);
+				navigate(
+					{
+						pathname,
+						search: nextSearch ? `?${nextSearch}` : "",
+						hash,
+					},
+					{ replace: true },
+				);
 			})
 			.catch((error) => {
 				console.error("failed to load watch session from url", error);
@@ -61,7 +58,7 @@ export const WatchSessionListener = () => {
 		return () => {
 			cancelled = true;
 		};
-	}, [client, hash, pathname, pendingSessionId, searchStr, sessionId, setupState]);
+	}, [client, hash, navigate, pathname, pendingSessionId, searchStr, sessionId, setupState]);
 
 	return null;
 };

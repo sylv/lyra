@@ -1,12 +1,12 @@
-import { useMutation } from "@apollo/client/react";
 import { useState, type FC, type FormEvent } from "react";
+import { useMutation } from "urql";
 import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
 import { Button, ButtonStyle } from "../../button";
 import { Input } from "../../input";
 import { LibraryIcon } from "../../library-icon";
 import { Modal, ModalBody, ModalHeader } from "../../modal";
 import { CheckboxCard } from "../checkbox-card";
-import { CreateUserInviteMutation, UpdateUserMutation, UsersManagementQuery } from "./queries";
+import { CreateUserInviteMutation, UpdateUserMutation } from "./queries";
 import { ADMIN_BIT, VIEW_ALL_LIBRARIES_BIT, permissionOptions } from "../../../lib/user-permissions";
 
 interface UserFormModalProps {
@@ -64,14 +64,8 @@ const UserForm: FC<{
 	user?: UserCardData;
 	viewerId: string | null;
 }> = ({ mode, libraries, onClose, user, viewerId }) => {
-	const [createUserInvite, { loading: creating }] = useMutation(CreateUserInviteMutation, {
-		refetchQueries: [UsersManagementQuery],
-		awaitRefetchQueries: true,
-	});
-	const [updateUser, { loading: updating }] = useMutation(UpdateUserMutation, {
-		refetchQueries: [UsersManagementQuery],
-		awaitRefetchQueries: true,
-	});
+	const [{ fetching: creating }, createUserInvite] = useMutation(CreateUserInviteMutation);
+	const [{ fetching: updating }, updateUser] = useMutation(UpdateUserMutation);
 	const [username, setUsername] = useState(user?.username ?? "");
 	const [permissions, setPermissions] = useState(user?.permissions ?? 0);
 	const [libraryIds, setLibraryIds] = useState(() => user?.libraries.map((library) => library.id) ?? []);
@@ -88,22 +82,24 @@ const UserForm: FC<{
 
 		try {
 			if (mode === "edit" && user) {
-				await updateUser({
-					variables: {
-						userId: user.id,
-						username: username.trim(),
-						permissions,
-						libraryIds,
-					},
+				const result = await updateUser({
+					userId: user.id,
+					username: username.trim(),
+					permissions,
+					libraryIds,
 				});
+				if (result.error) {
+					throw result.error;
+				}
 			} else {
-				await createUserInvite({
-					variables: {
-						username: username.trim(),
-						permissions,
-						libraryIds,
-					},
+				const result = await createUserInvite({
+					username: username.trim(),
+					permissions,
+					libraryIds,
 				});
+				if (result.error) {
+					throw result.error;
+				}
 			}
 
 			onClose();

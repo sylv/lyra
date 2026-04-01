@@ -1,11 +1,11 @@
 /* oxlint-disable jsx_a11y/prefer-tag-over-role */
-import { useQuery } from "@apollo/client/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, type FC } from "react";
-import { getApolloClient } from "../../client";
+import { useQuery } from "urql";
+import { client } from "../../client";
 import { cn } from "../../lib/utils";
-import { PlayerErrorOverlay } from "./components/player-error-overlay";
 import { PlayerControls } from "./components/player-controls";
+import { PlayerErrorOverlay } from "./components/player-error-overlay";
 import { PlayerIntroOverlay } from "./components/player-intro-overlay";
 import { PlayerLoadingIndicator } from "./components/player-loading-indicator";
 import { PlayerTopChrome } from "./components/player-top-chrome";
@@ -36,14 +36,11 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 	const hoveredCard = usePlayerContext((ctx) => ctx.controls.hoveredCard);
 	const miniPlayerAspectRatio = usePlayerContext((ctx) => Math.max(ctx.state.videoAspectRatio, 16 / 9));
 
-	const {
-		data,
-		previousData,
-		loading: isItemLoading,
-		error: itemLoadError,
-	} = useQuery(ItemPlaybackQuery, { variables: { itemId } });
-
-	const currentMedia = data?.node ?? (isItemLoading ? previousData?.node : null) ?? null;
+	const [{ data, fetching: isItemLoading, error: itemLoadError }] = useQuery({
+		query: ItemPlaybackQuery,
+		variables: { itemId },
+	});
+	const currentMedia = data?.node ?? null;
 	const isResolvingRequestedMedia = isItemLoading && currentMedia?.id !== itemId;
 
 	useEffect(() => {
@@ -225,13 +222,12 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
 			const sessionId = watchSession.sessionId;
 			const playerId = watchSession.playerId;
 			if (!sessionId || !playerId) return;
-			void getApolloClient().mutate({
-				mutation: LeaveWatchSession,
-				variables: {
+			void client
+				.mutation(LeaveWatchSession, {
 					sessionId,
 					playerId,
-				},
-			});
+				})
+				.toPromise();
 		};
 	}, [watchSession.playerId, watchSession.sessionId]);
 

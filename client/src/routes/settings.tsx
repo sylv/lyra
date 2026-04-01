@@ -1,11 +1,12 @@
-import { useSuspenseQuery } from "@apollo/client/react";
-import { Navigate, Outlet, createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import { type FC } from "react";
+import { Navigate, Outlet, useLocation, useNavigate } from "react-router";
+import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useTitle } from "../hooks/use-title";
 import { ADMIN_BIT } from "../lib/user-permissions";
 
-const settingsTabs = {
+export const settingsTabs = {
 	users: "/settings/users",
 	sessions: "/settings/sessions",
 	libraries: "/settings/libraries",
@@ -23,18 +24,12 @@ const SettingsViewerQuery = graphql(`
 		}
 	}
 `);
-
-export const Route = createFileRoute("/settings")({
-	component: RouteComponent,
-});
-
-function RouteComponent() {
-	const pathname = useLocation({
-		select: (location) => location.pathname,
-	});
+export const SettingsRoute: FC = () => {
+	const location = useLocation();
 	const navigate = useNavigate();
-	const { data } = useSuspenseQuery(SettingsViewerQuery);
-	const viewerPermissions = data.viewer?.permissions ?? 0;
+	const pathname = location.pathname;
+	const [{ data }] = useQuery({ query: SettingsViewerQuery, context: { suspense: true } });
+	const viewerPermissions = data?.viewer?.permissions ?? 0;
 	const canManageUsers = (viewerPermissions & ADMIN_BIT) !== 0;
 	const canViewSessions = (viewerPermissions & ADMIN_BIT) !== 0;
 	const canManageLibraries = (viewerPermissions & ADMIN_BIT) !== 0;
@@ -73,6 +68,7 @@ function RouteComponent() {
 	return (
 		<div className="pt-6">
 			<Tabs
+				className="w-full"
 				value={activeTab}
 				onValueChange={(value) => {
 					const nextPath = settingsTabs[value as SettingsTab];
@@ -80,9 +76,8 @@ function RouteComponent() {
 						return;
 					}
 
-					void navigate({ to: nextPath });
+					navigate(nextPath);
 				}}
-				className="w-full"
 			>
 				<TabsList>
 					{canManageUsers ? <TabsTrigger value="users">Users</TabsTrigger> : null}
@@ -97,4 +92,4 @@ function RouteComponent() {
 			</Tabs>
 		</div>
 	);
-}
+};
