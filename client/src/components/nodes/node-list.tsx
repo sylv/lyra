@@ -15,7 +15,7 @@ type FilterVariants =
 			type: "seasons";
 			totalSeasons: number;
 	  }
-	| { type: "movies_posters" }
+	| { type: "movies_series" }
 	| { type: "episodes" };
 
 type NodeListProps = FilterVariants & {
@@ -33,13 +33,13 @@ export enum DisplayKind {
 }
 
 const FILTER_NODE_MAP: Record<FilterVariants["type"], NodeKind[]> = {
-	movies_posters: [NodeKind.Movie, NodeKind.Series],
+	movies_series: [NodeKind.Movie, NodeKind.Series],
 	seasons: [NodeKind.Season],
 	episodes: [NodeKind.Episode],
 };
 
 const FILTER_DISPLAY_MAP: Record<FilterVariants["type"], DisplayKind> = {
-	movies_posters: DisplayKind.Poster,
+	movies_series: DisplayKind.Poster,
 	seasons: DisplayKind.Poster,
 	episodes: DisplayKind.Episode,
 };

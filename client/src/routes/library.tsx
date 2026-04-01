@@ -6,5 +6,5 @@ export function LibraryRoute() {
 	if (!libraryId) {
 		return null;
 	}
-	return <NodeList type="movies_posters" filterOverride={{ libraryId }} />;
+	return <NodeList type="movies_series" filterOverride={{ libraryId }} />;
 }

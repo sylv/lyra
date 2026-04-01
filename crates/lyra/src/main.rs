@@ -211,10 +211,12 @@ async fn main() {
         .await
         .expect("Failed to connect to SQLite");
 
+    tracing::info!("Running database migrations");
     sqlx::migrate!("../../migrations")
         .run(&pool)
         .await
         .expect("Failed to run migrations");
+    tracing::info!("Database migrations complete");
 
     let pool = DatabaseConnection::from(pool);
     let job_wake_signal = Arc::new(Notify::new());
