@@ -3,7 +3,7 @@ use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     assets as assets_api,
     entities::{
-        assets as assets_entity,
+        assets::{self as assets_entity, AssetKind},
         file_assets::{self, FileAssetRole},
         files, jobs as jobs_entity,
         metadata_source::MetadataSource,
@@ -131,7 +131,12 @@ impl Job for FileThumbnailJob {
                 .await?;
         }
 
-        let asset = assets_api::create_local_asset_from_bytes(&tx, &thumbnail.image_bytes).await?;
+        let asset = assets_api::create_local_asset_from_bytes(
+            &tx,
+            &thumbnail.image_bytes,
+            AssetKind::Thumbnail,
+        )
+        .await?;
 
         file_assets::Entity::insert(file_assets::ActiveModel {
             file_id: Set(file_id),

@@ -1,3 +1,4 @@
+use crate::entities::assets::AssetKind;
 use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     assets::download_asset_to_local,
@@ -17,6 +18,7 @@ impl Job for AssetDownloadJob {
 
     fn query(&self) -> Select<Self::Entity> {
         assets::Entity::find()
+            .filter(assets::Column::Kind.is_in(vec![AssetKind::Thumbnail, AssetKind::Poster]))
             .filter(assets::Column::SourceUrl.is_not_null())
             .filter(assets::Column::HashSha256.is_null())
             .order_by_asc(assets::Column::Id)

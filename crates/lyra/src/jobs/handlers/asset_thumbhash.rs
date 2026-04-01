@@ -1,7 +1,10 @@
 use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
     assets::storage,
-    entities::{assets, jobs as jobs_entity},
+    entities::{
+        assets::{self, AssetKind},
+        jobs as jobs_entity,
+    },
 };
 use anyhow::Context;
 use sea_orm::{
@@ -21,6 +24,7 @@ impl Job for AssetThumbhashJob {
 
     fn query(&self) -> Select<Self::Entity> {
         assets::Entity::find()
+            .filter(assets::Column::Kind.is_in([AssetKind::Poster, AssetKind::Thumbnail]))
             .filter(assets::Column::HashSha256.is_not_null())
             .filter(
                 Condition::any()

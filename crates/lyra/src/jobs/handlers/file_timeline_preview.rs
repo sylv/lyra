@@ -4,7 +4,7 @@ use crate::{
     assets as assets_api,
     config::get_config,
     entities::{
-        assets as assets_entity,
+        assets::{self as assets_entity, AssetKind},
         file_assets::{self, FileAssetRole},
         files, jobs as jobs_entity,
     },
@@ -105,8 +105,12 @@ impl Job for FileTimelinePreviewJob {
         }
 
         for preview in timeline_previews {
-            let asset =
-                assets_api::create_local_asset_from_bytes(&tx, &preview.preview_bytes).await?;
+            let asset = assets_api::create_local_asset_from_bytes(
+                &tx,
+                &preview.preview_bytes,
+                AssetKind::TimelinePreviewSheet,
+            )
+            .await?;
             let sheet_width_px = asset
                 .width
                 .context("timeline preview asset missing width")?;

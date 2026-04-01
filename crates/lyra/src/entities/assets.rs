@@ -5,6 +5,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
+    pub kind: AssetKind,
     #[sea_orm(column_type = "Text", nullable)]
     pub source_url: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -32,3 +33,12 @@ impl Related<super::file_assets::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "i64", db_type = "Integer")]
+pub enum AssetKind {
+    Poster = 0,
+    Thumbnail = 1,
+    Background = 2,
+    TimelinePreviewSheet = 3,
+}

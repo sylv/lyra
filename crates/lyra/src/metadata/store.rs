@@ -1,4 +1,8 @@
-use crate::entities::{assets, metadata_source::MetadataSource, node_metadata, nodes};
+use crate::entities::{
+    assets::{self, AssetKind},
+    metadata_source::MetadataSource,
+    node_metadata, nodes,
+};
 use crate::ids;
 use crate::metadata::local::{LOCAL_METADATA_PROVIDER_ID, NodeLocalMetadataInput};
 use lyra_metadata::{EpisodeMetadata, ImageSet, MovieMetadata, SeasonMetadata, SeriesMetadata};
@@ -284,12 +288,27 @@ async fn upsert_remote_node_metadata(
     metadata: MetadataFields,
     now: i64,
 ) -> anyhow::Result<()> {
-    let poster_asset_id =
-        ensure_remote_asset(pool, metadata.images.poster_url.as_deref(), now).await?;
-    let thumbnail_asset_id =
-        ensure_remote_asset(pool, metadata.images.thumbnail_url.as_deref(), now).await?;
-    let background_asset_id =
-        ensure_remote_asset(pool, metadata.images.background_url.as_deref(), now).await?;
+    let poster_asset_id = ensure_remote_asset(
+        pool,
+        metadata.images.poster_url.as_deref(),
+        AssetKind::Poster,
+        now,
+    )
+    .await?;
+    let thumbnail_asset_id = ensure_remote_asset(
+        pool,
+        metadata.images.thumbnail_url.as_deref(),
+        AssetKind::Thumbnail,
+        now,
+    )
+    .await?;
+    let background_asset_id = ensure_remote_asset(
+        pool,
+        metadata.images.background_url.as_deref(),
+        AssetKind::Background,
+        now,
+    )
+    .await?;
 
     node_metadata::Entity::insert(node_metadata::ActiveModel {
         id: Set(ids::generate_ulid()),
@@ -339,6 +358,7 @@ async fn upsert_remote_node_metadata(
 async fn ensure_remote_asset(
     pool: &impl ConnectionTrait,
     source_url: Option<&str>,
+    kind: AssetKind,
     now: i64,
 ) -> anyhow::Result<Option<String>> {
     let Some(source_url) = source_url else {
@@ -348,8 +368,10 @@ async fn ensure_remote_asset(
         return Ok(None);
     }
 
+    // The same upstream URL can legitimately back multiple attachment roles.
     if let Some(existing) = assets::Entity::find()
         .filter(assets::Column::SourceUrl.eq(source_url.to_string()))
+        .filter(assets::Column::Kind.eq(kind))
         .order_by_desc(assets::Column::Id)
         .one(pool)
         .await?
@@ -359,6 +381,7 @@ async fn ensure_remote_asset(
 
     let asset = assets::ActiveModel {
         id: Set(ids::generate_ulid()),
+        kind: Set(kind),
         source_url: Set(Some(source_url.to_string())),
         created_at: Set(now),
         ..Default::default()
@@ -513,6 +536,76 @@ mod tests {
             season_remote.description.as_deref(),
             Some("season description")
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn upsert_remote_series_metadata_keeps_distinct_asset_kinds_per_relation()
+    -> anyhow::Result<()> {
+        let pool = setup_test_db().await?;
+        insert_library(&pool).await?;
+        insert_node(
+            &pool,
+            "root",
+            "root",
+            None,
+            nodes::NodeKind::Series,
+            "Show",
+            None,
+            0,
+        )
+        .await?;
+
+        upsert_remote_node_metadata_from_series(
+            &pool,
+            "root",
+            "tmdb",
+            &SeriesMetadata {
+                imdb_id: None,
+                tmdb_id: Some(1),
+                name: "Show".to_owned(),
+                description: None,
+                score_display: None,
+                score_normalized: None,
+                released_at: None,
+                ended_at: None,
+                images: ImageSet {
+                    poster_url: Some("https://example.com/shared.jpg".to_owned()),
+                    thumbnail_url: Some("https://example.com/shared.jpg".to_owned()),
+                    background_url: Some("https://example.com/shared.jpg".to_owned()),
+                },
+            },
+            1,
+        )
+        .await?;
+
+        let remote = node_metadata::Entity::find()
+            .filter(node_metadata::Column::NodeId.eq("root"))
+            .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
+            .one(&pool)
+            .await?
+            .unwrap();
+
+        let poster_asset = assets::Entity::find_by_id(remote.poster_asset_id.unwrap())
+            .one(&pool)
+            .await?
+            .unwrap();
+        let thumbnail_asset = assets::Entity::find_by_id(remote.thumbnail_asset_id.unwrap())
+            .one(&pool)
+            .await?
+            .unwrap();
+        let background_asset = assets::Entity::find_by_id(remote.background_asset_id.unwrap())
+            .one(&pool)
+            .await?
+            .unwrap();
+
+        assert_ne!(poster_asset.id, thumbnail_asset.id);
+        assert_ne!(poster_asset.id, background_asset.id);
+        assert_ne!(thumbnail_asset.id, background_asset.id);
+        assert_eq!(poster_asset.kind, AssetKind::Poster);
+        assert_eq!(thumbnail_asset.kind, AssetKind::Thumbnail);
+        assert_eq!(background_asset.kind, AssetKind::Background);
 
         Ok(())
     }
