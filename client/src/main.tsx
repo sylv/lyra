@@ -10,7 +10,7 @@ if (!rootElement) {
 }
 
 createRoot(rootElement).render(
-	<BrowserRouter>
+	<BrowserRouter unstable_useTransitions>
 		<App />
 	</BrowserRouter>,
 );
