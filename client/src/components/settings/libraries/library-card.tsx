@@ -26,6 +26,7 @@ export const LibraryCardFragment = graphql(`
 		id
 		name
 		path
+		pinned
 		createdAt
 		lastScannedAt
 	}
@@ -60,6 +61,7 @@ export const LibraryCard: FC<LibraryCardProps> = ({ library: libraryRaw, onEdit 
 				title={library.name}
 				subtitle={library.path}
 				subtitleClassName="break-all"
+				footer={library.pinned ? formatLastScannedAt(library.lastScannedAt ?? null) : "Hidden from sidebar"}
 				actions={
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
@@ -87,7 +89,6 @@ export const LibraryCard: FC<LibraryCardProps> = ({ library: libraryRaw, onEdit 
 						</DropdownMenuContent>
 					</DropdownMenu>
 				}
-				footer={formatLastScannedAt(library.lastScannedAt ?? null)}
 			>
 				{error ? <p className="rounded bg-red-950/50 px-3 py-2 text-sm text-red-300">{error}</p> : null}
 			</ManagementCard>

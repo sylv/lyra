@@ -1,6 +1,6 @@
-use crate::auth::RequestAuth;
 use crate::entities::{node_closure, node_files, nodes, watch_progress};
 use crate::graphql::properties::NodeProperties;
+use crate::graphql::query::current_user_id;
 use crate::metadata::read;
 use async_graphql::{ComplexObject, Context};
 use sea_orm::{
@@ -229,10 +229,4 @@ impl nodes::Model {
             .await?;
         Ok(count as i64)
     }
-}
-
-fn current_user_id(ctx: &Context<'_>) -> Option<String> {
-    let auth = ctx.data_opt::<RequestAuth>()?;
-    let user = auth.get_user_or_err().ok()?;
-    Some(user.id.clone())
 }

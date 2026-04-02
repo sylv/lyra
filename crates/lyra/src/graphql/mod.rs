@@ -1,3 +1,4 @@
+pub mod collection;
 pub mod mutation;
 pub mod node;
 pub mod properties;

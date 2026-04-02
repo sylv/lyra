@@ -15,6 +15,11 @@ import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-
  */
 type Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": typeof types.GetActivitiesDocument,
+    "\n\tquery EditableCollections {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tcanEdit\n\t\t\tresolverKind\n\t\t}\n\t}\n": typeof types.EditableCollectionsDocument,
+    "\n\tmutation CreatePrivateCollection(\n\t\t$name: String!\n\t\t$resolverKind: CollectionResolverKind!\n\t\t$visibility: CollectionVisibility!\n\t) {\n\t\tcreateCollection(name: $name, resolverKind: $resolverKind, visibility: $visibility) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": typeof types.CreatePrivateCollectionDocument,
+    "\n\tmutation AddNodeToCollection($collectionId: String!, $nodeId: String!) {\n\t\taddNodeToCollection(collectionId: $collectionId, nodeId: $nodeId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": typeof types.AddNodeToCollectionDocument,
+    "\n\tfragment CollectionNodeCard on Node {\n\t\tid\n\t\tkind\n\t\tlibraryId\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tdescription\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\t...GetPathForNode\n\t}\n": typeof types.CollectionNodeCardFragmentDoc,
+    "\n\tfragment CollectionShelf on Collection {\n\t\tid\n\t\tname\n\t\tnodeList(first: 12) {\n\t\t\tnodes {\n\t\t\t\tid\n\t\t\t\t...CollectionNodeCard\n\t\t\t}\n\t\t}\n\t}\n": typeof types.CollectionShelfFragmentDoc,
     "\n\tsubscription ContentUpdates {\n\t\tcontentUpdates\n\t}\n": typeof types.ContentUpdatesDocument,
     "\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n": typeof types.GetFilesDocument,
     "\n\tfragment EpisodeCard on Node {\n\t\tid\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\truntimeMinutes\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\t...GetPathForNode\n\t}\n": typeof types.EpisodeCardFragmentDoc,
@@ -38,10 +43,10 @@ type Documents = {
     "\n\tfragment SearchNodeResult on Node {\n\t\tid\n\t\tkind\n\t\tlibraryId\n\t\troot {\n\t\t\tproperties {\n\t\t\t\tdisplayName\n\t\t\t}\n\t\t}\n\t\tseasonCount\n\t\tepisodeCount\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tdescription\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t\truntimeMinutes\n\t\t}\n\t\t...GetPathForNode\n\t}\n": typeof types.SearchNodeResultFragmentDoc,
     "\n\tquery SearchMedia($query: String!, $limit: Int) {\n\t\tsearch(query: $query, limit: $limit) {\n\t\t\troots {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t\tepisodes {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t}\n\t}\n": typeof types.SearchMediaDocument,
     "\n\tfragment SeasonCard on Node {\n\t\tid\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tseasonNumber\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\tunplayedCount\n\t\tepisodeCount\n\t\t...GetPathForNode\n\t}\n": typeof types.SeasonCardFragmentDoc,
-    "\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n": typeof types.LibraryCardFragmentDoc,
+    "\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tpinned\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n": typeof types.LibraryCardFragmentDoc,
     "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": typeof types.GetLibrariesDocument,
-    "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": typeof types.CreateLibraryDocument,
-    "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": typeof types.UpdateLibraryDocument,
+    "\n\tmutation CreateLibrary($name: String!, $path: String!, $pinned: Boolean!) {\n\t\tcreateLibrary(name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": typeof types.CreateLibraryDocument,
+    "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!, $pinned: Boolean!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": typeof types.UpdateLibraryDocument,
     "\n\tmutation DeleteLibrary($libraryId: String!) {\n\t\tdeleteLibrary(libraryId: $libraryId)\n\t}\n": typeof types.DeleteLibraryDocument,
     "\n\tfragment SessionCard on WatchSession {\n\t\tid\n\t\tupdatedAt\n\t\tcurrentPositionMs\n\t\teffectiveState\n\t\tplayers {\n\t\t\tid\n\t\t\tuserId\n\t\t\tuser {\n\t\t\t\tid\n\t\t\t\tusername\n\t\t\t\tcreatedAt\n\t\t\t}\n\t\t}\n\t\tnode {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tproperties {\n\t\t\t\tdisplayName\n\t\t\t\tseasonNumber\n\t\t\t\tepisodeNumber\n\t\t\t\truntimeMinutes\n\t\t\t\tfirstAired\n\t\t\t\tlastAired\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t}\n\t\t\troot {\n\t\t\t\tid\n\t\t\t\tproperties {\n\t\t\t\t\tdisplayName\n\t\t\t\t\tposterImage {\n\t\t\t\t\t\t...ImageAsset\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\tfile {\n\t\t\tid\n\t\t\ttimelinePreview {\n\t\t\t\t...PlayerTimelinePreviewSheet\n\t\t\t}\n\t\t}\n\t}\n": typeof types.SessionCardFragmentDoc,
     "\n\tquery SettingsSessions {\n\t\twatchSessions {\n\t\t\tid\n\t\t\t...SessionCard\n\t\t}\n\t}\n": typeof types.SettingsSessionsDocument,
@@ -51,9 +56,13 @@ type Documents = {
     "\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": typeof types.ResetUserInviteDocument,
     "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": typeof types.DeleteUserDocument,
     "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tlibraries {\n\t\t\tid\n\t\t}\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": typeof types.UserCardFragmentDoc,
-    "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": typeof types.LibrariesDocument,
+    "\n\tquery SidebarNavigation {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t\tpinned\n\t\t}\n\t\tcollections(pinned: true) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": typeof types.SidebarNavigationDocument,
     "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": typeof types.SidebarViewerDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": typeof types.GetPathForNodeFragmentDoc,
+    "\n\tquery CollectionPage($collectionId: String!, $after: String, $first: Int!) {\n\t\tcollection(collectionId: $collectionId) {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tcanDelete\n\t\t\tnodeList(after: $after, first: $first) {\n\t\t\t\tnodes {\n\t\t\t\t\tid\n\t\t\t\t\t...CollectionNodeCard\n\t\t\t\t}\n\t\t\t\tpageInfo {\n\t\t\t\t\tendCursor\n\t\t\t\t\thasNextPage\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n": typeof types.CollectionPageDocument,
+    "\n\tmutation DeleteCollection($collectionId: String!) {\n\t\tdeleteCollection(collectionId: $collectionId)\n\t}\n": typeof types.DeleteCollectionDocument,
+    "\n\tquery CollectionsIndex {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tvisibility\n\t\t\tcreatedBy {\n\t\t\t\tusername\n\t\t\t}\n\t\t}\n\t}\n": typeof types.CollectionsIndexDocument,
+    "\n\tquery HomeCollections {\n\t\thome {\n\t\t\tsections {\n\t\t\t\tid\n\t\t\t\t...CollectionShelf\n\t\t\t}\n\t\t}\n\t}\n": typeof types.HomeCollectionsDocument,
     "\n\tquery GetNodeById($nodeId: String!) {\n\t\tnode(nodeId: $nodeId) {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tkind\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tunplayedCount\n\t\t\tepisodeCount\n\t\t\t...GetPathForNode\n\t\t\tparent {\n\t\t\t\tid\n\t\t\t\tlibraryId\n\t\t\t\tproperties {\n\t\t\t\t\tdisplayName\n\t\t\t\t}\n\t\t\t\t...GetPathForNode\n\t\t\t}\n\t\t\troot {\n\t\t\t\tid\n\t\t\t\tproperties {\n\t\t\t\t\tdisplayName\n\t\t\t\t}\n\t\t\t}\n\t\t\tchildren {\n\t\t\t\tid\n\t\t\t\tkind\n\t\t\t\torder\n\t\t\t\tproperties {\n\t\t\t\t\tseasonNumber\n\t\t\t\t}\n\t\t\t\t...SeasonCard\n\t\t\t}\n\t\t\tproperties {\n\t\t\t\tdisplayName\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tfirstAired\n\t\t\t\tlastAired\n\t\t\t\truntimeMinutes\n\t\t\t\tdescription\n\t\t\t}\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t\tnextPlayable {\n\t\t\t\tid\n\t\t\t\twatchProgress {\n\t\t\t\t\tprogressPercent\n\t\t\t\t\tcompleted\n\t\t\t\t\tupdatedAt\n\t\t\t\t}\n\t\t\t}\n\t\t\tpreviousPlayable {\n\t\t\t\tid\n\t\t\t}\n\t\t}\n\t}\n": typeof types.GetNodeByIdDocument,
     "\n\tquery PlaygroundViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": typeof types.PlaygroundViewerDocument,
     "\n\tquery SettingsViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": typeof types.SettingsViewerDocument,
@@ -61,6 +70,11 @@ type Documents = {
 };
 const documents: Documents = {
     "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n": types.GetActivitiesDocument,
+    "\n\tquery EditableCollections {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tcanEdit\n\t\t\tresolverKind\n\t\t}\n\t}\n": types.EditableCollectionsDocument,
+    "\n\tmutation CreatePrivateCollection(\n\t\t$name: String!\n\t\t$resolverKind: CollectionResolverKind!\n\t\t$visibility: CollectionVisibility!\n\t) {\n\t\tcreateCollection(name: $name, resolverKind: $resolverKind, visibility: $visibility) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": types.CreatePrivateCollectionDocument,
+    "\n\tmutation AddNodeToCollection($collectionId: String!, $nodeId: String!) {\n\t\taddNodeToCollection(collectionId: $collectionId, nodeId: $nodeId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": types.AddNodeToCollectionDocument,
+    "\n\tfragment CollectionNodeCard on Node {\n\t\tid\n\t\tkind\n\t\tlibraryId\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tdescription\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\t...GetPathForNode\n\t}\n": types.CollectionNodeCardFragmentDoc,
+    "\n\tfragment CollectionShelf on Collection {\n\t\tid\n\t\tname\n\t\tnodeList(first: 12) {\n\t\t\tnodes {\n\t\t\t\tid\n\t\t\t\t...CollectionNodeCard\n\t\t\t}\n\t\t}\n\t}\n": types.CollectionShelfFragmentDoc,
     "\n\tsubscription ContentUpdates {\n\t\tcontentUpdates\n\t}\n": types.ContentUpdatesDocument,
     "\n\tquery GetFiles($path: String!) {\n\t\tlistFiles(path: $path)\n\t}\n": types.GetFilesDocument,
     "\n\tfragment EpisodeCard on Node {\n\t\tid\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tdescription\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\truntimeMinutes\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\t...GetPathForNode\n\t}\n": types.EpisodeCardFragmentDoc,
@@ -84,10 +98,10 @@ const documents: Documents = {
     "\n\tfragment SearchNodeResult on Node {\n\t\tid\n\t\tkind\n\t\tlibraryId\n\t\troot {\n\t\t\tproperties {\n\t\t\t\tdisplayName\n\t\t\t}\n\t\t}\n\t\tseasonCount\n\t\tepisodeCount\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tdescription\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t\truntimeMinutes\n\t\t}\n\t\t...GetPathForNode\n\t}\n": types.SearchNodeResultFragmentDoc,
     "\n\tquery SearchMedia($query: String!, $limit: Int) {\n\t\tsearch(query: $query, limit: $limit) {\n\t\t\troots {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t\tepisodes {\n\t\t\t\t...SearchNodeResult\n\t\t\t}\n\t\t}\n\t}\n": types.SearchMediaDocument,
     "\n\tfragment SeasonCard on Node {\n\t\tid\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tseasonNumber\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\tunplayedCount\n\t\tepisodeCount\n\t\t...GetPathForNode\n\t}\n": types.SeasonCardFragmentDoc,
-    "\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n": types.LibraryCardFragmentDoc,
+    "\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tpinned\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n": types.LibraryCardFragmentDoc,
     "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": types.GetLibrariesDocument,
-    "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": types.CreateLibraryDocument,
-    "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": types.UpdateLibraryDocument,
+    "\n\tmutation CreateLibrary($name: String!, $path: String!, $pinned: Boolean!) {\n\t\tcreateLibrary(name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": types.CreateLibraryDocument,
+    "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!, $pinned: Boolean!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n": types.UpdateLibraryDocument,
     "\n\tmutation DeleteLibrary($libraryId: String!) {\n\t\tdeleteLibrary(libraryId: $libraryId)\n\t}\n": types.DeleteLibraryDocument,
     "\n\tfragment SessionCard on WatchSession {\n\t\tid\n\t\tupdatedAt\n\t\tcurrentPositionMs\n\t\teffectiveState\n\t\tplayers {\n\t\t\tid\n\t\t\tuserId\n\t\t\tuser {\n\t\t\t\tid\n\t\t\t\tusername\n\t\t\t\tcreatedAt\n\t\t\t}\n\t\t}\n\t\tnode {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tproperties {\n\t\t\t\tdisplayName\n\t\t\t\tseasonNumber\n\t\t\t\tepisodeNumber\n\t\t\t\truntimeMinutes\n\t\t\t\tfirstAired\n\t\t\t\tlastAired\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t}\n\t\t\troot {\n\t\t\t\tid\n\t\t\t\tproperties {\n\t\t\t\t\tdisplayName\n\t\t\t\t\tposterImage {\n\t\t\t\t\t\t...ImageAsset\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\tfile {\n\t\t\tid\n\t\t\ttimelinePreview {\n\t\t\t\t...PlayerTimelinePreviewSheet\n\t\t\t}\n\t\t}\n\t}\n": types.SessionCardFragmentDoc,
     "\n\tquery SettingsSessions {\n\t\twatchSessions {\n\t\t\tid\n\t\t\t...SessionCard\n\t\t}\n\t}\n": types.SettingsSessionsDocument,
@@ -97,9 +111,13 @@ const documents: Documents = {
     "\n\tmutation ResetUserInvite($userId: String!) {\n\t\tresetUserInvite(userId: $userId) {\n\t\t\t...UserCard\n\t\t}\n\t}\n": types.ResetUserInviteDocument,
     "\n\tmutation DeleteUser($userId: String!) {\n\t\tdeleteUser(userId: $userId)\n\t}\n": types.DeleteUserDocument,
     "\n\tfragment UserCard on User {\n\t\tid\n\t\tusername\n\t\tinviteCode\n\t\tpermissions\n\t\tlibraries {\n\t\t\tid\n\t\t}\n\t\tcreatedAt\n\t\tlastSeenAt\n\t}\n": types.UserCardFragmentDoc,
-    "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n": types.LibrariesDocument,
+    "\n\tquery SidebarNavigation {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t\tpinned\n\t\t}\n\t\tcollections(pinned: true) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n": types.SidebarNavigationDocument,
     "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": types.SidebarViewerDocument,
     "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n": types.GetPathForNodeFragmentDoc,
+    "\n\tquery CollectionPage($collectionId: String!, $after: String, $first: Int!) {\n\t\tcollection(collectionId: $collectionId) {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tcanDelete\n\t\t\tnodeList(after: $after, first: $first) {\n\t\t\t\tnodes {\n\t\t\t\t\tid\n\t\t\t\t\t...CollectionNodeCard\n\t\t\t\t}\n\t\t\t\tpageInfo {\n\t\t\t\t\tendCursor\n\t\t\t\t\thasNextPage\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n": types.CollectionPageDocument,
+    "\n\tmutation DeleteCollection($collectionId: String!) {\n\t\tdeleteCollection(collectionId: $collectionId)\n\t}\n": types.DeleteCollectionDocument,
+    "\n\tquery CollectionsIndex {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tvisibility\n\t\t\tcreatedBy {\n\t\t\t\tusername\n\t\t\t}\n\t\t}\n\t}\n": types.CollectionsIndexDocument,
+    "\n\tquery HomeCollections {\n\t\thome {\n\t\t\tsections {\n\t\t\t\tid\n\t\t\t\t...CollectionShelf\n\t\t\t}\n\t\t}\n\t}\n": types.HomeCollectionsDocument,
     "\n\tquery GetNodeById($nodeId: String!) {\n\t\tnode(nodeId: $nodeId) {\n\t\t\tid\n\t\t\tlibraryId\n\t\t\tkind\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tunplayedCount\n\t\t\tepisodeCount\n\t\t\t...GetPathForNode\n\t\t\tparent {\n\t\t\t\tid\n\t\t\t\tlibraryId\n\t\t\t\tproperties {\n\t\t\t\t\tdisplayName\n\t\t\t\t}\n\t\t\t\t...GetPathForNode\n\t\t\t}\n\t\t\troot {\n\t\t\t\tid\n\t\t\t\tproperties {\n\t\t\t\t\tdisplayName\n\t\t\t\t}\n\t\t\t}\n\t\t\tchildren {\n\t\t\t\tid\n\t\t\t\tkind\n\t\t\t\torder\n\t\t\t\tproperties {\n\t\t\t\t\tseasonNumber\n\t\t\t\t}\n\t\t\t\t...SeasonCard\n\t\t\t}\n\t\t\tproperties {\n\t\t\t\tdisplayName\n\t\t\t\tposterImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tbackgroundImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tthumbnailImage {\n\t\t\t\t\t...ImageAsset\n\t\t\t\t}\n\t\t\t\tfirstAired\n\t\t\t\tlastAired\n\t\t\t\truntimeMinutes\n\t\t\t\tdescription\n\t\t\t}\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t\tnextPlayable {\n\t\t\t\tid\n\t\t\t\twatchProgress {\n\t\t\t\t\tprogressPercent\n\t\t\t\t\tcompleted\n\t\t\t\t\tupdatedAt\n\t\t\t\t}\n\t\t\t}\n\t\t\tpreviousPlayable {\n\t\t\t\tid\n\t\t\t}\n\t\t}\n\t}\n": types.GetNodeByIdDocument,
     "\n\tquery PlaygroundViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": types.PlaygroundViewerDocument,
     "\n\tquery SettingsViewer {\n\t\tviewer {\n\t\t\tid\n\t\t\tpermissions\n\t\t}\n\t}\n": types.SettingsViewerDocument,
@@ -124,6 +142,26 @@ export function graphql(source: string): unknown;
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery GetActivities {\n\t\tactivities {\n\t\t\ttaskType\n\t\t\ttitle\n\t\t\tcurrent\n\t\t\ttotal\n\t\t\tprogressPercent\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tquery EditableCollections {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tcanEdit\n\t\t\tresolverKind\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery EditableCollections {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tcanEdit\n\t\t\tresolverKind\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation CreatePrivateCollection(\n\t\t$name: String!\n\t\t$resolverKind: CollectionResolverKind!\n\t\t$visibility: CollectionVisibility!\n\t) {\n\t\tcreateCollection(name: $name, resolverKind: $resolverKind, visibility: $visibility) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreatePrivateCollection(\n\t\t$name: String!\n\t\t$resolverKind: CollectionResolverKind!\n\t\t$visibility: CollectionVisibility!\n\t) {\n\t\tcreateCollection(name: $name, resolverKind: $resolverKind, visibility: $visibility) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation AddNodeToCollection($collectionId: String!, $nodeId: String!) {\n\t\taddNodeToCollection(collectionId: $collectionId, nodeId: $nodeId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation AddNodeToCollection($collectionId: String!, $nodeId: String!) {\n\t\taddNodeToCollection(collectionId: $collectionId, nodeId: $nodeId) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tfragment CollectionNodeCard on Node {\n\t\tid\n\t\tkind\n\t\tlibraryId\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tdescription\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\t...GetPathForNode\n\t}\n"): (typeof documents)["\n\tfragment CollectionNodeCard on Node {\n\t\tid\n\t\tkind\n\t\tlibraryId\n\t\tproperties {\n\t\t\tdisplayName\n\t\t\tdescription\n\t\t\tposterImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tthumbnailImage {\n\t\t\t\t...ImageAsset\n\t\t\t}\n\t\t\tseasonNumber\n\t\t\tepisodeNumber\n\t\t\tfirstAired\n\t\t\tlastAired\n\t\t}\n\t\twatchProgress {\n\t\t\tprogressPercent\n\t\t\tcompleted\n\t\t\tupdatedAt\n\t\t}\n\t\tnextPlayable {\n\t\t\tid\n\t\t\twatchProgress {\n\t\t\t\tprogressPercent\n\t\t\t\tcompleted\n\t\t\t\tupdatedAt\n\t\t\t}\n\t\t}\n\t\t...GetPathForNode\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tfragment CollectionShelf on Collection {\n\t\tid\n\t\tname\n\t\tnodeList(first: 12) {\n\t\t\tnodes {\n\t\t\t\tid\n\t\t\t\t...CollectionNodeCard\n\t\t\t}\n\t\t}\n\t}\n"): (typeof documents)["\n\tfragment CollectionShelf on Collection {\n\t\tid\n\t\tname\n\t\tnodeList(first: 12) {\n\t\t\tnodes {\n\t\t\t\tid\n\t\t\t\t...CollectionNodeCard\n\t\t\t}\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -219,7 +257,7 @@ export function graphql(source: "\n\tfragment SeasonCard on Node {\n\t\tid\n\t\t
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n"): (typeof documents)["\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n"];
+export function graphql(source: "\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tpinned\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n"): (typeof documents)["\n\tfragment LibraryCard on Library {\n\t\tid\n\t\tname\n\t\tpath\n\t\tpinned\n\t\tcreatedAt\n\t\tlastScannedAt\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -227,11 +265,11 @@ export function graphql(source: "\n\tquery GetLibraries {\n\t\tlibraries {\n\t\t
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreateLibrary($name: String!, $path: String!) {\n\t\tcreateLibrary(name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"];
+export function graphql(source: "\n\tmutation CreateLibrary($name: String!, $path: String!, $pinned: Boolean!) {\n\t\tcreateLibrary(name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation CreateLibrary($name: String!, $path: String!, $pinned: Boolean!) {\n\t\tcreateLibrary(name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"];
+export function graphql(source: "\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!, $pinned: Boolean!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"): (typeof documents)["\n\tmutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!, $pinned: Boolean!) {\n\t\tupdateLibrary(libraryId: $libraryId, name: $name, path: $path, pinned: $pinned) {\n\t\t\t...LibraryCard\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -271,7 +309,7 @@ export function graphql(source: "\n\tfragment UserCard on User {\n\t\tid\n\t\tus
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery Libraries {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t}\n\t}\n"];
+export function graphql(source: "\n\tquery SidebarNavigation {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t\tpinned\n\t\t}\n\t\tcollections(pinned: true) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery SidebarNavigation {\n\t\tlibraries {\n\t\t\tid\n\t\t\tname\n\t\t\tcreatedAt\n\t\t\tpinned\n\t\t}\n\t\tcollections(pinned: true) {\n\t\t\tid\n\t\t\tname\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -280,6 +318,22 @@ export function graphql(source: "\n\tquery SidebarViewer {\n\t\tviewer {\n\t\t\t
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n"): (typeof documents)["\n\tfragment GetPathForNode on Node {\n\t\tid\n\t\tlibraryId\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tquery CollectionPage($collectionId: String!, $after: String, $first: Int!) {\n\t\tcollection(collectionId: $collectionId) {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tcanDelete\n\t\t\tnodeList(after: $after, first: $first) {\n\t\t\t\tnodes {\n\t\t\t\t\tid\n\t\t\t\t\t...CollectionNodeCard\n\t\t\t\t}\n\t\t\t\tpageInfo {\n\t\t\t\t\tendCursor\n\t\t\t\t\thasNextPage\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery CollectionPage($collectionId: String!, $after: String, $first: Int!) {\n\t\tcollection(collectionId: $collectionId) {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tcanDelete\n\t\t\tnodeList(after: $after, first: $first) {\n\t\t\t\tnodes {\n\t\t\t\t\tid\n\t\t\t\t\t...CollectionNodeCard\n\t\t\t\t}\n\t\t\t\tpageInfo {\n\t\t\t\t\tendCursor\n\t\t\t\t\thasNextPage\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tmutation DeleteCollection($collectionId: String!) {\n\t\tdeleteCollection(collectionId: $collectionId)\n\t}\n"): (typeof documents)["\n\tmutation DeleteCollection($collectionId: String!) {\n\t\tdeleteCollection(collectionId: $collectionId)\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tquery CollectionsIndex {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tvisibility\n\t\t\tcreatedBy {\n\t\t\t\tusername\n\t\t\t}\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery CollectionsIndex {\n\t\tcollections {\n\t\t\tid\n\t\t\tname\n\t\t\tdescription\n\t\t\titemCount\n\t\t\tvisibility\n\t\t\tcreatedBy {\n\t\t\t\tusername\n\t\t\t}\n\t\t}\n\t}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n\tquery HomeCollections {\n\t\thome {\n\t\t\tsections {\n\t\t\t\tid\n\t\t\t\t...CollectionShelf\n\t\t\t}\n\t\t}\n\t}\n"): (typeof documents)["\n\tquery HomeCollections {\n\t\thome {\n\t\t\tsections {\n\t\t\t\tid\n\t\t\t\t...CollectionShelf\n\t\t\t}\n\t\t}\n\t}\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

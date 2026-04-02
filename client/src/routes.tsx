@@ -2,6 +2,12 @@ import { lazy, type FC } from "react";
 import { Navigate, Route, Routes } from "react-router";
 
 const HomeRoute = lazy(() => import("./routes/home").then((module) => ({ default: module.HomeRoute })));
+const CollectionRoute = lazy(() =>
+	import("./routes/collection").then((module) => ({ default: module.CollectionRoute })),
+);
+const CollectionsRoute = lazy(() =>
+	import("./routes/collections").then((module) => ({ default: module.CollectionsRoute })),
+);
 const LibraryNodeRoute = lazy(() =>
 	import("./routes/library_node").then((module) => ({ default: module.LibraryNodeRoute })),
 );
@@ -44,6 +50,8 @@ export const AppRoutes: FC = () => (
 			<Route path="create-library" element={<SetupCreateLibraryRoute />} />
 		</Route>
 		<Route path="/playground" element={<PlaygroundRoute />} />
+		<Route path="/collection/:collectionId" element={<CollectionRoute />} />
+		<Route path="/collections" element={<CollectionsRoute />} />
 		<Route path="/library/:libraryId/node/:nodeId" element={<LibraryNodeRoute />} />
 		<Route path="/library/:libraryId" element={<LibraryRoute />} />
 		<Route path="/settings" element={<SettingsRoute />}>

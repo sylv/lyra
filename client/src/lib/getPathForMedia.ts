@@ -11,3 +11,5 @@ export const getPathForNode = (nodeRaw: FragmentType<typeof NodeFragment>) => {
 	const node = unmask(NodeFragment, nodeRaw);
 	return `/library/${node.libraryId}/node/${node.id}`;
 };
+
+export const getPathForCollection = (collectionId: string) => `/collection/${collectionId}`;

@@ -10,16 +10,16 @@ export const LibrariesQuery = graphql(`
 `);
 
 export const CreateLibraryMutation = graphql(`
-	mutation CreateLibrary($name: String!, $path: String!) {
-		createLibrary(name: $name, path: $path) {
+	mutation CreateLibrary($name: String!, $path: String!, $pinned: Boolean!) {
+		createLibrary(name: $name, path: $path, pinned: $pinned) {
 			...LibraryCard
 		}
 	}
 `);
 
 export const UpdateLibraryMutation = graphql(`
-	mutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!) {
-		updateLibrary(libraryId: $libraryId, name: $name, path: $path) {
+	mutation UpdateLibrary($libraryId: String!, $name: String!, $path: String!, $pinned: Boolean!) {
+		updateLibrary(libraryId: $libraryId, name: $name, path: $path, pinned: $pinned) {
 			...LibraryCard
 		}
 	}

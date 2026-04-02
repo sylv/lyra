@@ -1,5 +1,6 @@
 use crate::{
     auth::RequestAuth,
+    collections::reconcile_system_collections,
     config::get_config,
     content_update::CONTENT_UPDATE,
     entities::{
@@ -40,6 +41,7 @@ use tokio::{signal, task::JoinSet};
 mod activity;
 mod assets;
 mod auth;
+mod collections;
 mod config;
 mod content_update;
 mod entities;
@@ -219,6 +221,9 @@ async fn main() {
     tracing::info!("Database migrations complete");
 
     let pool = DatabaseConnection::from(pool);
+    reconcile_system_collections(&pool)
+        .await
+        .expect("Failed to reconcile system collections");
     let job_wake_signal = Arc::new(Notify::new());
     let job_semaphore = Arc::new(JobSemaphore::new());
     let job_startup_lock = Arc::new(RwLock::new(()));

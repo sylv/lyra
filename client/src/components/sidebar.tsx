@@ -1,9 +1,10 @@
-import { Activity, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
+import { Activity, FolderIcon, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import BrandLogo from "../assets/logo.svg";
+import { getPathForCollection } from "../lib/getPathForMedia";
 import { ADMIN_BIT } from "../lib/user-permissions";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
@@ -50,11 +51,16 @@ const SidebarLink: FC<{
 };
 
 const LibrariesQuery = graphql(`
-	query Libraries {
+	query SidebarNavigation {
 		libraries {
 			id
 			name
 			createdAt
+			pinned
+		}
+		collections(pinned: true) {
+			id
+			name
 		}
 	}
 `);
@@ -179,7 +185,15 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 				<SidebarLink to="/" icon={HomeIcon} active={pathname === "/"} onClick={onNavigate}>
 					Home
 				</SidebarLink>
-				{data?.libraries?.map((library) => {
+				<SidebarLink
+					to="/collections"
+					icon={FolderIcon}
+					active={pathname.startsWith("/collections") || pathname.startsWith("/collection/")}
+					onClick={onNavigate}
+				>
+					Collections
+				</SidebarLink>
+				{data?.libraries?.filter((library) => library.pinned).map((library) => {
 					const libraryPath = `/library/${library.id}`;
 					const isActive = pathname.startsWith(libraryPath);
 					return (
@@ -191,6 +205,21 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 							onClick={onNavigate}
 						>
 							{library.name}
+						</SidebarLink>
+					);
+				})}
+				{data?.collections?.map((collection) => {
+					const collectionPath = getPathForCollection(collection.id);
+					const isActive = pathname.startsWith(collectionPath);
+					return (
+						<SidebarLink
+							to={collectionPath}
+							icon={FolderIcon}
+							active={isActive}
+							key={collection.id}
+							onClick={onNavigate}
+						>
+							{collection.name}
 						</SidebarLink>
 					);
 				})}

@@ -36,6 +36,8 @@ pub enum Relation {
     NodeFiles,
     #[sea_orm(has_many = "super::node_metadata::Entity")]
     NodeMetadata,
+    #[sea_orm(has_many = "super::collection_items::Entity")]
+    CollectionItems,
     #[sea_orm(
         belongs_to = "Entity",
         from = "Column::ParentId",
@@ -74,6 +76,12 @@ impl Related<super::node_metadata::Entity> for Entity {
     }
 }
 
+impl Related<super::collection_items::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::CollectionItems.def()
+    }
+}
+
 impl Related<super::watch_progress::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::WatchProgress.def()
@@ -86,6 +94,15 @@ impl Related<super::files::Entity> for Entity {
     }
     fn via() -> Option<RelationDef> {
         Some(super::node_files::Relation::Nodes.def().rev())
+    }
+}
+
+impl Related<super::collections::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::collection_items::Relation::Collections.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::collection_items::Relation::Nodes.def().rev())
     }
 }
 

@@ -10,6 +10,7 @@ pub struct Model {
     pub name: String,
     #[sea_orm(column_type = "Text", unique)]
     pub path: String,
+    pub pinned: bool,
     pub last_scanned_at: Option<i64>,
     pub created_at: i64,
 }

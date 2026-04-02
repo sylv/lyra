@@ -19,6 +19,41 @@ type Asset {
 	signedUrl: String!
 }
 
+type Collection {
+	id: String!
+	name: String!
+	description: String
+	createdById: String
+	visibility: CollectionVisibility!
+	resolverKind: CollectionResolverKind!
+	showOnHome: Boolean!
+	homePosition: Int!
+	pinned: Boolean!
+	pinnedPosition: Int!
+	createdAt: Int!
+	updatedAt: Int!
+	kind: CollectionKind
+	createdBy: User
+	canEdit: Boolean!
+	canDelete: Boolean!
+	itemCount: Int!
+	nodeList(after: String, first: Int): NodeConnection!
+}
+
+enum CollectionKind {
+	CONTINUE_WATCHING
+}
+
+enum CollectionResolverKind {
+	MANUAL
+	FILTER
+}
+
+enum CollectionVisibility {
+	PUBLIC
+	PRIVATE
+}
+
 enum ContentUpdateEvent {
 	CONTENT_UPDATE
 }
@@ -55,6 +90,10 @@ type FileSegment {
 
 enum FileSegmentKind {
 	INTRO
+}
+
+type HomeView {
+	sections: [Collection!]!
 }
 
 type ImportWatchStateConflict {
@@ -115,6 +154,7 @@ type Library {
 	id: String!
 	name: String!
 	path: String!
+	pinned: Boolean!
 	lastScannedAt: Int
 	createdAt: Int!
 }
@@ -127,8 +167,12 @@ type Mutation {
 	deleteUser(userId: String!): Boolean!
 	updateWatchProgress(fileId: String!, progressPercent: Float!, userId: String): [WatchProgress!]!
 	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
-	createLibrary(name: String!, path: String!): Library!
-	updateLibrary(libraryId: String!, name: String!, path: String!): Library!
+	createLibrary(name: String!, path: String!, pinned: Boolean): Library!
+	updateLibrary(libraryId: String!, name: String!, path: String!, pinned: Boolean!): Library!
+	createCollection(name: String!, description: String, visibility: CollectionVisibility!, resolverKind: CollectionResolverKind!, filter: NodeFilter, showOnHome: Boolean, homePosition: Int, pinned: Boolean, pinnedPosition: Int): Collection!
+	updateCollection(collectionId: String!, name: String!, description: String, visibility: CollectionVisibility!, resolverKind: CollectionResolverKind!, filter: NodeFilter, showOnHome: Boolean!, homePosition: Int!, pinned: Boolean!, pinnedPosition: Int!): Collection!
+	deleteCollection(collectionId: String!): Boolean!
+	addNodeToCollection(collectionId: String!, nodeId: String!): Collection!
 	setPreferredAudio(language: String, disposition: TrackDispositionPreference): User!
 	setPreferredSubtitle(language: String, disposition: TrackDispositionPreference): User!
 	deleteLibrary(libraryId: String!): Boolean!
@@ -199,6 +243,7 @@ input NodeFilter {
 	orderBy: OrderBy
 	orderDirection: OrderDirection
 	watched: Boolean
+	continueWatching: Boolean
 }
 
 enum NodeKind {
@@ -242,6 +287,7 @@ enum OrderBy {
 	ALPHABETICAL
 	RATING
 	ORDER
+	WATCH_PROGRESS_UPDATED_AT
 }
 
 enum OrderDirection {
@@ -278,6 +324,9 @@ type Query {
 	listFiles(path: String!): [String!]!
 	library(libraryId: String!): Library!
 	libraries: [Library!]!
+	home: HomeView!
+	collections(pinned: Boolean): [Collection!]!
+	collection(collectionId: String!): Collection
 	viewer: User
 	watchSession(sessionId: String!): WatchSession
 	watchSessions: [WatchSession!]!

@@ -4,6 +4,7 @@ import type { LibraryCardFragment as LibraryCardData } from "../../../@generated
 import { Button, ButtonStyle } from "../../button";
 import { DirectoryPicker } from "../../directory-picker";
 import { Input } from "../../input";
+import { Checkbox } from "../../ui/checkbox";
 import { Modal, ModalBody, ModalHeader } from "../../modal";
 import { CreateLibraryMutation, UpdateLibraryMutation } from "./queries";
 
@@ -52,6 +53,7 @@ const LibraryForm: FC<{
 	const [{ fetching: updating }, updateLibrary] = useMutation(UpdateLibraryMutation);
 	const [libraryName, setLibraryName] = useState(library?.name ?? "");
 	const [selectedPath, setSelectedPath] = useState<string | null>(library?.path ?? null);
+	const [pinned, setPinned] = useState(library?.pinned ?? true);
 	const [error, setError] = useState<string | null>(null);
 	const submitting = creating || updating;
 
@@ -70,6 +72,7 @@ const LibraryForm: FC<{
 					libraryId: library.id,
 					name: libraryName.trim(),
 					path: selectedPath,
+					pinned,
 				});
 				if (result.error) {
 					throw result.error;
@@ -78,6 +81,7 @@ const LibraryForm: FC<{
 				const result = await createLibrary({
 					name: libraryName.trim(),
 					path: selectedPath,
+					pinned,
 				});
 				if (result.error) {
 					throw result.error;
@@ -112,6 +116,14 @@ const LibraryForm: FC<{
 				<div className="text-xs font-medium uppercase tracking-wide text-zinc-400">Path</div>
 				<DirectoryPicker onPathChange={setSelectedPath} initialPath={library?.path ?? "/"} />
 			</div>
+
+			<label className="flex items-center gap-3 rounded-md px-3 py-3 text-sm">
+				<Checkbox checked={pinned} onCheckedChange={(checked) => setPinned(checked === true)} />
+				<div>
+					<div className="font-medium">Pinned in Sidebar</div>
+					<div className="text-xs text-zinc-400">Unpin libraries you only want to surface through collections.</div>
+				</div>
+			</label>
 
 			{error ? <p className="rounded bg-red-950/50 px-3 py-2 text-sm text-red-300">{error}</p> : null}
 

@@ -4,11 +4,14 @@ use crate::auth::{
     ensure_library_access, find_pending_invite_user,
 };
 use crate::content_update::CONTENT_UPDATE;
+use crate::entities::collections::{CollectionResolverKind, CollectionVisibility};
 use crate::entities::users::UserPerms;
 use crate::entities::{
-    files, libraries, library_users, node_files, user_sessions, users, watch_progress,
+    collection_items, collections, files, libraries, library_users, node_files, nodes,
+    user_sessions, users, watch_progress,
 };
 use crate::graphql::properties::TrackDispositionPreference;
+use crate::graphql::query::{collection_editable_by_user, NodeFilter};
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
 use crate::watch_session::{
@@ -54,6 +57,62 @@ fn normalize_library_ids(mut library_ids: Vec<String>) -> Vec<String> {
     library_ids.sort();
     library_ids.dedup();
     library_ids
+}
+
+fn normalize_collection_name(name: String) -> Result<String, async_graphql::Error> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(async_graphql::Error::new("Collection name is required"));
+    }
+
+    Ok(name.to_string())
+}
+
+fn ensure_collection_visibility_allowed(
+    auth: &RequestAuth,
+    visibility: CollectionVisibility,
+) -> Result<(), async_graphql::Error> {
+    if visibility == CollectionVisibility::Public && !auth.has_permission(UserPerms::ADMIN) {
+        return Err(async_graphql::Error::new(
+            "Only admins can create or publish public collections",
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_collection_is_user_editable(
+    collection: &collections::Model,
+    auth: &RequestAuth,
+) -> Result<(), async_graphql::Error> {
+    let user = auth.get_user_or_err()?;
+    if !collection_editable_by_user(collection, &user.id, auth.has_permission(UserPerms::ADMIN)) {
+        return Err(async_graphql::Error::new("Collection is not editable"));
+    }
+
+    Ok(())
+}
+
+async fn ensure_node_accessible(
+    pool: &DatabaseConnection,
+    auth: &RequestAuth,
+    node_id: &str,
+) -> Result<nodes::Model, async_graphql::Error> {
+    let mut query = nodes::Entity::find().filter(nodes::Column::Id.eq(node_id.to_string()));
+    if let Some(visible_library_ids) = accessible_library_ids(pool, auth)
+        .await
+        .map_err(async_graphql::Error::from)?
+    {
+        if visible_library_ids.is_empty() {
+            return Err(async_graphql::Error::new("Node not found"));
+        }
+        query = query.filter(nodes::Column::LibraryId.is_in(visible_library_ids));
+    }
+
+    query
+        .one(pool)
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("Node not found"))
 }
 
 // keep user updates atomic so permission flips and explicit library assignments can't drift apart.
@@ -634,6 +693,7 @@ impl Mutation {
         ctx: &Context<'_>,
         name: String,
         path: String,
+        pinned: Option<bool>,
     ) -> Result<libraries::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
@@ -648,6 +708,7 @@ impl Mutation {
             id: Set(ids::generate_ulid()),
             name: Set(name),
             path: Set(path),
+            pinned: Set(pinned.unwrap_or(true)),
             ..Default::default()
         })
         .exec_with_returning(pool)
@@ -664,6 +725,7 @@ impl Mutation {
         library_id: String,
         name: String,
         path: String,
+        pinned: bool,
     ) -> Result<libraries::Model, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
@@ -683,6 +745,7 @@ impl Mutation {
         let mut library = existing_library.into_active_model();
         library.name = Set(name);
         library.path = Set(path);
+        library.pinned = Set(pinned);
 
         // force the scheduler to rescan quickly when the root changes
         // instead of leaving the moved library on the previous scan cadence.
@@ -697,6 +760,181 @@ impl Mutation {
 
         CONTENT_UPDATE.emit();
         Ok(library)
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn create_collection(
+        &self,
+        ctx: &Context<'_>,
+        name: String,
+        description: Option<String>,
+        visibility: CollectionVisibility,
+        resolver_kind: CollectionResolverKind,
+        filter: Option<NodeFilter>,
+        show_on_home: Option<bool>,
+        home_position: Option<i64>,
+        pinned: Option<bool>,
+        pinned_position: Option<i64>,
+    ) -> Result<collections::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+        ensure_collection_visibility_allowed(auth, visibility)?;
+
+        if resolver_kind == CollectionResolverKind::Filter && filter.is_none() {
+            return Err(async_graphql::Error::new(
+                "Filter collections require a filter definition",
+            ));
+        }
+
+        let collection = collections::Entity::insert(collections::ActiveModel {
+            id: Set(ids::generate_ulid()),
+            name: Set(normalize_collection_name(name)?),
+            description: Set(description.and_then(|value| {
+                let trimmed = value.trim().to_string();
+                (!trimmed.is_empty()).then_some(trimmed)
+            })),
+            created_by_id: Set(Some(user.id.clone())),
+            visibility: Set(visibility),
+            resolver_kind: Set(resolver_kind),
+            kind: Set(None),
+            filter_json: Set(filter
+                .as_ref()
+                .map(serde_json::to_vec)
+                .transpose()?
+            ),
+            show_on_home: Set(show_on_home.unwrap_or(false)),
+            home_position: Set(home_position.unwrap_or(0)),
+            pinned: Set(pinned.unwrap_or(false)),
+            pinned_position: Set(pinned_position.unwrap_or(0)),
+            ..Default::default()
+        })
+        .exec_with_returning(pool)
+        .await?;
+
+        CONTENT_UPDATE.emit();
+        Ok(collection)
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn update_collection(
+        &self,
+        ctx: &Context<'_>,
+        collection_id: String,
+        name: String,
+        description: Option<String>,
+        visibility: CollectionVisibility,
+        resolver_kind: CollectionResolverKind,
+        filter: Option<NodeFilter>,
+        show_on_home: bool,
+        home_position: i64,
+        pinned: bool,
+        pinned_position: i64,
+    ) -> Result<collections::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        ensure_collection_visibility_allowed(auth, visibility)?;
+
+        let existing = collections::Entity::find_by_id(collection_id)
+            .one(pool)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Collection not found"))?;
+        ensure_collection_is_user_editable(&existing, auth)?;
+
+        if resolver_kind == CollectionResolverKind::Filter && filter.is_none() {
+            return Err(async_graphql::Error::new(
+                "Filter collections require a filter definition",
+            ));
+        }
+
+        let mut active = existing.into_active_model();
+        active.name = Set(normalize_collection_name(name)?);
+        active.description = Set(description.and_then(|value| {
+            let trimmed = value.trim().to_string();
+            (!trimmed.is_empty()).then_some(trimmed)
+        }));
+        active.visibility = Set(visibility);
+        active.resolver_kind = Set(resolver_kind);
+        active.filter_json = Set(filter
+            .as_ref()
+            .map(serde_json::to_vec)
+            .transpose()?);
+        active.show_on_home = Set(show_on_home);
+        active.home_position = Set(home_position);
+        active.pinned = Set(pinned);
+        active.pinned_position = Set(pinned_position);
+
+        let collection = active.update(pool).await?;
+        CONTENT_UPDATE.emit();
+        Ok(collection)
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn delete_collection(
+        &self,
+        ctx: &Context<'_>,
+        collection_id: String,
+    ) -> Result<bool, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let Some(collection) = collections::Entity::find_by_id(collection_id)
+            .one(pool)
+            .await?
+        else {
+            return Ok(false);
+        };
+        ensure_collection_is_user_editable(&collection, auth)?;
+        collections::Entity::delete_by_id(collection.id).exec(pool).await?;
+        CONTENT_UPDATE.emit();
+        Ok(true)
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn add_node_to_collection(
+        &self,
+        ctx: &Context<'_>,
+        collection_id: String,
+        node_id: String,
+    ) -> Result<collections::Model, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let collection = collections::Entity::find_by_id(collection_id)
+            .one(pool)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Collection not found"))?;
+        ensure_collection_is_user_editable(&collection, auth)?;
+
+        if collection.resolver_kind != CollectionResolverKind::Manual {
+            return Err(async_graphql::Error::new(
+                "Only manual collections can accept direct node additions",
+            ));
+        }
+
+        let _node = ensure_node_accessible(pool, auth, &node_id).await?;
+        let next_position = collection_items::Entity::find()
+            .filter(collection_items::Column::CollectionId.eq(collection.id.clone()))
+            .count(pool)
+            .await? as i64;
+
+        collection_items::Entity::insert(collection_items::ActiveModel {
+            collection_id: Set(collection.id.clone()),
+            node_id: Set(node_id),
+            position: Set(next_position),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::columns([
+                collection_items::Column::CollectionId,
+                collection_items::Column::NodeId,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec(pool)
+        .await?;
+
+        CONTENT_UPDATE.emit();
+        Ok(collection)
     }
 
     pub async fn set_preferred_audio(

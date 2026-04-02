@@ -1,4 +1,6 @@
 pub mod assets;
+pub mod collection_items;
+pub mod collections;
 pub mod file_assets;
 pub mod file_probe;
 pub mod files;
