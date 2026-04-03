@@ -7,7 +7,9 @@ use crate::content_update::CONTENT_UPDATE;
 use crate::entities::{files, libraries};
 use crate::ids;
 use crate::scanner::derive_nodes::group_parsed_files_by_root;
-use crate::scanner::reconcile::{find_roots_for_file_ids, parse_file_rows, reconcile_root};
+use crate::scanner::reconcile::{
+    find_roots_for_file_ids, parse_file_rows, reconcile_root, refresh_library_node_availability,
+};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
@@ -17,8 +19,9 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::path::{Path as StdPath, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{Notify, RwLock};
 use tokio::time::{Duration, sleep};
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 const MIN_FILE_SIZE_MB: u64 = 25 * 1024 * 1024;
 const SCAN_BATCH_SIZE: usize = 100;
@@ -34,9 +37,8 @@ struct ScannedFileCandidate {
 pub async fn start_scanner(
     pool: DatabaseConnection,
     wake_signal: Arc<Notify>,
-    job_startup_lock: Arc<RwLock<()>>,
+    startup_scans_complete: CancellationToken,
 ) -> anyhow::Result<()> {
-    let startup_guard = job_startup_lock.write().await;
     let libraries = libraries::Entity::find()
         .order_by_asc(libraries::Column::CreatedAt)
         .all(&pool)
@@ -53,7 +55,7 @@ pub async fn start_scanner(
     }
 
     tracing::info!("startup scans complete");
-    drop(startup_guard);
+    startup_scans_complete.cancel();
 
     loop {
         let config = get_config();
@@ -84,31 +86,165 @@ async fn scan_library(
     let scan_start_time = chrono::Utc::now().timestamp();
     let library_path = PathBuf::from(&library.path);
     let mut new_file_ids = HashSet::new();
+    let library_available = library_has_top_level_directories(&library_path).await;
 
-    // if the library root can't be read, treat the whole library as unavailable for this pass
-    // instead of crashing startup or the scanner loop.
-    let scan_result = scan_directory(pool, library, &library_path, scan_start_time).await;
-    if let Ok(scanned_new_file_ids) = &scan_result {
-        new_file_ids.extend(scanned_new_file_ids.iter().cloned());
-    }
-    if let Err(error) = scan_result {
-        tracing::warn!(
-            library_id = %library.id,
-            path = %library.path,
-            error = ?error,
-            "library scan could not read root; marking missing files unavailable"
-        );
+    match library_available {
+        Ok(true) => {
+            let scan_result = scan_directory(pool, library, &library_path, scan_start_time).await;
+            if let Ok(scanned_new_file_ids) = &scan_result {
+                new_file_ids.extend(scanned_new_file_ids.iter().cloned());
+            }
+            if let Err(error) = scan_result {
+                tracing::warn!(
+                    library_id = %library.id,
+                    path = %library.path,
+                    error = ?error,
+                    "library scan failed while reading mount; marking library unavailable"
+                );
+                mark_library_unavailable(pool, library, scan_start_time).await?;
+                refresh_library_node_availability(pool, &library.id, scan_start_time).await?;
+                finalize_library_scan(pool, library, scan_start_time, Some(scan_start_time))
+                    .await?;
+                wake_signal.notify_waiters();
+                CONTENT_UPDATE.emit();
+                return Ok(());
+            }
+
+            let newly_unavailable_file_ids = files::Entity::find()
+                .filter(files::Column::LibraryId.eq(library.id.clone()))
+                .filter(files::Column::ScannedAt.lt(scan_start_time))
+                .filter(files::Column::UnavailableAt.is_null())
+                .select_only()
+                .column(files::Column::Id)
+                .into_tuple::<String>()
+                .all(pool)
+                .await?;
+
+            files::Entity::update_many()
+                .set(files::ActiveModel {
+                    unavailable_at: Set(Some(scan_start_time)),
+                    ..Default::default()
+                })
+                .filter(files::Column::LibraryId.eq(library.id.clone()))
+                .filter(files::Column::ScannedAt.lt(scan_start_time))
+                .filter(files::Column::UnavailableAt.is_null())
+                .exec(pool)
+                .await?;
+
+            let mut parsed_new_files_by_root = HashMap::new();
+            if !new_file_ids.is_empty() {
+                let new_rows = files::Entity::find()
+                    .filter(files::Column::Id.is_in(new_file_ids.into_iter().collect::<Vec<_>>()))
+                    .all(pool)
+                    .await?;
+                let parsed_new_rows = parse_file_rows(&new_rows).await;
+                parsed_new_files_by_root =
+                    group_parsed_files_by_root(&library_path, &parsed_new_rows);
+
+                let total_import_files = parsed_new_files_by_root
+                    .values()
+                    .map(|rows| rows.len() as i64)
+                    .sum::<i64>();
+                if total_import_files > 0 {
+                    activity.set_total(total_import_files);
+                }
+            }
+
+            let mut touched_root_ids = parsed_new_files_by_root
+                .keys()
+                .cloned()
+                .collect::<HashSet<_>>();
+            touched_root_ids.extend(
+                find_roots_for_file_ids(pool, &newly_unavailable_file_ids)
+                    .await?
+                    .into_iter(),
+            );
+
+            let mut processed_import_files = 0_i64;
+            for root_id in touched_root_ids {
+                let extra_rows = parsed_new_files_by_root
+                    .get(root_id.as_str())
+                    .cloned()
+                    .unwrap_or_default();
+                let imported_file_count = extra_rows.len() as i64;
+
+                if let Err(error) =
+                    reconcile_root(pool, &library.id, &library_path, &root_id, extra_rows).await
+                {
+                    tracing::warn!(
+                        library_id = %library.id,
+                        root_id,
+                        error = ?error,
+                        "failed to reconcile touched root"
+                    );
+                }
+
+                if imported_file_count > 0 {
+                    processed_import_files += imported_file_count;
+                    activity.set_progress(processed_import_files);
+                }
+            }
+
+            refresh_library_node_availability(pool, &library.id, scan_start_time).await?;
+            finalize_library_scan(pool, library, scan_start_time, None).await?;
+        }
+        Ok(false) => {
+            tracing::warn!(
+                library_id = %library.id,
+                path = %library.path,
+                "library root is missing or has no top-level directories; marking unavailable"
+            );
+            mark_library_unavailable(pool, library, scan_start_time).await?;
+            refresh_library_node_availability(pool, &library.id, scan_start_time).await?;
+            finalize_library_scan(pool, library, scan_start_time, Some(scan_start_time)).await?;
+        }
+        Err(error) => {
+            tracing::warn!(
+                library_id = %library.id,
+                path = %library.path,
+                error = ?error,
+                "library mount preflight failed; marking unavailable"
+            );
+            mark_library_unavailable(pool, library, scan_start_time).await?;
+            refresh_library_node_availability(pool, &library.id, scan_start_time).await?;
+            finalize_library_scan(pool, library, scan_start_time, Some(scan_start_time)).await?;
+        }
     }
 
-    let newly_unavailable_file_ids = files::Entity::find()
-        .filter(files::Column::LibraryId.eq(library.id.clone()))
-        .filter(files::Column::ScannedAt.lt(scan_start_time))
-        .filter(files::Column::UnavailableAt.is_null())
-        .select_only()
-        .column(files::Column::Id)
-        .into_tuple::<String>()
-        .all(pool)
-        .await?;
+    wake_signal.notify_waiters();
+    CONTENT_UPDATE.emit();
+    Ok(())
+}
+
+// Treat a mount as healthy only when the root is readable and exposes at least one top-level
+// directory. This avoids collapsing an offline mount into a destructive "empty library" scan.
+async fn library_has_top_level_directories(root_dir: &StdPath) -> anyhow::Result<bool> {
+    if !tokio::fs::try_exists(root_dir).await? {
+        return Ok(false);
+    }
+
+    let mut entries = tokio::fs::read_dir(root_dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if entry.file_type().await?.is_dir() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+async fn mark_library_unavailable(
+    pool: &DatabaseConnection,
+    library: &libraries::Model,
+    scan_start_time: i64,
+) -> anyhow::Result<()> {
+    libraries::Entity::update(libraries::ActiveModel {
+        id: Set(library.id.clone()),
+        unavailable_at: Set(Some(scan_start_time)),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?;
 
     files::Entity::update_many()
         .set(files::ActiveModel {
@@ -116,74 +252,28 @@ async fn scan_library(
             ..Default::default()
         })
         .filter(files::Column::LibraryId.eq(library.id.clone()))
-        .filter(files::Column::ScannedAt.lt(scan_start_time))
         .filter(files::Column::UnavailableAt.is_null())
         .exec(pool)
         .await?;
 
-    let mut parsed_new_files_by_root = HashMap::new();
-    if !new_file_ids.is_empty() {
-        let new_rows = files::Entity::find()
-            .filter(files::Column::Id.is_in(new_file_ids.into_iter().collect::<Vec<_>>()))
-            .all(pool)
-            .await?;
-        let parsed_new_rows = parse_file_rows(&new_rows).await;
-        parsed_new_files_by_root = group_parsed_files_by_root(&library_path, &parsed_new_rows);
+    Ok(())
+}
 
-        let total_import_files = parsed_new_files_by_root
-            .values()
-            .map(|rows| rows.len() as i64)
-            .sum::<i64>();
-        if total_import_files > 0 {
-            activity.set_total(total_import_files);
-        }
-    }
-
-    let mut touched_root_ids = parsed_new_files_by_root
-        .keys()
-        .cloned()
-        .collect::<HashSet<_>>();
-    touched_root_ids.extend(
-        find_roots_for_file_ids(pool, &newly_unavailable_file_ids)
-            .await?
-            .into_iter(),
-    );
-
-    let mut processed_import_files = 0_i64;
-    for root_id in touched_root_ids {
-        let extra_rows = parsed_new_files_by_root
-            .get(root_id.as_str())
-            .cloned()
-            .unwrap_or_default();
-        let imported_file_count = extra_rows.len() as i64;
-
-        if let Err(error) =
-            reconcile_root(pool, &library.id, &library_path, &root_id, extra_rows).await
-        {
-            tracing::warn!(
-                library_id = %library.id,
-                root_id,
-                error = ?error,
-                "failed to reconcile touched root"
-            );
-        }
-
-        if imported_file_count > 0 {
-            processed_import_files += imported_file_count;
-            activity.set_progress(processed_import_files);
-        }
-    }
-
+async fn finalize_library_scan(
+    pool: &DatabaseConnection,
+    library: &libraries::Model,
+    scan_start_time: i64,
+    unavailable_at: Option<i64>,
+) -> anyhow::Result<()> {
     libraries::Entity::update(libraries::ActiveModel {
         id: Set(library.id.clone()),
-        last_scanned_at: Set(Some(chrono::Utc::now().timestamp())),
+        last_scanned_at: Set(Some(scan_start_time)),
+        unavailable_at: Set(unavailable_at),
         ..Default::default()
     })
     .exec(pool)
     .await?;
 
-    wake_signal.notify_waiters();
-    CONTENT_UPDATE.emit();
     Ok(())
 }
 
@@ -352,7 +442,9 @@ mod tests {
             id: Set("lib".to_owned()),
             path: Set("/library".to_owned()),
             name: Set("Library".to_owned()),
+            pinned: Set(false),
             last_scanned_at: Set(None),
+            unavailable_at: Set(None),
             created_at: Set(0),
         })
         .exec(pool)

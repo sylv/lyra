@@ -31,13 +31,20 @@ pub async fn collection_item_count(
                 .map(serde_json::from_slice)
                 .transpose()?
                 .unwrap_or_default();
-            let qb = build_node_query_for_viewer(pool, visible_library_ids.as_deref(), &user_id, &filter).await?;
+            let qb = build_node_query_for_viewer(
+                pool,
+                visible_library_ids.as_deref(),
+                &user_id,
+                &filter,
+            )
+            .await?;
             Ok(qb.count(pool).await? as i64)
         }
         collections::CollectionResolverKind::Manual => {
             let mut query = nodes::Entity::find()
                 .join(JoinType::InnerJoin, nodes::Relation::CollectionItems.def())
-                .filter(collection_items::Column::CollectionId.eq(collection.id.clone()));
+                .filter(collection_items::Column::CollectionId.eq(collection.id.clone()))
+                .filter(nodes::Column::UnavailableAt.is_null());
 
             if let Some(visible_library_ids) = visible_library_ids {
                 if visible_library_ids.is_empty() {
@@ -66,7 +73,9 @@ impl collections::Model {
         };
 
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        users::Entity::find_by_id(created_by_id.clone()).one(pool).await
+        users::Entity::find_by_id(created_by_id.clone())
+            .one(pool)
+            .await
     }
 
     pub async fn can_edit(&self, ctx: &Context<'_>) -> Result<bool, async_graphql::Error> {
@@ -101,7 +110,8 @@ impl collections::Model {
         let visible_library_ids = accessible_library_ids(pool, auth)
             .await
             .map_err(async_graphql::Error::from)?;
-        let user_id = current_user_id(ctx).ok_or_else(|| async_graphql::Error::new("Unauthenticated"))?;
+        let user_id =
+            current_user_id(ctx).ok_or_else(|| async_graphql::Error::new("Unauthenticated"))?;
 
         match self.resolver_kind {
             collections::CollectionResolverKind::Filter => {
@@ -111,8 +121,13 @@ impl collections::Model {
                     .map(serde_json::from_slice)
                     .transpose()?
                     .unwrap_or_default();
-                let qb =
-                    build_node_query_for_viewer(pool, visible_library_ids.as_deref(), &user_id, &filter).await?;
+                let qb = build_node_query_for_viewer(
+                    pool,
+                    visible_library_ids.as_deref(),
+                    &user_id,
+                    &filter,
+                )
+                .await?;
                 paginate_node_query(pool, qb, after, first).await
             }
             collections::CollectionResolverKind::Manual => {
@@ -125,34 +140,37 @@ impl collections::Model {
                         let mut query = nodes::Entity::find()
                             .join(JoinType::InnerJoin, nodes::Relation::CollectionItems.def())
                             .filter(collection_items::Column::CollectionId.eq(self.id.clone()))
+                            .filter(nodes::Column::UnavailableAt.is_null())
                             .order_by_asc(collection_items::Column::Position)
                             .order_by_asc(nodes::Column::Id);
 
                         if let Some(visible_library_ids) = visible_library_ids.as_ref() {
                             if visible_library_ids.is_empty() {
-                                return Ok::<_, async_graphql::Error>(
-                                    connection::Connection::new(false, false),
-                                );
+                                return Ok::<_, async_graphql::Error>(connection::Connection::new(
+                                    false, false,
+                                ));
                             }
-                            query = query
-                                .filter(nodes::Column::LibraryId.is_in(visible_library_ids.clone()));
+                            query = query.filter(
+                                nodes::Column::LibraryId.is_in(visible_library_ids.clone()),
+                            );
                         }
 
                         let count = query.clone().count(pool).await?;
                         let limit = first.unwrap_or(50) as u64;
                         let offset = after.map(|cursor| cursor + 1).unwrap_or(0);
-                        let records: Vec<nodes::Model> =
-                            query.limit(Some(limit)).offset(Some(offset)).all(pool).await?;
+                        let records: Vec<nodes::Model> = query
+                            .limit(Some(limit))
+                            .offset(Some(offset))
+                            .all(pool)
+                            .await?;
 
                         let has_previous_page = offset > 0;
                         let has_next_page = offset + limit < count;
-                        let mut connection = connection::Connection::new(has_previous_page, has_next_page);
-                        connection.edges.extend(
-                            records
-                                .into_iter()
-                                .enumerate()
-                                .map(|(index, node)| connection::Edge::new(offset + index as u64, node)),
-                        );
+                        let mut connection =
+                            connection::Connection::new(has_previous_page, has_next_page);
+                        connection.edges.extend(records.into_iter().enumerate().map(
+                            |(index, node)| connection::Edge::new(offset + index as u64, node),
+                        ));
 
                         Ok::<_, async_graphql::Error>(connection)
                     },

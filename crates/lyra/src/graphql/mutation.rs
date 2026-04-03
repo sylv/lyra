@@ -11,7 +11,7 @@ use crate::entities::{
     user_sessions, users, watch_progress,
 };
 use crate::graphql::properties::TrackDispositionPreference;
-use crate::graphql::query::{collection_editable_by_user, NodeFilter};
+use crate::graphql::query::{NodeFilter, collection_editable_by_user};
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
 use crate::watch_session::{
@@ -798,11 +798,7 @@ impl Mutation {
             visibility: Set(visibility),
             resolver_kind: Set(resolver_kind),
             kind: Set(None),
-            filter_json: Set(filter
-                .as_ref()
-                .map(serde_json::to_vec)
-                .transpose()?
-            ),
+            filter_json: Set(filter.as_ref().map(serde_json::to_vec).transpose()?),
             show_on_home: Set(show_on_home.unwrap_or(false)),
             home_position: Set(home_position.unwrap_or(0)),
             pinned: Set(pinned.unwrap_or(false)),
@@ -855,10 +851,7 @@ impl Mutation {
         }));
         active.visibility = Set(visibility);
         active.resolver_kind = Set(resolver_kind);
-        active.filter_json = Set(filter
-            .as_ref()
-            .map(serde_json::to_vec)
-            .transpose()?);
+        active.filter_json = Set(filter.as_ref().map(serde_json::to_vec).transpose()?);
         active.show_on_home = Set(show_on_home);
         active.home_position = Set(home_position);
         active.pinned = Set(pinned);
@@ -884,7 +877,9 @@ impl Mutation {
             return Ok(false);
         };
         ensure_collection_is_user_editable(&collection, auth)?;
-        collections::Entity::delete_by_id(collection.id).exec(pool).await?;
+        collections::Entity::delete_by_id(collection.id)
+            .exec(pool)
+            .await?;
         CONTENT_UPDATE.emit();
         Ok(true)
     }

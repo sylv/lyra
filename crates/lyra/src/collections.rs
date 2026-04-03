@@ -15,6 +15,8 @@ fn continue_watching_filter() -> NodeFilter {
         root_id: None,
         parent_id: None,
         kinds: None,
+        search_term: None,
+        availability: None,
         order_by: Some(OrderBy::WatchProgressUpdatedAt),
         order_direction: Some(OrderDirection::Desc),
         watched: None,

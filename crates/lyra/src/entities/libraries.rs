@@ -12,6 +12,7 @@ pub struct Model {
     pub path: String,
     pub pinned: bool,
     pub last_scanned_at: Option<i64>,
+    pub unavailable_at: Option<i64>,
     pub created_at: i64,
 }
 

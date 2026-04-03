@@ -2,8 +2,8 @@ import { SearchAlertIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
 import { Link } from "react-router";
 import { useQuery } from "urql";
-import { graphql, unmask, type FragmentType } from "../@generated/gql";
-import type { SearchNodeResultFragment as SearchNodeResultData } from "../@generated/gql/graphql";
+import { graphql, unmask } from "../@generated/gql";
+import { NodeKind, type SearchNodeResultFragment as SearchNodeResultData } from "../@generated/gql/graphql";
 import { useDebounce } from "../hooks/use-debounce";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForNode } from "../lib/getPathForMedia";
@@ -47,12 +47,9 @@ const SearchNodeResultFragment = graphql(`
 `);
 
 const SearchMediaQuery = graphql(`
-	query SearchMedia($query: String!, $limit: Int) {
-		search(query: $query, limit: $limit) {
-			roots {
-				...SearchNodeResult
-			}
-			episodes {
+	query SearchMedia($query: String!, $limit: Int!, $kinds: [NodeKind!]!) {
+		nodeList(first: $limit, filter: { searchTerm: $query, kinds: $kinds }) {
+			nodes {
 				...SearchNodeResult
 			}
 		}
@@ -75,11 +72,7 @@ const getRootDetail = (node: SearchNodeResultData) => {
 	return formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null) ?? null;
 };
 
-const SearchNodeCard: FC<{ node: FragmentType<typeof SearchNodeResultFragment>; onSelect: () => void }> = ({
-	node: nodeRef,
-	onSelect,
-}) => {
-	const node = unmask(SearchNodeResultFragment, nodeRef);
+const SearchNodeCard: FC<{ node: SearchNodeResultData; onSelect: () => void }> = ({ node, onSelect }) => {
 	const path = getPathForNode(node);
 
 	if (node.kind === "EPISODE") {
@@ -149,11 +142,16 @@ export const SearchModal: FC<{ open: boolean; onOpenChange: (open: boolean) => v
 	const [{ data: rawData, fetching: loading, error }] = useQuery({
 		query: SearchMediaQuery,
 		pause: !shouldSearch,
-		variables: { query: deferredQuery, limit: 6 },
+		variables: {
+			query: deferredQuery,
+			limit: 12,
+			kinds: [NodeKind.Episode, NodeKind.Series, NodeKind.Movie],
+		},
 	});
 	const displayData = error ? undefined : rawData;
-	const roots = displayData?.search.roots ?? [];
-	const episodes = displayData?.search.episodes ?? [];
+	const results = (displayData?.nodeList.nodes ?? []).map((node) => unmask(SearchNodeResultFragment, node));
+	const roots = results.filter((node) => node.kind !== "EPISODE");
+	const episodes = results.filter((node) => node.kind === "EPISODE");
 	const hasResults = roots.length > 0 || episodes.length > 0;
 
 	useEffect(() => {
@@ -215,8 +213,7 @@ export const SearchModal: FC<{ open: boolean; onOpenChange: (open: boolean) => v
 							<section>
 								<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3">
 									{roots.map((node) => {
-										const result = unmask(SearchNodeResultFragment, node);
-										return <SearchNodeCard key={result.id} node={node} onSelect={() => handleOpenChange(false)} />;
+										return <SearchNodeCard key={node.id} node={node} onSelect={() => handleOpenChange(false)} />;
 									})}
 								</div>
 							</section>
@@ -225,8 +222,7 @@ export const SearchModal: FC<{ open: boolean; onOpenChange: (open: boolean) => v
 							<section>
 								<div className={cn("mt-2", episodes.length > 0 && "space-y-1")}>
 									{episodes.map((node) => {
-										const result = unmask(SearchNodeResultFragment, node);
-										return <SearchNodeCard key={result.id} node={node} onSelect={() => handleOpenChange(false)} />;
+										return <SearchNodeCard key={node.id} node={node} onSelect={() => handleOpenChange(false)} />;
 									})}
 								</div>
 							</section>

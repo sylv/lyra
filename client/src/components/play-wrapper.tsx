@@ -8,6 +8,7 @@ import { UnplayedItemsTab } from "./unplayed-items-tab";
 interface PlayWrapperProps {
 	itemId?: string | null;
 	path: string;
+	unavailable?: boolean | null;
 	watchProgress?: {
 		completed?: boolean;
 		progressPercent: number;
@@ -16,12 +17,13 @@ interface PlayWrapperProps {
 	children: ReactNode;
 }
 
-export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watchProgress }) => {
+export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, unavailable, watchProgress }) => {
 	const navigate = useNavigate();
+	const playableItemId = unavailable ? null : itemId;
 
 	return (
 		<div className="group/play relative inline-block overflow-hidden rounded-sm">
-			{itemId && (
+			{playableItemId && (
 				<button
 					type="button"
 					className={cn(
@@ -29,7 +31,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 						"transition-opacity duration-75 group-hover/play:opacity-100",
 					)}
 					onClick={() => {
-						openPlayerMedia(itemId, true);
+						openPlayerMedia(playableItemId, true);
 						navigate(path);
 					}}
 				>
@@ -50,7 +52,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, watc
 					<CheckCheckIcon className="size-4" strokeWidth={2.5} />
 				</UnplayedItemsTab>
 			)}
-			{!itemId && (
+			{unavailable && (
 				<div className="absolute left-0 top-0 flex h-full w-full select-none items-center justify-center gap-2 bg-black/60 p-3">
 					<FileWarningIcon className="h-6 w-6 text-orange-500" />
 					<p className="text-sm font-semibold text-orange-100">Unavailable</p>

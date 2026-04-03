@@ -5,6 +5,7 @@ import { cn } from "../lib/utils";
 
 export enum ButtonStyle {
 	Primary = "bg-amethyst-600/50 not-disabled:hover:bg-amethyst-600/70",
+	Plex = "bg-[#e5a00d] text-black not-disabled:hover:bg-[#e5a00d]/90",
 	Glass = "bg-zinc-700/30 text-zinc-200 not-disabled:hover:bg-zinc-700/50",
 	White = "bg-zinc-100 text-zinc-950 not-disabled:hover:bg-white",
 	Transparent = "bg-transparent text-zinc-400 not-disabled:hover:bg-zinc-500/20 not-disabled:hover:text-zinc-100",

@@ -14,6 +14,7 @@ export const CollectionNodeCardFragment = graphql(`
 		id
 		kind
 		libraryId
+		unavailableAt
 		properties {
 			displayName
 			description
@@ -60,7 +61,12 @@ export function CollectionNodeCard({
 		return (
 			<>
 				<div className={cn("flex w-44 shrink-0 flex-col gap-2", className)}>
-					<PlayWrapper itemId={node.id} path={path} watchProgress={node.watchProgress}>
+					<PlayWrapper
+						itemId={node.id}
+						path={path}
+						unavailable={node.unavailableAt != null}
+						watchProgress={node.watchProgress}
+					>
 						<Image
 							type={ImageType.Thumbnail}
 							asset={node.properties.thumbnailImage ?? node.properties.posterImage}
@@ -110,6 +116,7 @@ export function CollectionNodeCard({
 				<PlayWrapper
 					itemId={node.nextPlayable?.id ?? node.id}
 					path={path}
+					unavailable={node.unavailableAt != null}
 					watchProgress={node.nextPlayable?.watchProgress ?? null}
 				>
 					<Image

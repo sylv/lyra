@@ -1,5 +1,6 @@
 use crate::{
     auth::RequestAuth,
+    cleanup::start_cleanup_worker,
     collections::reconcile_system_collections,
     config::get_config,
     content_update::CONTENT_UPDATE,
@@ -35,12 +36,14 @@ use std::{
     sync::{Arc, atomic::AtomicI64},
     time::Duration,
 };
-use tokio::sync::{Mutex, Notify, RwLock};
+use tokio::sync::{Mutex, Notify};
 use tokio::{signal, task::JoinSet};
+use tokio_util::sync::CancellationToken;
 
 mod activity;
 mod assets;
 mod auth;
+mod cleanup;
 mod collections;
 mod config;
 mod content_update;
@@ -226,7 +229,7 @@ async fn main() {
         .expect("Failed to reconcile system collections");
     let job_wake_signal = Arc::new(Notify::new());
     let job_semaphore = Arc::new(JobSemaphore::new());
-    let job_startup_lock = Arc::new(RwLock::new(()));
+    let startup_scans_complete = CancellationToken::new();
 
     CONTENT_UPDATE.start();
 
@@ -241,16 +244,27 @@ async fn main() {
 
     let scanner_pool = pool.clone();
     let scanner_wake_signal = job_wake_signal.clone();
-    let scanner_job_startup_lock = job_startup_lock.clone();
+    let scanner_startup_scans_complete = startup_scans_complete.clone();
     background_workers.spawn(async move {
-        scanner::start_scanner(scanner_pool, scanner_wake_signal, scanner_job_startup_lock).await
+        scanner::start_scanner(
+            scanner_pool,
+            scanner_wake_signal,
+            scanner_startup_scans_complete,
+        )
+        .await
+    });
+
+    let cleanup_pool = pool.clone();
+    let cleanup_startup_scans_complete = startup_scans_complete.clone();
+    background_workers.spawn(async move {
+        start_cleanup_worker(cleanup_pool, cleanup_startup_scans_complete).await
     });
 
     let registered_jobs = load_registered_jobs(
         &pool,
         job_wake_signal.clone(),
         job_semaphore.clone(),
-        job_startup_lock.clone(),
+        startup_scans_complete.clone(),
     );
     for job in registered_jobs {
         let job_kind = job.job_kind;

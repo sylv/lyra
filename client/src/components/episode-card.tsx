@@ -23,6 +23,7 @@ const formatRuntime = (minutes: number | null) => {
 const Fragment = graphql(`
 	fragment EpisodeCard on Node {
 		id
+		unavailableAt
 		properties {
 			displayName
 			description
@@ -48,6 +49,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 	const navigate = useNavigate();
 	const path = getPathForNode(episode);
 	const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
+	const unavailable = episode.unavailableAt != null;
 	const releaseDate = useMemo(() => {
 		if (!episode.properties.firstAired) return null;
 		return new Date(episode.properties.firstAired * 1000).toLocaleDateString(undefined, {
@@ -64,13 +66,20 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					type="button"
 					className="group/play flex min-w-0 flex-1 gap-4 text-left"
 					aria-label={`Play ${episode.properties.displayName}`}
+					disabled={unavailable}
 					onClick={() => {
+						if (unavailable) return;
 						openPlayerMedia(episode.id, true);
 						navigate(path);
 					}}
 				>
 					<div className="relative h-min shrink-0 overflow-hidden rounded-sm">
-						<PlayWrapper itemId={episode.id} path={path} watchProgress={episode.watchProgress}>
+						<PlayWrapper
+							itemId={episode.id}
+							path={path}
+							unavailable={episode.unavailableAt != null}
+							watchProgress={episode.watchProgress}
+						>
 							<Image
 								type={ImageType.Thumbnail}
 								asset={episode.properties.thumbnailImage}

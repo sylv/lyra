@@ -20,6 +20,7 @@ async fn previous_or_next_playable(
                 .add(nodes::Column::Kind.eq(nodes::NodeKind::Movie))
                 .add(nodes::Column::Kind.eq(nodes::NodeKind::Episode)),
         )
+        .filter(nodes::Column::UnavailableAt.is_null())
         .filter(if forward {
             Condition::any()
                 .add(nodes::Column::Order.gt(current.order))

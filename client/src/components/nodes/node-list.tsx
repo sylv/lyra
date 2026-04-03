@@ -1,7 +1,13 @@
 import { CalendarClockIcon, CalendarPlusIcon, ListOrderedIcon, SortAscIcon, StarIcon } from "lucide-react";
 import { useMemo, useState, type FC } from "react";
 import z from "zod";
-import { NodeKind, OrderBy, OrderDirection, type NodeFilter } from "../../@generated/gql/graphql";
+import {
+	NodeAvailability,
+	NodeKind,
+	OrderBy,
+	OrderDirection,
+	type NodeFilter,
+} from "../../@generated/gql/graphql";
 import { useQueryState } from "../../hooks/use-query-state";
 import { FilterButton, FilterSelect } from "../filter-button";
 import { NodePage } from "./node-page";
@@ -57,6 +63,7 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 	const schema = useMemo(() => {
 		const FilterSchema = z.object({
 			kinds: z.array(z.enum(NodeKind)).default(possibleKinds),
+			availability: z.enum(NodeAvailability).default(NodeAvailability.Available),
 			watched: z.boolean().nullable(),
 			orderBy: z.enum(OrderBy).default(OrderBy.LastAired),
 			orderDirection: z.enum(OrderDirection).nullable(),
@@ -133,6 +140,18 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 								{ value: OrderBy.Order, label: "Canonical Order", icon: ListOrderedIcon },
 							]}
 							onValueChange={(nextValue) => updateFilter({ orderBy: nextValue })}
+						/>
+					)}
+					{(!filterOverride || filterOverride.availability == null) && (
+						<FilterSelect
+							label="Availability"
+							value={queryFilter.availability || NodeAvailability.Available}
+							options={[
+								{ value: NodeAvailability.Available, label: "Available" },
+								{ value: NodeAvailability.Unavailable, label: "Unavailable" },
+								{ value: NodeAvailability.Both, label: "Both" },
+							]}
+							onValueChange={(nextValue) => updateFilter({ availability: nextValue })}
 						/>
 					)}
 				</div>

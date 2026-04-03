@@ -11,15 +11,16 @@ use sea_orm::{
 use sqlx::query;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::Notify;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 pub struct JobManager<J: Job> {
     job: Arc<J>,
     pool: DatabaseConnection,
     wake_signal: Arc<Notify>,
     job_semaphore: Arc<JobSemaphore>,
-    job_startup_lock: Arc<RwLock<()>>,
+    startup_scans_complete: CancellationToken,
 }
 
 impl<J: Job> JobManager<J> {
@@ -28,14 +29,14 @@ impl<J: Job> JobManager<J> {
         database: DatabaseConnection,
         wake_signal: Arc<Notify>,
         job_semaphore: Arc<JobSemaphore>,
-        job_startup_lock: Arc<RwLock<()>>,
+        startup_scans_complete: CancellationToken,
     ) -> Self {
         Self {
             job,
             pool: database,
             wake_signal,
             job_semaphore,
-            job_startup_lock,
+            startup_scans_complete,
         }
     }
 
@@ -47,7 +48,7 @@ impl<J: Job> JobManager<J> {
         // wait for scanner to finish startup scans
         // otherwise, if lyra was offline for awhile, files might have moved and we might try
         // run jobs against them when they were deleted a week ago.
-        let _lock = self.job_startup_lock.read().await;
+        self.startup_scans_complete.cancelled().await;
         tracing::info!(job=?J::JOB_KIND, "starting job manager thread");
 
         loop {

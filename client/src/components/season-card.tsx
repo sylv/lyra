@@ -14,6 +14,7 @@ interface SeasonCardProps {
 const Fragment = graphql(`
 	fragment SeasonCard on Node {
 		id
+		unavailableAt
 		properties {
 			displayName
 			seasonNumber
@@ -51,7 +52,12 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw }) => {
 
 	return (
 		<div className="flex flex-col gap-2 overflow-hidden w-38">
-			<PlayWrapper itemId={season.nextPlayable?.id} path={path} watchProgress={season.nextPlayable?.watchProgress}>
+			<PlayWrapper
+				itemId={season.nextPlayable?.id}
+				path={path}
+				unavailable={season.unavailableAt != null}
+				watchProgress={season.nextPlayable?.watchProgress}
+			>
 				<Image type={ImageType.Poster} asset={imageAsset} alt={season.properties.displayName} className="w-full" />
 				<UnplayedItemsTab>{season.unplayedCount}</UnplayedItemsTab>
 			</PlayWrapper>

@@ -156,6 +156,7 @@ type Library {
 	path: String!
 	pinned: Boolean!
 	lastScannedAt: Int
+	unavailableAt: Int
 	createdAt: Int!
 }
 
@@ -191,6 +192,7 @@ type Node {
 	seasonNumber: Int
 	episodeNumber: Int
 	lastAddedAt: Int!
+	unavailableAt: Int
 	createdAt: Int!
 	updatedAt: Int!
 	root: Node
@@ -204,6 +206,12 @@ type Node {
 	unplayedCount: Int!
 	seasonCount: Int!
 	episodeCount: Int!
+}
+
+enum NodeAvailability {
+	AVAILABLE
+	UNAVAILABLE
+	BOTH
 }
 
 type NodeConnection {
@@ -240,6 +248,8 @@ input NodeFilter {
 	rootId: String
 	parentId: String
 	kinds: [NodeKind!]
+	searchTerm: String
+	availability: NodeAvailability
 	orderBy: OrderBy
 	orderDirection: OrderDirection
 	watched: Boolean
@@ -320,7 +330,6 @@ type PageInfo {
 type Query {
 	nodeList(filter: NodeFilter!, after: String, first: Int): NodeConnection!
 	node(nodeId: String!): Node!
-	search(query: String!, limit: Int): SearchResults!
 	listFiles(path: String!): [String!]!
 	library(libraryId: String!): Library!
 	libraries: [Library!]!
@@ -338,11 +347,6 @@ type RecommendedTrack {
 	manifestIndex: Int!
 	trackType: TrackType!
 	enabled: Boolean!
-}
-
-type SearchResults {
-	roots: [Node!]!
-	episodes: [Node!]!
 }
 
 type SubscriptionRoot {

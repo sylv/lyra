@@ -79,8 +79,7 @@ impl Job for RootIntroSegmentsJob {
                             Expr::col((files::Entity, files::Column::UnavailableAt)).is_null(),
                         )
                         .and_where(
-                            Expr::col((files::Entity, files::Column::SegmentsJson))
-                                .is_null(),
+                            Expr::col((files::Entity, files::Column::SegmentsJson)).is_null(),
                         )
                         .to_owned(),
                 ),
@@ -332,7 +331,10 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
     batch
 }
 
-fn decode_segments_payload(payload: Option<&[u8]>, file_id: &str) -> Option<Vec<StoredFileSegment>> {
+fn decode_segments_payload(
+    payload: Option<&[u8]>,
+    file_id: &str,
+) -> Option<Vec<StoredFileSegment>> {
     let payload = payload?;
 
     match json_encoding::decode_json_zstd::<Vec<StoredFileSegment>>(payload) {

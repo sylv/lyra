@@ -11,7 +11,7 @@ use lyra_parser::{ParsedFile, parse_files};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, JoinType, QueryFilter,
-    QuerySelect, RelationTrait, TransactionTrait,
+    QueryOrder, QuerySelect, RelationTrait, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::Path as StdPath;
@@ -200,6 +200,7 @@ pub(crate) async fn materialize_touched_root(
             season_number: Set(wanted.season_number),
             episode_number: Set(wanted.episode_number),
             last_added_at: Set(wanted.last_added_at),
+            unavailable_at: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         })
@@ -218,6 +219,7 @@ pub(crate) async fn materialize_touched_root(
                         nodes::Column::SeasonNumber,
                         nodes::Column::EpisodeNumber,
                         nodes::Column::LastAddedAt,
+                        nodes::Column::UnavailableAt,
                         nodes::Column::UpdatedAt,
                     ])
                     .to_owned(),
@@ -294,6 +296,99 @@ pub(crate) async fn materialize_touched_root(
 
     txn.commit().await?;
     recompute_root_orders_with_sqlx(pool, &plan.root_id, now).await?;
+    Ok(())
+}
+
+pub(crate) async fn refresh_library_node_availability(
+    pool: &DatabaseConnection,
+    library_id: &str,
+    unavailable_at: i64,
+) -> anyhow::Result<()> {
+    let library_nodes = nodes::Entity::find()
+        .filter(nodes::Column::LibraryId.eq(library_id))
+        .order_by_desc(nodes::Column::Order)
+        .order_by_desc(nodes::Column::Id)
+        .all(pool)
+        .await?;
+    if library_nodes.is_empty() {
+        return Ok(());
+    }
+
+    let available_file_node_ids = node_files::Entity::find()
+        .join(JoinType::InnerJoin, node_files::Relation::Nodes.def())
+        .join(JoinType::InnerJoin, node_files::Relation::Files.def())
+        .filter(nodes::Column::LibraryId.eq(library_id))
+        .filter(files::Column::UnavailableAt.is_null())
+        .select_only()
+        .column(node_files::Column::NodeId)
+        .distinct()
+        .into_tuple::<String>()
+        .all(pool)
+        .await?
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    let mut child_ids_by_parent = HashMap::<String, Vec<String>>::new();
+    for node in &library_nodes {
+        let Some(parent_id) = &node.parent_id else {
+            continue;
+        };
+        child_ids_by_parent
+            .entry(parent_id.clone())
+            .or_default()
+            .push(node.id.clone());
+    }
+
+    // Walk children first so parent availability can collapse to "any descendant is still live".
+    let mut available_by_node_id = HashMap::<String, bool>::with_capacity(library_nodes.len());
+    for node in &library_nodes {
+        let is_available = match node.kind {
+            nodes::NodeKind::Movie | nodes::NodeKind::Episode => {
+                available_file_node_ids.contains(&node.id)
+            }
+            nodes::NodeKind::Series | nodes::NodeKind::Season => child_ids_by_parent
+                .get(&node.id)
+                .into_iter()
+                .flatten()
+                .any(|child_id| available_by_node_id.get(child_id).copied().unwrap_or(false)),
+        };
+        available_by_node_id.insert(node.id.clone(), is_available);
+    }
+
+    let available_node_ids = library_nodes
+        .iter()
+        .filter(|node| available_by_node_id.get(&node.id).copied().unwrap_or(false))
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
+    if !available_node_ids.is_empty() {
+        nodes::Entity::update_many()
+            .set(nodes::ActiveModel {
+                unavailable_at: Set(None),
+                ..Default::default()
+            })
+            .filter(nodes::Column::Id.is_in(available_node_ids))
+            .filter(nodes::Column::UnavailableAt.is_not_null())
+            .exec(pool)
+            .await?;
+    }
+
+    let newly_unavailable_node_ids = library_nodes
+        .iter()
+        .filter(|node| !available_by_node_id.get(&node.id).copied().unwrap_or(false))
+        .filter(|node| node.unavailable_at.is_none())
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
+    if !newly_unavailable_node_ids.is_empty() {
+        nodes::Entity::update_many()
+            .set(nodes::ActiveModel {
+                unavailable_at: Set(Some(unavailable_at)),
+                ..Default::default()
+            })
+            .filter(nodes::Column::Id.is_in(newly_unavailable_node_ids))
+            .exec(pool)
+            .await?;
+    }
+
     Ok(())
 }
 
@@ -409,7 +504,9 @@ mod tests {
             id: Set("lib".to_owned()),
             path: Set("/library".to_owned()),
             name: Set("Library".to_owned()),
+            pinned: Set(false),
             last_scanned_at: Set(None),
+            unavailable_at: Set(None),
             created_at: Set(0),
         })
         .exec(pool)
@@ -588,6 +685,7 @@ mod tests {
             season_number: Set(None),
             episode_number: Set(None),
             last_added_at: Set(1),
+            unavailable_at: Set(None),
             created_at: Set(1),
             updated_at: Set(1),
         })
@@ -684,6 +782,7 @@ mod tests {
                 season_number: Set(None),
                 episode_number: Set(None),
                 last_added_at: Set(1),
+                unavailable_at: Set(None),
                 created_at: Set(1),
                 updated_at: Set(1),
             },
@@ -698,6 +797,7 @@ mod tests {
                 season_number: Set(None),
                 episode_number: Set(Some(1)),
                 last_added_at: Set(1),
+                unavailable_at: Set(None),
                 created_at: Set(1),
                 updated_at: Set(1),
             },

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button } from "../components/button";
+import { Button, ButtonStyle } from "../components/button";
 import { PlexImportModal } from "../components/import/plex-import-modal";
 
 export function SettingsImportRoute() {
@@ -12,7 +12,7 @@ export function SettingsImportRoute() {
 					<h3>Plex</h3>
 					<p className="text-sm text-zinc-400">Import watch progress from Plex</p>
 				</div>
-				<Button className="bg-[#e5a00d] text-black hover:bg-[#e5a00d]" onClick={() => setIsPlexImportOpen(true)}>
+				<Button style={ButtonStyle.Plex} onClick={() => setIsPlexImportOpen(true)}>
 					Import from Plex
 				</Button>
 			</div>

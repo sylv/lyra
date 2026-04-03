@@ -71,7 +71,9 @@ mod tests {
             id: Set("lib".to_owned()),
             path: Set("/library".to_owned()),
             name: Set("Library".to_owned()),
+            pinned: Set(false),
             last_scanned_at: Set(None),
+            unavailable_at: Set(None),
             created_at: Set(0),
         })
         .exec(pool)
@@ -91,6 +93,7 @@ mod tests {
             season_number: Set(None),
             episode_number: Set(None),
             last_added_at: Set(0),
+            unavailable_at: Set(None),
             created_at: Set(0),
             updated_at: Set(0),
         })

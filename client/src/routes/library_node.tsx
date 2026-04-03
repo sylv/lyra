@@ -11,6 +11,7 @@ import { useState, type JSX } from "react";
 import { Link, Navigate, useParams } from "react-router";
 import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
+import { NodeAvailability } from "../@generated/gql/graphql";
 import { useTitle } from "../hooks/use-title";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForNode } from "../lib/getPathForMedia";
@@ -21,6 +22,7 @@ const Query = graphql(`
 			id
 			libraryId
 			kind
+			unavailableAt
 			seasonNumber
 			episodeNumber
 			unplayedCount
@@ -131,6 +133,7 @@ export function LibraryNodeRoute() {
 		.filter((c) => c.kind === "SEASON")
 		.map((c) => ({ id: c.id, seasonNumber: c.properties.seasonNumber }));
 	const hasEpisodeChildren = sortedChildren.some((child) => child.kind === "EPISODE");
+	const directAvailabilityFilter = node.unavailableAt != null ? NodeAvailability.Both : undefined;
 
 	// Breadcrumb above the title: back button for episodes view, parent link or release year otherwise.
 	let breadcrumb: JSX.Element | null = null;
@@ -157,9 +160,13 @@ export function LibraryNodeRoute() {
 	// Episode list rendered inline in the right column: by parentId for seasons, by rootId for the episodes view.
 	let inlineEpisodeList: JSX.Element | null = null;
 	if (isSeason) {
-		inlineEpisodeList = <NodeList type="episodes" filterOverride={{ parentId: node.id }} />;
+		inlineEpisodeList = (
+			<NodeList type="episodes" filterOverride={{ parentId: node.id, availability: directAvailabilityFilter }} />
+		);
 	} else if (isEpisodesView) {
-		inlineEpisodeList = <NodeList type="episodes" filterOverride={{ rootId: node.id }} />;
+		inlineEpisodeList = (
+			<NodeList type="episodes" filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }} />
+		);
 	}
 
 	return (
@@ -167,7 +174,12 @@ export function LibraryNodeRoute() {
 			<div className="pt-6">
 				<div className="container flex flex-col lg:flex-row lg:gap-6">
 					<div className="shrink-0">
-						<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
+						<PlayWrapper
+							itemId={playableItemId}
+							path={nodePath}
+							unavailable={node.unavailableAt != null}
+							watchProgress={playableWatchProgress}
+						>
 							<Image type={ImageType.Poster} asset={poster} alt={node.properties.displayName} className="h-96" />
 							<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 						</PlayWrapper>
@@ -202,7 +214,7 @@ export function LibraryNodeRoute() {
 					<>
 						{hasEpisodeChildren && seasonEntries.length === 0 ? (
 							<div className="container py-6">
-								<NodeList type="episodes" filterOverride={{ rootId: node.id }} />
+								<NodeList type="episodes" filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }} />
 							</div>
 						) : null}
 						{sortedChildren.length > 0 && seasonEntries.length > 0 && (
@@ -210,7 +222,12 @@ export function LibraryNodeRoute() {
 								<div className="flex flex-wrap gap-4">
 									{hasSeasons && (
 										<div className="flex w-38 flex-col gap-2 overflow-hidden">
-											<PlayWrapper itemId={playableItemId} path={nodePath} watchProgress={playableWatchProgress}>
+											<PlayWrapper
+												itemId={playableItemId}
+												path={nodePath}
+												unavailable={node.unavailableAt != null}
+												watchProgress={playableWatchProgress}
+											>
 												<Image type={ImageType.Poster} asset={poster} alt="All Episodes" className="w-full" />
 												<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 											</PlayWrapper>

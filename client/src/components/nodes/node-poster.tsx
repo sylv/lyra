@@ -24,6 +24,7 @@ const Fragment = graphql(`
 		id
 		kind
 		libraryId
+		unavailableAt
 		properties {
 			displayName
 			posterImage {
@@ -59,6 +60,7 @@ export const NodePoster: FC<NodePosterProps> = ({ node: nodeRaw, className, styl
 				<PlayWrapper
 					itemId={node.nextPlayable?.id ?? node.id}
 					path={path}
+					unavailable={node.unavailableAt != null}
 					watchProgress={node.nextPlayable?.watchProgress ?? null}
 				>
 					<Image
