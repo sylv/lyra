@@ -18,6 +18,7 @@ const getGraphqlWebsocketUrl = () => {
 
 const wsClient = createWsClient({
 	url: getGraphqlWebsocketUrl(),
+	lazy: false,
 	retryAttempts: Infinity,
 	retryWait: (retries) => {
 		const timeout = Math.min(1000 * 2 ** retries, 5 * 60 * 1000);
