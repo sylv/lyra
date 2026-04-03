@@ -105,12 +105,16 @@ pub enum CollectionResolverKind {
 #[derive(Debug, Enum, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CollectionKind {
     ContinueWatching = 0,
+    RecentlyReleased = 1,
+    RecentlyAdded = 2,
 }
 
 impl CollectionKind {
     pub fn from_db(value: i64) -> Option<Self> {
         match value {
             0 => Some(Self::ContinueWatching),
+            1 => Some(Self::RecentlyReleased),
+            2 => Some(Self::RecentlyAdded),
             _ => None,
         }
     }

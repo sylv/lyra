@@ -1,7 +1,8 @@
 use crate::auth::{RequestAuth, accessible_library_ids};
 use crate::entities::{collection_items, collections, nodes, users};
 use crate::graphql::query::{
-    build_node_query_for_viewer, collection_editable_by_user, current_user_id, paginate_node_query,
+    build_node_query_for_viewer, collection_editable_by_user, current_user_id,
+    is_watchlist_collection, paginate_node_query,
 };
 use async_graphql::{
     ComplexObject, Context,
@@ -11,6 +12,63 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, JoinType, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, RelationTrait,
 };
+
+async fn paginate_watchlist_query(
+    pool: &DatabaseConnection,
+    collection_id: &str,
+    visible_library_ids: Option<&[String]>,
+    after: Option<String>,
+    first: Option<i32>,
+) -> Result<connection::Connection<u64, nodes::Model, EmptyFields, EmptyFields>, async_graphql::Error>
+{
+    connection::query(
+        after,
+        None,
+        first,
+        None,
+        |after, _before, first, _last| async move {
+            let mut query = nodes::Entity::find()
+                .join(JoinType::InnerJoin, nodes::Relation::CollectionItems.def())
+                .filter(collection_items::Column::CollectionId.eq(collection_id.to_string()))
+                .filter(nodes::Column::UnavailableAt.is_null())
+                .order_by_desc(collection_items::Column::CreatedAt)
+                .order_by_desc(collection_items::Column::UpdatedAt)
+                .order_by_asc(nodes::Column::Id);
+
+            if let Some(visible_library_ids) = visible_library_ids {
+                if visible_library_ids.is_empty() {
+                    return Ok::<_, async_graphql::Error>(connection::Connection::new(
+                        false, false,
+                    ));
+                }
+
+                query = query.filter(nodes::Column::LibraryId.is_in(visible_library_ids.to_vec()));
+            }
+
+            let count = query.clone().count(pool).await?;
+            let limit = first.unwrap_or(50) as u64;
+            let offset = after.map(|cursor| cursor + 1).unwrap_or(0);
+            let records: Vec<nodes::Model> = query
+                .limit(Some(limit))
+                .offset(Some(offset))
+                .all(pool)
+                .await?;
+
+            let has_previous_page = offset > 0;
+            let has_next_page = offset + limit < count;
+            let mut connection = connection::Connection::new(has_previous_page, has_next_page);
+            connection.edges.extend(
+                records
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, node)| connection::Edge::new(offset + index as u64, node)),
+            );
+
+            Ok::<_, async_graphql::Error>(connection)
+        },
+    )
+    .await
+}
 
 pub async fn collection_item_count(
     ctx: &Context<'_>,
@@ -112,6 +170,17 @@ impl collections::Model {
             .map_err(async_graphql::Error::from)?;
         let user_id =
             current_user_id(ctx).ok_or_else(|| async_graphql::Error::new("Unauthenticated"))?;
+
+        if is_watchlist_collection(self) {
+            return paginate_watchlist_query(
+                pool,
+                &self.id,
+                visible_library_ids.as_deref(),
+                after,
+                first,
+            )
+            .await;
+        }
 
         match self.resolver_kind {
             collections::CollectionResolverKind::Filter => {

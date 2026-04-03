@@ -11,7 +11,7 @@ use crate::entities::{
     user_sessions, users, watch_progress,
 };
 use crate::graphql::properties::TrackDispositionPreference;
-use crate::graphql::query::{NodeFilter, collection_editable_by_user};
+use crate::graphql::query::{NodeFilter, collection_editable_by_user, is_watchlist_collection};
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
 use crate::watch_session::{
@@ -113,6 +113,48 @@ async fn ensure_node_accessible(
         .one(pool)
         .await?
         .ok_or_else(|| async_graphql::Error::new("Node not found"))
+}
+
+async fn ensure_watchlist_collection(
+    pool: &DatabaseConnection,
+    user_id: &str,
+) -> Result<collections::Model, async_graphql::Error> {
+    if let Some(collection) = collections::Entity::find_by_id(user_id.to_string())
+        .one(pool)
+        .await?
+    {
+        let mut active = collection.into_active_model();
+        active.name = Set("Watchlist".to_string());
+        active.description = Set(Some("Your saved movies, series, and episodes".to_string()));
+        active.created_by_id = Set(Some(user_id.to_string()));
+        active.visibility = Set(CollectionVisibility::Private);
+        active.resolver_kind = Set(CollectionResolverKind::Manual);
+        active.kind = Set(None);
+        active.filter_json = Set(None);
+        active.show_on_home = Set(false);
+        active.home_position = Set(0);
+        active.pinned = Set(false);
+        active.pinned_position = Set(0);
+        return Ok(active.update(pool).await?);
+    }
+
+    Ok(collections::Entity::insert(collections::ActiveModel {
+        id: Set(user_id.to_string()),
+        name: Set("Watchlist".to_string()),
+        description: Set(Some("Your saved movies, series, and episodes".to_string())),
+        created_by_id: Set(Some(user_id.to_string())),
+        visibility: Set(CollectionVisibility::Private),
+        resolver_kind: Set(CollectionResolverKind::Manual),
+        kind: Set(None),
+        filter_json: Set(None),
+        show_on_home: Set(false),
+        home_position: Set(0),
+        pinned: Set(false),
+        pinned_position: Set(0),
+        ..Default::default()
+    })
+    .exec_with_returning(pool)
+    .await?)
 }
 
 // keep user updates atomic so permission flips and explicit library assignments can't drift apart.
@@ -905,6 +947,12 @@ impl Mutation {
             ));
         }
 
+        if is_watchlist_collection(&collection) {
+            return Err(async_graphql::Error::new(
+                "Use the watchlist actions to manage your watchlist",
+            ));
+        }
+
         let _node = ensure_node_accessible(pool, auth, &node_id).await?;
         let next_position = collection_items::Entity::find()
             .filter(collection_items::Column::CollectionId.eq(collection.id.clone()))
@@ -930,6 +978,63 @@ impl Mutation {
 
         CONTENT_UPDATE.emit();
         Ok(collection)
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn add_node_to_watchlist(
+        &self,
+        ctx: &Context<'_>,
+        node_id: String,
+    ) -> Result<bool, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+        let collection = ensure_watchlist_collection(pool, &user.id).await?;
+        let _node = ensure_node_accessible(pool, auth, &node_id).await?;
+        let next_position = collection_items::Entity::find()
+            .filter(collection_items::Column::CollectionId.eq(collection.id.clone()))
+            .count(pool)
+            .await? as i64;
+
+        collection_items::Entity::insert(collection_items::ActiveModel {
+            collection_id: Set(collection.id),
+            node_id: Set(node_id),
+            position: Set(next_position),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::columns([
+                collection_items::Column::CollectionId,
+                collection_items::Column::NodeId,
+            ])
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec(pool)
+        .await?;
+
+        CONTENT_UPDATE.emit();
+        Ok(true)
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn remove_node_from_watchlist(
+        &self,
+        ctx: &Context<'_>,
+        node_id: String,
+    ) -> Result<bool, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+
+        collection_items::Entity::delete_many()
+            .filter(collection_items::Column::CollectionId.eq(user.id.clone()))
+            .filter(collection_items::Column::NodeId.eq(node_id))
+            .exec(pool)
+            .await?;
+
+        CONTENT_UPDATE.emit();
+        Ok(true)
     }
 
     pub async fn set_preferred_audio(

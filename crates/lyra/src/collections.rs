@@ -3,15 +3,26 @@ use crate::entities::collections::{
 };
 use crate::graphql::query::{NodeFilter, OrderBy, OrderDirection};
 use crate::ids;
+use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
     Set,
 };
 
 const CONTINUE_WATCHING_CARD_NAME: &str = "continue-watching";
+const RECENTLY_RELEASED_CARD_NAME: &str = "recently-released";
+const RECENTLY_ADDED_CARD_NAME: &str = "recently-added";
 
 fn continue_watching_id() -> String {
     ids::generate_prefixed_hashid("hs", [CONTINUE_WATCHING_CARD_NAME])
+}
+
+pub fn recently_released_id() -> String {
+    ids::generate_prefixed_hashid("hs", [RECENTLY_RELEASED_CARD_NAME])
+}
+
+pub fn recently_added_id() -> String {
+    ids::generate_prefixed_hashid("hs", [RECENTLY_ADDED_CARD_NAME])
 }
 
 fn continue_watching_filter() -> NodeFilter {
@@ -26,7 +37,92 @@ fn continue_watching_filter() -> NodeFilter {
         order_direction: Some(OrderDirection::Desc),
         watched: None,
         continue_watching: Some(true),
+        released_after: None,
     }
+}
+
+pub fn recently_released_filter() -> NodeFilter {
+    NodeFilter {
+        library_id: None,
+        root_id: None,
+        parent_id: None,
+        kinds: Some(vec![
+            crate::entities::nodes::NodeKind::Movie,
+            crate::entities::nodes::NodeKind::Episode,
+        ]),
+        search_term: None,
+        availability: None,
+        order_by: Some(OrderBy::ReleasedAt),
+        order_direction: Some(OrderDirection::Desc),
+        watched: None,
+        continue_watching: None,
+        released_after: Some((Utc::now() - Duration::days(31 * 6)).timestamp().max(0)),
+    }
+}
+
+pub fn recently_added_filter() -> NodeFilter {
+    NodeFilter {
+        library_id: None,
+        root_id: None,
+        parent_id: None,
+        kinds: Some(vec![
+            crate::entities::nodes::NodeKind::Movie,
+            crate::entities::nodes::NodeKind::Series,
+        ]),
+        search_term: None,
+        availability: None,
+        order_by: Some(OrderBy::LastAddedAt),
+        order_direction: Some(OrderDirection::Desc),
+        watched: None,
+        continue_watching: None,
+        released_after: None,
+    }
+}
+
+fn synthetic_collection(
+    id: String,
+    name: &str,
+    description: &str,
+    kind: CollectionKind,
+    filter: Option<NodeFilter>,
+) -> collections::Model {
+    collections::Model {
+        id,
+        name: name.to_string(),
+        description: Some(description.to_string()),
+        created_by_id: None,
+        visibility: CollectionVisibility::Public,
+        resolver_kind: CollectionResolverKind::Filter,
+        kind: Some(kind.as_db()),
+        filter_json: filter
+            .map(|value| serde_json::to_vec(&value).expect("system filter is serializable")),
+        show_on_home: true,
+        home_position: 0,
+        pinned: false,
+        pinned_position: 0,
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+pub fn recently_released_collection() -> collections::Model {
+    synthetic_collection(
+        recently_released_id(),
+        "Recently Released",
+        "Recent movies and episodes from the last six months",
+        CollectionKind::RecentlyReleased,
+        Some(recently_released_filter()),
+    )
+}
+
+pub fn recently_added_collection() -> collections::Model {
+    synthetic_collection(
+        recently_added_id(),
+        "Recently Added",
+        "Series and movies added most recently",
+        CollectionKind::RecentlyAdded,
+        Some(recently_added_filter()),
+    )
 }
 
 pub async fn reconcile_system_collections(pool: &DatabaseConnection) -> anyhow::Result<()> {

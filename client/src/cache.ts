@@ -7,8 +7,10 @@ import type {
 	DeleteCollectionMutation,
 	DeleteUserMutation,
 	AddNodeToCollectionMutation,
+	AddNodeToWatchlistMutation,
 	RunImportWatchStatesMutation,
 	RunImportWatchStatesMutationVariables,
+	RemoveNodeFromWatchlistMutation,
 } from "./@generated/gql/graphql";
 
 const invalidateQueryField = (cache: Cache, fieldName: string) => {
@@ -65,6 +67,17 @@ const updateAddNodeToCollection = (
 	invalidateQueryField(cache, "home");
 };
 
+const updateWatchlist = (
+	_result: AddNodeToWatchlistMutation | RemoveNodeFromWatchlistMutation,
+	_args: { nodeId: string },
+	cache: Cache,
+) => {
+	invalidateQueryField(cache, "home");
+	invalidateQueryField(cache, "collection");
+	invalidateQueryField(cache, "collections");
+	invalidateQueryField(cache, "node");
+};
+
 const updateImportWatchStates = (
 	_result: RunImportWatchStatesMutation,
 	args: RunImportWatchStatesMutationVariables,
@@ -85,9 +98,11 @@ export const cacheUpdates = {
 		createCollection: updateCreateCollection,
 		createUserInvite: updateCreateUserInvite,
 		addNodeToCollection: updateAddNodeToCollection,
+		addNodeToWatchlist: updateWatchlist,
 		deleteCollection: updateDeleteCollection,
 		deleteLibrary: updateDeleteLibrary,
 		deleteUser: updateDeleteUser,
 		importWatchStates: updateImportWatchStates,
+		removeNodeFromWatchlist: updateWatchlist,
 	},
 } satisfies UpdatesConfig;

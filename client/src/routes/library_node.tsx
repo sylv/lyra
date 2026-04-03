@@ -6,6 +6,7 @@ import { NodeList } from "@/components/nodes/node-list";
 import { PlayWrapper } from "@/components/play-wrapper";
 import { SeasonCard } from "@/components/season-card";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
+import { WatchlistButton } from "@/components/watchlist-controls";
 import { useDynamicBackground } from "@/hooks/use-background";
 import { useState, type JSX } from "react";
 import { Link, Navigate, useParams } from "react-router";
@@ -15,6 +16,7 @@ import { NodeAvailability } from "../@generated/gql/graphql";
 import { useTitle } from "../hooks/use-title";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForNode } from "../lib/getPathForMedia";
+import { openPlayerMedia } from "../components/player/player-context";
 
 const Query = graphql(`
 	query GetNodeById($nodeId: String!) {
@@ -22,6 +24,7 @@ const Query = graphql(`
 			id
 			libraryId
 			kind
+			inWatchlist
 			unavailableAt
 			seasonNumber
 			episodeNumber
@@ -198,7 +201,7 @@ export function LibraryNodeRoute() {
 										className="w-fit"
 										icon={["play", PlayIcon]}
 										iconSide="left"
-										onClick={() => setIsAddToCollectionOpen(true)}
+										onClick={() => openPlayerMedia(node.nextPlayable!.id, true)}
 									>
 										{node.nextPlayable.watchProgress ? "Resume" : "Play"}
 									</Button>
@@ -213,6 +216,7 @@ export function LibraryNodeRoute() {
 								>
 									Add to Collection
 								</Button>
+								<WatchlistButton nodeId={node.id} inWatchlist={node.inWatchlist} />
 							</div>
 							{!isEpisodesView && node.properties.runtimeMinutes && (
 								<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>

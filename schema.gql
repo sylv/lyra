@@ -42,6 +42,8 @@ type Collection {
 
 enum CollectionKind {
 	CONTINUE_WATCHING
+	RECENTLY_RELEASED
+	RECENTLY_ADDED
 }
 
 enum CollectionResolverKind {
@@ -174,6 +176,8 @@ type Mutation {
 	updateCollection(collectionId: String!, name: String!, description: String, visibility: CollectionVisibility!, resolverKind: CollectionResolverKind!, filter: NodeFilter, showOnHome: Boolean!, homePosition: Int!, pinned: Boolean!, pinnedPosition: Int!): Collection!
 	deleteCollection(collectionId: String!): Boolean!
 	addNodeToCollection(collectionId: String!, nodeId: String!): Collection!
+	addNodeToWatchlist(nodeId: String!): Boolean!
+	removeNodeFromWatchlist(nodeId: String!): Boolean!
 	setPreferredAudio(language: String, disposition: TrackDispositionPreference): User!
 	setPreferredSubtitle(language: String, disposition: TrackDispositionPreference): User!
 	deleteLibrary(libraryId: String!): Boolean!
@@ -201,6 +205,7 @@ type Node {
 	properties: NodeProperties!
 	file: File
 	watchProgress: WatchProgress
+	inWatchlist: Boolean!
 	nextPlayable: Node
 	previousPlayable: Node
 	unplayedCount: Int
@@ -254,6 +259,7 @@ input NodeFilter {
 	orderDirection: OrderDirection
 	watched: Boolean
 	continueWatching: Boolean
+	releasedAfter: Int
 }
 
 enum NodeKind {
@@ -293,8 +299,10 @@ type NodeProperties {
 
 enum OrderBy {
 	ADDED_AT
+	LAST_ADDED_AT
 	FIRST_AIRED
 	LAST_AIRED
+	RELEASED_AT
 	ALPHABETICAL
 	RATING
 	ORDER

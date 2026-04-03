@@ -1,4 +1,4 @@
-use crate::entities::{node_closure, node_files, nodes, watch_progress};
+use crate::entities::{collection_items, node_closure, node_files, nodes, watch_progress};
 use crate::graphql::dataloaders::node_counts::{NodeCounts, NodeCountsLoader};
 use crate::graphql::dataloaders::node_metadata::NodeMetadataLoader;
 use crate::graphql::properties::NodeProperties;
@@ -152,6 +152,20 @@ impl nodes::Model {
             .one(pool)
             .await?;
         Ok(progress)
+    }
+
+    pub async fn in_watchlist(&self, ctx: &Context<'_>) -> Result<bool, async_graphql::Error> {
+        let Some(user_id) = current_user_id(ctx) else {
+            return Ok(false);
+        };
+
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        Ok(
+            collection_items::Entity::find_by_id((user_id, self.id.clone()))
+                .one(pool)
+                .await?
+                .is_some(),
+        )
     }
 
     pub async fn next_playable(

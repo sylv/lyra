@@ -1,6 +1,10 @@
 use crate::{
     activity::ACTIVITY_REGISTRY,
     auth::{AuthenticatedGuard, PermissionGuard, RequestAuth, accessible_library_ids},
+    collections::{
+        recently_added_collection, recently_added_id, recently_released_collection,
+        recently_released_id,
+    },
     entities::{collections, libraries, node_metadata, nodes, users, watch_progress},
     metadata::read,
     watch_session::WatchSessionRegistry,
@@ -15,11 +19,10 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, JoinType, Order, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, QueryTrait, RelationTrait,
     prelude::Expr,
-    sea_query::{Alias, Query as SeaQuery},
+    sea_query::{Alias, Func, Query as SeaQuery},
 };
 use tokio::task::spawn_blocking;
 
-const SECONDS_PER_DAY: i64 = 86_400;
 const DIRECTORY_PRIORITY_HINTS: &[&str] = &[
     "mnt",
     "media",
@@ -72,6 +75,7 @@ pub struct NodeFilter {
     pub order_direction: Option<OrderDirection>,
     pub watched: Option<bool>,
     pub continue_watching: Option<bool>,
+    pub released_after: Option<i64>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Enum, serde::Deserialize, serde::Serialize)]
@@ -100,8 +104,10 @@ impl OrderDirection {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Enum, serde::Deserialize, serde::Serialize)]
 pub enum OrderBy {
     AddedAt,
+    LastAddedAt,
     FirstAired,
     LastAired,
+    ReleasedAt,
     Alphabetical,
     Rating,
     Order,
@@ -111,9 +117,12 @@ pub enum OrderBy {
 impl OrderBy {
     pub fn default_direction(self) -> OrderDirection {
         match self {
-            OrderBy::AddedAt | OrderBy::FirstAired | OrderBy::LastAired | OrderBy::Rating => {
-                OrderDirection::Desc
-            }
+            OrderBy::AddedAt
+            | OrderBy::LastAddedAt
+            | OrderBy::FirstAired
+            | OrderBy::LastAired
+            | OrderBy::ReleasedAt
+            | OrderBy::Rating => OrderDirection::Desc,
             OrderBy::Alphabetical | OrderBy::Order => OrderDirection::Asc,
             OrderBy::WatchProgressUpdatedAt => OrderDirection::Desc,
         }
@@ -155,7 +164,10 @@ pub fn collection_editable_by_user(
     user_id: &str,
     is_admin: bool,
 ) -> bool {
-    if collection.created_by_id.is_none() {
+    if collection.kind.is_some()
+        || is_watchlist_collection(collection)
+        || collection.created_by_id.is_none()
+    {
         return false;
     }
 
@@ -164,6 +176,21 @@ pub fn collection_editable_by_user(
             .created_by_id
             .as_ref()
             .is_some_and(|created_by_id| created_by_id == user_id)
+}
+
+pub fn is_watchlist_collection(collection: &collections::Model) -> bool {
+    collection
+        .created_by_id
+        .as_ref()
+        .is_some_and(|created_by_id| created_by_id == &collection.id)
+}
+
+fn synthetic_collection_for_viewer(collection_id: &str) -> Option<collections::Model> {
+    match collection_id {
+        id if id == recently_released_id() => Some(recently_released_collection()),
+        id if id == recently_added_id() => Some(recently_added_collection()),
+        _ => None,
+    }
 }
 
 pub async fn build_node_query(
@@ -288,6 +315,16 @@ pub async fn build_node_query_for_viewer(
         }
     }
 
+    if let Some(released_after) = filter.released_after {
+        qb = qb.filter(
+            Expr::expr(Func::coalesce([
+                Expr::col(node_metadata::Column::LastAired).into(),
+                Expr::col(node_metadata::Column::FirstAired).into(),
+            ]))
+            .gte(released_after),
+        );
+    }
+
     if fts_query.is_some() {
         let search_matches = Alias::new("search_matches");
         qb = qb
@@ -309,10 +346,13 @@ pub async fn build_node_query_for_viewer(
         match order_by {
             OrderBy::AddedAt => {
                 qb = qb
-                    .order_by(
-                        Expr::col(nodes::Column::LastAddedAt).div(SECONDS_PER_DAY),
-                        order_direction.clone(),
-                    )
+                    .order_by(nodes::Column::LastAddedAt, order_direction.clone())
+                    .order_by(node_metadata::Column::LastAired, order_direction.clone())
+                    .order_by(node_metadata::Column::FirstAired, order_direction)
+            }
+            OrderBy::LastAddedAt => {
+                qb = qb
+                    .order_by(nodes::Column::LastAddedAt, order_direction.clone())
                     .order_by(node_metadata::Column::LastAired, order_direction)
             }
             OrderBy::FirstAired => {
@@ -320,6 +360,15 @@ pub async fn build_node_query_for_viewer(
             }
             OrderBy::LastAired => {
                 qb = qb.order_by(node_metadata::Column::LastAired, order_direction)
+            }
+            OrderBy::ReleasedAt => {
+                qb = qb.order_by(
+                    Expr::expr(Func::coalesce([
+                        Expr::col(node_metadata::Column::LastAired).into(),
+                        Expr::col(node_metadata::Column::FirstAired).into(),
+                    ])),
+                    order_direction,
+                )
             }
             OrderBy::Alphabetical => qb = qb.order_by(node_metadata::Column::Name, order_direction),
             OrderBy::Rating => {
@@ -576,6 +625,8 @@ impl Query {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
         let user_id = auth.get_user_or_err()?.id.clone();
+        let mut visible_sections = Vec::new();
+
         let collections = collections::Entity::find()
             .filter(collections::Column::ShowOnHome.eq(true))
             .order_by_asc(collections::Column::HomePosition)
@@ -583,7 +634,6 @@ impl Query {
             .all(pool)
             .await?;
 
-        let mut visible_sections = Vec::new();
         for collection in collections {
             if !collection_visible_to_user(&collection, &user_id) {
                 continue;
@@ -591,6 +641,23 @@ impl Query {
 
             if crate::graphql::collection::collection_item_count(ctx, &collection).await? > 0 {
                 visible_sections.push(collection);
+            }
+        }
+
+        for collection in [recently_released_collection(), recently_added_collection()] {
+            if crate::graphql::collection::collection_item_count(ctx, &collection).await? > 0 {
+                visible_sections.push(collection);
+            }
+        }
+
+        if let Some(watchlist) = collections::Entity::find_by_id(user_id.clone())
+            .one(pool)
+            .await?
+        {
+            if is_watchlist_collection(&watchlist)
+                && crate::graphql::collection::collection_item_count(ctx, &watchlist).await? > 0
+            {
+                visible_sections.push(watchlist);
             }
         }
 
@@ -627,8 +694,25 @@ impl Query {
                 continue;
             }
 
+            if is_watchlist_collection(&collection) {
+                continue;
+            }
+
             if crate::graphql::collection::collection_item_count(ctx, &collection).await? > 0 {
                 visible_collections.push(collection);
+            }
+        }
+
+        if pinned != Some(false) {
+            if let Some(watchlist) = collections::Entity::find_by_id(user_id.clone())
+                .one(pool)
+                .await?
+            {
+                if is_watchlist_collection(&watchlist)
+                    && crate::graphql::collection::collection_item_count(ctx, &watchlist).await? > 0
+                {
+                    visible_collections.push(watchlist);
+                }
             }
         }
 
@@ -644,6 +728,15 @@ impl Query {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
         let user_id = auth.get_user_or_err()?.id.clone();
+
+        if let Some(collection) = synthetic_collection_for_viewer(&collection_id) {
+            if crate::graphql::collection::collection_item_count(ctx, &collection).await? == 0 {
+                return Ok(None);
+            }
+
+            return Ok(Some(collection));
+        }
+
         let Some(collection) = collections::Entity::find_by_id(collection_id)
             .one(pool)
             .await?

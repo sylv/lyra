@@ -1,4 +1,4 @@
-import { Activity, FolderIcon, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
+import { Activity, BookmarkIcon, FolderIcon, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "urql";
@@ -61,6 +61,7 @@ const LibrariesQuery = graphql(`
 		collections(pinned: true) {
 			id
 			name
+			createdById
 		}
 	}
 `);
@@ -211,10 +212,11 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 				{data?.collections?.map((collection) => {
 					const collectionPath = getPathForCollection(collection.id);
 					const isActive = pathname.startsWith(collectionPath);
+					const isWatchlist = collection.createdById != null && collection.id === collection.createdById;
 					return (
 						<SidebarLink
 							to={collectionPath}
-							icon={FolderIcon}
+							icon={isWatchlist ? BookmarkIcon : FolderIcon}
 							active={isActive}
 							key={collection.id}
 							onClick={onNavigate}

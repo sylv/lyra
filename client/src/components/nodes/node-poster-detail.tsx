@@ -8,6 +8,7 @@ import { cn } from "../../lib/utils";
 import { AddToCollectionModal } from "../add-to-collection-modal";
 import { Image, ImageType } from "../image";
 import { PlayWrapper } from "../play-wrapper";
+import { WatchlistMenuItem } from "../watchlist-controls";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { UnplayedItemsTab } from "../unplayed-items-tab";
 
@@ -22,6 +23,7 @@ const Fragment = graphql(`
 		id
 		kind
 		libraryId
+		inWatchlist
 		unavailableAt
 		properties {
 			displayName
@@ -54,6 +56,7 @@ export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, cla
 	const node = unmask(Fragment, nodeRaw);
 	const path = getPathForNode(node);
 	const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
+	const namePrefix = node.kind === "EPISODE" ? `S${node.seasonNumber}E${node.episodeNumber}` : "";
 
 	return (
 		<>
@@ -69,7 +72,9 @@ export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, cla
 				</PlayWrapper>
 				<div className="flex items-start gap-2">
 					<Link to={path} className="block min-w-0 flex-1 truncate text-sm group">
-						<span className="group-hover:underline">{node.properties.displayName}</span>
+						<span className="group-hover:underline">
+							{namePrefix} {node.properties.displayName}
+						</span>
 						{node.properties.displayDetail && (
 							<p className="text-xs text-zinc-500 -mt-0.5">{node.properties.displayDetail}</p>
 						)}
@@ -93,6 +98,7 @@ export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, cla
 									<FolderPlusIcon className="size-4" />
 									Add to Collection
 								</DropdownMenuItem>
+								<WatchlistMenuItem nodeId={node.id} inWatchlist={node.inWatchlist} />
 							</DropdownMenuContent>
 						</DropdownMenu>
 					</div>

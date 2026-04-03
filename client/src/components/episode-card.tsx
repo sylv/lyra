@@ -5,6 +5,7 @@ import { getPathForNode } from "../lib/getPathForMedia";
 import { AddToCollectionModal } from "./add-to-collection-modal";
 import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
+import { WatchlistMenuItem } from "./watchlist-controls";
 import { openPlayerMedia } from "./player/player-context";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { EllipsisVerticalIcon, FolderPlusIcon } from "lucide-react";
@@ -23,6 +24,7 @@ const formatRuntime = (minutes: number | null) => {
 const Fragment = graphql(`
 	fragment EpisodeCard on Node {
 		id
+		inWatchlist
 		unavailableAt
 		properties {
 			displayName
@@ -124,6 +126,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 								<FolderPlusIcon className="size-4" />
 								Add to Collection
 							</DropdownMenuItem>
+							<WatchlistMenuItem nodeId={episode.id} inWatchlist={episode.inWatchlist} />
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>
