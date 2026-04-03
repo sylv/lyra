@@ -30,6 +30,7 @@ const Fragment = graphql(`
 		nextPlayable {
 			id
 			watchProgress {
+				id
 				progressPercent
 				completed
 				updatedAt

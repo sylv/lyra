@@ -14,6 +14,7 @@ use crate::{
 };
 use anyhow::Context;
 use async_graphql::Data;
+use async_graphql::dataloader::DataLoader;
 use async_graphql::{Schema, http::GraphiQLSource};
 use async_graphql_axum::{GraphQLProtocol, GraphQLRequest, GraphQLResponse, GraphQLWebSocket};
 use axum::{
@@ -284,6 +285,14 @@ async fn main() {
     .limit_complexity(100)
     .limit_directives(5)
     .data(pool.clone())
+    .data(DataLoader::new(
+        graphql::dataloaders::node_metadata::NodeMetadataLoader::new(pool.clone()),
+        tokio::spawn,
+    ))
+    .data(DataLoader::new(
+        graphql::dataloaders::node_counts::NodeCountsLoader::new(pool.clone()),
+        tokio::spawn,
+    ))
     .data(signer.clone())
     .data(watch_session_registry)
     .finish();

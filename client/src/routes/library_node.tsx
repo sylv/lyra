@@ -68,6 +68,7 @@ const Query = graphql(`
 				description
 			}
 			watchProgress {
+				id
 				progressPercent
 				completed
 				updatedAt
@@ -75,6 +76,7 @@ const Query = graphql(`
 			nextPlayable {
 				id
 				watchProgress {
+					id
 					progressPercent
 					completed
 					updatedAt
@@ -214,7 +216,10 @@ export function LibraryNodeRoute() {
 					<>
 						{hasEpisodeChildren && seasonEntries.length === 0 ? (
 							<div className="container py-6">
-								<NodeList type="episodes" filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }} />
+								<NodeList
+									type="episodes"
+									filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }}
+								/>
 							</div>
 						) : null}
 						{sortedChildren.length > 0 && seasonEntries.length > 0 && (

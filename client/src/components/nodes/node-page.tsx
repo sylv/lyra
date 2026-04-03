@@ -4,7 +4,7 @@ import { graphql } from "../../@generated/gql";
 import type { NodeFilter } from "../../@generated/gql/graphql";
 import { EpisodeCard } from "../episode-card";
 import { DisplayKind, type PageVariables } from "./node-list";
-import { NodePoster } from "./node-poster";
+import { NodePosterDetail } from "./node-poster-detail";
 import { ViewLoader } from "../view-loader";
 import { Spinner } from "../ui/spinner";
 
@@ -63,7 +63,7 @@ export const NodePage: FC<NodePageProps> = ({
 				displayKind === DisplayKind.Episode ? (
 					<EpisodeCard episode={edge.node} key={edge.node.id} />
 				) : (
-					<NodePoster node={edge.node} key={edge.node.id} />
+					<NodePosterDetail node={edge.node} key={edge.node.id} />
 				),
 			)}
 			{isLast && data?.nodeList.pageInfo.hasNextPage && data.nodeList.pageInfo.endCursor && (

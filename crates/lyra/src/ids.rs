@@ -20,6 +20,13 @@ pub fn generate_ulid() -> String {
 }
 
 pub fn generate_hashid<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+    generate_prefixed_hashid("h", parts)
+}
+
+pub fn generate_prefixed_hashid<'a>(
+    prefix: &str,
+    parts: impl IntoIterator<Item = &'a str>,
+) -> String {
     let mut hasher = Sha256::new();
     for part in parts {
         hasher.update(part.to_lowercase().as_bytes());
@@ -29,7 +36,7 @@ pub fn generate_hashid<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
     let digest = hasher.finalize();
     let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&digest[..16]);
-    format!("h_{}", encode_crockford_u128(u128::from_be_bytes(bytes)))
+    format!("{prefix}_{}", encode_crockford_u128(u128::from_be_bytes(bytes)))
 }
 
 fn encode_crockford(bytes: &[u8]) -> String {
@@ -70,12 +77,19 @@ fn encode_crockford_u128(mut value: u128) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::generate_hashid;
+    use super::{generate_hashid, generate_prefixed_hashid};
 
     #[test]
     fn hash_ids_are_ulid_shaped() {
         let id = generate_hashid(["example"]);
         assert_eq!(id.len(), 28);
         assert!(id.starts_with("h_"));
+    }
+
+    #[test]
+    fn prefixed_hash_ids_keep_the_requested_prefix() {
+        let id = generate_prefixed_hashid("hs", ["continue-watching"]);
+        assert_eq!(id.len(), 29);
+        assert!(id.starts_with("hs_"));
     }
 }

@@ -4,11 +4,17 @@ use crate::{
     entities::{
         assets,
         file_assets::{self, FileAssetRole},
-        file_probe, files, libraries, library_users, node_files, node_metadata, nodes, users,
+        file_probe, files, libraries, library_users, node_files, nodes, users,
+    },
+    graphql::dataloaders::{
+        node_counts::NodeCountsLoader,
+        node_metadata::{NodeMetadataLoader, PreferredNodeMetadata},
     },
     signer::Signer,
 };
+use async_graphql::dataloader::DataLoader;
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
+use chrono::{DateTime, Datelike, Utc};
 use lyra_ffprobe::StreamType as ProbeStreamType;
 use lyra_packager::state::{build_track_display_name, language_to_display_name};
 use sea_orm::{
@@ -157,6 +163,12 @@ pub struct NodeProperties {
     pub thumbnail_asset_id: Option<String>,
     #[graphql(skip)]
     pub node_id: String,
+    #[graphql(skip)]
+    pub root_id: String,
+    #[graphql(skip)]
+    pub parent_id: Option<String>,
+    #[graphql(skip)]
+    pub kind: nodes::NodeKind,
 }
 
 #[ComplexObject]
@@ -171,11 +183,15 @@ impl NodeProperties {
 
     pub async fn poster_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        if let Some(asset_id) = self
-            .poster_asset_id
-            .clone()
-            .or(self.thumbnail_asset_id.clone())
-        {
+        if let Some(asset_id) = self.episode_poster_fallback_asset_id(ctx).await? {
+            return find_asset(pool, Some(asset_id)).await;
+        }
+
+        if let Some(asset_id) = self.poster_asset_id.clone() {
+            return find_asset(pool, Some(asset_id)).await;
+        }
+
+        if let Some(asset_id) = self.thumbnail_asset_id.clone() {
             return find_asset(pool, Some(asset_id)).await;
         }
 
@@ -194,6 +210,41 @@ impl NodeProperties {
 
         let asset_id = self.file_thumbnail_asset_id(pool).await?;
         find_asset(pool, asset_id).await
+    }
+
+    pub async fn display_detail(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<String>, sea_orm::DbErr> {
+        match self.kind {
+            nodes::NodeKind::Series => {
+                let loader = ctx.data_unchecked::<DataLoader<NodeCountsLoader>>();
+                let counts = loader
+                    .load_one(self.node_id.clone())
+                    .await
+                    .map_err(sea_orm::DbErr::Custom)?
+                    .unwrap_or_default();
+                Ok(format_count_detail(counts.season_count, "season"))
+            }
+            nodes::NodeKind::Season => {
+                let loader = ctx.data_unchecked::<DataLoader<NodeCountsLoader>>();
+                let counts = loader
+                    .load_one(self.node_id.clone())
+                    .await
+                    .map_err(sea_orm::DbErr::Custom)?
+                    .unwrap_or_default();
+                Ok(format_count_detail(counts.episode_count, "episode"))
+            }
+            nodes::NodeKind::Episode => {
+                let loader = ctx.data_unchecked::<DataLoader<NodeMetadataLoader>>();
+                Ok(loader
+                    .load_one(self.root_id.clone())
+                    .await
+                    .map_err(sea_orm::DbErr::Custom)?
+                    .map(|metadata| metadata.display_name().to_owned()))
+            }
+            nodes::NodeKind::Movie => Ok(self.release_year()),
+        }
     }
 }
 
@@ -499,7 +550,7 @@ impl NodeProperties {
     pub async fn from_node(
         pool: &DatabaseConnection,
         node: &nodes::Model,
-        metadata: Option<node_metadata::Model>,
+        metadata: Option<PreferredNodeMetadata>,
     ) -> Result<Self, sea_orm::DbErr> {
         let default_file = Self::primary_file_for_node(pool, &node.id).await?;
         let probe = if let Some(file) = &default_file {
@@ -516,10 +567,15 @@ impl NodeProperties {
             .filter(|seconds| *seconds > 0);
 
         let runtime_minutes = duration_seconds.map(minutes_from_seconds_ceil);
+        let metadata = metadata.and_then(|metadata| metadata.metadata);
+        let display_name = metadata
+            .as_ref()
+            .map(|metadata| metadata.name.clone())
+            .unwrap_or_else(|| node.name.clone());
 
         Ok(match metadata {
             Some(metadata) => Self {
-                display_name: metadata.name,
+                display_name: display_name.clone(),
                 description: metadata.description,
                 rating: metadata.score_normalized.map(|score| score as f64 / 10.0),
                 season_number: node.season_number,
@@ -550,9 +606,12 @@ impl NodeProperties {
                 poster_asset_id: metadata.poster_asset_id,
                 thumbnail_asset_id: metadata.thumbnail_asset_id,
                 node_id: node.id.clone(),
+                root_id: node.root_id.clone(),
+                parent_id: node.parent_id.clone(),
+                kind: node.kind,
             },
             None => Self {
-                display_name: node.name.clone(),
+                display_name,
                 description: None,
                 rating: None,
                 season_number: node.season_number,
@@ -583,6 +642,9 @@ impl NodeProperties {
                 poster_asset_id: None,
                 thumbnail_asset_id: None,
                 node_id: node.id.clone(),
+                root_id: node.root_id.clone(),
+                parent_id: node.parent_id.clone(),
+                kind: node.kind,
             },
         })
     }
@@ -650,10 +712,57 @@ impl NodeProperties {
 
         Ok(None)
     }
+
+    // Episode cards should inherit their parent season or root series poster before falling
+    // back to episode thumbnails so the poster slot stays visually consistent in mixed grids.
+    async fn episode_poster_fallback_asset_id(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<String>, sea_orm::DbErr> {
+        if self.kind != nodes::NodeKind::Episode {
+            return Ok(None);
+        }
+
+        let fallback_node_id = self
+            .parent_id
+            .clone()
+            .unwrap_or_else(|| self.root_id.clone());
+        if fallback_node_id == self.node_id {
+            return Ok(None);
+        }
+
+        let loader = ctx.data_unchecked::<DataLoader<NodeMetadataLoader>>();
+        Ok(loader
+            .load_one(fallback_node_id)
+            .await
+            .map_err(sea_orm::DbErr::Custom)?
+            .and_then(|metadata| metadata.poster_asset_id().map(str::to_owned)))
+    }
+
+    fn release_year(&self) -> Option<String> {
+        year_from_unix_timestamp(self.first_aired.or(self.last_aired)?).map(|year| year.to_string())
+    }
 }
 
 fn minutes_from_seconds_ceil(seconds: i64) -> i64 {
     (seconds + 59) / 60
+}
+
+fn format_count_detail(count: i64, singular: &str) -> Option<String> {
+    if count <= 0 {
+        return None;
+    }
+
+    let suffix = if count == 1 {
+        singular.to_owned()
+    } else {
+        format!("{singular}s")
+    };
+    Some(format!("{count} {suffix}"))
+}
+
+fn year_from_unix_timestamp(timestamp: i64) -> Option<i32> {
+    DateTime::<Utc>::from_timestamp(timestamp, 0).map(|date| date.year())
 }
 
 impl Asset {

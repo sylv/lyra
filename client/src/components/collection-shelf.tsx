@@ -1,7 +1,8 @@
 import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import { getPathForCollection } from "../lib/getPathForMedia";
-import { CollectionNodeCard } from "./collection-node-card";
+import { NodePosterDetail } from "./nodes/node-poster-detail";
+import type { FC } from "react";
 
 export const CollectionShelfFragment = graphql(`
 	fragment CollectionShelf on Collection {
@@ -10,19 +11,16 @@ export const CollectionShelfFragment = graphql(`
 		nodeList(first: 12) {
 			nodes {
 				id
-				...CollectionNodeCard
+				...NodePoster
 			}
 		}
 	}
 `);
 
-export function CollectionShelf({
-	collection: collectionRaw,
-}: {
+export const CollectionShelf: FC<{
 	collection: FragmentType<typeof CollectionShelfFragment>;
-}) {
+}> = ({ collection: collectionRaw }) => {
 	const collection = unmask(CollectionShelfFragment, collectionRaw);
-
 	if (collection.nodeList.nodes.length === 0) return null;
 
 	return (
@@ -37,10 +35,12 @@ export function CollectionShelf({
 			<div className="-mx-6 overflow-x-auto px-6">
 				<div className="flex gap-4">
 					{collection.nodeList.nodes.map((node) => (
-						<CollectionNodeCard key={node.id} node={node} />
+						<div className="w-42" key={node.id}>
+							<NodePosterDetail node={node} />
+						</div>
 					))}
 				</div>
 			</div>
 		</section>
 	);
-}
+};

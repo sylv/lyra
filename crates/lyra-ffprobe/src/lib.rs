@@ -320,7 +320,7 @@ async fn run_ffprobe_command(
     input: &Path,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<Option<Output>> {
-    println!(
+    tracing::info!(
         "running ffprobe command: {} {} {}",
         ffprobe_bin.display(),
         args.join(" "),

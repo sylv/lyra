@@ -11,20 +11,24 @@
 		"noEmit": true,
 		"moduleResolution": "Bundler",
 		"target": "ES2022",
-		"lib": ["DOM", "DOM.Iterable", "ESNext"],
-		"types": ["vite/client"],
+		"lib": [
+			"DOM",
+			"DOM.Iterable",
+			"ESNext"
+		],
+		"types": [
+			"vite/client"
+		],
 		"jsx": "preserve",
 		"jsxImportSource": "react",
-		"baseUrl": ".",
 		"paths": {
-			"@/*": ["./src/*"]
-		},
-		"plugins": [
-			{
-				"name": "@0no-co/graphqlsp",
-				"schema": "../schema.gql"
-			}
-		]
+			"@/*": [
+				"./src/*"
+			]
+		}
 	},
-	"exclude": ["dist", "src/@generated"]
+	"exclude": [
+		"dist",
+		"src/@generated"
+	]
 }

@@ -3,8 +3,6 @@ import type React from "react";
 import { useState, type FC } from "react";
 import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../../@generated/gql";
-import type { NodePosterFragment } from "../../@generated/gql/graphql";
-import { formatReleaseYear } from "../../lib/format-release-year";
 import { getPathForNode } from "../../lib/getPathForMedia";
 import { cn } from "../../lib/utils";
 import { AddToCollectionModal } from "../add-to-collection-modal";
@@ -13,7 +11,7 @@ import { PlayWrapper } from "../play-wrapper";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { UnplayedItemsTab } from "../unplayed-items-tab";
 
-interface NodePosterProps {
+interface NodePosterDetailProps {
 	node: FragmentType<typeof Fragment>;
 	className?: string;
 	style?: React.CSSProperties;
@@ -27,6 +25,7 @@ const Fragment = graphql(`
 		unavailableAt
 		properties {
 			displayName
+			displayDetail
 			posterImage {
 				...ImageAsset
 			}
@@ -36,6 +35,7 @@ const Fragment = graphql(`
 		nextPlayable {
 			id
 			watchProgress {
+				id
 				progressPercent
 				completed
 				updatedAt
@@ -44,14 +44,15 @@ const Fragment = graphql(`
 		unplayedCount
 		seasonCount
 		episodeCount
+		seasonNumber
+		episodeNumber
 		...GetPathForNode
 	}
 `);
 
-export const NodePoster: FC<NodePosterProps> = ({ node: nodeRaw, className, style }) => {
+export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, className, style }) => {
 	const node = unmask(Fragment, nodeRaw);
 	const path = getPathForNode(node);
-	const detail = getPosterDetail(node);
 	const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
 
 	return (
@@ -63,18 +64,15 @@ export const NodePoster: FC<NodePosterProps> = ({ node: nodeRaw, className, styl
 					unavailable={node.unavailableAt != null}
 					watchProgress={node.nextPlayable?.watchProgress ?? null}
 				>
-					<Image
-						type={ImageType.Poster}
-						asset={node.properties.posterImage}
-						alt={node.properties.displayName}
-						className="w-full"
-					/>
+					<Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.properties.displayName} />
 					<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 				</PlayWrapper>
 				<div className="flex items-start gap-2">
 					<Link to={path} className="block min-w-0 flex-1 truncate text-sm group">
 						<span className="group-hover:underline">{node.properties.displayName}</span>
-						{detail && <p className="text-xs text-zinc-500 -mt-0.5">{detail}</p>}
+						{node.properties.displayDetail && (
+							<p className="text-xs text-zinc-500 -mt-0.5">{node.properties.displayDetail}</p>
+						)}
 					</Link>
 					<div className="shrink-0">
 						<DropdownMenu>
@@ -100,21 +98,7 @@ export const NodePoster: FC<NodePosterProps> = ({ node: nodeRaw, className, styl
 					</div>
 				</div>
 			</div>
-			<AddToCollectionModal
-				nodeId={node.id}
-				open={isAddToCollectionOpen}
-				onOpenChange={setIsAddToCollectionOpen}
-			/>
+			<AddToCollectionModal nodeId={node.id} open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen} />
 		</>
 	);
-};
-
-const getPosterDetail = (node: NodePosterFragment): string | number | null => {
-	if (node.kind === "SERIES") {
-		if (node.seasonCount > 0) return `${node.seasonCount} ${node.seasonCount === 1 ? "season" : "seasons"}`;
-		if (node.episodeCount > 0) return `${node.episodeCount} ${node.episodeCount === 1 ? "episode" : "episodes"}`;
-	}
-
-	if (!node.properties.firstAired && !node.properties.lastAired) return null;
-	return formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null) ?? null;
 };

@@ -27,7 +27,7 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, unav
 				<button
 					type="button"
 					className={cn(
-						"absolute left-0 top-0 z-10 flex h-full w-full cursor-pointer items-center justify-center bg-black/40 opacity-0",
+						"absolute left-0 top-0 z-10 flex h-full w-full cursor-pointer items-center justify-center border-2 border-white/80 opacity-0 rounded-md",
 						"transition-opacity duration-75 group-hover/play:opacity-100",
 					)}
 					onClick={() => {

@@ -2,12 +2,17 @@ use crate::entities::collections::{
     self, CollectionKind, CollectionResolverKind, CollectionVisibility,
 };
 use crate::graphql::query::{NodeFilter, OrderBy, OrderDirection};
+use crate::ids;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
     Set,
 };
 
-const CONTINUE_WATCHING_ID: &str = "system:continue-watching";
+const CONTINUE_WATCHING_CARD_NAME: &str = "continue-watching";
+
+fn continue_watching_id() -> String {
+    ids::generate_prefixed_hashid("hs", [CONTINUE_WATCHING_CARD_NAME])
+}
 
 fn continue_watching_filter() -> NodeFilter {
     NodeFilter {
@@ -25,6 +30,7 @@ fn continue_watching_filter() -> NodeFilter {
 }
 
 pub async fn reconcile_system_collections(pool: &DatabaseConnection) -> anyhow::Result<()> {
+    let continue_watching_id = continue_watching_id();
     let filter_json = serde_json::to_vec(&continue_watching_filter())?;
     let Some(existing) = collections::Entity::find()
         .filter(collections::Column::Kind.eq(CollectionKind::ContinueWatching.as_db()))
@@ -32,7 +38,7 @@ pub async fn reconcile_system_collections(pool: &DatabaseConnection) -> anyhow::
         .await?
     else {
         collections::Entity::insert(collections::ActiveModel {
-            id: Set(CONTINUE_WATCHING_ID.to_string()),
+            id: Set(continue_watching_id),
             name: Set("Continue Watching".to_string()),
             description: Set(Some("Pick up where you left off".to_string())),
             created_by_id: Set(None),
@@ -51,12 +57,12 @@ pub async fn reconcile_system_collections(pool: &DatabaseConnection) -> anyhow::
         return Ok(());
     };
 
-    if existing.id != CONTINUE_WATCHING_ID {
+    if existing.id != continue_watching_id {
         collections::Entity::delete_by_id(existing.id.clone())
             .exec(pool)
             .await?;
         collections::Entity::insert(collections::ActiveModel {
-            id: Set(CONTINUE_WATCHING_ID.to_string()),
+            id: Set(continue_watching_id),
             name: Set("Continue Watching".to_string()),
             description: Set(Some("Pick up where you left off".to_string())),
             created_by_id: Set(None),

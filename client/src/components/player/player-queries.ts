@@ -21,6 +21,7 @@ export const ItemPlaybackQuery = graphql(`
 				}
 			}
 			watchProgress {
+				id
 				progressPercent
 				completed
 				updatedAt

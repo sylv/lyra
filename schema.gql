@@ -203,7 +203,7 @@ type Node {
 	watchProgress: WatchProgress
 	nextPlayable: Node
 	previousPlayable: Node
-	unplayedCount: Int!
+	unplayedCount: Int
 	seasonCount: Int!
 	episodeCount: Int!
 }
@@ -288,6 +288,7 @@ type NodeProperties {
 	backgroundImage: Asset
 	posterImage: Asset
 	thumbnailImage: Asset
+	displayDetail: String
 }
 
 enum OrderBy {

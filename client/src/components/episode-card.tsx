@@ -36,6 +36,7 @@ const Fragment = graphql(`
 			runtimeMinutes
 		}
 		watchProgress {
+			id
 			progressPercent
 			completed
 			updatedAt
@@ -127,11 +128,7 @@ export const EpisodeCard: FC<EpisodeCardProps> = ({ episode: episodeRef }) => {
 					</DropdownMenu>
 				</div>
 			</div>
-			<AddToCollectionModal
-				nodeId={episode.id}
-				open={isAddToCollectionOpen}
-				onOpenChange={setIsAddToCollectionOpen}
-			/>
+			<AddToCollectionModal nodeId={episode.id} open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen} />
 		</>
 	);
 };

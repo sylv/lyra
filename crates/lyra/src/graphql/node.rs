@@ -1,11 +1,12 @@
 use crate::entities::{node_closure, node_files, nodes, watch_progress};
+use crate::graphql::dataloaders::node_counts::{NodeCounts, NodeCountsLoader};
+use crate::graphql::dataloaders::node_metadata::NodeMetadataLoader;
 use crate::graphql::properties::NodeProperties;
 use crate::graphql::query::current_user_id;
-use crate::metadata::read;
+use async_graphql::dataloader::DataLoader;
 use async_graphql::{ComplexObject, Context};
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 
 async fn previous_or_next_playable(
@@ -77,6 +78,19 @@ async fn previous_or_next_playable(
     Ok(None)
 }
 
+fn is_playable_node(node: &nodes::Model) -> bool {
+    matches!(node.kind, nodes::NodeKind::Movie | nodes::NodeKind::Episode)
+}
+
+async fn load_node_counts(ctx: &Context<'_>, node_id: &str) -> Result<NodeCounts, sea_orm::DbErr> {
+    let loader = ctx.data_unchecked::<DataLoader<NodeCountsLoader>>();
+    Ok(loader
+        .load_one(node_id.to_owned())
+        .await
+        .map_err(sea_orm::DbErr::Custom)?
+        .unwrap_or_default())
+}
+
 #[ComplexObject]
 impl nodes::Model {
     pub async fn root(&self, ctx: &Context<'_>) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
@@ -107,7 +121,11 @@ impl nodes::Model {
 
     pub async fn properties(&self, ctx: &Context<'_>) -> Result<NodeProperties, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let metadata = read::preferred_node_metadata(pool, &self.id).await?;
+        let loader = ctx.data_unchecked::<DataLoader<NodeMetadataLoader>>();
+        let metadata = loader
+            .load_one(self.id.clone())
+            .await
+            .map_err(sea_orm::DbErr::Custom)?;
         NodeProperties::from_node(pool, self, metadata).await
     }
 
@@ -140,6 +158,12 @@ impl nodes::Model {
         &self,
         ctx: &Context<'_>,
     ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
+        // Playable nodes should resolve to themselves so UI callers can use one field
+        // consistently for "play this node" and "continue watching" affordances.
+        if is_playable_node(self) {
+            return Ok(Some(self.clone()));
+        }
+
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         previous_or_next_playable(pool, self, true).await
     }
@@ -152,9 +176,16 @@ impl nodes::Model {
         previous_or_next_playable(pool, self, false).await
     }
 
-    pub async fn unplayed_count(&self, ctx: &Context<'_>) -> Result<i64, async_graphql::Error> {
+    pub async fn unplayed_count(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<i64>, async_graphql::Error> {
+        if !matches!(self.kind, nodes::NodeKind::Series | nodes::NodeKind::Season) {
+            return Ok(None);
+        }
+
         let Some(user_id) = current_user_id(ctx) else {
-            return Ok(0);
+            return Ok(None);
         };
 
         let pool = ctx.data_unchecked::<DatabaseConnection>();
@@ -167,7 +198,7 @@ impl nodes::Model {
             .await?;
 
         if descendant_ids.is_empty() {
-            return Ok(0);
+            return Ok(Some(0));
         }
 
         let playable_ids: Vec<String> = nodes::Entity::find()
@@ -184,7 +215,7 @@ impl nodes::Model {
             .await?;
 
         if playable_ids.is_empty() {
-            return Ok(0);
+            return Ok(Some(0));
         }
 
         let watched_ids: Vec<String> = watch_progress::Entity::find()
@@ -200,34 +231,16 @@ impl nodes::Model {
             .all(pool)
             .await?;
 
-        Ok(playable_ids.len().saturating_sub(watched_ids.len()) as i64)
+        Ok(Some(
+            playable_ids.len().saturating_sub(watched_ids.len()) as i64
+        ))
     }
 
     pub async fn season_count(&self, ctx: &Context<'_>) -> Result<i64, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let count = node_closure::Entity::find()
-            .join(
-                sea_orm::JoinType::InnerJoin,
-                node_closure::Relation::Descendant.def(),
-            )
-            .filter(node_closure::Column::AncestorId.eq(self.id.clone()))
-            .filter(nodes::Column::Kind.eq(nodes::NodeKind::Season))
-            .count(pool)
-            .await?;
-        Ok(count as i64)
+        Ok(load_node_counts(ctx, &self.id).await?.season_count)
     }
 
     pub async fn episode_count(&self, ctx: &Context<'_>) -> Result<i64, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let count = node_closure::Entity::find()
-            .join(
-                sea_orm::JoinType::InnerJoin,
-                node_closure::Relation::Descendant.def(),
-            )
-            .filter(node_closure::Column::AncestorId.eq(self.id.clone()))
-            .filter(nodes::Column::Kind.eq(nodes::NodeKind::Episode))
-            .count(pool)
-            .await?;
-        Ok(count as i64)
+        Ok(load_node_counts(ctx, &self.id).await?.episode_count)
     }
 }

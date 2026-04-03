@@ -4,7 +4,7 @@ import { Navigate, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import { Button, ButtonStyle } from "../components/button";
-import { CollectionNodeCard } from "../components/collection-node-card";
+import { NodePosterDetail } from "../components/nodes/node-poster-detail";
 import { ViewLoader } from "../components/view-loader";
 import { useTitle } from "../hooks/use-title";
 
@@ -19,7 +19,7 @@ const CollectionQuery = graphql(`
 			nodeList(after: $after, first: $first) {
 				nodes {
 					id
-					...CollectionNodeCard
+					...NodePoster
 				}
 				pageInfo {
 					endCursor
@@ -105,7 +105,7 @@ export function CollectionRoute() {
 
 			<div className="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-4">
 				{items.map((node) => (
-					<CollectionNodeCard key={node.id} node={node} />
+					<NodePosterDetail key={node.id} node={node} />
 				))}
 			</div>
 

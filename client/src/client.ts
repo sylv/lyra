@@ -51,6 +51,8 @@ export const client = createUrqlClient({
 		cacheExchange({
 			keys: {
 				NodeProperties: () => null,
+				HomeView: () => null,
+				Activity: (data) => data.taskType as any,
 			},
 			updates: cacheUpdates,
 		}),
