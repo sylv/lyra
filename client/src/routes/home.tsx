@@ -20,12 +20,12 @@ export function HomeRoute() {
 	const [{ data }] = useQuery({ query: HomeQuery, context: { suspense: true } });
 
 	return (
-		<div className="space-y-3 py-6">
+		<div className="space-y-8 py-6">
 			{data?.home.sections.map((section) => (
 				<CollectionShelf key={section.id} collection={section} />
 			))}
 			<section>
-				<h2 className="text-xl font-semibold -mb-2">All Media</h2>
+				<h2 className="text-xl font-semibold mb-2">Everything else</h2>
 				<NodeList type="movies_series" />
 			</section>
 		</div>

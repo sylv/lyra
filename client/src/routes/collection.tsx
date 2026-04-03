@@ -82,13 +82,10 @@ export function CollectionRoute() {
 	};
 
 	return (
-		<div className="space-y-6 py-6">
+		<div className="space-y-2 py-6">
 			<div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
 				<div>
 					<h1 className="text-2xl font-semibold">{collection?.name}</h1>
-					{collection?.description ? (
-						<p className="mt-1 max-w-2xl text-sm text-zinc-300">{collection.description}</p>
-					) : null}
 				</div>
 				{collection?.canDelete ? (
 					<Button
@@ -102,7 +99,6 @@ export function CollectionRoute() {
 					</Button>
 				) : null}
 			</div>
-
 			<div className="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-4">
 				{items.map((node) => (
 					<NodePosterDetail key={node.id} node={node} />

@@ -27,26 +27,29 @@ export function CollectionsRoute() {
 		<div className="space-y-4 py-6">
 			<div>
 				<h1 className="text-2xl font-semibold">Collections</h1>
-				<p className="mt-1 text-sm text-zinc-400">Browse your private shelves and the shared ones worth keeping around.</p>
 			</div>
 			<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
 				{data?.collections.map((collection) => (
 					<Link
 						key={collection.id}
 						to={getPathForCollection(collection.id)}
-						className="rounded-lg border border-zinc-800 bg-black/20 p-4 transition hover:bg-zinc-950/70"
+						className="rounded-lg border border-zinc-800 p-4 group"
 					>
 						<div className="flex items-start justify-between gap-4">
 							<div>
-								<div className="font-semibold hover:underline">{collection.name}</div>
-								<div className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
+								<div className="font-semibold group-hover:underline">{collection.name}</div>
+								<div className="text-[11px] uppercase font-semibold text-zinc-500">
 									{collection.visibility.toLowerCase()}
 									{collection.createdBy ? ` by ${collection.createdBy.username}` : " system"}
 								</div>
 							</div>
-							<div className="text-sm text-zinc-400">{collection.itemCount}</div>
+							<div className="text-sm text-zinc-400">
+								{collection.itemCount} item{collection.itemCount !== 1 ? "s" : ""}
+							</div>
 						</div>
-						{collection.description ? <p className="mt-3 line-clamp-3 text-sm text-zinc-300">{collection.description}</p> : null}
+						{collection.description ? (
+							<p className="mt-3 line-clamp-3 text-sm text-zinc-300">{collection.description}</p>
+						) : null}
 					</Link>
 				))}
 			</div>

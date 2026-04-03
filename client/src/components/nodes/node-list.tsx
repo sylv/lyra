@@ -1,13 +1,7 @@
 import { CalendarClockIcon, CalendarPlusIcon, ListOrderedIcon, SortAscIcon, StarIcon } from "lucide-react";
 import { useMemo, useState, type FC } from "react";
 import z from "zod";
-import {
-	NodeAvailability,
-	NodeKind,
-	OrderBy,
-	OrderDirection,
-	type NodeFilter,
-} from "../../@generated/gql/graphql";
+import { NodeAvailability, NodeKind, OrderBy, OrderDirection, type NodeFilter } from "../../@generated/gql/graphql";
 import { useQueryState } from "../../hooks/use-query-state";
 import { FilterButton, FilterSelect } from "../filter-button";
 import { NodePage } from "./node-page";
@@ -100,7 +94,7 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 
 	return (
 		<>
-			<div className="my-4 flex flex-col gap-2">
+			<div className="my-2 flex flex-col gap-2">
 				<div className="flex flex-wrap gap-2">
 					{(!filterOverride || filterOverride.watched == null) && (
 						<>
