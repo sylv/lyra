@@ -1,4 +1,4 @@
-import { FolderPlusIcon } from "lucide-react";
+import { FolderPlusIcon, PlayIcon } from "lucide-react";
 import { AddToCollectionModal } from "@/components/add-to-collection-modal";
 import { Button, ButtonSize, ButtonStyle } from "@/components/button";
 import { Image, ImageType } from "@/components/image";
@@ -190,16 +190,30 @@ export function LibraryNodeRoute() {
 						<div className="mt-3 flex flex-col gap-2">
 							{breadcrumb}
 							<h1 className="text-2xl font-bold">{isEpisodesView ? "All Episodes" : node.properties.displayName}</h1>
-							<Button
-								style={ButtonStyle.Glass}
-								size={ButtonSize.Smol}
-								className="w-fit"
-								icon={["add-to-collection", FolderPlusIcon]}
-								iconSide="left"
-								onClick={() => setIsAddToCollectionOpen(true)}
-							>
-								Add to Collection
-							</Button>
+							<div className="flex flex-wrap items-center gap-2">
+								{node.nextPlayable && (
+									<Button
+										style={ButtonStyle.Primary}
+										size={ButtonSize.Smol}
+										className="w-fit"
+										icon={["play", PlayIcon]}
+										iconSide="left"
+										onClick={() => setIsAddToCollectionOpen(true)}
+									>
+										{node.nextPlayable.watchProgress ? "Resume" : "Play"}
+									</Button>
+								)}
+								<Button
+									style={ButtonStyle.Glass}
+									size={ButtonSize.Smol}
+									className="w-fit"
+									icon={["add-to-collection", FolderPlusIcon]}
+									iconSide="left"
+									onClick={() => setIsAddToCollectionOpen(true)}
+								>
+									Add to Collection
+								</Button>
+							</div>
 							{!isEpisodesView && node.properties.runtimeMinutes && (
 								<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
 							)}

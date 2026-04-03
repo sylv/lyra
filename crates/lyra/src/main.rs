@@ -40,6 +40,7 @@ use std::{
 use tokio::sync::{Mutex, Notify};
 use tokio::{signal, task::JoinSet};
 use tokio_util::sync::CancellationToken;
+use tower_http::compression::CompressionLayer;
 
 mod activity;
 mod assets;
@@ -341,12 +342,12 @@ async fn main() {
         let static_path = std::env::var("LYRA_STATIC_PATH")
             .expect("LYRA_STATIC_PATH must be set for release builds with static feature");
         let index_path = static_path.clone() + "/index.html";
-        let serve_dir = ServeDir::new(static_path)
-            .not_found_service(ServeFile::new(index_path))
-            .precompressed_gzip();
+        let serve_dir = ServeDir::new(static_path).not_found_service(ServeFile::new(index_path));
 
         app = app.fallback_service(serve_dir)
     }
+
+    app = app.layer(CompressionLayer::new());
 
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
         .await

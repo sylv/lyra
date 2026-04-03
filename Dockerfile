@@ -16,8 +16,6 @@ RUN bun install --frozen-lockfile
 COPY client ./client
 WORKDIR /build/client
 RUN bun run build
-# Precompress static assets for ServeDir::precompressed_gzip
-RUN find ./dist -type f -exec gzip -k -q {} \;
 
 
 # Stage 2: Cargo Chef base

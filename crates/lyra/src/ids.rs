@@ -36,7 +36,10 @@ pub fn generate_prefixed_hashid<'a>(
     let digest = hasher.finalize();
     let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&digest[..16]);
-    format!("{prefix}_{}", encode_crockford_u128(u128::from_be_bytes(bytes)))
+    format!(
+        "{prefix}_{}",
+        encode_crockford_u128(u128::from_be_bytes(bytes))
+    )
 }
 
 fn encode_crockford(bytes: &[u8]) -> String {
