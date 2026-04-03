@@ -6,8 +6,6 @@ import { useQueryState } from "../../hooks/use-query-state";
 import { FilterButton, FilterSelect } from "../filter-button";
 import { NodePage } from "./node-page";
 
-const POSTER_WIDTH = 185;
-const GAP_SIZE = 16;
 const PER_PAGE = 30;
 
 type FilterVariants =
@@ -153,14 +151,10 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 			<div className="flex flex-wrap gap-4">
 				<div className="w-full relative mb-24">
 					<div
-						className={displayKind === DisplayKind.Poster ? "grid" : "space-y-6"}
+						className={displayKind === DisplayKind.Poster ? "grid gap-4" : "space-y-6 gap-4"}
 						style={
 							displayKind === DisplayKind.Poster
-								? {
-										gridTemplateColumns: `repeat(auto-fill, minmax(${POSTER_WIDTH}px, 1fr))`,
-										columnGap: GAP_SIZE,
-										rowGap: GAP_SIZE,
-									}
+								? { gridTemplateColumns: `repeat(auto-fill, minmax(clamp(145px, 40vw, 174px), 1fr))` }
 								: undefined
 						}
 					>
