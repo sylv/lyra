@@ -10,3 +10,6 @@ dist/
 /bin
 lyra.yml
 .lyra/
+
+# please god just read AGENTS.md like everyone else
+CLAUDE.md

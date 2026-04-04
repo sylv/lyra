@@ -345,9 +345,9 @@ fn episode_metadata_from_item(item: &SeriesItem, episode: &TvEpisodeDetails) -> 
         first_aired: parse_date(episode.air_date.as_deref()),
         last_aired: parse_date(episode.air_date.as_deref()),
         images: ImageSet {
-            poster_url: image_url(episode.still_path.as_deref(), "w780"),
+            poster_url: None,
             thumbnail_url: image_url(episode.still_path.as_deref(), "w300"),
-            background_url: image_url(episode.still_path.as_deref(), "w780"),
+            background_url: None,
         },
     }
 }

@@ -183,11 +183,11 @@ impl NodeProperties {
 
     pub async fn poster_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        if let Some(asset_id) = self.episode_poster_fallback_asset_id(ctx).await? {
+        if self.kind != nodes::NodeKind::Episode && let Some(asset_id) = self.poster_asset_id.clone() {
             return find_asset(pool, Some(asset_id)).await;
         }
 
-        if let Some(asset_id) = self.poster_asset_id.clone() {
+        if let Some(asset_id) = self.poster_fallback_asset_id(pool).await? {
             return find_asset(pool, Some(asset_id)).await;
         }
 
@@ -713,30 +713,48 @@ impl NodeProperties {
         Ok(None)
     }
 
-    // Episode cards should inherit their parent season or root series poster before falling
-    // back to episode thumbnails so the poster slot stays visually consistent in mixed grids.
-    async fn episode_poster_fallback_asset_id(
+    // Rank metadata per ancestor by the existing preference order, then return the nearest
+    // ancestor whose preferred row includes a poster.
+    async fn poster_fallback_asset_id(
         &self,
-        ctx: &Context<'_>,
+        pool: &DatabaseConnection,
     ) -> Result<Option<String>, sea_orm::DbErr> {
-        if self.kind != nodes::NodeKind::Episode {
+        if !matches!(
+            self.kind,
+            nodes::NodeKind::Season | nodes::NodeKind::Episode
+        ) {
             return Ok(None);
         }
 
-        let fallback_node_id = self
-            .parent_id
-            .clone()
-            .unwrap_or_else(|| self.root_id.clone());
-        if fallback_node_id == self.node_id {
-            return Ok(None);
-        }
-
-        let loader = ctx.data_unchecked::<DataLoader<NodeMetadataLoader>>();
-        Ok(loader
-            .load_one(fallback_node_id)
-            .await
-            .map_err(sea_orm::DbErr::Custom)?
-            .and_then(|metadata| metadata.poster_asset_id().map(str::to_owned)))
+        Ok(sqlx::query_scalar!(
+            r#"
+            WITH ranked_ancestor_metadata AS (
+                SELECT
+                    nc.ancestor_id,
+                    nc.depth,
+                    nm.poster_asset_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY nc.ancestor_id
+                        ORDER BY nm.source DESC, nm.updated_at DESC
+                    ) AS metadata_rank
+                FROM node_closure nc
+                INNER JOIN node_metadata nm ON nm.node_id = nc.ancestor_id
+                WHERE nc.descendant_id = ?
+                AND nc.depth > 0
+            )
+            SELECT poster_asset_id AS "poster_asset_id?: String"
+            FROM ranked_ancestor_metadata
+            WHERE metadata_rank = 1
+            AND poster_asset_id IS NOT NULL
+            ORDER BY depth ASC
+            LIMIT 1
+            "#,
+            self.node_id,
+        )
+        .fetch_optional(pool.get_sqlite_connection_pool())
+        .await
+        .map_err(|error| sea_orm::DbErr::Custom(error.to_string()))?
+        .flatten())
     }
 
     fn release_year(&self) -> Option<String> {
