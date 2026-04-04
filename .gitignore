@@ -10,6 +10,8 @@ dist/
 /bin
 lyra.yml
 .lyra/
+*.mkv
+*.mp4
 
 # please god just read AGENTS.md like everyone else
 CLAUDE.md
