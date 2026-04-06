@@ -20,6 +20,14 @@ export interface PlayerController {
 	destroy(): void;
 }
 
+interface HlsLevelLike {
+	attrs?: { NAME?: string };
+	name?: string;
+	url?: string[];
+	uri?: string;
+	path?: string;
+}
+
 // the initial playlist load can take quite a bit of time (mainly because we may have to extract
 // probe data on demand before we can respond to the manifest request), so we need to increase timeouts
 // or else clients can time out before we finish.
@@ -92,6 +100,28 @@ export const createHlsPlayer = async (
 	const serverTrackByManifestIndex = (type: "AUDIO" | "SUBTITLE", manifestIndex: number) =>
 		serverTracks.find((track) => track.trackType === type && track.manifestIndex === manifestIndex);
 
+	const findPreferredVideoLevel = () =>
+		hls.levels.findIndex((level) => {
+			const candidate = level as HlsLevelLike;
+			const name = candidate.attrs?.NAME ?? candidate.name ?? "";
+			const urls = candidate.url ?? [];
+			const uri = candidate.uri ?? candidate.path ?? "";
+
+			return [name, uri, ...urls].some((value) => value.toLowerCase().includes("video_copy"));
+		});
+
+	// todo: this is gross.
+	const applyPreferredVideoLevel = () => {
+		// Pin the copy profile when it exists so hls.js does not switch up to the more expensive
+		// transcode profile after startup.
+		const preferredLevel = findPreferredVideoLevel();
+		if (preferredLevel < 0) return;
+
+		hls.loadLevel = preferredLevel;
+		hls.nextLevel = preferredLevel;
+		hls.currentLevel = preferredLevel;
+	};
+
 	const syncAudioTracks = () => {
 		const tracks = hls.audioTracks.map((_track, id) => {
 			const serverTrack = serverTrackByManifestIndex("AUDIO", id);
@@ -151,6 +181,7 @@ export const createHlsPlayer = async (
 	});
 
 	hls.on(Hls.Events.MANIFEST_PARSED, () => {
+		applyPreferredVideoLevel();
 		syncAudioTracks();
 		syncSubtitleTracks();
 		applyRecommendations();
