@@ -1,5 +1,5 @@
 use crate::jobs::handlers::shared::get_job_file_path;
-use crate::jobs::{Job, JobLease, JobOutcome};
+use crate::jobs::{Job, JobLease, JobOutcome, JobScheduling};
 use crate::{
     entities::{file_probe, files, jobs as jobs_entity},
     file_analysis, json_encoding,
@@ -21,7 +21,7 @@ impl Job for FileProbeJob {
     type Model = files::Model;
 
     const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileProbe;
-    const IS_HEAVY: bool = true;
+    const SCHEDULING: JobScheduling = JobScheduling::Heavy(0);
 
     fn query(&self) -> Select<Self::Entity> {
         files::Entity::find()

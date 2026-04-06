@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use lyra_probe::probe;
 use lyra_marker::{IntroDetectionInputFile, detect_intros};
+use lyra_probe::probe;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,8 +35,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let intros = detect_intros(&detection_inputs, None)
-    .await?
-    .context("intro detection cancelled unexpectedly")?;
+        .await?
+        .context("intro detection cancelled unexpectedly")?;
     for detection in intros {
         println!("{}", detection.path.display());
         if let Some(intro) = detection.intro {

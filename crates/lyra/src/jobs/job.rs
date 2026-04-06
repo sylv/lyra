@@ -44,7 +44,7 @@ pub trait Job: Send + Sync + 'static {
     type Model: ModelTrait<Entity = Self::Entity> + FromQueryResult + Send + Sync;
 
     const JOB_KIND: jobs_entity::JobKind;
-    const IS_HEAVY: bool = false;
+    const SCHEDULING: JobScheduling = JobScheduling::Light;
 
     fn query(&self) -> Select<Self::Entity>;
 
@@ -72,6 +72,12 @@ pub trait Job: Send + Sync + 'static {
         target: Self::Model,
         lease: &JobLease,
     ) -> anyhow::Result<JobOutcome>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobScheduling {
+    Light,
+    Heavy(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

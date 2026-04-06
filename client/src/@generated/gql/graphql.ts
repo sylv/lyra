@@ -593,7 +593,7 @@ export type TrackInfo = {
   language: Maybe<Scalars['String']['output']>;
   /** 0-based index within type (maps to HLS.js index directly) */
   manifestIndex: Scalars['Int']['output'];
-  /** original ffprobe stream index */
+  /** original media stream index */
   trackIndex: Scalars['Int']['output'];
   trackType: TrackType;
 };

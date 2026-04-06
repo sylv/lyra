@@ -3,8 +3,8 @@ use crate::{
         file_probe, files, jobs as jobs_entity, libraries, node_files, nodes, nodes::NodeKind,
     },
     file_analysis,
+    jobs::{Job, JobLease, JobOutcome, JobScheduling},
     json_encoding,
-    jobs::{Job, JobLease, JobOutcome},
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
 };
 use anyhow::Context;
@@ -56,7 +56,7 @@ impl Job for RootIntroSegmentsJob {
     type Model = nodes::Model;
 
     const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::NodeGenerateIntroSegments;
-    const IS_HEAVY: bool = true;
+    const SCHEDULING: JobScheduling = JobScheduling::Heavy(2);
 
     fn query(&self) -> Select<Self::Entity> {
         nodes::Entity::find()
@@ -248,10 +248,7 @@ impl Job for RootIntroSegmentsJob {
     }
 }
 
-async fn load_root_files(
-    db: &DatabaseConnection,
-    root_id: &str,
-) -> anyhow::Result<Vec<RootFile>> {
+async fn load_root_files(db: &DatabaseConnection, root_id: &str) -> anyhow::Result<Vec<RootFile>> {
     let rows = node_files::Entity::find()
         .join(JoinType::InnerJoin, node_files::Relation::Nodes.def())
         .join(JoinType::InnerJoin, node_files::Relation::Files.def())

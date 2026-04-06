@@ -1,5 +1,5 @@
 use crate::jobs::handlers::shared::get_job_file_path;
-use crate::jobs::{Job, JobLease, JobOutcome};
+use crate::jobs::{Job, JobLease, JobOutcome, JobScheduling};
 use crate::{
     assets as assets_api,
     entities::{
@@ -29,7 +29,7 @@ impl Job for FileThumbnailJob {
     type Model = files::Model;
 
     const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileGenerateThumbnail;
-    const IS_HEAVY: bool = true;
+    const SCHEDULING: JobScheduling = JobScheduling::Heavy(1);
 
     fn query(&self) -> Select<Self::Entity> {
         files::Entity::find()

@@ -9,7 +9,7 @@ use crate::{
         users::{self},
     },
     error::AppError,
-    jobs::{JobSemaphore, load_registered_jobs},
+    jobs::{HeavyJobController, load_registered_jobs},
     watch_session::WatchSessionRegistry,
 };
 use anyhow::Context;
@@ -76,7 +76,7 @@ struct AppState {
     pool: DatabaseConnection,
     schema: Arc<AppSchema>,
     job_wake_signal: Arc<Notify>,
-    job_semaphore: Arc<JobSemaphore>,
+    heavy_job_controller: Arc<HeavyJobController>,
     setup_code: u32,
     last_setup_code_attempt: Arc<AtomicI64>,
     packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
@@ -230,7 +230,7 @@ async fn main() {
         .await
         .expect("Failed to reconcile system collections");
     let job_wake_signal = Arc::new(Notify::new());
-    let job_semaphore = Arc::new(JobSemaphore::new());
+    let heavy_job_controller = Arc::new(HeavyJobController::new());
     let startup_scans_complete = CancellationToken::new();
 
     CONTENT_UPDATE.start();
@@ -265,7 +265,7 @@ async fn main() {
     let registered_jobs = load_registered_jobs(
         &pool,
         job_wake_signal.clone(),
-        job_semaphore.clone(),
+        heavy_job_controller.clone(),
         startup_scans_complete.clone(),
     );
     for job in registered_jobs {
@@ -330,7 +330,7 @@ async fn main() {
             pool: pool.clone(),
             schema: Arc::new(schema),
             job_wake_signal,
-            job_semaphore,
+            heavy_job_controller,
             setup_code,
             last_setup_code_attempt: Arc::new(AtomicI64::new(0)),
         });

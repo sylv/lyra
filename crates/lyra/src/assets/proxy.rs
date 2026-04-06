@@ -17,7 +17,7 @@ use reqwest::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
 use std::{io::Cursor, path::Path as FsPath, time::Duration};
-use tokio::fs::File;
+use tokio::{fs::File, task::spawn_blocking};
 use tokio_util::io::ReaderStream;
 
 const ON_DEMAND_JOB_TIMEOUT: Duration = Duration::from_secs(120);
@@ -93,21 +93,28 @@ async fn serve_asset(
 
     let transformed_path =
         storage::get_transformed_cache_path(hash_sha256, params.width, params.height);
+
     if !tokio::fs::try_exists(&transformed_path).await? {
-        let original_bytes = tokio::fs::read(&original_path)
-            .await
-            .map_err(|err| anyhow::anyhow!("failed reading source asset file: {err}"))?;
-        let image = image::load_from_memory(&original_bytes)?;
+        let target_width = params.width;
+        let target_height = params.height;
 
-        let (original_width, original_height) = image.dimensions();
-        let target_width = params.width.unwrap_or(original_width);
-        let target_height = params.height.unwrap_or(original_height);
+        // Run image decoding and resizing off the async runtime and capture only owned values.
+        let bytes = spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+            let original_bytes = std::fs::read(&original_path)
+                .map_err(|err| anyhow::anyhow!("failed reading source asset file: {err}"))?;
+            let image = image::load_from_memory(&original_bytes)?;
 
-        let resized = image.resize(target_width, target_height, FilterType::Lanczos3);
+            let (original_width, original_height) = image.dimensions();
+            let target_width = target_width.unwrap_or(original_width);
+            let target_height = target_height.unwrap_or(original_height);
 
-        let mut cursor = Cursor::new(Vec::new());
-        resized.write_to(&mut cursor, ImageOutputFormat::Jpeg(80))?;
-        let bytes = cursor.into_inner();
+            let resized = image.resize(target_width, target_height, FilterType::Lanczos3);
+
+            let mut cursor = Cursor::new(Vec::new());
+            resized.write_to(&mut cursor, ImageOutputFormat::Jpeg(80))?;
+            Ok(cursor.into_inner())
+        })
+        .await??;
 
         storage::persist_bytes_atomically(&transformed_path, &bytes).await?;
     }

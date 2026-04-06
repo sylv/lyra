@@ -57,7 +57,7 @@ async fn get_master_playlist(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let _guard = state.job_semaphore.push_lock(JOB_LOCK_GRACE).await;
+    let _guard = state.heavy_job_controller.push_block(JOB_LOCK_GRACE).await;
     let packager_state = get_or_build_packager_state(&state, &auth, file_id.clone()).await?;
     let playlist = rewrite_playlist_for_file(packager_state.master_playlist(), &file_id);
 
@@ -74,7 +74,7 @@ async fn get_stream_playlist(
     State(state): State<AppState>,
     Path((file_id, stream_id, profile_id)): Path<(String, u32, String)>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let _guard = state.job_semaphore.push_lock(JOB_LOCK_GRACE).await;
+    let _guard = state.heavy_job_controller.push_block(JOB_LOCK_GRACE).await;
     let packager_state = get_or_build_packager_state(&state, &auth, file_id.clone()).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)
@@ -95,7 +95,7 @@ async fn get_segment(
     Path((file_id, stream_id, profile_id, name)): Path<(String, u32, String, String)>,
     Query(query): Query<SegmentQuery>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let _guard = state.job_semaphore.push_lock(JOB_LOCK_GRACE).await;
+    let _guard = state.heavy_job_controller.push_block(JOB_LOCK_GRACE).await;
     let packager_state = get_or_build_packager_state(&state, &auth, file_id).await?;
     let session = packager_state
         .get_session(stream_id, &profile_id)

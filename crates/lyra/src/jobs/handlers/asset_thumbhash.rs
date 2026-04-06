@@ -6,11 +6,12 @@ use crate::{
         jobs as jobs_entity,
     },
 };
-use anyhow::Context;
+use anyhow::{Context, Result};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     QueryFilter, QueryOrder, Select,
 };
+use tokio::task::spawn_blocking;
 
 #[derive(Debug, Default)]
 pub struct AssetThumbhashJob;
@@ -67,13 +68,20 @@ impl Job for AssetThumbhashJob {
             .with_context(|| format!("failed to read image at {}", image_path.display()))?;
 
         let format = image::guess_format(&bytes).context("failed to guess image format")?;
-        let decoded = image::load_from_memory_with_format(&bytes, format)
-            .context("failed to decode image")?;
-        let resized = decoded.thumbnail(100, 100).to_rgba8();
+        let thumbhash = spawn_blocking::<_, Result<Vec<u8>>>(move || {
+            let decoded = image::load_from_memory_with_format(&bytes, format)
+                .context("failed to decode image")?;
+            let resized = decoded.thumbnail(100, 100).to_rgba8();
 
-        let width = usize::try_from(resized.width()).context("image width exceeds usize")?;
-        let height = usize::try_from(resized.height()).context("image height exceeds usize")?;
-        let thumbhash = thumbhash::rgba_to_thumb_hash(width, height, resized.as_raw());
+            let width = usize::try_from(resized.width()).context("image width exceeds usize")?;
+            let height = usize::try_from(resized.height()).context("image height exceeds usize")?;
+            Ok(thumbhash::rgba_to_thumb_hash(
+                width,
+                height,
+                resized.as_raw(),
+            ))
+        })
+        .await??;
 
         let mut updated: assets::ActiveModel = asset.into();
         updated.thumbhash = Set(Some(thumbhash));

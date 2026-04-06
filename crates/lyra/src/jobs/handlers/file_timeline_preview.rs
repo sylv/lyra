@@ -1,5 +1,5 @@
 use crate::jobs::handlers::shared::get_job_file_path;
-use crate::jobs::{Job, JobLease, JobOutcome};
+use crate::jobs::{Job, JobLease, JobOutcome, JobScheduling};
 use crate::{
     assets as assets_api,
     config::get_config,
@@ -29,7 +29,7 @@ impl Job for FileTimelinePreviewJob {
     type Model = files::Model;
 
     const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileGenerateTimelinePreview;
-    const IS_HEAVY: bool = true;
+    const SCHEDULING: JobScheduling = JobScheduling::Heavy(3);
 
     fn query(&self) -> Select<Self::Entity> {
         files::Entity::find()

@@ -6,8 +6,8 @@ use std::{
 use anyhow::{Context, bail};
 use lyra_probe::{ProbeData, get_ffmpeg_path};
 use rusty_chromaprint::{Configuration, Fingerprinter, match_fingerprints};
-use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio::task::spawn_blocking;
+use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
