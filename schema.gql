@@ -379,7 +379,7 @@ enum TrackDispositionPreference {
 
 type TrackInfo {
 	"""
-	original ffprobe stream index
+	original media stream index
 	"""
 	trackIndex: Int!
 	"""

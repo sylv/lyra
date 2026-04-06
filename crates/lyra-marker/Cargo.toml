@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 anyhow = "1.0.102"
-lyra-ffprobe = { path = "../lyra-ffprobe" }
+lyra-probe = { path = "../lyra-probe" }
 rusty-chromaprint = "0.3.0"
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }

@@ -67,7 +67,7 @@ isolang = "2.4"
 lyra-metadata = { path = "../lyra-metadata" }
 lyra-metadata-tmdb = { path = "../lyra-metadata-tmdb" }
 lyra-parser = { path = "../lyra-parser" }
-lyra-ffprobe = { path = "../lyra-ffprobe" }
+lyra-probe = { path = "../lyra-probe" }
 lyra-thumbnail = { path = "../lyra-thumbnail" }
 lyra-timeline-preview = { path = "../lyra-timeline-preview" }
 lyra-marker = { path = "../lyra-marker" }
@@ -75,7 +75,6 @@ async-recursion = "1.1.1"
 async-trait = "0.1.89"
 zstd = "0.13.3"
 rusty-chromaprint = "0.3.0"
-lyra-keyframe-extractor = { version = "0.1.0", path = "../lyra-keyframe-extractor" }
 
 [features]
 static = []

@@ -1,3 +1,4 @@
+use crate::paths::get_ffprobe_path;
 use anyhow::Context;
 use std::path::Path;
 use tokio::io::AsyncBufReadExt;
@@ -7,7 +8,7 @@ pub async fn extract_keyframes(
     file_path: &Path,
     cancellation_token: Option<&CancellationToken>,
 ) -> anyhow::Result<Option<Vec<i64>>> {
-    let ffprobe_bin = lyra_ffprobe::paths::get_ffprobe_path()?;
+    let ffprobe_bin = get_ffprobe_path();
     let cancellation_token = cancellation_token
         .cloned()
         .unwrap_or_else(CancellationToken::new);
@@ -17,7 +18,7 @@ pub async fn extract_keyframes(
         "-loglevel".to_string(), "error".to_string(),
         "-select_streams".to_string(), "v:0".to_string(),
         "-fflags".to_string(), "+genpts".to_string(),
-        "-show_entries".to_string(), "packet=pts_time,flags".to_string(),
+        "-show_entries".to_string(), "packet=pts,flags".to_string(),
         "-of".to_string(), "csv=print_section=0".to_string(),
     ];
 
@@ -46,12 +47,12 @@ pub async fn extract_keyframes(
                     None => break,
                 };
 
-                let (pts_time_str, flags_str) = line.split_once(',')
+                let (pts_str, flags_str) = line.split_once(',')
                     .context("failed to parse ffprobe output line")?;
 
                 if flags_str.as_bytes()[0] == b'K' {
-                    if let Ok(pts_time) = pts_time_str.parse::<f64>() {
-                        keyframes.push((pts_time * 1000.0).round() as i64);
+                    if let Ok(pts) = pts_str.parse::<i64>() {
+                        keyframes.push(pts);
                     }
                 }
             },

@@ -22,7 +22,7 @@ Important supporting crates:
 
 - `crates/lyra-parser`: parses file paths into structured media information.
 - `crates/lyra-packager`: builds HLS package state and playlists from media analysis.
-- `crates/lyra-ffprobe`: ffmpeg/ffprobe integration and media probing helpers.
+- `crates/lyra-probe`: ffmpeg/ffprobe integration, normalized media probing helpers, and keyframe extraction.
 - `crates/lyra-thumbnail`: representative thumbnail generation.
 - `crates/lyra-timeline-preview`: timeline preview sprite generation.
 - `crates/lyra-metadata` and `crates/lyra-metadata-tmdb`: remote metadata interfaces and providers.

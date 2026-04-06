@@ -164,13 +164,13 @@ async fn get_or_build_packager_state(
     }
     let mut generated_probe = false;
     let mut generated_keyframes = false;
-    let mut ffprobe_output = file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
+    let mut probe = file_analysis::load_cached_probe(&state.pool, &file_id)
         .await
         .map_err(|err| {
             tracing::error!(
                 file_id,
                 error = %err,
-                "failed to load cached ffprobe data"
+                "failed to load cached probe data"
             );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -191,8 +191,8 @@ async fn get_or_build_packager_state(
             )
         })?;
 
-    if ffprobe_output.is_none() || keyframes_pts.is_none() {
-        generated_probe = ffprobe_output.is_none();
+    if probe.is_none() || keyframes_pts.is_none() {
+        generated_probe = probe.is_none();
         generated_keyframes = keyframes_pts.is_none();
 
         let file = files::Entity::find_by_id(file_id.clone())
@@ -231,13 +231,13 @@ async fn get_or_build_packager_state(
                 )
             })?;
 
-        ffprobe_output = file_analysis::load_cached_ffprobe_output(&state.pool, &file_id)
+        probe = file_analysis::load_cached_probe(&state.pool, &file_id)
             .await
             .map_err(|err| {
                 tracing::error!(
                     file_id,
                     error = %err,
-                    "failed to load cached ffprobe data after playback analysis job"
+                    "failed to load cached probe data after playback analysis job"
                 );
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -259,7 +259,7 @@ async fn get_or_build_packager_state(
             })?;
     }
 
-    let ffprobe_output = ffprobe_output.ok_or_else(|| {
+    let probe = probe.ok_or_else(|| {
         tracing::error!(
             file_id,
             "playback analysis finished without storing probe data"
@@ -300,7 +300,7 @@ async fn get_or_build_packager_state(
             &file_path,
             &profiles,
             &build_options,
-            &ffprobe_output,
+            &probe,
             &keyframes_pts,
         )
         .map_err(|err| {

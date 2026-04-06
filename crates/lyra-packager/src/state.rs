@@ -5,9 +5,7 @@ use crate::{
     profiles::{PlaylistKind, Profile, ProfileContext, SegmentLayout},
 };
 use anyhow::{Context, Result};
-use lyra_ffprobe::{
-    FfprobeOutput, StreamType as ProbeStreamType, probe_streams_from_output as parse_probe_streams,
-};
+use lyra_probe::ProbeData;
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
@@ -153,44 +151,33 @@ pub fn create_process_segment_dir(root: &Path) -> Result<PathBuf> {
 }
 
 pub fn streams_from_probe_output(
-    ffprobe_output: &FfprobeOutput,
+    probe: &ProbeData,
 ) -> Result<(Vec<StreamDescriptor>, Option<StreamInfo>, f64)> {
-    let parsed = parse_probe_streams(ffprobe_output)?;
-
-    let duration_seconds = parsed
-        .duration_seconds
-        .context("missing duration from ffprobe")?;
+    let duration_seconds = probe.duration_secs.context("missing duration from probe")?;
 
     let mut streams: Vec<StreamDescriptor> = Vec::new();
     let mut primary_video_info: Option<StreamInfo> = None;
     let mut seen_primary_video = false;
 
-    for stream in parsed.streams {
+    for stream in &probe.streams {
         let stream_index = stream.index;
-        let stream_type = match stream.stream_type {
-            ProbeStreamType::Video => StreamType::Video,
-            ProbeStreamType::Audio => StreamType::Audio,
-            ProbeStreamType::Subtitle => StreamType::Subtitle,
-            ProbeStreamType::Other(_) => continue,
+        let stream_type = match stream.kind() {
+            lyra_probe::StreamKind::Video => StreamType::Video,
+            lyra_probe::StreamKind::Audio => StreamType::Audio,
+            lyra_probe::StreamKind::Subtitle => StreamType::Subtitle,
         };
 
-        let codec_name = match stream.codec_name {
-            Some(value) => value,
-            None => {
-                tracing::warn!(stream_index, "stream missing codec_name, skipping");
-                continue;
-            }
-        };
+        let codec_name = stream.codec_name.clone();
 
         let is_primary_video = stream_type == StreamType::Video && !seen_primary_video;
         if is_primary_video {
             seen_primary_video = true;
-            let time_base = stream
-                .time_base
+            let (time_base_num, time_base_den) = stream
+                .time_base()
                 .context("missing time_base for primary video")?;
             primary_video_info = Some(StreamInfo {
-                time_base_num: time_base.num,
-                time_base_den: time_base.den,
+                time_base_num,
+                time_base_den,
                 duration_seconds,
             });
         }
@@ -221,14 +208,16 @@ pub fn streams_from_probe_output(
                     + 1
             ),
         };
-        let display_name = build_track_display_name(
-            stream.language.as_deref(),
-            stream.title.as_deref(),
-            &fallback,
-            stream.is_forced,
-            stream.is_hearing_impaired,
-            stream.is_commentary,
-        );
+        let display_name = stream.display_name.clone().unwrap_or_else(|| {
+            build_track_display_name(
+                stream.language_bcp47.as_deref(),
+                stream.original_title.as_deref(),
+                &fallback,
+                stream.is_forced(),
+                stream.is_hearing_impaired(),
+                stream.is_commentary(),
+            )
+        });
 
         streams.push(StreamDescriptor {
             stream_id: stream_index,
@@ -236,16 +225,15 @@ pub fn streams_from_probe_output(
             stream_type,
             codec_name,
             bit_rate: stream.bit_rate,
-            frame_rate: parse_stream_frame_rate(stream.avg_frame_rate.as_deref())
-                .or_else(|| parse_stream_frame_rate(stream.r_frame_rate.as_deref())),
-            width: stream.width,
-            height: stream.height,
-            channels: stream.channels,
-            language: stream.language,
+            frame_rate: stream.frame_rate().map(f64::from),
+            width: stream.width(),
+            height: stream.height(),
+            channels: stream.channels().map(u32::from),
+            language: stream.language_bcp47.clone(),
             is_primary_video,
-            is_forced: stream.is_forced,
-            is_sdh: stream.is_hearing_impaired,
-            is_commentary: stream.is_commentary,
+            is_forced: stream.is_forced(),
+            is_sdh: stream.is_hearing_impaired(),
+            is_commentary: stream.is_commentary(),
             display_name,
         });
     }
@@ -603,31 +591,6 @@ fn estimate_video_profile_bandwidth(profile: &StreamProfileState) -> Option<u64>
 
 fn scale_bitrate(value: u64, numerator: u64, denominator: u64) -> u64 {
     value.saturating_mul(numerator) / denominator
-}
-
-fn parse_stream_frame_rate(value: Option<&str>) -> Option<f64> {
-    let raw = value?;
-    if raw.is_empty() || raw == "0/0" {
-        return None;
-    }
-    if let Some((num, den)) = raw.split_once('/') {
-        let num = num.parse::<f64>().ok()?;
-        let den = den.parse::<f64>().ok()?;
-        if den <= 0.0 {
-            return None;
-        }
-        let rate = num / den;
-        if rate > 0.0 && rate.is_finite() {
-            return Some(rate);
-        }
-        return None;
-    }
-    let rate = raw.parse::<f64>().ok()?;
-    if rate > 0.0 && rate.is_finite() {
-        Some(rate)
-    } else {
-        None
-    }
 }
 
 fn compute_segment_starts_from_keyframes_pts(

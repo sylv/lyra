@@ -28,6 +28,5 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 libc = "0.2"
 uuid = { version = "1.7.0", features = ["v4"] }
-lyra-ffprobe = { path = "../lyra-ffprobe" }
+lyra-probe = { path = "../lyra-probe" }
 isolang = "2.4"
-lyra-keyframe-extractor = { version = "0.1.0", path = "../lyra-keyframe-extractor" }

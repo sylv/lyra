@@ -1,24 +1,24 @@
 use crate::entities::{file_probe, files};
 use anyhow::Result;
-use lyra_ffprobe::FfprobeOutput;
+use lyra_probe::ProbeData;
 use sea_orm::{DatabaseConnection, EntityTrait};
 
-pub async fn load_cached_ffprobe_output(
+pub async fn load_cached_probe(
     pool: &DatabaseConnection,
     file_id: &str,
-) -> Result<Option<FfprobeOutput>> {
+) -> Result<Option<ProbeData>> {
     let maybe_row = file_probe::Entity::find_by_id(file_id).one(pool).await?;
     let Some(row) = maybe_row else {
         return Ok(None);
     };
 
-    match row.decode_ffprobe_output() {
+    match row.get_probe() {
         Ok(output) => Ok(Some(output)),
         Err(error) => {
             tracing::warn!(
                 file_id,
                 error = %error,
-                "failed to decode cached ffprobe payload; probing will be retried"
+                "failed to decode cached probe payload; probing will be retried"
             );
             Ok(None)
         }

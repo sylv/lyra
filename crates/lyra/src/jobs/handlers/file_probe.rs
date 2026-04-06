@@ -5,8 +5,7 @@ use crate::{
     file_analysis, json_encoding,
 };
 use anyhow::Context;
-use lyra_ffprobe::{paths::get_ffprobe_path, probe_output, probe_streams_from_output};
-use lyra_keyframe_extractor::extract_keyframes;
+use lyra_probe::{encode_probe_data_json_zstd, extract_keyframes, probe_with_cancellation};
 use sea_orm::{
     ActiveValue::Set,
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
@@ -56,111 +55,40 @@ impl Job for FileProbeJob {
             return Ok(JobOutcome::Complete);
         };
 
-        let needs_ffprobe = file_analysis::load_cached_ffprobe_output(db, &file.id)
+        let needs_probe = file_analysis::load_cached_probe(db, &file.id)
             .await?
             .is_none();
         let needs_keyframes = file_analysis::load_cached_keyframes(db, &file.id)
             .await?
             .is_none();
 
-        if !needs_ffprobe && !needs_keyframes {
+        if !needs_probe && !needs_keyframes {
             return Ok(JobOutcome::Complete);
         }
 
-        if needs_ffprobe {
-            let ffprobe_output = probe_output(
-                get_ffprobe_path()?,
-                &file_path,
-                ctx.get_cancellation_token(),
-            )
-            .await?;
-            let Some(ffprobe_output) = ffprobe_output else {
+        if needs_probe {
+            let probe = probe_with_cancellation(&file_path, ctx.get_cancellation_token()).await?;
+            let Some(probe) = probe else {
                 return Ok(JobOutcome::Cancelled);
             };
 
-            let probe = probe_streams_from_output(&ffprobe_output).with_context(|| {
-                format!("failed to normalize ffprobe output for file {}", file.id)
-            })?;
-            let primary_video = probe
-                .streams
-                .iter()
-                .find(|stream| matches!(stream.stream_type, lyra_ffprobe::StreamType::Video));
-            let primary_audio = probe
-                .streams
-                .iter()
-                .find(|stream| matches!(stream.stream_type, lyra_ffprobe::StreamType::Audio));
-            let has_subtitles = probe
-                .streams
-                .iter()
-                .any(|stream| matches!(stream.stream_type, lyra_ffprobe::StreamType::Subtitle));
-
-            let duration_s = probe
-                .duration_seconds
-                .map(|value| value.max(0.0).floor() as i64);
-
-            let fps = primary_video
-                .and_then(|stream| stream.avg_frame_rate.as_deref())
-                .and_then(parse_frame_rate)
-                .or_else(|| {
-                    primary_video
-                        .and_then(|stream| stream.r_frame_rate.as_deref())
-                        .and_then(parse_frame_rate)
-                });
-
-            let streams = json_encoding::encode_json_zstd(&ffprobe_output)
-                .context("failed to encode ffprobe payload")?;
+            let probe_blob =
+                encode_probe_data_json_zstd(&probe).context("failed to encode probe payload")?;
             let now = chrono::Utc::now().timestamp();
-            let height = primary_video.and_then(|stream| stream.height.map(i64::from));
-            let width = primary_video.and_then(|stream| stream.width.map(i64::from));
-            let video_bitrate = primary_video
-                .and_then(|stream| stream.bit_rate)
-                .and_then(|value| i64::try_from(value).ok());
-            let audio_bitrate = primary_audio
-                .and_then(|stream| stream.bit_rate)
-                .and_then(|value| i64::try_from(value).ok());
-            let audio_channels = primary_audio.and_then(|stream| stream.channels.map(i64::from));
 
             file_probe::Entity::insert(file_probe::ActiveModel {
                 file_id: Set(file.id.clone()),
-                duration_s: Set(duration_s),
-                height: Set(height),
-                width: Set(width),
-                fps: Set(fps),
-                video_codec: Set(primary_video.and_then(|stream| stream.codec_name.clone())),
-                video_bitrate: Set(video_bitrate),
-                audio_codec: Set(primary_audio.and_then(|stream| stream.codec_name.clone())),
-                audio_bitrate: Set(audio_bitrate),
-                audio_channels: Set(audio_channels),
-                has_subtitles: Set(i64::from(has_subtitles)),
-                streams: Set(Some(streams)),
+                probe: Set(probe_blob),
                 generated_at: Set(now),
             })
             .on_conflict(
                 OnConflict::column(file_probe::Column::FileId)
-                    .update_columns([
-                        file_probe::Column::DurationS,
-                        file_probe::Column::Height,
-                        file_probe::Column::Width,
-                        file_probe::Column::Fps,
-                        file_probe::Column::VideoCodec,
-                        file_probe::Column::VideoBitrate,
-                        file_probe::Column::AudioCodec,
-                        file_probe::Column::AudioBitrate,
-                        file_probe::Column::AudioChannels,
-                        file_probe::Column::HasSubtitles,
-                        file_probe::Column::Streams,
-                        file_probe::Column::GeneratedAt,
-                    ])
+                    .update_columns([file_probe::Column::Probe, file_probe::Column::GeneratedAt])
                     .to_owned(),
             )
             .exec(db)
             .await
-            .with_context(|| {
-                format!(
-                    "failed storing ffprobe for file {} (duration_s={duration_s:?}, width={width:?}, height={height:?}, fps={fps:?}, video_bitrate={video_bitrate:?}, audio_bitrate={audio_bitrate:?}, audio_channels={audio_channels:?}, has_subtitles={has_subtitles})",
-                    file.id
-                )
-            })?;
+            .with_context(|| format!("failed storing probe for file {}", file.id))?;
         }
 
         if needs_keyframes {
@@ -183,29 +111,4 @@ impl Job for FileProbeJob {
 
         Ok(JobOutcome::Complete)
     }
-}
-
-fn parse_frame_rate(value: &str) -> Option<f64> {
-    if value.contains('/') {
-        let mut parts = value.split('/');
-        let num = parts.next().and_then(|part| part.parse::<f64>().ok())?;
-        let den = parts.next().and_then(|part| part.parse::<f64>().ok())?;
-        if parts.next().is_some() || den <= 0.0 {
-            return None;
-        }
-        let rate = num / den;
-        return if rate.is_finite() && rate > 0.0 {
-            Some(rate)
-        } else {
-            None
-        };
-    }
-
-    value.parse::<f64>().ok().and_then(|rate| {
-        if rate.is_finite() && rate > 0.0 {
-            Some(rate)
-        } else {
-            None
-        }
-    })
 }

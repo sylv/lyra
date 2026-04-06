@@ -15,8 +15,8 @@ use crate::{
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
 use chrono::{DateTime, Datelike, Utc};
-use lyra_ffprobe::StreamType as ProbeStreamType;
 use lyra_packager::state::{build_track_display_name, language_to_display_name};
+use lyra_probe::{ProbeData, Stream, StreamKind};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait,
@@ -57,7 +57,7 @@ impl TrackDispositionPreference {
 
 #[derive(Clone, Debug, SimpleObject)]
 pub struct TrackInfo {
-    /// original ffprobe stream index
+    /// original media stream index
     pub track_index: i32,
     /// 0-based index within type (maps to HLS.js index directly)
     pub manifest_index: i32,
@@ -183,7 +183,9 @@ impl NodeProperties {
 
     pub async fn poster_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        if self.kind != nodes::NodeKind::Episode && let Some(asset_id) = self.poster_asset_id.clone() {
+        if self.kind != nodes::NodeKind::Episode
+            && let Some(asset_id) = self.poster_asset_id.clone()
+        {
             return find_asset(pool, Some(asset_id)).await;
         }
 
@@ -348,28 +350,23 @@ impl files::Model {
             return Ok(Vec::new());
         };
 
-        let ffprobe_output = match probe.decode_ffprobe_output() {
-            Ok(v) => v,
-            Err(_) => return Ok(Vec::new()),
-        };
-
-        let probe_result = match lyra_ffprobe::probe_streams_from_output(&ffprobe_output) {
+        let probe_data = match probe.get_probe() {
             Ok(v) => v,
             Err(_) => return Ok(Vec::new()),
         };
 
         // separate audio and subtitle tracks, sorted by stream index, to match HLS manifest order
-        let mut audio_streams: Vec<_> = probe_result
+        let mut audio_streams: Vec<_> = probe_data
             .streams
             .iter()
-            .filter(|s| s.stream_type == ProbeStreamType::Audio)
+            .filter(|s| s.kind() == StreamKind::Audio)
             .collect();
         audio_streams.sort_by_key(|s| s.index);
 
-        let mut subtitle_streams: Vec<_> = probe_result
+        let mut subtitle_streams: Vec<_> = probe_data
             .streams
             .iter()
-            .filter(|s| s.stream_type == ProbeStreamType::Subtitle)
+            .filter(|s| s.kind() == StreamKind::Subtitle)
             .collect();
         subtitle_streams.sort_by_key(|s| s.index);
 
@@ -377,32 +374,32 @@ impl files::Model {
 
         for (manifest_index, stream) in audio_streams.iter().enumerate() {
             let has_parseable_lang = stream
-                .language
+                .language_bcp47
                 .as_deref()
                 .and_then(language_to_display_name)
                 .is_some();
 
             let (language, disposition) = if has_parseable_lang {
-                let disp = if stream.is_commentary {
+                let disp = if stream.is_commentary() {
                     Some(TrackDispositionPreference::Commentary)
-                } else if stream.is_hearing_impaired {
+                } else if stream.is_hearing_impaired() {
                     Some(TrackDispositionPreference::Sdh)
                 } else {
                     Some(TrackDispositionPreference::Normal)
                 };
-                (stream.language.clone(), disp)
+                (stream.language_bcp47.clone(), disp)
             } else {
                 (None, None)
             };
 
             let fallback = format!("Audio {}", manifest_index + 1);
             let display_name = build_track_display_name(
-                stream.language.as_deref(),
-                stream.title.as_deref(),
+                stream.language_bcp47.as_deref(),
+                stream.original_title.as_deref(),
                 &fallback,
-                stream.is_forced,
-                stream.is_hearing_impaired,
-                stream.is_commentary,
+                stream.is_forced(),
+                stream.is_hearing_impaired(),
+                stream.is_commentary(),
             );
 
             tracks.push(TrackInfo {
@@ -412,41 +409,41 @@ impl files::Model {
                 display_name,
                 language,
                 disposition,
-                is_forced: stream.is_forced,
+                is_forced: stream.is_forced(),
             });
         }
 
         for (manifest_index, stream) in subtitle_streams.iter().enumerate() {
             let has_parseable_lang = stream
-                .language
+                .language_bcp47
                 .as_deref()
                 .and_then(language_to_display_name)
                 .is_some();
 
             // forced tracks are not a user-selectable disposition; disposition is set to null for them
-            let (language, disposition) = if has_parseable_lang && !stream.is_forced {
-                let disp = if stream.is_commentary {
+            let (language, disposition) = if has_parseable_lang && !stream.is_forced() {
+                let disp = if stream.is_commentary() {
                     Some(TrackDispositionPreference::Commentary)
-                } else if stream.is_hearing_impaired {
+                } else if stream.is_hearing_impaired() {
                     Some(TrackDispositionPreference::Sdh)
                 } else {
                     Some(TrackDispositionPreference::Normal)
                 };
-                (stream.language.clone(), disp)
-            } else if has_parseable_lang && stream.is_forced {
-                (stream.language.clone(), None)
+                (stream.language_bcp47.clone(), disp)
+            } else if has_parseable_lang && stream.is_forced() {
+                (stream.language_bcp47.clone(), None)
             } else {
                 (None, None)
             };
 
             let fallback = format!("Subtitle {}", manifest_index + 1);
             let display_name = build_track_display_name(
-                stream.language.as_deref(),
-                stream.title.as_deref(),
+                stream.language_bcp47.as_deref(),
+                stream.original_title.as_deref(),
                 &fallback,
-                stream.is_forced,
-                stream.is_hearing_impaired,
-                stream.is_commentary,
+                stream.is_forced(),
+                stream.is_hearing_impaired(),
+                stream.is_commentary(),
             );
 
             tracks.push(TrackInfo {
@@ -456,7 +453,7 @@ impl files::Model {
                 display_name,
                 language,
                 disposition,
-                is_forced: stream.is_forced,
+                is_forced: stream.is_forced(),
             });
         }
 
@@ -483,27 +480,22 @@ impl files::Model {
             return Ok(Vec::new());
         };
 
-        let ffprobe_output = match probe.decode_ffprobe_output() {
+        let probe_data = match probe.get_probe() {
             Ok(v) => v,
             Err(_) => return Ok(Vec::new()),
         };
 
-        let probe_result = match lyra_ffprobe::probe_streams_from_output(&ffprobe_output) {
-            Ok(v) => v,
-            Err(_) => return Ok(Vec::new()),
-        };
-
-        let mut audio_streams: Vec<_> = probe_result
+        let mut audio_streams: Vec<_> = probe_data
             .streams
             .iter()
-            .filter(|s| s.stream_type == ProbeStreamType::Audio)
+            .filter(|s| s.kind() == StreamKind::Audio)
             .collect();
         audio_streams.sort_by_key(|s| s.index);
 
-        let mut subtitle_streams: Vec<_> = probe_result
+        let mut subtitle_streams: Vec<_> = probe_data
             .streams
             .iter()
-            .filter(|s| s.stream_type == ProbeStreamType::Subtitle)
+            .filter(|s| s.kind() == StreamKind::Subtitle)
             .collect();
         subtitle_streams.sort_by_key(|s| s.index);
 
@@ -560,10 +552,12 @@ impl NodeProperties {
         } else {
             None
         };
+        let probe_data = probe.as_ref().and_then(|probe| probe.get_probe().ok());
+        let probe_summary = probe_data.as_ref().map(summarize_probe);
 
-        let duration_seconds = probe
+        let duration_seconds = probe_summary
             .as_ref()
-            .and_then(|probe| probe.duration_s)
+            .and_then(|probe| probe.duration_seconds)
             .filter(|seconds| *seconds > 0);
 
         let runtime_minutes = duration_seconds.map(minutes_from_seconds_ceil);
@@ -582,21 +576,27 @@ impl NodeProperties {
                 episode_number: node.episode_number,
                 runtime_minutes,
                 duration_seconds,
-                width: probe
+                width: probe_summary
                     .as_ref()
                     .and_then(|probe| probe.width)
                     .or(default_file.as_ref().and_then(|file| file.width)),
-                height: probe
+                height: probe_summary
                     .as_ref()
                     .and_then(|probe| probe.height)
                     .or(default_file.as_ref().and_then(|file| file.height)),
-                video_codec: probe.as_ref().and_then(|probe| probe.video_codec.clone()),
-                audio_codec: probe.as_ref().and_then(|probe| probe.audio_codec.clone()),
-                fps: probe.as_ref().and_then(|probe| probe.fps),
-                video_bitrate: probe.as_ref().and_then(|probe| probe.video_bitrate),
-                audio_bitrate: probe.as_ref().and_then(|probe| probe.audio_bitrate),
-                audio_channels: probe.as_ref().and_then(|probe| probe.audio_channels),
-                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles != 0),
+                video_codec: probe_summary
+                    .as_ref()
+                    .and_then(|probe| probe.video_codec.clone()),
+                audio_codec: probe_summary
+                    .as_ref()
+                    .and_then(|probe| probe.audio_codec.clone()),
+                fps: probe_summary.as_ref().and_then(|probe| probe.fps),
+                video_bitrate: probe_summary.as_ref().and_then(|probe| probe.video_bitrate),
+                audio_bitrate: probe_summary.as_ref().and_then(|probe| probe.audio_bitrate),
+                audio_channels: probe_summary
+                    .as_ref()
+                    .and_then(|probe| probe.audio_channels),
+                has_subtitles: probe_summary.as_ref().map(|probe| probe.has_subtitles),
                 file_size_bytes: default_file.as_ref().map(|file| file.size_bytes),
                 first_aired: metadata.first_aired,
                 last_aired: metadata.last_aired,
@@ -618,21 +618,27 @@ impl NodeProperties {
                 episode_number: node.episode_number,
                 runtime_minutes,
                 duration_seconds,
-                width: probe
+                width: probe_summary
                     .as_ref()
                     .and_then(|probe| probe.width)
                     .or(default_file.as_ref().and_then(|file| file.width)),
-                height: probe
+                height: probe_summary
                     .as_ref()
                     .and_then(|probe| probe.height)
                     .or(default_file.as_ref().and_then(|file| file.height)),
-                video_codec: probe.as_ref().and_then(|probe| probe.video_codec.clone()),
-                audio_codec: probe.as_ref().and_then(|probe| probe.audio_codec.clone()),
-                fps: probe.as_ref().and_then(|probe| probe.fps),
-                video_bitrate: probe.as_ref().and_then(|probe| probe.video_bitrate),
-                audio_bitrate: probe.as_ref().and_then(|probe| probe.audio_bitrate),
-                audio_channels: probe.as_ref().and_then(|probe| probe.audio_channels),
-                has_subtitles: probe.as_ref().map(|probe| probe.has_subtitles != 0),
+                video_codec: probe_summary
+                    .as_ref()
+                    .and_then(|probe| probe.video_codec.clone()),
+                audio_codec: probe_summary
+                    .as_ref()
+                    .and_then(|probe| probe.audio_codec.clone()),
+                fps: probe_summary.as_ref().and_then(|probe| probe.fps),
+                video_bitrate: probe_summary.as_ref().and_then(|probe| probe.video_bitrate),
+                audio_bitrate: probe_summary.as_ref().and_then(|probe| probe.audio_bitrate),
+                audio_channels: probe_summary
+                    .as_ref()
+                    .and_then(|probe| probe.audio_channels),
+                has_subtitles: probe_summary.as_ref().map(|probe| probe.has_subtitles),
                 file_size_bytes: default_file.as_ref().map(|file| file.size_bytes),
                 first_aired: None,
                 last_aired: None,
@@ -823,8 +829,8 @@ fn langs_match(a: &str, b: &str) -> bool {
 }
 
 fn compute_recommended_tracks(
-    audio_streams: &[&lyra_ffprobe::Stream],
-    subtitle_streams: &[&lyra_ffprobe::Stream],
+    audio_streams: &[&Stream],
+    subtitle_streams: &[&Stream],
     user: &users::Model,
 ) -> Vec<RecommendedTrack> {
     let mut recommendations = Vec::new();
@@ -839,11 +845,11 @@ fn compute_recommended_tracks(
             .and_then(TrackDispositionPreference::from_str);
 
         // find all tracks matching the preferred language
-        let matching: Vec<(usize, &&lyra_ffprobe::Stream)> = audio_streams
+        let matching: Vec<(usize, &&Stream)> = audio_streams
             .iter()
             .enumerate()
             .filter(|(_, s)| {
-                s.language
+                s.language_bcp47
                     .as_deref()
                     .map(|lang| langs_match(lang, pref_lang))
                     .unwrap_or(false)
@@ -855,9 +861,11 @@ fn compute_recommended_tracks(
         } else if let Some(disp) = pref_disp {
             // prefer exact disposition match, then fall through ordering
             let exact = matching.iter().find(|(_, s)| match disp {
-                TrackDispositionPreference::Commentary => s.is_commentary,
-                TrackDispositionPreference::Sdh => s.is_hearing_impaired && !s.is_commentary,
-                TrackDispositionPreference::Normal => !s.is_hearing_impaired && !s.is_commentary,
+                TrackDispositionPreference::Commentary => s.is_commentary(),
+                TrackDispositionPreference::Sdh => s.is_hearing_impaired() && !s.is_commentary(),
+                TrackDispositionPreference::Normal => {
+                    !s.is_hearing_impaired() && !s.is_commentary()
+                }
             });
             Some(
                 exact
@@ -869,13 +877,13 @@ fn compute_recommended_tracks(
             // prefer Normal > SDH > Commentary > other
             let pick = matching
                 .iter()
-                .find(|(_, s)| !s.is_hearing_impaired && !s.is_commentary)
+                .find(|(_, s)| !s.is_hearing_impaired() && !s.is_commentary())
                 .or_else(|| {
                     matching
                         .iter()
-                        .find(|(_, s)| s.is_hearing_impaired && !s.is_commentary)
+                        .find(|(_, s)| s.is_hearing_impaired() && !s.is_commentary())
                 })
-                .or_else(|| matching.iter().find(|(_, s)| s.is_commentary))
+                .or_else(|| matching.iter().find(|(_, s)| s.is_commentary()))
                 .or_else(|| matching.first());
             Some(pick.map(|(i, _)| *i).unwrap_or(0))
         }
@@ -895,15 +903,15 @@ fn compute_recommended_tracks(
     let active_audio_lang: Option<String> = user
         .preferred_audio_language
         .clone()
-        .or_else(|| audio_streams.first().and_then(|s| s.language.clone()));
+        .or_else(|| audio_streams.first().and_then(|s| s.language_bcp47.clone()));
 
     // --- subtitle recommendations ---
     // forced tracks whose language matches active audio are always enabled
     for (manifest_index, stream) in subtitle_streams.iter().enumerate() {
-        if !stream.is_forced {
+        if !stream.is_forced() {
             continue;
         }
-        let enabled = match (&stream.language, &active_audio_lang) {
+        let enabled = match (&stream.language_bcp47, &active_audio_lang) {
             (Some(sub_lang), Some(audio_lang)) => langs_match(sub_lang, audio_lang),
             _ => false,
         };
@@ -915,10 +923,10 @@ fn compute_recommended_tracks(
     }
 
     // non-forced subtitle tracks
-    let non_forced: Vec<(usize, &&lyra_ffprobe::Stream)> = subtitle_streams
+    let non_forced: Vec<(usize, &&Stream)> = subtitle_streams
         .iter()
         .enumerate()
-        .filter(|(_, s)| !s.is_forced)
+        .filter(|(_, s)| !s.is_forced())
         .collect();
 
     if let Some(ref pref_lang) = user.preferred_subtitle_language {
@@ -927,10 +935,10 @@ fn compute_recommended_tracks(
             .as_deref()
             .and_then(TrackDispositionPreference::from_str);
 
-        let matching: Vec<(usize, &&lyra_ffprobe::Stream)> = non_forced
+        let matching: Vec<(usize, &&Stream)> = non_forced
             .iter()
             .filter(|(_, s)| {
-                s.language
+                s.language_bcp47
                     .as_deref()
                     .map(|lang| langs_match(lang, pref_lang))
                     .unwrap_or(false)
@@ -942,21 +950,23 @@ fn compute_recommended_tracks(
             None
         } else if let Some(disp) = pref_disp {
             let exact = matching.iter().find(|(_, s)| match disp {
-                TrackDispositionPreference::Commentary => s.is_commentary,
-                TrackDispositionPreference::Sdh => s.is_hearing_impaired && !s.is_commentary,
-                TrackDispositionPreference::Normal => !s.is_hearing_impaired && !s.is_commentary,
+                TrackDispositionPreference::Commentary => s.is_commentary(),
+                TrackDispositionPreference::Sdh => s.is_hearing_impaired() && !s.is_commentary(),
+                TrackDispositionPreference::Normal => {
+                    !s.is_hearing_impaired() && !s.is_commentary()
+                }
             });
             exact.or_else(|| matching.first()).map(|(i, _)| *i)
         } else {
             let pick = matching
                 .iter()
-                .find(|(_, s)| !s.is_hearing_impaired && !s.is_commentary)
+                .find(|(_, s)| !s.is_hearing_impaired() && !s.is_commentary())
                 .or_else(|| {
                     matching
                         .iter()
-                        .find(|(_, s)| s.is_hearing_impaired && !s.is_commentary)
+                        .find(|(_, s)| s.is_hearing_impaired() && !s.is_commentary())
                 })
-                .or_else(|| matching.iter().find(|(_, s)| s.is_commentary))
+                .or_else(|| matching.iter().find(|(_, s)| s.is_commentary()))
                 .or_else(|| matching.first());
             pick.map(|(i, _)| *i)
         };
@@ -981,4 +991,42 @@ fn compute_recommended_tracks(
     }
 
     recommendations
+}
+
+#[derive(Clone, Debug)]
+struct ProbeSummary {
+    duration_seconds: Option<i64>,
+    width: Option<i64>,
+    height: Option<i64>,
+    video_codec: Option<String>,
+    audio_codec: Option<String>,
+    fps: Option<f64>,
+    video_bitrate: Option<i64>,
+    audio_bitrate: Option<i64>,
+    audio_channels: Option<i64>,
+    has_subtitles: bool,
+}
+
+fn summarize_probe(probe: &ProbeData) -> ProbeSummary {
+    let video = probe.get_video_stream();
+    let audio = probe.get_audio_stream();
+
+    ProbeSummary {
+        duration_seconds: probe
+            .duration_secs
+            .map(|value| value.max(0.0).floor() as i64),
+        width: video.and_then(|stream| stream.width()).map(i64::from),
+        height: video.and_then(|stream| stream.height()).map(i64::from),
+        video_codec: video.map(|stream| stream.codec_name.clone()),
+        audio_codec: audio.map(|stream| stream.codec_name.clone()),
+        fps: video.and_then(|stream| stream.frame_rate()).map(f64::from),
+        video_bitrate: video
+            .and_then(|stream| stream.bit_rate)
+            .and_then(|value| i64::try_from(value).ok()),
+        audio_bitrate: audio
+            .and_then(|stream| stream.bit_rate)
+            .and_then(|value| i64::try_from(value).ok()),
+        audio_channels: audio.and_then(|stream| stream.channels()).map(i64::from),
+        has_subtitles: probe.has_subtitles(),
+    }
 }

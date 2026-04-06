@@ -5,6 +5,9 @@ use std::{
 };
 
 use anyhow::{Context, bail};
+use lyra_probe::{
+    get_ffmpeg_path, get_ffprobe_path, init_ffmpeg, probe_blocking, probe_with_cancellation,
+};
 use rusty_chromaprint::{Configuration, Fingerprinter, match_fingerprints};
 use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio_util::sync::CancellationToken;
@@ -79,9 +82,9 @@ pub fn detect_intros_blocking(
 
     info!(file_count = input_files.len(), "starting intro detection");
 
-    lyra_ffprobe::paths::init_ffmpeg().context("failed to configure ffmpeg binary")?;
-    let ffmpeg_path = lyra_ffprobe::paths::get_ffmpeg_path()?;
-    let ffprobe_path = lyra_ffprobe::paths::get_ffprobe_path()?;
+    init_ffmpeg().context("failed to configure ffmpeg binary")?;
+    let ffmpeg_path = get_ffmpeg_path();
+    let ffprobe_path = get_ffprobe_path();
     detect_intros_with_tools(&ffmpeg_path, &ffprobe_path, input_files)
 }
 
@@ -102,9 +105,9 @@ pub async fn detect_intros(
 
     info!(file_count = input_files.len(), "starting intro detection");
 
-    lyra_ffprobe::paths::init_ffmpeg().context("failed to configure ffmpeg binary")?;
-    let ffmpeg_path = lyra_ffprobe::paths::get_ffmpeg_path()?;
-    let ffprobe_path = lyra_ffprobe::paths::get_ffprobe_path()?;
+    init_ffmpeg().context("failed to configure ffmpeg binary")?;
+    let ffmpeg_path = get_ffmpeg_path();
+    let ffprobe_path = get_ffprobe_path();
     detect_intros_with_tools_async(&ffmpeg_path, &ffprobe_path, input_files, cancellation_token)
         .await
 }
@@ -247,16 +250,16 @@ fn detect_intros_with_tools(
 
 fn calc_fingerprint(
     ffmpeg_path: &str,
-    ffprobe_path: &str,
+    _ffprobe_path: &str,
     path: impl AsRef<Path>,
     config: &Configuration,
 ) -> anyhow::Result<Vec<u32>> {
     let path = path.as_ref();
-    let probe = lyra_ffprobe::probe_streams(Path::new(ffprobe_path), path)
-        .with_context(|| format!("failed to probe '{}'", path.display()))?;
+    let probe =
+        probe_blocking(path).with_context(|| format!("failed to probe '{}'", path.display()))?;
     let duration_seconds = probe
-        .duration_seconds
-        .context("missing file duration from ffprobe")?;
+        .duration_secs
+        .context("missing file duration from probe")?;
     let scan_seconds = duration_seconds * FINGERPRINT_SCAN_RATIO;
 
     debug!(
@@ -516,21 +519,19 @@ async fn detect_intros_with_tools_async(
 
 async fn calc_fingerprint_async(
     ffmpeg_path: &str,
-    ffprobe_path: &str,
+    _ffprobe_path: &str,
     path: impl AsRef<Path>,
     _config: &Configuration,
     cancellation_token: Option<&CancellationToken>,
 ) -> anyhow::Result<Option<Vec<u32>>> {
     let path = path.as_ref();
-    let probe = lyra_ffprobe::probe_output(ffprobe_path, path, cancellation_token).await?;
+    let probe = probe_with_cancellation(path, cancellation_token).await?;
     let Some(probe) = probe else {
         return Ok(None);
     };
-    let probe = lyra_ffprobe::probe_streams_from_output(&probe)
-        .with_context(|| format!("failed to probe '{}'", path.display()))?;
     let duration_seconds = probe
-        .duration_seconds
-        .context("missing file duration from ffprobe")?;
+        .duration_secs
+        .context("missing file duration from probe")?;
     let scan_seconds = duration_seconds * FINGERPRINT_SCAN_RATIO;
 
     debug!(

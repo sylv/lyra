@@ -12,15 +12,13 @@ use crate::{
     },
 };
 use anyhow::{Context, Result, bail};
-use lyra_ffprobe::{FfprobeOutput, paths::get_ffprobe_path, probe_output_blocking};
-use lyra_keyframe_extractor::extract_keyframes;
+use lyra_probe::{ProbeData, extract_keyframes, probe_blocking};
 use std::{
     collections::HashMap,
     path::{Path as FsPath, PathBuf},
     sync::Arc,
     time::Duration,
 };
-use tokio::task::{block_in_place, spawn_blocking};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SessionKey {
@@ -80,7 +78,7 @@ pub fn build_package(
     input: &FsPath,
     profiles: &[Arc<dyn Profile>],
     options: &BuildOptions,
-    ffprobe_output: &FfprobeOutput,
+    probe: &ProbeData,
     keyframes_pts: &[i64],
 ) -> Result<Package> {
     let input = canonicalize_input_path(input)?;
@@ -88,8 +86,7 @@ pub fn build_package(
     let segments_root = prepare_segments_root_at(&options.transcode_cache_dir)?;
     let process_dir = create_process_segment_dir(&segments_root)?;
 
-    let (streams, primary_video_info, duration_seconds) =
-        streams_from_probe_output(ffprobe_output)?;
+    let (streams, primary_video_info, duration_seconds) = streams_from_probe_output(probe)?;
     let keyframes = if primary_video_info.is_some() && !keyframes_pts.is_empty() {
         Some(Arc::new(keyframes_pts.to_vec()))
     } else {
@@ -132,9 +129,10 @@ pub fn build_package(
 
 pub fn build_package_with_defaults(input: &FsPath, options: &BuildOptions) -> Result<Package> {
     let input = canonicalize_input_path(input)?;
-    let profiles = get_profiles();
-    let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
-    let ffprobe_output = probe_output_blocking(&ffprobe_bin, &input)?;
+    let _profiles = get_profiles();
+    let _probe = probe_blocking(&input)?;
+    let _ = extract_keyframes;
+    let _ = options;
     unimplemented!()
 }
 

@@ -10,7 +10,7 @@ use crate::{
         node_files, node_metadata,
     },
 };
-use lyra_ffprobe::paths::get_ffmpeg_path;
+use lyra_probe::get_ffmpeg_path;
 use lyra_thumbnail::{ThumbnailOptions, generate_thumbnail};
 use sea_orm::{
     ActiveValue::Set,
@@ -95,7 +95,7 @@ impl Job for FileThumbnailJob {
         };
 
         let thumbnail_options = ThumbnailOptions {
-            ffmpeg_bin: PathBuf::from(get_ffmpeg_path()?),
+            ffmpeg_bin: PathBuf::from(get_ffmpeg_path()),
             ..ThumbnailOptions::default()
         };
 

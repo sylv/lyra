@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
-use lyra_ffprobe::{paths::get_ffprobe_path, probe_output_blocking};
-use lyra_keyframe_extractor::extract_keyframes;
 use lyra_packager::{
     BuildOptions, build_package, canonicalize_input_path, profiles::VideoCopyProfile,
 };
+use lyra_probe::{extract_keyframes, probe_blocking};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tracing::info;
 
@@ -31,15 +30,14 @@ async fn main() -> Result<()> {
     };
 
     info!(input = %input.display(), "probing");
-    let ffprobe_bin = PathBuf::from(get_ffprobe_path()?);
-    let ffprobe_output = probe_output_blocking(&ffprobe_bin, &input)?;
+    let probe = probe_blocking(&input)?;
     let keyframes = extract_keyframes(&input, None)
         .await?
         .context("keyframe extraction was cancelled")?;
 
     // only use the copy profile so we generate exactly what playback would use
     let profiles: Vec<Arc<dyn lyra_packager::profiles::Profile>> = vec![Arc::new(VideoCopyProfile)];
-    let package = build_package(&input, &profiles, &options, &ffprobe_output, &keyframes)?;
+    let package = build_package(&input, &profiles, &options, &probe, &keyframes)?;
 
     // find the video_copy session; it may be absent if the file has no keyframe data
     let session = package

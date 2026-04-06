@@ -3,7 +3,7 @@ use crate::{
     state::{FfmpegState, StreamProfileState},
 };
 use anyhow::{Context, Result, bail};
-use lyra_ffprobe::paths::get_ffmpeg_path;
+use lyra_probe::get_ffmpeg_path;
 use std::{
     path::Path,
     process::Stdio,
@@ -186,7 +186,7 @@ async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Re
     let args = state
         .profile
         .build_args(&ctx, start_segment, start_seconds, &state.hls_cuts);
-    let ffmpeg_bin = get_ffmpeg_path()?;
+    let ffmpeg_bin = get_ffmpeg_path();
 
     tracing::debug!(
         cwd = %state.segment_dir.display(),

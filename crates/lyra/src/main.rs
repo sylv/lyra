@@ -190,7 +190,7 @@ async fn get_init_state(
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-    lyra_ffprobe::paths::init_ffmpeg().unwrap();
+    lyra_probe::init_ffmpeg().unwrap();
     let config = get_config();
     let private_key = config
         .get_private_key()
