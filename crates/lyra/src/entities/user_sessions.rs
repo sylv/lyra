@@ -5,12 +5,10 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
-    #[sea_orm(column_type = "Text", unique)]
-    pub token: String,
     #[sea_orm(column_type = "Text")]
     pub user_id: String,
     pub created_at: i64,
-    pub expires_at: i64,
+    pub user_agent: Option<String>,
     pub last_seen_at: i64,
 }
 

@@ -17,7 +17,7 @@ use sea_orm::{
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
     QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
-    sea_query::{Expr, Query},
+    sea_query::{Expr, ExprTrait, Query},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -62,6 +62,7 @@ impl Job for RootIntroSegmentsJob {
         nodes::Entity::find()
             .filter(nodes::Column::ParentId.is_null())
             .filter(nodes::Column::Kind.eq(NodeKind::Series))
+            // Skip roots that cannot form a valid intro-detection batch yet.
             .filter(
                 Expr::col(nodes::Column::Id).in_subquery(
                     Query::select()
@@ -85,6 +86,36 @@ impl Job for RootIntroSegmentsJob {
                         )
                         .and_where(
                             Expr::col((files::Entity, files::Column::SegmentsJson)).is_null(),
+                        )
+                        .to_owned(),
+                ),
+            )
+            .filter(
+                Expr::col(nodes::Column::Id).in_subquery(
+                    Query::select()
+                        .column(nodes::Column::RootId)
+                        .from(node_files::Entity)
+                        .inner_join(
+                            nodes::Entity,
+                            Expr::col((node_files::Entity, node_files::Column::NodeId))
+                                .equals((nodes::Entity, nodes::Column::Id)),
+                        )
+                        .inner_join(
+                            files::Entity,
+                            Expr::col((node_files::Entity, node_files::Column::FileId))
+                                .equals((files::Entity, files::Column::Id)),
+                        )
+                        .and_where(
+                            Expr::col((nodes::Entity, nodes::Column::Kind)).eq(NodeKind::Episode),
+                        )
+                        .and_where(
+                            Expr::col((files::Entity, files::Column::UnavailableAt)).is_null(),
+                        )
+                        .group_by_col((nodes::Entity, nodes::Column::RootId))
+                        .and_having(
+                            Expr::col((files::Entity, files::Column::Id))
+                                .count()
+                                .gte(INTRO_DETECTION_BATCH_MIN_FILES as i32),
                         )
                         .to_owned(),
                 ),

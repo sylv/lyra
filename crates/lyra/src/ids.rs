@@ -3,12 +3,6 @@ use sha2::{Digest, Sha256};
 
 const CROCKFORD_BASE32: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-pub fn new_session_token() -> String {
-    let mut bytes = [0_u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    encode_crockford(&bytes)
-}
-
 pub fn new_invite_code() -> String {
     let mut bytes = [0_u8; 12];
     rand::rng().fill_bytes(&mut bytes);

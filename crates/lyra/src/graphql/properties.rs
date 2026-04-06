@@ -1,16 +1,16 @@
+use crate::assets::sign_asset_url;
 use crate::segment_markers::StoredFileSegmentKind;
 use crate::{
     auth::RequestAuth,
     entities::{
         assets,
         file_assets::{self, FileAssetRole},
-        file_probe, files, libraries, library_users, node_files, nodes, users,
+        file_probe, files, libraries, library_users, node_files, nodes, user_sessions, users,
     },
     graphql::dataloaders::{
         node_counts::NodeCountsLoader,
         node_metadata::{NodeMetadataLoader, PreferredNodeMetadata},
     },
-    signer::Signer,
 };
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{ComplexObject, Context, Enum, SimpleObject};
@@ -93,20 +93,8 @@ pub struct Asset {
 
 #[ComplexObject]
 impl Asset {
-    pub async fn signed_url(&self, ctx: &Context<'_>) -> async_graphql::Result<String> {
-        const ASSET_URL_SIGNATURE_SCOPE: &str = "asset_url";
-        const ASSET_URL_SIGNATURE_TTL_SECONDS: i64 = 24 * 60 * 60;
-
-        let auth = ctx.data::<RequestAuth>()?;
-        let user_id = auth.get_user_or_err()?.id.as_str();
-        let signer = ctx.data_unchecked::<Signer>();
-        let signature = signer.sign(
-            ASSET_URL_SIGNATURE_SCOPE,
-            ASSET_URL_SIGNATURE_TTL_SECONDS,
-            &[user_id, &self.id],
-        );
-
-        Ok(format!("/api/assets/{}/{}", self.id, signature))
+    pub async fn signed_url(&self) -> async_graphql::Result<String> {
+        Ok(sign_asset_url(&self.id))
     }
 }
 
@@ -252,6 +240,18 @@ impl NodeProperties {
 
 #[ComplexObject]
 impl users::Model {
+    pub async fn last_seen_at(&self, ctx: &Context<'_>) -> Result<Option<i64>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+
+        let session = user_sessions::Entity::find()
+            .filter(user_sessions::Column::UserId.eq(&self.id))
+            .order_by_desc(user_sessions::Column::LastSeenAt)
+            .one(pool)
+            .await?;
+
+        Ok(session.map(|s| s.last_seen_at))
+    }
+
     pub async fn libraries(
         &self,
         ctx: &Context<'_>,

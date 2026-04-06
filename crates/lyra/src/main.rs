@@ -19,12 +19,13 @@ use async_graphql::{Schema, http::GraphiQLSource};
 use async_graphql_axum::{GraphQLProtocol, GraphQLRequest, GraphQLResponse, GraphQLWebSocket};
 use axum::{
     Json, Router,
-    extract::ws::WebSocketUpgrade,
-    extract::{FromRef, Query as AxumQuery, State},
+    extract::{FromRef, Query as AxumQuery, State, ws::WebSocketUpgrade},
+    http::HeaderMap,
     response::{Html, IntoResponse},
     routing::{get, post},
 };
 use lyra_packager::Package as PackagerState;
+use reqwest::header::USER_AGENT;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde::Serialize;
 use serde_json::json;
@@ -72,7 +73,6 @@ type AppSchema = Schema<
 
 #[derive(Clone, FromRef)]
 struct AppState {
-    signer: signer::Signer,
     pool: DatabaseConnection,
     schema: Arc<AppSchema>,
     job_wake_signal: Arc<Notify>,
@@ -109,17 +109,31 @@ async fn get_graphql_ws(
         })
 }
 
+#[derive(Clone)]
+struct UserAgent(pub Option<String>);
+
+// the entire graphql api is covered by auth. without at least some auth, you cannot get in.
+// that is why the login route is a normal http route - everything else can be done with some form
+// of auth (signups use invite codes, setup uses the temporary setup code, etc)
 async fn post_graphql(
     State(state): State<AppState>,
-    auth: Option<RequestAuth>,
+    auth: RequestAuth,
+    headers: HeaderMap,
     req: GraphQLRequest,
 ) -> GraphQLResponse {
     let req = req.into_inner();
+    let user_agent = UserAgent(
+        headers
+            .get(USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+    );
 
-    match auth {
-        Some(auth) => state.schema.execute(req.data(auth)).await.into(),
-        None => state.schema.execute(req).await.into(),
-    }
+    state
+        .schema
+        .execute(req.data(auth).data(user_agent))
+        .await
+        .into()
 }
 
 #[derive(Serialize)]
@@ -191,12 +205,8 @@ async fn get_init_state(
 async fn main() {
     tracing_subscriber::fmt::init();
     lyra_probe::init_ffmpeg().unwrap();
-    let config = get_config();
-    let private_key = config
-        .get_private_key()
-        .expect("failed to load private key");
-    let signer = signer::Signer::new(&private_key).expect("failed to load signer");
 
+    let config = get_config();
     let db_path = config.data_dir.join("data.db");
     let pool = SqlitePoolOptions::new()
         .max_connections(8)
@@ -294,7 +304,6 @@ async fn main() {
         graphql::dataloaders::node_counts::NodeCountsLoader::new(pool.clone()),
         tokio::spawn,
     ))
-    .data(signer.clone())
     .data(watch_session_registry)
     .finish();
 
@@ -325,7 +334,6 @@ async fn main() {
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))
         .with_state(AppState {
-            signer,
             packager_states: Arc::new(Mutex::new(HashMap::new())),
             pool: pool.clone(),
             schema: Arc::new(schema),

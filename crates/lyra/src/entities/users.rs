@@ -13,7 +13,6 @@ pub struct Model {
     pub password_hash: Option<String>,
     pub invite_code: Option<String>,
     pub permissions: i64,
-    pub last_seen_at: Option<i64>,
     pub created_at: i64,
     pub preferred_audio_language: Option<String>,
     pub preferred_audio_disposition: Option<String>,

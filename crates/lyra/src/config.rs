@@ -1,8 +1,9 @@
-use rand::RngCore;
+use ed25519_dalek::SigningKey;
+use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-const PRIVATE_KEY_FILENAME: &str = "private_key";
+const SIGNING_KEY_FILENAME: &str = "signing_key";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -47,33 +48,23 @@ impl Config {
         self.data_dir.join("tmp")
     }
 
-    pub fn get_private_key_path(&self) -> PathBuf {
-        self.data_dir.join(PRIVATE_KEY_FILENAME)
-    }
-
-    pub fn get_private_key(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let private_key_path = self.get_private_key_path();
-        if private_key_path.exists() {
-            let private_key = std::fs::read_to_string(&private_key_path)?;
-            validate_private_key(private_key.trim())?;
-            return Ok(private_key.trim().to_string());
-        }
-
-        // keep the key stable across restarts so issued signatures remain valid until expiry.
-        let private_key = generate_private_key();
-        std::fs::write(&private_key_path, &private_key)?;
-        Ok(private_key)
+    pub fn get_signing_key_path(&self) -> PathBuf {
+        self.data_dir.join(SIGNING_KEY_FILENAME)
     }
 }
 
-static CONFIG: once_cell::sync::Lazy<Config> =
-    once_cell::sync::Lazy::new(|| load_config().expect("failed to load lyra config"));
+static CONFIG: once_cell::sync::Lazy<(Config, SigningKey)> =
+    once_cell::sync::Lazy::new(|| init().expect("failed to load lyra config"));
 
 pub fn get_config() -> &'static Config {
-    &CONFIG
+    &CONFIG.0
 }
 
-fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+pub fn get_signing_key() -> &'static SigningKey {
+    &CONFIG.1
+}
+
+fn init() -> Result<(Config, SigningKey), Box<dyn std::error::Error>> {
     let config = config::Config::builder()
         .add_source(config::Environment::with_prefix("lyra"))
         .add_source(config::File::with_name("lyra.yml").required(false))
@@ -113,24 +104,23 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
         "loaded config"
     );
 
-    Ok(config)
-}
+    let signing_key_path = config.get_signing_key_path();
+    let signing_key = if signing_key_path.exists() {
+        tracing::info!("loading signing key from {}", signing_key_path.display());
+        let key_bytes = std::fs::read(&signing_key_path)?;
+        if key_bytes.len() != 32 {
+            return Err(format!("signing_key must be 32 bytes, got {}", key_bytes.len()).into());
+        }
 
-fn validate_private_key(private_key: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let decoded = hex::decode(private_key.trim())?;
-    if decoded.len() != 32 {
-        return Err(format!(
-            "config.private_key must decode to 32 bytes, got {}",
-            decoded.len()
-        )
-        .into());
-    }
+        let mut key_bytes_array = [0_u8; 32];
+        key_bytes_array.copy_from_slice(&key_bytes);
+        SigningKey::from_bytes(&key_bytes_array)
+    } else {
+        let mut csprng = OsRng;
+        let signing_key = SigningKey::generate(&mut csprng);
+        std::fs::write(&signing_key_path, signing_key.to_bytes())?;
+        signing_key
+    };
 
-    Ok(())
-}
-
-fn generate_private_key() -> String {
-    let mut bytes = [0_u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    hex::encode(bytes)
+    Ok((config, signing_key))
 }

@@ -1,7 +1,6 @@
-use crate::RequestAuth;
 use crate::auth::{
     AuthenticatedGuard, PermissionGuard, accessible_library_ids, create_session_for_user,
-    ensure_library_access, find_pending_invite_user,
+    ensure_library_access, find_pending_invite_user, get_set_cookie_headers_for_session,
 };
 use crate::content_update::CONTENT_UPDATE;
 use crate::entities::collections::{CollectionResolverKind, CollectionVisibility};
@@ -17,12 +16,14 @@ use crate::import::watch_state_import;
 use crate::watch_session::{
     WatchSessionActionInput, WatchSessionBeacon, WatchSessionHeartbeatInput, WatchSessionRegistry,
 };
+use crate::{RequestAuth, UserAgent};
 use argon2::{
     Argon2,
     password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 use async_graphql::{Context, InputObject, Object, SimpleObject};
 use chrono::Utc;
+use reqwest::header::SET_COOKIE;
 use sea_orm::Set;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
@@ -319,12 +320,9 @@ impl Mutation {
         let username = normalize_username(username)?;
         let password_hash = hash_password(&password)?;
 
-        if let Some(invite_code) = invite_code
-            .as_deref()
-            .map(str::trim)
-            .filter(|invite_code| !invite_code.is_empty())
-        {
-            let blank_user = find_pending_invite_user(pool, invite_code)
+        let mut auto_signin = false;
+        let user = if let Some(invite_code) = invite_code {
+            let blank_user = find_pending_invite_user(pool, &invite_code)
                 .await
                 .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
@@ -345,16 +343,13 @@ impl Mutation {
             blank_user.password_hash = Set(Some(password_hash));
             blank_user.invite_code = Set(None);
             let user = blank_user.update(pool).await?;
-            let cookie = create_session_for_user(pool, &user.id)
-                .await
-                .map_err(|e| -> async_graphql::Error { e.into() })?;
-            ctx.insert_http_header("Set-Cookie", cookie);
-            CONTENT_UPDATE.emit();
-            Ok(user)
+            auto_signin = true;
+            user
         } else {
             let auth = ctx.data_opt::<RequestAuth>().ok_or_else(|| {
                 async_graphql::Error::new("No invite code provided and users already exist")
             })?;
+
             if !auth.has_permission(UserPerms::ADMIN) {
                 return Err(async_graphql::Error::new(
                     "No invite code provided and users already exist".to_string(),
@@ -382,15 +377,23 @@ impl Mutation {
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
             if auth.is_setup() {
-                let cookie = create_session_for_user(pool, &user.id)
-                    .await
-                    .map_err(|e| -> async_graphql::Error { e.into() })?;
-                ctx.insert_http_header("Set-Cookie", cookie);
+                auto_signin = true;
             }
 
-            CONTENT_UPDATE.emit();
-            Ok(user)
+            user
+        };
+
+        if auto_signin {
+            let ua = ctx.data::<UserAgent>()?.0.clone();
+            let session_id = create_session_for_user(pool, &user.id, ua)
+                .await
+                .map_err(|e| -> async_graphql::Error { e.into() })?;
+            let cookie = get_set_cookie_headers_for_session(user.id.clone(), session_id)?;
+            ctx.insert_http_header(SET_COOKIE, cookie);
         }
+
+        CONTENT_UPDATE.emit();
+        Ok(user)
     }
 
     #[graphql(guard = PermissionGuard::new(UserPerms::ADMIN))]
