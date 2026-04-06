@@ -43,10 +43,8 @@ impl Profile for VideoCopyProfile {
         if ctx.keyframes.is_none() || ctx.stream_info.is_none() {
             return false;
         }
-        // todo: hevc seems to have a problem where "gaps" appear in the output segments
-        // i have some guesses but they're annoying, possibly impossible with -hls_cuts
-        // matches!(ctx.stream.codec_name.as_str(), "h264" | "hevc" | "av1")
-        matches!(ctx.stream.codec_name.as_str(), "h264" | "av1")
+
+        matches!(ctx.stream.codec_name.as_str(), "h264" | "h265" | "av1")
     }
 
     fn build_args(

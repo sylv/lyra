@@ -10,6 +10,7 @@
 !client/codegen.ts
 !client/package.json
 !migrations/
+!crates/lyra-probe/dictionary
 !package.json
 !bun.lock
 !schema.gql
