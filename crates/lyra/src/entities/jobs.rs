@@ -32,9 +32,7 @@ pub enum JobKind {
     #[sea_orm(num_value = 1)]
     FileGenerateThumbnail,
     #[sea_orm(num_value = 2)]
-    FileExtractFfprobe,
-    #[sea_orm(num_value = 3)]
-    FileExtractKeyframes,
+    FileProbe,
     #[sea_orm(num_value = 4)]
     AssetDownload,
     #[sea_orm(num_value = 5)]
@@ -50,8 +48,7 @@ impl JobKind {
         match self {
             JobKind::FileGenerateTimelinePreview => 0,
             JobKind::FileGenerateThumbnail => 1,
-            JobKind::FileExtractFfprobe => 2,
-            JobKind::FileExtractKeyframes => 3,
+            JobKind::FileProbe => 2,
             JobKind::AssetDownload => 4,
             JobKind::AssetGenerateThumbhash => 5,
             JobKind::NodeGenerateIntroSegments => 6,

@@ -20,7 +20,7 @@ impl Job for FileProbeJob {
     type Entity = files::Entity;
     type Model = files::Model;
 
-    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileExtractFfprobe;
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileProbe;
     const IS_HEAVY: bool = true;
 
     fn query(&self) -> Select<Self::Entity> {
