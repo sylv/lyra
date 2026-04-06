@@ -71,6 +71,10 @@ const LOADING_PHRASES = [
 	"How do they get the bees to swarm like that?",
 	"I need good men, Ser Duncan.",
 	"Get up.",
+	"Rocky fix.",
+	"amaze amaze amaze",
+	"Fist my bump",
+	"How long since last sleep, question?",
 ];
 
 export const LoadingText: FC = () => {
