@@ -2,6 +2,7 @@ use crate::{
     model::StreamType,
     profiles::{PlaylistKind, Profile, ProfileContext, ProfileType, SegmentLayout},
 };
+use lyra_probe::Codec;
 use std::ffi::OsString;
 
 #[derive(Debug)]
@@ -40,8 +41,13 @@ impl Profile for SubtitleWebVttProfile {
         // only advertise text subtitles here. image-based codecs like pgs/dvdsub
         // won't reliably transcode to webvtt in this simple one-shot path.
         matches!(
-            ctx.stream.codec_name.as_str(),
-            "ass" | "mov_text" | "srt" | "ssa" | "subrip" | "text" | "ttml" | "webvtt"
+            ctx.stream.codec,
+            Codec::SubtitleAss
+                | Codec::SubtitleMovText
+                | Codec::SubtitleSubRip
+                | Codec::SubtitleText
+                | Codec::SubtitleTtml
+                | Codec::SubtitleWebVtt
         )
     }
 
@@ -74,14 +80,14 @@ mod tests {
     use crate::model::StreamDescriptor;
     use std::{path::PathBuf, sync::Arc};
 
-    fn ctx(codec_name: &str) -> ProfileContext {
+    fn ctx(codec: Codec) -> ProfileContext {
         ProfileContext {
             input: PathBuf::new(),
             stream: StreamDescriptor {
                 stream_id: 0,
                 stream_index: 0,
                 stream_type: StreamType::Subtitle,
-                codec_name: codec_name.to_string(),
+                codec,
                 bit_rate: None,
                 frame_rate: None,
                 width: None,
@@ -103,9 +109,9 @@ mod tests {
     fn supports_text_subtitles_only() {
         let profile = SubtitleWebVttProfile;
 
-        assert!(profile.supports_stream(&ctx("subrip")));
-        assert!(profile.supports_stream(&ctx("ass")));
-        assert!(!profile.supports_stream(&ctx("hdmv_pgs_subtitle")));
-        assert!(!profile.supports_stream(&ctx("dvd_subtitle")));
+        assert!(profile.supports_stream(&ctx(Codec::SubtitleSubRip)));
+        assert!(profile.supports_stream(&ctx(Codec::SubtitleAss)));
+        assert!(!profile.supports_stream(&ctx(Codec::SubtitlePgs)));
+        assert!(!profile.supports_stream(&ctx(Codec::SubtitleVobSub)));
     }
 }

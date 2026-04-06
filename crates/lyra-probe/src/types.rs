@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProbeData {
@@ -79,10 +80,92 @@ pub enum StreamKind {
     Subtitle,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Codec {
+    VideoH264,
+    VideoH265,
+    VideoAv1,
+    AudioAac,
+    SubtitleAss,
+    SubtitleSubRip,
+    SubtitleMovText,
+    SubtitleText,
+    SubtitleTtml,
+    SubtitleWebVtt,
+    SubtitlePgs,
+    SubtitleVobSub,
+    Unknown(String),
+}
+
+impl Codec {
+    pub fn from_str(value: &str) -> Self {
+        let value = value.to_ascii_lowercase();
+        match value.as_str() {
+            "av1" => Self::VideoAv1,
+            "h264" | "avc" => Self::VideoH264,
+            "h265" | "hevc" => Self::VideoH265,
+            "aac" => Self::AudioAac,
+            "ass" | "ssa" => Self::SubtitleAss,
+            "mov_text" => Self::SubtitleMovText,
+            "subrip" | "srt" => Self::SubtitleSubRip,
+            "text" => Self::SubtitleText,
+            "ttml" => Self::SubtitleTtml,
+            "webvtt" => Self::SubtitleWebVtt,
+            "hdmv_pgs_subtitle" | "pgs" => Self::SubtitlePgs,
+            "dvd_subtitle" | "vobsub" | "dvdsub" => Self::SubtitleVobSub,
+            _ => Self::Unknown(value),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::VideoH264 => "h264",
+            Self::VideoH265 => "h265",
+            Self::VideoAv1 => "av1",
+            Self::AudioAac => "aac",
+            Self::SubtitleAss => "ass",
+            Self::SubtitleSubRip => "subrip",
+            Self::SubtitleMovText => "mov_text",
+            Self::SubtitleText => "text",
+            Self::SubtitleTtml => "ttml",
+            Self::SubtitleWebVtt => "webvtt",
+            Self::SubtitlePgs => "hdmv_pgs_subtitle",
+            Self::SubtitleVobSub => "dvd_subtitle",
+            Self::Unknown(value) => value.as_str(),
+        }
+    }
+}
+
+impl Serialize for Codec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for Codec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(Self::from_str(&value))
+    }
+}
+
+impl fmt::Display for Codec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stream {
     pub index: u32,
-    pub codec_name: String,
+    #[serde(rename = "codec_name")]
+    pub codec: Codec,
     /// Cleaned up display name, e.g. "English (Forced)" vs "eng_forced"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
@@ -236,5 +319,21 @@ mod disposition_as_bits {
         let bits = u16::deserialize(deserializer)?;
         StreamDisposition::from_bits(bits)
             .ok_or_else(|| serde::de::Error::custom("invalid stream disposition bits"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Codec;
+
+    #[test]
+    fn codec_parsing_normalizes_aliases_and_case() {
+        assert_eq!(Codec::from_str("hevc"), Codec::VideoH265);
+        assert_eq!(Codec::from_str("H264"), Codec::VideoH264);
+        assert_eq!(Codec::from_str("SSA"), Codec::SubtitleAss);
+        assert_eq!(
+            Codec::from_str("SomethingCustom"),
+            Codec::Unknown("somethingcustom".to_string())
+        );
     }
 }

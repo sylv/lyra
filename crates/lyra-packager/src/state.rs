@@ -5,7 +5,7 @@ use crate::{
     profiles::{PlaylistKind, Profile, ProfileContext, SegmentLayout},
 };
 use anyhow::{Context, Result};
-use lyra_probe::ProbeData;
+use lyra_probe::{Codec, ProbeData};
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
@@ -167,7 +167,7 @@ pub fn streams_from_probe_output(
             lyra_probe::StreamKind::Subtitle => StreamType::Subtitle,
         };
 
-        let codec_name = stream.codec_name.clone();
+        let codec = stream.codec.clone();
 
         let is_primary_video = stream_type == StreamType::Video && !seen_primary_video;
         if is_primary_video {
@@ -223,7 +223,7 @@ pub fn streams_from_probe_output(
             stream_id: stream_index,
             stream_index,
             stream_type,
-            codec_name,
+            codec,
             bit_rate: stream.bit_rate,
             frame_rate: stream.frame_rate().map(f64::from),
             width: stream.width(),
@@ -579,7 +579,7 @@ fn estimate_video_profile_bandwidth(profile: &StreamProfileState) -> Option<u64>
     match profile.profile.id_name() {
         "video_copy" => Some(source_bitrate),
         "video_h264" => {
-            if profile.stream.codec_name.eq_ignore_ascii_case("h264") {
+            if matches!(profile.stream.codec, Codec::VideoH264) {
                 Some(scale_bitrate(source_bitrate, 3, 2))
             } else {
                 Some(scale_bitrate(source_bitrate, 2, 1))
@@ -669,10 +669,10 @@ mod tests {
             stream_id,
             stream_index: stream_id,
             stream_type,
-            codec_name: match stream_type {
-                StreamType::Video => "h264".to_string(),
-                StreamType::Audio => "aac".to_string(),
-                StreamType::Subtitle => "subrip".to_string(),
+            codec: match stream_type {
+                StreamType::Video => Codec::VideoH264,
+                StreamType::Audio => Codec::AudioAac,
+                StreamType::Subtitle => Codec::SubtitleSubRip,
             },
             bit_rate: Some(1_000_000),
             frame_rate: Some(24.0),

@@ -223,7 +223,7 @@ fn convert(raw: FfprobeOutput) -> Result<ProbeData> {
 }
 
 fn convert_stream(raw: FfprobeStream) -> Result<Stream> {
-    let codec_name = raw.codec_name.unwrap_or_default();
+    let codec = Codec::from_str(&raw.codec_name.unwrap_or_default());
 
     let kind = match raw.codec_type.as_deref() {
         Some("video") => StreamKind::Video,
@@ -294,14 +294,14 @@ fn convert_stream(raw: FfprobeStream) -> Result<Stream> {
             }
         }
         StreamKind::Subtitle => {
-            let format = codec_name_to_subtitle_format(&codec_name);
+            let format = codec_to_subtitle_format(&codec);
             StreamDetails::Subtitle { format }
         }
     };
 
     Ok(Stream {
         index: raw.index,
-        codec_name,
+        codec,
         display_name,
         original_title,
         bit_rate,
@@ -394,13 +394,13 @@ fn detect_hdr(
     }
 }
 
-fn codec_name_to_subtitle_format(codec_name: &str) -> Option<SubtitleFormat> {
-    match codec_name {
-        "subrip" | "srt" => Some(SubtitleFormat::Srt),
-        "ass" | "ssa" => Some(SubtitleFormat::Ass),
-        "webvtt" => Some(SubtitleFormat::WebVtt),
-        "hdmv_pgs_subtitle" | "pgs" => Some(SubtitleFormat::Pgs),
-        "dvd_subtitle" | "vobsub" | "dvdsub" => Some(SubtitleFormat::VobSub),
+fn codec_to_subtitle_format(codec: &Codec) -> Option<SubtitleFormat> {
+    match codec {
+        Codec::SubtitleSubRip => Some(SubtitleFormat::Srt),
+        Codec::SubtitleAss => Some(SubtitleFormat::Ass),
+        Codec::SubtitleWebVtt => Some(SubtitleFormat::WebVtt),
+        Codec::SubtitlePgs => Some(SubtitleFormat::Pgs),
+        Codec::SubtitleVobSub => Some(SubtitleFormat::VobSub),
         _ => None,
     }
 }

@@ -3,6 +3,7 @@ use crate::{
     model::StreamType,
     profiles::{PlaylistKind, Profile, ProfileContext, ProfileType, SegmentLayout},
 };
+use lyra_probe::Codec;
 use std::ffi::OsString;
 
 #[derive(Debug)]
@@ -44,7 +45,10 @@ impl Profile for VideoCopyProfile {
             return false;
         }
 
-        matches!(ctx.stream.codec_name.as_str(), "h264" | "h265" | "av1")
+        matches!(
+            ctx.stream.codec,
+            Codec::VideoH264 | Codec::VideoH265 | Codec::VideoAv1
+        )
     }
 
     fn build_args(

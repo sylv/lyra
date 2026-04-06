@@ -1017,8 +1017,8 @@ fn summarize_probe(probe: &ProbeData) -> ProbeSummary {
             .map(|value| value.max(0.0).floor() as i64),
         width: video.and_then(|stream| stream.width()).map(i64::from),
         height: video.and_then(|stream| stream.height()).map(i64::from),
-        video_codec: video.map(|stream| stream.codec_name.clone()),
-        audio_codec: audio.map(|stream| stream.codec_name.clone()),
+        video_codec: video.map(|stream| stream.codec.to_string()),
+        audio_codec: audio.map(|stream| stream.codec.to_string()),
         fps: video.and_then(|stream| stream.frame_rate()).map(f64::from),
         video_bitrate: video
             .and_then(|stream| stream.bit_rate)

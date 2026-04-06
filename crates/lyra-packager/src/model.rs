@@ -1,3 +1,5 @@
+use lyra_probe::Codec;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StreamType {
     Video,
@@ -10,7 +12,7 @@ pub struct StreamDescriptor {
     pub stream_id: u32,
     pub stream_index: u32,
     pub stream_type: StreamType,
-    pub codec_name: String,
+    pub codec: Codec,
     pub bit_rate: Option<u64>,
     pub frame_rate: Option<f64>,
     pub width: Option<u32>,
