@@ -275,8 +275,8 @@ async fn load_root_files(
 }
 
 fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
-    let mut batch = Vec::new();
-    let mut selected = HashSet::new();
+    let mut batch = vec![seed.clone()];
+    let mut selected = HashSet::from([seed.file_id.clone()]);
 
     for file in files {
         if selected.contains(&file.file_id) {
@@ -329,6 +329,38 @@ fn build_intro_batch(seed: &RootFile, files: &[RootFile]) -> Vec<RootFile> {
     }
 
     batch
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_file(file_id: &str, season_id: &str, item_order: i64) -> RootFile {
+        RootFile {
+            file_id: file_id.to_owned(),
+            file_path: PathBuf::from(format!("/tmp/{file_id}.mkv")),
+            audio_fingerprint: None,
+            season_id: Some(season_id.to_owned()),
+            item_order,
+            has_intro_marker: false,
+            pending_segments: true,
+        }
+    }
+
+    #[test]
+    fn build_intro_batch_keeps_seed_when_season_exceeds_batch_limit() {
+        let season_id = "season-32";
+        let files = (0..22)
+            .map(|idx| test_file(&format!("file-{idx:02}"), season_id, idx))
+            .collect::<Vec<_>>();
+
+        let seed = files[21].clone();
+        let batch = build_intro_batch(&seed, &files);
+
+        assert_eq!(batch.len(), INTRO_DETECTION_BATCH_MAX_FILES);
+        assert_eq!(batch[0].file_id, seed.file_id);
+        assert!(batch.iter().any(|file| file.file_id == seed.file_id));
+    }
 }
 
 fn decode_segments_payload(
