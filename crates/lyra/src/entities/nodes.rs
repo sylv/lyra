@@ -18,6 +18,7 @@ pub struct Model {
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     pub last_added_at: i64,
+    pub last_fingerprint_version: Option<i64>,
     pub unavailable_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,

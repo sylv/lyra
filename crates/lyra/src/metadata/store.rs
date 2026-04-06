@@ -443,6 +443,7 @@ mod tests {
             season_number: Set(season_number),
             episode_number: Set(None),
             last_added_at: Set(0),
+            last_fingerprint_version: Set(None),
             unavailable_at: Set(None),
             created_at: Set(0),
             updated_at: Set(0),
