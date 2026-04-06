@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use lyra_marker::{IntroDetectionInputFile, detect_intros_blocking};
+use lyra_marker::{IntroDetectionInputFile, detect_intros};
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let args: Vec<_> = std::env::args_os().collect();
@@ -23,7 +24,7 @@ fn main() -> anyhow::Result<()> {
     let mut input_files = collect_input_files(input_dir)?;
     input_files.sort();
 
-    let intros = detect_intros_blocking(
+    let intros = detect_intros(
         &input_files
             .iter()
             .cloned()
@@ -32,7 +33,10 @@ fn main() -> anyhow::Result<()> {
                 fingerprint_cache: None,
             })
             .collect::<Vec<_>>(),
-    )?;
+        None,
+    )
+    .await?
+    .context("intro detection cancelled unexpectedly")?;
     for detection in intros {
         println!("{}", detection.path.display());
         if let Some(intro) = detection.intro {
