@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use lyra_probe::{get_ffmpeg_path, probe_with_cancellation};
+use lyra_probe::{ProbeData, get_ffmpeg_path};
 use rusty_chromaprint::{Configuration, Fingerprinter, match_fingerprints};
 use tokio::{io::AsyncReadExt, process::Command as TokioCommand};
 use tokio::task::spawn_blocking;
@@ -30,9 +30,10 @@ pub struct IntroRange {
     pub end_seconds: f32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct IntroDetectionInputFile {
     pub path: PathBuf,
+    pub probe_data: ProbeData,
     pub fingerprint_cache: Option<Vec<u8>>,
 }
 
@@ -106,7 +107,8 @@ pub async fn detect_intros(
                 path = %path.display(),
                 "extracting fingerprint"
             );
-            let Some(fingerprint) = calc_fingerprint_async(path, cancellation_token).await?
+            let Some(fingerprint) =
+                calc_fingerprint_async(path, &input_file.probe_data, cancellation_token).await?
             else {
                 return Ok(None);
             };
@@ -196,14 +198,11 @@ pub async fn detect_intros(
 
 async fn calc_fingerprint_async(
     path: impl AsRef<Path>,
+    probe_data: &ProbeData,
     cancellation_token: Option<&CancellationToken>,
 ) -> anyhow::Result<Option<Vec<u32>>> {
     let path = path.as_ref();
-    let probe = probe_with_cancellation(path, cancellation_token).await?;
-    let Some(probe) = probe else {
-        return Ok(None);
-    };
-    let duration_seconds = probe
+    let duration_seconds = probe_data
         .duration_secs
         .context("missing file duration from probe")?;
     let scan_seconds = duration_seconds * FINGERPRINT_SCAN_RATIO;

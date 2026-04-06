@@ -1,7 +1,10 @@
-use crate::jobs::{Job, JobLease, JobOutcome};
 use crate::{
-    entities::{files, jobs as jobs_entity, libraries, node_files, nodes, nodes::NodeKind},
+    entities::{
+        file_probe, files, jobs as jobs_entity, libraries, node_files, nodes, nodes::NodeKind,
+    },
+    file_analysis,
     json_encoding,
+    jobs::{Job, JobLease, JobOutcome},
     segment_markers::{StoredFileSegment, StoredFileSegmentKind, intro_segment_from_range},
 };
 use anyhow::Context;
@@ -9,6 +12,7 @@ use lyra_marker::{
     INTRO_DETECTION_BATCH_MAX_FILES, INTRO_DETECTION_BATCH_MIN_FILES, IntroDetectionInputFile,
     detect_intros,
 };
+use lyra_probe::ProbeData;
 use sea_orm::{
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType,
@@ -27,6 +31,7 @@ pub struct RootIntroSegmentsJob;
 struct RootFile {
     file_id: String,
     file_path: PathBuf,
+    probe_data: ProbeData,
     audio_fingerprint: Option<Vec<u8>>,
     season_id: Option<String>,
     item_order: i64,
@@ -80,6 +85,38 @@ impl Job for RootIntroSegmentsJob {
                         )
                         .and_where(
                             Expr::col((files::Entity, files::Column::SegmentsJson)).is_null(),
+                        )
+                        .to_owned(),
+                ),
+            )
+            .filter(
+                Expr::col(nodes::Column::Id).not_in_subquery(
+                    Query::select()
+                        .column(nodes::Column::RootId)
+                        .from(node_files::Entity)
+                        .inner_join(
+                            nodes::Entity,
+                            Expr::col((node_files::Entity, node_files::Column::NodeId))
+                                .equals((nodes::Entity, nodes::Column::Id)),
+                        )
+                        .inner_join(
+                            files::Entity,
+                            Expr::col((node_files::Entity, node_files::Column::FileId))
+                                .equals((files::Entity, files::Column::Id)),
+                        )
+                        .and_where(
+                            Expr::col((nodes::Entity, nodes::Column::Kind)).eq(NodeKind::Episode),
+                        )
+                        .and_where(
+                            Expr::col((files::Entity, files::Column::UnavailableAt)).is_null(),
+                        )
+                        .and_where(
+                            Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
+                                Query::select()
+                                    .column(file_probe::Column::FileId)
+                                    .from(file_probe::Entity)
+                                    .to_owned(),
+                            ),
                         )
                         .to_owned(),
                 ),
@@ -145,6 +182,7 @@ impl Job for RootIntroSegmentsJob {
                 .iter()
                 .map(|file| IntroDetectionInputFile {
                     path: file.file_path.clone(),
+                    probe_data: file.probe_data.clone(),
                     fingerprint_cache: file.audio_fingerprint.clone(),
                 })
                 .collect::<Vec<_>>();
@@ -211,7 +249,7 @@ impl Job for RootIntroSegmentsJob {
 }
 
 async fn load_root_files(
-    db: &impl ConnectionTrait,
+    db: &DatabaseConnection,
     root_id: &str,
 ) -> anyhow::Result<Vec<RootFile>> {
     let rows = node_files::Entity::find()
@@ -245,8 +283,9 @@ async fn load_root_files(
 
     let mut output = Vec::with_capacity(unique_rows.len());
     for row in unique_rows {
+        let file_id = row.file_id.clone();
         let file_path = PathBuf::from(row.library_path).join(row.relative_path);
-        let segments = decode_segments_payload(row.segments_json.as_deref(), &row.file_id);
+        let segments = decode_segments_payload(row.segments_json.as_deref(), &file_id);
         let has_intro_marker = segments.as_ref().is_some_and(|segments| {
             segments
                 .iter()
@@ -254,8 +293,11 @@ async fn load_root_files(
         });
 
         output.push(RootFile {
-            file_id: row.file_id,
+            file_id,
             file_path,
+            probe_data: file_analysis::load_cached_probe(db, &row.file_id)
+                .await?
+                .with_context(|| format!("missing cached probe data for file {}", row.file_id))?,
             audio_fingerprint: row.audio_fingerprint,
             season_id: row.season_id,
             item_order: row.item_order,
@@ -339,6 +381,11 @@ mod tests {
         RootFile {
             file_id: file_id.to_owned(),
             file_path: PathBuf::from(format!("/tmp/{file_id}.mkv")),
+            probe_data: ProbeData {
+                duration_secs: Some(1.0),
+                overall_bit_rate: None,
+                streams: Vec::new(),
+            },
             audio_fingerprint: None,
             season_id: Some(season_id.to_owned()),
             item_order,

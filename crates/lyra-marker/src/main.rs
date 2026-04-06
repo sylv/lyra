@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
+use lyra_probe::probe;
 use lyra_marker::{IntroDetectionInputFile, detect_intros};
 
 #[tokio::main]
@@ -24,17 +25,16 @@ async fn main() -> anyhow::Result<()> {
     let mut input_files = collect_input_files(input_dir)?;
     input_files.sort();
 
-    let intros = detect_intros(
-        &input_files
-            .iter()
-            .cloned()
-            .map(|path| IntroDetectionInputFile {
-                path,
-                fingerprint_cache: None,
-            })
-            .collect::<Vec<_>>(),
-        None,
-    )
+    let mut detection_inputs = Vec::with_capacity(input_files.len());
+    for path in &input_files {
+        detection_inputs.push(IntroDetectionInputFile {
+            path: path.clone(),
+            probe_data: probe(path).await?,
+            fingerprint_cache: None,
+        });
+    }
+
+    let intros = detect_intros(&detection_inputs, None)
     .await?
     .context("intro detection cancelled unexpectedly")?;
     for detection in intros {

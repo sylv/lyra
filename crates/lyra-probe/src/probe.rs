@@ -127,12 +127,9 @@ pub async fn probe_with_cancellation(
 
 pub fn encode_probe_data_json_zstd(value: &ProbeData) -> Result<Vec<u8>> {
     let json = serde_json::to_vec(value).context("failed to serialize probe JSON")?;
-    let mut encoder = zstd::stream::Encoder::with_dictionary(
-        Vec::new(),
-        PROBE_ZSTD_LEVEL,
-        PROBE_ZSTD_DICTIONARY,
-    )
-    .context("failed to initialize zstd encoder for probe JSON")?;
+    let mut encoder =
+        zstd::stream::Encoder::with_dictionary(Vec::new(), PROBE_ZSTD_LEVEL, PROBE_ZSTD_DICTIONARY)
+            .context("failed to initialize zstd encoder for probe JSON")?;
     encoder
         .write_all(&json)
         .context("failed to write probe JSON into zstd encoder")?;
@@ -212,7 +209,7 @@ fn convert(raw: FfprobeOutput) -> Result<ProbeData> {
         .filter_map(|s| match convert_stream(s) {
             Ok(stream) => Some(stream),
             Err(e) => {
-                tracing::warn!("skipping stream: {e}");
+                tracing::debug!("skipping stream: {e}");
                 None
             }
         })
