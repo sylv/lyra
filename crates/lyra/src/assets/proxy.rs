@@ -15,7 +15,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use image::{GenericImageView, ImageOutputFormat, imageops::FilterType};
+use image::{GenericImageView, codecs::jpeg::JpegEncoder, imageops::FilterType};
 use reqwest::header::{CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, VARY};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
@@ -125,7 +125,7 @@ async fn serve_asset(
             let resized = image.resize(target_width, target_height, FilterType::Lanczos3);
 
             let mut cursor = Cursor::new(Vec::new());
-            resized.write_to(&mut cursor, ImageOutputFormat::Jpeg(80))?;
+            JpegEncoder::new_with_quality(&mut cursor, 80).encode_image(&resized)?;
             Ok(cursor.into_inner())
         })
         .await??;
