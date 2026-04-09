@@ -205,7 +205,7 @@ async fn get_init_state(
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
     lyra_probe::init_ffmpeg().unwrap();
 
     let config = get_config();

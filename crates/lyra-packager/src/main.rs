@@ -25,7 +25,7 @@ struct SegmentQuery {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
 
     let input = parse_single_input_path_arg()?;
     let options = BuildOptions {

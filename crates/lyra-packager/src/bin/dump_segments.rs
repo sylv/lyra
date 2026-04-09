@@ -8,7 +8,7 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
 
     let mut args = std::env::args();
     let program = args.next().unwrap_or_else(|| "dump-segments".to_string());

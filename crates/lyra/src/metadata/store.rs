@@ -1,5 +1,5 @@
 use crate::entities::{
-    assets::{self, AssetKind},
+    assets::{self, AssetKind, AssetType},
     metadata_source::MetadataSource,
     node_metadata, nodes,
 };
@@ -382,6 +382,7 @@ async fn ensure_remote_asset(
     let asset = assets::ActiveModel {
         id: Set(ids::generate_ulid()),
         kind: Set(kind),
+        asset_type: Set(AssetType::Image),
         source_url: Set(Some(source_url.to_string())),
         created_at: Set(now),
         ..Default::default()
@@ -610,6 +611,9 @@ mod tests {
         assert_eq!(poster_asset.kind, AssetKind::Poster);
         assert_eq!(thumbnail_asset.kind, AssetKind::Thumbnail);
         assert_eq!(background_asset.kind, AssetKind::Background);
+        assert_eq!(poster_asset.asset_type, AssetType::Image);
+        assert_eq!(thumbnail_asset.asset_type, AssetType::Image);
+        assert_eq!(background_asset.asset_type, AssetType::Image);
 
         Ok(())
     }

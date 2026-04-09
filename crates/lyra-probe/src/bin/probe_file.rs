@@ -2,7 +2,7 @@ use lyra_probe::probe;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
 
     let file_path = std::env::args()
         .nth(1)

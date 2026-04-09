@@ -4,7 +4,7 @@ use std::{env, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
     let input_file: PathBuf = env::args()
         .nth(1)
         .context("Please provide a video file path as the first argument")?

@@ -6,7 +6,7 @@ use lyra_probe::probe;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
 
     let args: Vec<_> = std::env::args_os().collect();
     if args.len() != 2 {

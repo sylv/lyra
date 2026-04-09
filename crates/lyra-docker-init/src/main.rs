@@ -19,7 +19,7 @@ struct UserConfig {
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
 
     let command = parse_command();
     let target = parse_target_user()?;

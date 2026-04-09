@@ -18,6 +18,7 @@ tower-http = { workspace = true, features = [
 ] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+lyra-tracing = { path = "../lyra-tracing" }
 nix = { workspace = true, features = ["signal"] }
 notify.workspace = true
 libc.workspace = true

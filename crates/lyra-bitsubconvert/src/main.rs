@@ -5,7 +5,7 @@ use tokio::fs;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    lyra_tracing::init();
 
     let model_dir = PathBuf::from("models");
     let input_path = std::env::args()

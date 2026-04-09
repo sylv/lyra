@@ -1,0 +1,7 @@
+[package]
+name = "lyra-tracing"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

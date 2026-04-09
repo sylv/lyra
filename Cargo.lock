@@ -859,7 +859,7 @@ dependencies = [
  "serde_core",
  "serde_json",
  "toml",
- "winnow 1.0.1",
+ "winnow",
  "yaml-rust2",
 ]
 
@@ -2733,6 +2733,7 @@ dependencies = [
  "lyra-probe",
  "lyra-thumbnail",
  "lyra-timeline-preview",
+ "lyra-tracing",
  "nix 0.30.1",
  "notify",
  "once_cell",
@@ -2771,10 +2772,10 @@ dependencies = [
  "image",
  "itertools",
  "lyra-probe",
+ "lyra-tracing",
  "ndarray",
  "oar-ocr-core",
  "ort",
- "pgs-rs",
  "rayon",
  "reqwest",
  "serde_json",
@@ -2792,6 +2793,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "libc",
+ "lyra-tracing",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2802,6 +2804,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "lyra-probe",
+ "lyra-tracing",
  "rusty-chromaprint",
  "tokio",
  "tokio-util",
@@ -2842,6 +2845,7 @@ dependencies = [
  "isolang",
  "libc",
  "lyra-probe",
+ "lyra-tracing",
  "serde",
  "serde_json",
  "tokio",
@@ -2873,6 +2877,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitflags 2.11.0",
+ "lyra-tracing",
  "serde",
  "serde_json",
  "tokio",
@@ -2888,6 +2893,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "image",
+ "lyra-tracing",
  "tokio",
  "tokio-util",
  "tracing",
@@ -2900,10 +2906,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "image",
+ "lyra-tracing",
  "tempfile",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "lyra-tracing"
+version = "0.1.0"
+dependencies = [
  "tracing-subscriber",
 ]
 
@@ -3693,18 +3707,6 @@ checksum = "89815c69d36021a140146f26659a81d6c2afa33d216d736dd4be5381a7362220"
 dependencies = [
  "pest",
  "sha2 0.10.9",
-]
-
-[[package]]
-name = "pgs-rs"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96834f17811c35a8919ad50b9b6c3a20ebfe6c15cffff0995b39f58c7a892760"
-dependencies = [
- "struple",
- "thiserror",
- "winnow 0.7.15",
- "yuv",
 ]
 
 [[package]]
@@ -5208,26 +5210,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "struple"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8574c4bc0d1a23fd92df103574812badd294dc3dea6e80b095f60a87a5fa5938"
-dependencies = [
- "struple-impl",
-]
-
-[[package]]
-name = "struple-impl"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "934863dc48fa9e2b100706446b7f08e56612b0f867987372ef1e2dbc97c92e6e"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "subtile"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5590,7 +5572,7 @@ dependencies = [
  "toml_datetime",
  "toml_parser",
  "toml_writer",
- "winnow 1.0.1",
+ "winnow",
 ]
 
 [[package]]
@@ -5611,7 +5593,7 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "toml_parser",
- "winnow 1.0.1",
+ "winnow",
 ]
 
 [[package]]
@@ -5620,7 +5602,7 @@ version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
- "winnow 1.0.1",
+ "winnow",
 ]
 
 [[package]]
@@ -6543,15 +6525,6 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
 name = "winnow"
-version = "0.7.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-name = "winnow"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09dac053f1cd375980747450bfc7250c264eaae0583872e845c0c7cd578872b5"
@@ -6716,15 +6689,6 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure",
-]
-
-[[package]]
-name = "yuv"
-version = "0.8.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d3a7e2cda3061858987ee2fb028f61695f5ee13f9490d75be6c3900df9a4ea"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
