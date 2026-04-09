@@ -22,6 +22,7 @@ pub struct Model {
     pub segments_json: Option<Vec<u8>>,
     #[graphql(skip)]
     pub keyframes_json: Option<Vec<u8>>,
+    pub subtitles_extracted_at: Option<i64>,
     pub unavailable_at: Option<i64>,
     pub scanned_at: Option<i64>,
     pub discovered_at: i64,
@@ -43,6 +44,8 @@ pub enum Relation {
     NodeFiles,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
+    #[sea_orm(has_many = "super::file_subtitles::Entity")]
+    FileSubtitles,
 }
 
 impl Related<super::file_probe::Entity> for Entity {
@@ -66,6 +69,12 @@ impl Related<super::node_files::Entity> for Entity {
 impl Related<super::watch_progress::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::WatchProgress.def()
+    }
+}
+
+impl Related<super::file_subtitles::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileSubtitles.def()
     }
 }
 

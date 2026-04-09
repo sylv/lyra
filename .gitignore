@@ -16,4 +16,15 @@ lyra.yml
 # please god just read AGENTS.md like everyone else
 CLAUDE.md
 
+# you are not important enough to get your own file or directory
+.codex
+
 samples*/
+frames*/
+dump*/
+crates/lyra-bitsubconvert/models/
+
+*.sup
+*.idx
+*.sub
+*.vtt

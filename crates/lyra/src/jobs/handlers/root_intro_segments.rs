@@ -42,7 +42,7 @@ impl Job for RootIntroSegmentsJob {
     type Model = nodes::Model;
 
     const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::NodeGenerateIntroSegments;
-    const SCHEDULING: JobScheduling = JobScheduling::Heavy(2);
+    const SCHEDULING: JobScheduling = JobScheduling::Heavy(4);
 
     fn query(&self) -> Select<Self::Entity> {
         nodes::Entity::find()

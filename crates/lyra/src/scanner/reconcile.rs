@@ -908,6 +908,7 @@ mod tests {
             keyframes_json: None,
             unavailable_at: Some(10),
             scanned_at: Some(10),
+            subtitles_extracted_at: None,
             discovered_at: 1,
         };
         let new_file = files::Model {
@@ -924,6 +925,7 @@ mod tests {
             unavailable_at: None,
             scanned_at: Some(20),
             discovered_at: 20,
+            subtitles_extracted_at: None,
         };
 
         let rows =

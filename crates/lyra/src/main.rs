@@ -63,6 +63,8 @@ mod metadata;
 mod scanner;
 mod segment_markers;
 mod signer;
+mod subtitle_files;
+mod subtitles;
 mod watch_session;
 
 type AppSchema = Schema<

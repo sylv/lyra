@@ -1,4 +1,5 @@
 use crate::config::get_config;
+use crate::subtitles::{extension_for_asset_file, maybe_compressed_extension};
 use anyhow::Context;
 use image::{GenericImageView, ImageFormat};
 use sha2::{Digest, Sha256};
@@ -19,6 +20,15 @@ pub struct PreparedImage {
     pub width: i64,
     pub height: i64,
     pub extension: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedFile {
+    pub hash_sha256: String,
+    pub size_bytes: i64,
+    pub mime_type: String,
+    pub content_encoding: Option<String>,
+    pub extension: String,
 }
 
 pub fn hash_bytes_sha256_hex(bytes: &[u8]) -> String {
@@ -50,11 +60,7 @@ pub fn prepare_image(bytes: &[u8]) -> anyhow::Result<PreparedImage> {
 }
 
 pub fn extension_for_mime(mime_type: &str) -> anyhow::Result<&'static str> {
-    match mime_type {
-        "image/jpeg" => Ok("jpg"),
-        "image/webp" => Ok("webp"),
-        _ => Err(anyhow::anyhow!("unsupported mime type: {mime_type}")),
-    }
+    extension_for_asset_file(mime_type)
 }
 
 pub fn get_asset_output_path(hash_sha256: &str, extension: &str) -> anyhow::Result<PathBuf> {
@@ -81,6 +87,16 @@ pub fn get_asset_output_path_from_mime(
 ) -> anyhow::Result<PathBuf> {
     let extension = extension_for_mime(mime_type)?;
     get_asset_output_path(hash_sha256, extension)
+}
+
+pub fn get_asset_output_path_from_mime_and_encoding(
+    hash_sha256: &str,
+    mime_type: &str,
+    content_encoding: Option<&str>,
+) -> anyhow::Result<PathBuf> {
+    let extension = extension_for_mime(mime_type)?;
+    let extension = maybe_compressed_extension(extension, content_encoding);
+    get_asset_output_path(hash_sha256, &extension)
 }
 
 pub fn get_transformed_cache_path(
@@ -136,4 +152,22 @@ pub async fn persist_image_bytes(bytes: &[u8], image: &PreparedImage) -> anyhow:
     let output_path = get_asset_output_path(&image.hash_sha256, image.extension)?;
     persist_bytes_atomically(&output_path, bytes).await?;
     Ok(output_path)
+}
+
+pub fn prepare_file_bytes(
+    bytes: &[u8],
+    mime_type: &str,
+    content_encoding: Option<&str>,
+) -> anyhow::Result<PreparedFile> {
+    let hash_sha256 = hash_bytes_sha256_hex(bytes);
+    let extension = extension_for_asset_file(mime_type)?;
+    let extension = maybe_compressed_extension(extension, content_encoding);
+
+    Ok(PreparedFile {
+        hash_sha256,
+        size_bytes: i64::try_from(bytes.len()).context("file byte length exceeds i64")?,
+        mime_type: mime_type.to_string(),
+        content_encoding: content_encoding.map(str::to_string),
+        extension,
+    })
 }

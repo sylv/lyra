@@ -4,7 +4,8 @@ use crate::jobs::{
     HeavyJobRunner, HeavyJobScheduler, LightJobWorker,
     handlers::{
         asset_download::AssetDownloadJob, asset_thumbhash::AssetThumbhashJob,
-        file_probe::FileProbeJob, file_thumbnail::FileThumbnailJob,
+        file_probe::FileProbeJob, file_subtitle_extract::FileSubtitleExtractJob,
+        file_subtitle_process::FileSubtitleProcessJob, file_thumbnail::FileThumbnailJob,
         file_timeline_preview::FileTimelinePreviewJob, root_intro_segments::RootIntroSegmentsJob,
     },
     manager::GenericHeavyJobRunner,
@@ -50,6 +51,22 @@ pub fn load_registered_jobs(
     );
     register_job(
         Arc::new(FileProbeJob),
+        &mut jobs,
+        &mut heavy_jobs,
+        pool,
+        wake_signal.clone(),
+        startup_scans_complete.clone(),
+    );
+    register_job(
+        Arc::new(FileSubtitleExtractJob),
+        &mut jobs,
+        &mut heavy_jobs,
+        pool,
+        wake_signal.clone(),
+        startup_scans_complete.clone(),
+    );
+    register_job(
+        Arc::new(FileSubtitleProcessJob),
         &mut jobs,
         &mut heavy_jobs,
         pool,

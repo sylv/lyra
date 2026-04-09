@@ -1,4 +1,4 @@
-import type { ItemPlaybackQuery } from "../../../@generated/gql/graphql";
+import { TrackDispositionPreference, type ItemPlaybackQuery } from "../../../@generated/gql/graphql";
 import { useClient, useMutation } from "urql";
 import { playerContext, setPlayerState } from "../player-context";
 import { ItemPlaybackQuery as ItemPlaybackQueryDoc, SetPreferredAudio, SetPreferredSubtitle } from "../player-queries";
@@ -52,12 +52,11 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 		}
 	};
 
-	const onSubtitleTrackChange = (trackId: number | null) => {
-		const { setSubtitleDisplay, setSubtitleTrack } = playerContext.getState().actions;
-		if (trackId === null || trackId < 0) {
-			setSubtitleDisplay(false);
-			setSubtitleTrack(-1);
-			setPlayerState({ selectedSubtitleTrackId: trackId === null ? null : -1 });
+	const onSubtitleTrackChange = (trackId: string | null) => {
+		const { setSubtitleTrack } = playerContext.getState().actions;
+		if (trackId === null || trackId === "") {
+			setSubtitleTrack(trackId);
+			setPlayerState({ selectedSubtitleTrackId: trackId });
 			setPreferredSubtitle({ language: null, disposition: null })
 				.then((result) => {
 					if (result.error) {
@@ -71,16 +70,19 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 			return;
 		}
 
-		if (Number.isNaN(trackId)) return;
-		setSubtitleDisplay(true);
 		setSubtitleTrack(trackId);
 		setPlayerState({ selectedSubtitleTrackId: trackId });
 
-		const serverTrack = currentMedia?.file?.tracks?.find(
-			(track) => track.trackType === "SUBTITLE" && track.manifestIndex === trackId,
-		);
+		const serverTrack = currentMedia?.file?.subtitleTracks?.find((track) => track.id === trackId);
+		const disposition = serverTrack?.dispositions?.includes("Commentary")
+			? TrackDispositionPreference.Commentary
+			: serverTrack?.dispositions?.includes("SDH")
+				? TrackDispositionPreference.Sdh
+				: serverTrack?.dispositions?.includes("Forced")
+					? null
+					: TrackDispositionPreference.Normal;
 		if (serverTrack?.language != null) {
-			setPreferredSubtitle({ language: serverTrack.language, disposition: serverTrack.disposition ?? null })
+			setPreferredSubtitle({ language: serverTrack.language, disposition })
 				.then((result) => {
 					if (result.error) {
 						throw result.error;

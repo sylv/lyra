@@ -39,6 +39,7 @@ interface PlayerVideoProps {
 
 export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shouldPromptResume }) => {
 	const { videoRef, controllerRef } = usePlayerRefsContext();
+	const subtitleTrackElementsRef = useRef(new Map<string, HTMLTrackElement>());
 	const [, updateWatchProgress] = useMutation(UpdateWatchState);
 	const [, watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
 	const [, watchSessionAction] = useMutation(WatchSessionAction);
@@ -188,12 +189,18 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			controllerRef.current?.setAudioTrack(trackId);
 		};
 
-		const setSubtitleTrack = (trackId: number) => {
-			controllerRef.current?.setSubtitleTrack(trackId);
-		};
+		const setSubtitleTrack = (trackId: string | null) => {
+			const video = videoRef.current;
+			if (!video || !currentMedia?.file?.subtitleTracks) return;
 
-		const setSubtitleDisplay = (enabled: boolean) => {
-			controllerRef.current?.setSubtitleDisplay(enabled);
+			const selectedTrackId = trackId === null ? currentMedia.file.recommendedSubtitleTrackId : trackId;
+			for (const track of currentMedia.file.subtitleTracks) {
+				const element = subtitleTrackElementsRef.current.get(track.id);
+				if (!element?.track) continue;
+				element.track.mode = selectedTrackId === track.id ? "showing" : "disabled";
+			}
+
+			setPlayerState({ selectedSubtitleTrackId: trackId });
 		};
 
 		const switchItem = (itemId: string) => {
@@ -215,10 +222,9 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			setVolume,
 			setAudioTrack,
 			setSubtitleTrack,
-			setSubtitleDisplay,
 			switchItem,
 		});
-	}, [controllerRef, videoRef, watchSessionAction]);
+	}, [controllerRef, currentMedia?.file?.recommendedSubtitleTrackId, currentMedia?.file?.subtitleTracks, videoRef, watchSessionAction]);
 
 	useEffect(() => {
 		if (!videoRef.current) return;
@@ -249,6 +255,18 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 
 		setPlayerState({ errorMessage: null });
 		setPlayerLoading(true);
+		setPlayerState({
+			subtitleTrackOptions:
+				currentMedia.file.subtitleTracks?.map((track) => ({
+					id: track.id,
+					label: track.label,
+					source: track.source,
+					tags: track.dispositions.concat(track.source === "EXTRACTED" ? [] : [track.source]),
+					language: track.language ?? null,
+					signedUrl: track.asset.signedUrl,
+				})) ?? [],
+			selectedSubtitleTrackId: null,
+		});
 
 		const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/master.m3u8`;
 		const initialPositionSeconds = playerContext.getState().state.pendingInitialPosition;
@@ -293,6 +311,11 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			controllerRef.current = null;
 		};
 	}, [autoplay, currentMediaId, currentFileId, controllerRef, shouldPromptResume, videoRef]);
+
+	useEffect(() => {
+		const selectedSubtitleTrackId = playerContext.getState().state.selectedSubtitleTrackId;
+		playerContext.getState().actions.setSubtitleTrack(selectedSubtitleTrackId);
+	}, [currentMedia?.file?.recommendedSubtitleTrackId, currentMedia?.file?.subtitleTracks]);
 
 	useEffect(() => {
 		if (!currentMedia?.file) return;
@@ -705,7 +728,22 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			autoPlay={autoplayEnabled}
 			controls={false}
 			disablePictureInPicture
-		/>
+		>
+			{currentMedia?.file?.subtitleTracks?.map((track) => (
+				<track
+					key={track.id}
+					ref={(element) => {
+						if (element) subtitleTrackElementsRef.current.set(track.id, element);
+						else subtitleTrackElementsRef.current.delete(track.id);
+					}}
+					src={track.asset.signedUrl}
+					label={track.label}
+					srcLang={track.language ?? undefined}
+					kind="subtitles"
+					default={currentMedia.file?.recommendedSubtitleTrackId === track.id}
+				/>
+			))}
+		</video>
 	);
 };
 

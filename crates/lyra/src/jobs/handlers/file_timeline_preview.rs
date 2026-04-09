@@ -29,7 +29,7 @@ impl Job for FileTimelinePreviewJob {
     type Model = files::Model;
 
     const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileGenerateTimelinePreview;
-    const SCHEDULING: JobScheduling = JobScheduling::Heavy(3);
+    const SCHEDULING: JobScheduling = JobScheduling::Heavy(5);
 
     fn query(&self) -> Select<Self::Entity> {
         files::Entity::find()

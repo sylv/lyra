@@ -1,12 +1,16 @@
 /* oxlint-disable jsx_a11y/click-events-have-key-events, jsx_a11y/no-static-element-interactions */
 import {
+	CaptionsIcon,
+	FileTextIcon,
 	MaximizeIcon,
 	MinimizeIcon,
+	ScanSearchIcon,
 	PauseIcon,
 	PlayIcon,
 	SettingsIcon,
 	SkipBackIcon,
 	SkipForwardIcon,
+	SparklesIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FC } from "react";
 import type { FragmentType } from "../../../@generated/gql";
@@ -42,7 +46,7 @@ interface PlayerControlsProps {
 	onPreviousItem: () => void;
 	onNextItem: () => void;
 	onAudioTrackChange: (trackId: number | null) => void;
-	onSubtitleTrackChange: (trackId: number | null) => void;
+	onSubtitleTrackChange: (trackId: string | null) => void;
 	dropdownPortalContainer: HTMLElement | null;
 }
 
@@ -210,26 +214,34 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 											</DropdownMenuItem>
 										) : (
 											<DropdownMenuRadioGroup
-												value={selectedSubtitleTrackId?.toString() ?? "auto"}
+												value={selectedSubtitleTrackId === "" ? "off" : (selectedSubtitleTrackId ?? "auto")}
 												onValueChange={(value) => {
 													if (value === "auto") onSubtitleTrackChange(null);
-													else if (value === "-1") onSubtitleTrackChange(-1);
-													else onSubtitleTrackChange(Number.parseInt(value, 10));
+													else if (value === "off") onSubtitleTrackChange("");
+													else onSubtitleTrackChange(value);
 												}}
 											>
 												<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="auto">
 													Auto
 												</DropdownMenuRadioItem>
-												<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="-1">
+												<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" value="off">
 													Off
 												</DropdownMenuRadioItem>
 												{subtitleTrackOptions.map((track) => (
 													<DropdownMenuRadioItem
 														className="py-2.5 focus:bg-zinc-800"
 														key={track.id}
-														value={track.id.toString()}
+														value={track.id}
 													>
-														{track.label}
+														<div className="flex min-w-0 items-start gap-2">
+															<span className="mt-0.5 text-zinc-400">{subtitleSourceIcon(track.source)}</span>
+															<span className="min-w-0">
+																<span className="block truncate">{track.label}</span>
+																{track.tags.length > 0 ? (
+																	<span className="block text-xs text-zinc-400">{track.tags.join(", ")}</span>
+																) : null}
+															</span>
+														</div>
 													</DropdownMenuRadioItem>
 												))}
 											</DropdownMenuRadioGroup>
@@ -261,4 +273,17 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 			</div>
 		</div>
 	);
+};
+
+const subtitleSourceIcon = (source: "EXTRACTED" | "CONVERTED" | "OCR" | "GENERATED") => {
+	switch (source) {
+		case "EXTRACTED":
+			return <CaptionsIcon className="size-4" />;
+		case "CONVERTED":
+			return <FileTextIcon className="size-4" />;
+		case "OCR":
+			return <ScanSearchIcon className="size-4" />;
+		case "GENERATED":
+			return <SparklesIcon className="size-4" />;
+	}
 };

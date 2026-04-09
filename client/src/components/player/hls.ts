@@ -15,8 +15,6 @@ export interface ResumeConfig {
 
 export interface PlayerController {
 	setAudioTrack(id: number): void;
-	setSubtitleTrack(id: number): void;
-	setSubtitleDisplay(enabled: boolean): void;
 	destroy(): void;
 }
 
@@ -134,34 +132,11 @@ export const createHlsPlayer = async (
 		});
 	};
 
-	const syncSubtitleTracks = () => {
-		const tracks = hls.subtitleTracks.map((_track, id) => {
-			const serverTrack = serverTrackByManifestIndex("SUBTITLE", id);
-			return { id, label: serverTrack?.displayName ?? `Subtitle ${id + 1}` };
-		});
-
-		setPlayerState({
-			subtitleTrackOptions: tracks,
-			selectedSubtitleTrackId: tracks.length > 0 ? (hls.subtitleTrack >= 0 ? hls.subtitleTrack : -1) : null,
-		});
-	};
-
 	const applyRecommendations = () => {
 		for (const recommendation of recommendations) {
 			if (recommendation.trackType === "AUDIO" && recommendation.enabled) {
 				hls.audioTrack = recommendation.manifestIndex;
 			}
-		}
-
-		const enabledSubtitles = recommendations.find(
-			(recommendation) => recommendation.trackType === "SUBTITLE" && recommendation.enabled,
-		);
-		if (enabledSubtitles) {
-			hls.subtitleDisplay = true;
-			hls.subtitleTrack = enabledSubtitles.manifestIndex;
-		} else {
-			hls.subtitleDisplay = false;
-			hls.subtitleTrack = -1;
 		}
 	};
 
@@ -183,7 +158,6 @@ export const createHlsPlayer = async (
 	hls.on(Hls.Events.MANIFEST_PARSED, () => {
 		applyPreferredVideoLevel();
 		syncAudioTracks();
-		syncSubtitleTracks();
 		applyRecommendations();
 
 		if (
@@ -242,19 +216,6 @@ export const createHlsPlayer = async (
 			setPlayerState({ selectedAudioTrackId: data.id });
 		}
 	});
-	hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, syncSubtitleTracks);
-	hls.on(Hls.Events.SUBTITLE_TRACKS_CLEARED, () => {
-		setPlayerState({ subtitleTrackOptions: [], selectedSubtitleTrackId: null });
-	});
-	hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (_event, data) => {
-		if (typeof data.id === "number") {
-			setPlayerState({ selectedSubtitleTrackId: data.id });
-		} else if (hls.subtitleTracks.length > 0) {
-			setPlayerState({ selectedSubtitleTrackId: -1 });
-		} else {
-			setPlayerState({ selectedSubtitleTrackId: null });
-		}
-	});
 
 	hls.loadSource(hlsUrl);
 	hls.attachMedia(video);
@@ -262,12 +223,6 @@ export const createHlsPlayer = async (
 	return {
 		setAudioTrack(id) {
 			hls.audioTrack = id;
-		},
-		setSubtitleTrack(id) {
-			hls.subtitleTrack = id;
-		},
-		setSubtitleDisplay(enabled) {
-			hls.subtitleDisplay = enabled;
 		},
 		destroy() {
 			hls.destroy();

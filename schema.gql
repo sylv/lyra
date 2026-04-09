@@ -11,7 +11,9 @@ type Asset {
 	sourceUrl: String
 	hashSha256: String
 	sizeBytes: Int
+	uncompressedSizeBytes: Int
 	mimeType: String
+	contentEncoding: String
 	height: Int
 	width: Int
 	thumbhash: String
@@ -75,12 +77,15 @@ type File {
 	height: Int
 	width: Int
 	editionName: String
+	subtitlesExtractedAt: Int
 	unavailableAt: Int
 	scannedAt: Int
 	discoveredAt: Int!
 	timelinePreview: [TimelinePreviewSheet!]!
 	tracks: [TrackInfo!]!
 	recommendedTracks: [RecommendedTrack!]!
+	subtitleTracks: [SubtitleTrack!]!
+	recommendedSubtitleTrackId: String
 	segments: [FileSegment!]!
 }
 
@@ -196,6 +201,7 @@ type Node {
 	seasonNumber: Int
 	episodeNumber: Int
 	lastAddedAt: Int!
+	lastFingerprintVersion: Int
 	unavailableAt: Int
 	createdAt: Int!
 	updatedAt: Int!
@@ -361,6 +367,36 @@ type RecommendedTrack {
 type SubscriptionRoot {
 	contentUpdates: ContentUpdateEvent!
 	watchSessionBeacons(sessionId: String!, playerId: String!): WatchSessionBeacon!
+}
+
+enum SubtitleKind {
+	SRT
+	VTT
+	ASS
+	MOV_TEXT
+	TEXT
+	TTML
+	PGS
+	VOB_SUB
+}
+
+enum SubtitleSource {
+	EXTRACTED
+	CONVERTED
+	OCR
+	GENERATED
+}
+
+type SubtitleTrack {
+	id: String!
+	streamIndex: Int!
+	kind: SubtitleKind!
+	source: SubtitleSource!
+	label: String!
+	language: String
+	dispositions: [String!]!
+	asset: Asset!
+	derivedFromSubtitleId: String
 }
 
 type TimelinePreviewSheet {

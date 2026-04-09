@@ -89,6 +89,14 @@ impl Job for FileProbeJob {
             .exec(db)
             .await
             .with_context(|| format!("failed storing probe for file {}", file.id))?;
+
+            files::Entity::update(files::ActiveModel {
+                id: Set(file.id.clone()),
+                subtitles_extracted_at: Set(None),
+                ..Default::default()
+            })
+            .exec(db)
+            .await?;
         }
 
         if needs_keyframes {

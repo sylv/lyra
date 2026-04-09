@@ -29,7 +29,7 @@ impl Job for FileThumbnailJob {
     type Model = files::Model;
 
     const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::FileGenerateThumbnail;
-    const SCHEDULING: JobScheduling = JobScheduling::Heavy(1);
+    const SCHEDULING: JobScheduling = JobScheduling::Heavy(3);
 
     fn query(&self) -> Select<Self::Entity> {
         files::Entity::find()

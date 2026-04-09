@@ -42,6 +42,21 @@ export const ItemPlaybackQuery = graphql(`
 					trackType
 					enabled
 				}
+				subtitleTracks {
+					id
+					streamIndex
+					kind
+					source
+					label
+					language
+					dispositions
+					derivedFromSubtitleId
+					asset {
+						id
+						signedUrl
+					}
+				}
+				recommendedSubtitleTrackId
 				segments {
 					kind
 					startMs

@@ -5,10 +5,12 @@ pub mod storage;
 use crate::signer::sign;
 pub use proxy::get_assets_router;
 use serde::{Deserialize, Serialize};
-pub use service::{create_local_asset_from_bytes, download_asset_to_local};
+pub use service::{
+    create_local_asset_from_bytes, create_local_file_asset_from_bytes, download_asset_to_local,
+};
 use std::time::Duration;
 
-const ASSET_SIGNATURE_TTL: Duration = Duration::from_hours(1);
+const ASSET_SIGNATURE_TTL: Duration = Duration::from_hours(24);
 
 pub fn sign_asset_url(asset_id: &str) -> String {
     let payload = AssetPayload {

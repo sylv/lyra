@@ -25,6 +25,9 @@ pub fn get_ffprobe_path() -> String {
     get_paths().ffprobe_path
 }
 
+/// optionally initialize ffmpeg paths explicitly
+/// if not called, paths are lazy-inited. This is only useful if you want to catch errors early.
+/// generally, only the "main" process should call this. Once-off scripts and libraries should not.
 pub fn init_ffmpeg() -> Result<()> {
     let _ = get_paths();
     Ok(())

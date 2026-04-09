@@ -9,7 +9,7 @@ members = [
     "crates/lyra-thumbnail",
     "crates/lyra-timeline-preview",
     "crates/lyra-marker",
-    "crates/lyra-probe",
+    "crates/lyra-probe", "crates/lyra-bitsubconvert",
 ]
 resolver = "3"
 default-members = ["crates/lyra"]

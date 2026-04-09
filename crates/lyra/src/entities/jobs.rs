@@ -41,6 +41,10 @@ pub enum JobKind {
     NodeGenerateIntroSegments,
     #[sea_orm(num_value = 7)]
     NodeSyncMetadataRoot,
+    #[sea_orm(num_value = 8)]
+    FileExtractSubtitles,
+    #[sea_orm(num_value = 9)]
+    FileProcessSubtitle,
 }
 
 impl JobKind {
@@ -53,6 +57,8 @@ impl JobKind {
             JobKind::AssetGenerateThumbhash => 5,
             JobKind::NodeGenerateIntroSegments => 6,
             JobKind::NodeSyncMetadataRoot => 7,
+            JobKind::FileExtractSubtitles => 8,
+            JobKind::FileProcessSubtitle => 9,
         }
     }
 }

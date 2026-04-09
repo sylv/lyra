@@ -2,7 +2,15 @@ import { create } from "zustand";
 import { useStore } from "zustand/react";
 import { createJSONStorage, persist, type PersistOptions } from "zustand/middleware";
 
-type TrackOption = { id: number; label: string };
+type AudioTrackOption = { id: number; label: string };
+export type SubtitleTrackOption = {
+	id: string;
+	label: string;
+	source: "EXTRACTED" | "CONVERTED" | "OCR" | "GENERATED";
+	tags: string[];
+	language: string | null;
+	signedUrl: string;
+};
 type HoveredCard = "previous" | "next" | null;
 export type PlayerWatchSessionMode = "ADVISORY" | "SYNCED" | null;
 export type PlayerWatchSessionEffectiveState = "PLAYING" | "PAUSED" | "BUFFERING" | "INACTIVE_PLAYERS" | null;
@@ -58,10 +66,10 @@ export interface PlayerState {
 	bufferedRanges: Array<{ start: number; end: number }>;
 	videoAspectRatio: number;
 	errorMessage: string | null;
-	audioTrackOptions: TrackOption[];
+	audioTrackOptions: AudioTrackOption[];
 	selectedAudioTrackId: number | null;
-	subtitleTrackOptions: TrackOption[];
-	selectedSubtitleTrackId: number | null;
+	subtitleTrackOptions: SubtitleTrackOption[];
+	selectedSubtitleTrackId: string | null;
 	ended: boolean;
 	upNextDismissed: boolean;
 	upNextCountdownCancelled: boolean;
@@ -87,8 +95,7 @@ export interface PlayerActions {
 	toggleMute: () => void;
 	setVolume: (volume: number) => void;
 	setAudioTrack: (trackId: number) => void;
-	setSubtitleTrack: (trackId: number) => void;
-	setSubtitleDisplay: (enabled: boolean) => void;
+	setSubtitleTrack: (trackId: string | null) => void;
 	showControlsTemporarily: () => void;
 	beginControlsInteraction: () => void;
 	endControlsInteraction: () => void;
@@ -157,7 +164,6 @@ const initialActions: PlayerActions = {
 	setVolume: noop,
 	setAudioTrack: noop,
 	setSubtitleTrack: noop,
-	setSubtitleDisplay: noop,
 	showControlsTemporarily: noop,
 	beginControlsInteraction: noop,
 	endControlsInteraction: noop,

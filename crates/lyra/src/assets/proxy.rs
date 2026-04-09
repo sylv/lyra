@@ -2,7 +2,7 @@ use crate::{
     AppState,
     assets::{AssetPayload, storage},
     auth::LazyRequestAuth,
-    entities::assets as assets_entity,
+    entities::assets::{self as assets_entity, AssetType},
     error::AppError,
     jobs::{self, AssetDownloadJob},
     signer::verify,
@@ -11,11 +11,12 @@ use axum::{
     Router,
     body::Body,
     extract::{Path, Query, State},
+    http::{HeaderMap, header},
     response::{IntoResponse, Response},
     routing::get,
 };
 use image::{GenericImageView, ImageOutputFormat, imageops::FilterType};
-use reqwest::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE};
+use reqwest::header::{CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, VARY};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
 use std::{io::Cursor, path::Path as FsPath, time::Duration};
@@ -40,6 +41,7 @@ pub fn get_assets_router() -> Router<AppState> {
 async fn get_asset(
     _lazy_auth: LazyRequestAuth,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path((_unchecked_asset_id, signature)): Path<(String, String)>,
     Query(params): Query<TranscodeParams>,
 ) -> Result<Response, AppError> {
@@ -64,12 +66,13 @@ async fn get_asset(
             .ok_or_else(|| anyhow::anyhow!("asset disappeared after download job"))?;
     }
 
-    Ok(serve_asset(&asset, &params).await?)
+    Ok(serve_asset(&asset, &params, &headers).await?)
 }
 
 async fn serve_asset(
     asset: &assets_entity::Model,
     params: &TranscodeParams,
+    headers: &HeaderMap,
 ) -> Result<Response, AppError> {
     let hash_sha256 = asset
         .hash_sha256
@@ -80,7 +83,24 @@ async fn serve_asset(
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("asset has no mime_type"))?;
 
-    let original_path = storage::get_asset_output_path_from_mime(hash_sha256, mime_type)?;
+    let original_path = storage::get_asset_output_path_from_mime_and_encoding(
+        hash_sha256,
+        mime_type,
+        asset.content_encoding.as_deref(),
+    )?;
+    if asset.asset_type == AssetType::File {
+        if params.width.is_some() || params.height.is_some() {
+            return Err(anyhow::anyhow!("file assets do not support transforms").into());
+        }
+        return stream_file_asset(
+            &original_path,
+            mime_type,
+            asset.content_encoding.as_deref(),
+            headers,
+        )
+        .await;
+    }
+
     if params.width.is_none() && params.height.is_none() {
         return stream_file(&original_path, mime_type).await;
     }
@@ -133,4 +153,52 @@ async fn stream_file(path: &FsPath, content_type: &str) -> Result<Response, AppE
     ];
 
     Ok((headers, body).into_response())
+}
+
+async fn stream_file_asset(
+    path: &FsPath,
+    content_type: &str,
+    content_encoding: Option<&str>,
+    headers: &HeaderMap,
+) -> Result<Response, AppError> {
+    let accepts_zstd = headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.split(',').any(|item| item.trim().starts_with("zstd")));
+
+    if matches!(content_encoding, Some("zstd")) && accepts_zstd {
+        let file = File::open(path).await?;
+        let metadata = file.metadata().await?;
+        let stream = ReaderStream::new(file);
+        let body = Body::from_stream(stream);
+        let headers = [
+            (CONTENT_LENGTH, metadata.len().to_string()),
+            (CONTENT_TYPE, content_type.to_string()),
+            (CONTENT_ENCODING, "zstd".to_string()),
+            (VARY, "Accept-Encoding".to_string()),
+            (
+                CACHE_CONTROL,
+                "public, max-age=31536000, immutable".to_string(),
+            ),
+        ];
+        return Ok((headers, body).into_response());
+    }
+
+    let bytes = tokio::fs::read(path).await?;
+    let decoded = match content_encoding {
+        Some("zstd") => zstd::decode_all(std::io::Cursor::new(bytes))
+            .map_err(|error| anyhow::anyhow!("failed to decompress zstd asset: {error}"))?,
+        Some(other) => return Err(anyhow::anyhow!("unsupported content encoding: {other}").into()),
+        None => bytes,
+    };
+    let headers = [
+        (CONTENT_LENGTH, decoded.len().to_string()),
+        (CONTENT_TYPE, content_type.to_string()),
+        (VARY, "Accept-Encoding".to_string()),
+        (
+            CACHE_CONTROL,
+            "public, max-age=31536000, immutable".to_string(),
+        ),
+    ];
+    Ok((headers, decoded).into_response())
 }

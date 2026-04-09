@@ -21,6 +21,8 @@ pub enum ActivityKind {
     AssetGenerateThumbhash,
     NodeGenerateIntroSegments,
     NodeSyncMetadataRoot,
+    FileExtractSubtitles,
+    FileProcessSubtitle,
 }
 
 impl ActivityKind {
@@ -34,6 +36,8 @@ impl ActivityKind {
             ActivityKind::AssetGenerateThumbhash => "Asset Preview Generation",
             ActivityKind::NodeGenerateIntroSegments => "Intro Detection",
             ActivityKind::NodeSyncMetadataRoot => "Metadata Sync",
+            ActivityKind::FileExtractSubtitles => "Subtitle Extraction",
+            ActivityKind::FileProcessSubtitle => "Subtitle Processing",
         }
     }
 
@@ -47,6 +51,8 @@ impl ActivityKind {
             ActivityKind::AssetGenerateThumbhash => "thumbhash",
             ActivityKind::NodeGenerateIntroSegments => "intro_segments",
             ActivityKind::NodeSyncMetadataRoot => "metadata_sync",
+            ActivityKind::FileExtractSubtitles => "subtitle_extract",
+            ActivityKind::FileProcessSubtitle => "subtitle_process",
         }
     }
 }
@@ -61,6 +67,8 @@ impl From<JobKind> for ActivityKind {
             JobKind::AssetGenerateThumbhash => ActivityKind::AssetGenerateThumbhash,
             JobKind::NodeGenerateIntroSegments => ActivityKind::NodeGenerateIntroSegments,
             JobKind::NodeSyncMetadataRoot => ActivityKind::NodeSyncMetadataRoot,
+            JobKind::FileExtractSubtitles => ActivityKind::FileExtractSubtitles,
+            JobKind::FileProcessSubtitle => ActivityKind::FileProcessSubtitle,
         }
     }
 }

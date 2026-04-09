@@ -3,6 +3,7 @@ pub mod collection_items;
 pub mod collections;
 pub mod file_assets;
 pub mod file_probe;
+pub mod file_subtitles;
 pub mod files;
 pub mod jobs;
 pub mod libraries;

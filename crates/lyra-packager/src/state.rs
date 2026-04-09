@@ -475,47 +475,6 @@ pub fn build_master_playlist(
         playlist.push_str(&format!("#EXT-X-MEDIA:{}\n", media_attrs.join(",")));
     }
 
-    let mut subtitle_renditions: Vec<&StreamDescriptor> = streams
-        .iter()
-        .filter(|stream| stream.stream_type == StreamType::Subtitle)
-        .collect();
-    subtitle_renditions.sort_by_key(|stream| stream.stream_id);
-
-    let mut has_subtitles = false;
-    for stream in &subtitle_renditions {
-        let key = StreamProfileKey {
-            stream_id: stream.stream_id,
-            profile_id: "subtitle_webvtt".to_string(),
-        };
-        if !stream_profiles.contains_key(&key) {
-            continue;
-        }
-        has_subtitles = true;
-        let name = stream.display_name.clone();
-        let uri = format!(
-            "/stream/{}/{}/index.m3u8",
-            stream.stream_id, "subtitle_webvtt"
-        );
-        let forced_attr = if stream.is_forced {
-            "FORCED=YES"
-        } else {
-            "FORCED=NO"
-        };
-        let mut media_attrs = vec![
-            "TYPE=SUBTITLES".to_string(),
-            "GROUP-ID=\"subs\"".to_string(),
-            format!("NAME=\"{}\"", name),
-            "DEFAULT=NO".to_string(),
-            "AUTOSELECT=YES".to_string(),
-            forced_attr.to_string(),
-            format!("URI=\"{}\"", uri),
-        ];
-        if let Some(language) = stream.language.as_deref() {
-            media_attrs.push(format!("LANGUAGE=\"{}\"", language));
-        }
-        playlist.push_str(&format!("#EXT-X-MEDIA:{}\n", media_attrs.join(",")));
-    }
-
     let primary_video = streams
         .iter()
         .find(|stream| stream.is_primary_video && stream.stream_type == StreamType::Video)
@@ -562,10 +521,6 @@ pub fn build_master_playlist(
         if has_audio {
             attrs.push("AUDIO=\"audio\"".to_string());
         }
-        if has_subtitles {
-            attrs.push("SUBTITLES=\"subs\"".to_string());
-        }
-
         playlist.push_str(&format!("#EXT-X-STREAM-INF:{}\n", attrs.join(",")));
         playlist.push_str(&format!("{}\n", uri));
     }

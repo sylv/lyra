@@ -6,13 +6,17 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
     pub kind: AssetKind,
+    pub asset_type: AssetType,
     #[sea_orm(column_type = "Text", nullable)]
     pub source_url: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub hash_sha256: Option<String>,
     pub size_bytes: Option<i64>,
+    pub uncompressed_size_bytes: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub mime_type: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub content_encoding: Option<String>,
     pub height: Option<i64>,
     pub width: Option<i64>,
     #[sea_orm(column_type = "Blob", nullable)]
@@ -41,4 +45,12 @@ pub enum AssetKind {
     Thumbnail = 1,
     Background = 2,
     TimelinePreviewSheet = 3,
+    Subtitle = 4,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "i64", db_type = "Integer")]
+pub enum AssetType {
+    Image = 0,
+    File = 1,
 }
