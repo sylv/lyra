@@ -10,7 +10,6 @@ use crate::{
         node_files, node_metadata,
     },
 };
-use lyra_probe::get_ffmpeg_path;
 use lyra_thumbnail::{ThumbnailOptions, generate_thumbnail};
 use sea_orm::{
     ActiveValue::Set,
@@ -18,7 +17,6 @@ use sea_orm::{
     TransactionTrait,
     sea_query::{Expr, Query},
 };
-use std::path::PathBuf;
 
 #[derive(Debug, Default)]
 pub struct FileThumbnailJob;
@@ -94,11 +92,7 @@ impl Job for FileThumbnailJob {
             return Ok(JobOutcome::Complete);
         };
 
-        let thumbnail_options = ThumbnailOptions {
-            ffmpeg_bin: PathBuf::from(get_ffmpeg_path()),
-            ..ThumbnailOptions::default()
-        };
-
+        let thumbnail_options = ThumbnailOptions::default();
         let Some(thumbnail) =
             generate_thumbnail(&file_path, &thumbnail_options, ctx.get_cancellation_token())
                 .await?

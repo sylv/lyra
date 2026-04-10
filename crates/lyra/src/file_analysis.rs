@@ -1,6 +1,6 @@
 use crate::entities::{file_probe, files};
 use anyhow::Result;
-use lyra_probe::ProbeData;
+use lyra_probe::{ProbeData, VideoKeyframes};
 use sea_orm::{DatabaseConnection, EntityTrait};
 
 pub async fn load_cached_probe(
@@ -28,7 +28,7 @@ pub async fn load_cached_probe(
 pub async fn load_cached_keyframes(
     pool: &DatabaseConnection,
     file_id: &str,
-) -> Result<Option<Vec<i64>>> {
+) -> Result<Option<VideoKeyframes>> {
     let maybe_row = files::Entity::find_by_id(file_id).one(pool).await?;
     let Some(row) = maybe_row else {
         return Ok(None);

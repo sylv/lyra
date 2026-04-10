@@ -14,32 +14,15 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
 		client.query(ItemPlaybackQueryDoc, { itemId }, { requestPolicy: "network-only" }).toPromise();
 
 	const onAudioTrackChange = (trackId: number | null) => {
-		const setAudioTrack = playerContext.getState().actions.setAudioTrack;
-		if (trackId === null) {
-			setAudioTrack(0);
-			setPlayerState({ selectedAudioTrackId: 0 });
-			setPreferredAudio({ language: null, disposition: null })
-				.then((result) => {
-					if (result.error) {
-						throw result.error;
-					}
-					return refreshPlaybackQuery();
-				})
-				.catch((err: unknown) => {
-					console.error("failed to save audio preference", err);
-				});
-			return;
-		}
-
-		if (Number.isNaN(trackId)) return;
-		setAudioTrack(trackId);
+		if (trackId === null || Number.isNaN(trackId)) return;
+		playerContext.getState().actions.setAudioTrack(trackId);
 		setPlayerState({ selectedAudioTrackId: trackId });
 
-		const serverTrack = currentMedia?.file?.tracks?.find(
-			(track) => track.trackType === "AUDIO" && track.manifestIndex === trackId,
+		const serverTrack = currentMedia?.file?.playbackOptions?.audioTracks?.find(
+			(track) => track.streamIndex === trackId,
 		);
 		if (serverTrack?.language != null) {
-			setPreferredAudio({ language: serverTrack.language, disposition: serverTrack.disposition ?? null })
+			setPreferredAudio({ language: serverTrack.language, disposition: null })
 				.then((result) => {
 					if (result.error) {
 						throw result.error;

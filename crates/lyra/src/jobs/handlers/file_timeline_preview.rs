@@ -10,7 +10,6 @@ use crate::{
     },
 };
 use anyhow::Context;
-use lyra_probe::get_ffmpeg_path;
 use lyra_timeline_preview::{PreviewOptions, generate_previews};
 use sea_orm::{
     ActiveValue::Set,
@@ -18,7 +17,7 @@ use sea_orm::{
     TransactionTrait,
     sea_query::{Expr, Query},
 };
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 #[derive(Debug, Default)]
 pub struct FileTimelinePreviewJob;
@@ -64,7 +63,6 @@ impl Job for FileTimelinePreviewJob {
         };
         let file_id = file.id.clone();
         let preview_options = PreviewOptions {
-            ffmpeg_bin: PathBuf::from(get_ffmpeg_path()),
             working_dir: get_config()
                 .data_dir
                 .join("tmp")

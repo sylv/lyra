@@ -1,3 +1,4 @@
+use crate::assets::sign_asset_url;
 use crate::auth::{
     AuthenticatedGuard, PermissionGuard, accessible_library_ids, create_session_for_user,
     ensure_library_access, find_pending_invite_user, get_set_cookie_headers_for_session,
@@ -6,11 +7,12 @@ use crate::content_update::CONTENT_UPDATE;
 use crate::entities::collections::{CollectionResolverKind, CollectionVisibility};
 use crate::entities::users::UserPerms;
 use crate::entities::{
-    collection_items, collections, files, libraries, library_users, node_files, nodes,
-    user_sessions, users, watch_progress,
+    collection_items, collections, file_subtitles, files, libraries, library_users, node_files,
+    nodes, user_sessions, users, watch_progress,
 };
 use crate::graphql::properties::TrackDispositionPreference;
 use crate::graphql::query::{NodeFilter, collection_editable_by_user, is_watchlist_collection};
+use crate::hls::{self, MintPlaybackUrlInput, PlaybackRegistry};
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
 use crate::watch_session::{
@@ -260,6 +262,33 @@ pub struct ImportWatchStatesResult {
     pub skipped: i32,
     pub conflicts: Vec<ImportWatchStateConflict>,
     pub unmatched: Vec<ImportWatchStateUnmatched>,
+}
+
+#[derive(Debug, Clone, InputObject)]
+pub struct PlaybackUrlInput {
+    pub file_id: String,
+    pub player_id: String,
+    pub video_rendition_id: String,
+    pub audio_stream_index: i32,
+    pub audio_rendition_id: String,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct PlaybackUrlPayload {
+    pub url: String,
+    pub packager_id: String,
+}
+
+#[derive(Debug, Clone, InputObject)]
+pub struct SubtitleUrlInput {
+    pub file_id: String,
+    pub subtitle_id: String,
+    pub rendition_id: String,
+}
+
+#[derive(Debug, Clone, SimpleObject)]
+pub struct SubtitleUrlPayload {
+    pub url: String,
 }
 
 impl From<watch_state_import::ImportWatchStateConflictData> for ImportWatchStateConflict {
@@ -1157,5 +1186,68 @@ impl Mutation {
         let auth = ctx.data::<RequestAuth>()?;
         let registry = ctx.data::<WatchSessionRegistry>()?;
         registry.apply_action(auth, input).await
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn mint_playback_url(
+        &self,
+        ctx: &Context<'_>,
+        input: PlaybackUrlInput,
+    ) -> Result<PlaybackUrlPayload, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let playback_registry = ctx.data::<PlaybackRegistry>()?;
+        let minted = hls::mint_playback_url(
+            pool,
+            playback_registry,
+            auth,
+            MintPlaybackUrlInput {
+                file_id: input.file_id,
+                player_id: input.player_id,
+                video_rendition_id: input.video_rendition_id,
+                audio_stream_index: input.audio_stream_index,
+                audio_rendition_id: input.audio_rendition_id,
+            },
+        )
+        .await?;
+
+        Ok(PlaybackUrlPayload {
+            url: minted.url,
+            packager_id: minted.packager_id,
+        })
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn mint_subtitle_url(
+        &self,
+        ctx: &Context<'_>,
+        input: SubtitleUrlInput,
+    ) -> Result<SubtitleUrlPayload, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+
+        if input.rendition_id != "webvtt" {
+            return Err(async_graphql::Error::new("Unsupported subtitle rendition"));
+        }
+
+        let file = hls::ensure_file_access(pool, auth, &input.file_id).await?;
+        let subtitle = file_subtitles::Entity::find_by_id(input.subtitle_id)
+            .one(pool)
+            .await
+            .map_err(|error| async_graphql::Error::new(error.to_string()))?
+            .ok_or_else(|| async_graphql::Error::new("Subtitle not found"))?;
+
+        if subtitle.file_id != file.id {
+            return Err(async_graphql::Error::new("Subtitle not found"));
+        }
+        if subtitle.kind != file_subtitles::SubtitleKind::Vtt {
+            return Err(async_graphql::Error::new(
+                "Subtitle rendition not available",
+            ));
+        }
+
+        Ok(SubtitleUrlPayload {
+            url: sign_asset_url(&subtitle.asset_id),
+        })
     }
 }

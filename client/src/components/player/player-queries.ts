@@ -15,6 +15,7 @@ export const ItemPlaybackQuery = graphql(`
 				lastAired
 			}
 			root {
+				id
 				libraryId
 				properties {
 					displayName
@@ -28,19 +29,41 @@ export const ItemPlaybackQuery = graphql(`
 			}
 			file {
 				id
-				tracks {
-					trackIndex
-					manifestIndex
-					trackType
-					displayName
-					language
-					disposition
-					isForced
-				}
-				recommendedTracks {
-					manifestIndex
-					trackType
-					enabled
+				playbackOptions {
+					videoRenditions {
+						renditionId
+						displayName
+						displayInfo
+						codecTag
+						onDemand
+					}
+					audioTracks {
+						streamIndex
+						displayName
+						language
+						recommended
+						renditions {
+							renditionId
+							codecName
+							bitrate
+							channels
+							sampleRate
+							codecTag
+							onDemand
+						}
+					}
+					subtitleTracks {
+						subtitleId
+						streamIndex
+						displayName
+						language
+						recommended
+						renditions {
+							renditionId
+							codecName
+							onDemand
+						}
+					}
 				}
 				subtitleTracks {
 					id
@@ -91,6 +114,15 @@ export const ItemPlaybackQuery = graphql(`
 				}
 			}
 			...GetPathForNode
+		}
+	}
+`);
+
+export const MintPlaybackUrl = graphql(`
+	mutation MintPlaybackUrl($input: PlaybackUrlInput!) {
+		mintPlaybackUrl(input: $input) {
+			url
+			packagerId
 		}
 	}
 `);

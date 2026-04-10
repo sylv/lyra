@@ -52,6 +52,12 @@ export const client = createUrqlClient({
 			keys: {
 				NodeProperties: () => null,
 				HomeView: () => null,
+				PlaybackOptions: () => null,
+				VideoRenditionOption: () => null,
+				AudioTrackOption: () => null,
+				AudioRenditionOption: () => null,
+				SubtitlePlaybackTrack: () => null,
+				SubtitleRenditionOption: () => null,
 				Activity: (data) => data.taskType as any,
 			},
 			updates: cacheUpdates,

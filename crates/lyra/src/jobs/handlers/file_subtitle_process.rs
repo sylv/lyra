@@ -13,11 +13,8 @@ use crate::{
 };
 use anyhow::Context;
 use sea_orm::{
-    ActiveModelTrait,
-    ActiveValue::Set,
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
-    TransactionTrait,
-    sea_query::{Expr, ExprTrait, Func, SimpleExpr},
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Select, TransactionTrait,
 };
 
 #[derive(Debug, Default)]

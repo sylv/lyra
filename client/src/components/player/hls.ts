@@ -1,37 +1,22 @@
-import type { ItemPlaybackQuery } from "../../@generated/gql/graphql";
 import { setPlayerControls, setPlayerLoading, setPlayerState } from "./player-context";
-
-type ServerTracks = NonNullable<NonNullable<NonNullable<ItemPlaybackQuery["node"]>["file"]>["tracks"]>;
-type Recommendations = NonNullable<NonNullable<NonNullable<ItemPlaybackQuery["node"]>["file"]>["recommendedTracks"]>;
 
 export interface ResumeConfig {
 	initialPositionSeconds: number | null;
 	watchProgressPercent: number | null | undefined;
 	runtimeDurationSeconds: number | null;
 	shouldPromptResume: boolean;
+	shouldAutoplay: boolean;
 	pauseAfterInitialSeek: boolean;
 	videoRef: React.RefObject<HTMLVideoElement | null>;
 }
 
 export interface PlayerController {
-	setAudioTrack(id: number): void;
 	destroy(): void;
 }
 
-interface HlsLevelLike {
-	attrs?: { NAME?: string };
-	name?: string;
-	url?: string[];
-	uri?: string;
-	path?: string;
-}
-
-// the initial playlist load can take quite a bit of time (mainly because we may have to extract
-// probe data on demand before we can respond to the manifest request), so we need to increase timeouts
-// or else clients can time out before we finish.
-const HLS_TIMEOUT_MS = 15_000; // each attempt can take up to 15s
+const HLS_TIMEOUT_MS = 15_000;
 const HLS_RETRY_DELAY_MS = 1000;
-const HLS_MAX_RETRY_TIME = 300_000; // retry for up to 5min
+const HLS_MAX_RETRY_TIME = 300_000;
 const HLS_RETRY_COUNT = Math.ceil(HLS_MAX_RETRY_TIME / HLS_TIMEOUT_MS);
 
 const retryPolicy = {
@@ -53,8 +38,6 @@ const loaderPolicy = {
 export const createHlsPlayer = async (
 	video: HTMLVideoElement,
 	hlsUrl: string,
-	serverTracks: ServerTracks,
-	recommendations: Recommendations,
 	resumeConfig: ResumeConfig,
 ): Promise<PlayerController | null> => {
 	const { default: Hls } = await import("hls.js");
@@ -70,6 +53,7 @@ export const createHlsPlayer = async (
 		watchProgressPercent,
 		runtimeDurationSeconds,
 		shouldPromptResume,
+		shouldAutoplay,
 		pauseAfterInitialSeek,
 		videoRef,
 	} = resumeConfig;
@@ -92,51 +76,12 @@ export const createHlsPlayer = async (
 	const startLoadAt = (startPosition: number) => {
 		if (hasStartedLoading) return;
 		hasStartedLoading = true;
+		if (videoRef.current) {
+			videoRef.current.autoplay = shouldAutoplay;
+		}
 		hls.startLoad(Number.isFinite(startPosition) ? startPosition : -1);
-	};
-
-	const serverTrackByManifestIndex = (type: "AUDIO" | "SUBTITLE", manifestIndex: number) =>
-		serverTracks.find((track) => track.trackType === type && track.manifestIndex === manifestIndex);
-
-	const findPreferredVideoLevel = () =>
-		hls.levels.findIndex((level) => {
-			const candidate = level as HlsLevelLike;
-			const name = candidate.attrs?.NAME ?? candidate.name ?? "";
-			const urls = candidate.url ?? [];
-			const uri = candidate.uri ?? candidate.path ?? "";
-
-			return [name, uri, ...urls].some((value) => value.toLowerCase().includes("video_copy"));
-		});
-
-	// todo: this is gross.
-	const applyPreferredVideoLevel = () => {
-		// Pin the copy profile when it exists so hls.js does not switch up to the more expensive
-		// transcode profile after startup.
-		const preferredLevel = findPreferredVideoLevel();
-		if (preferredLevel < 0) return;
-
-		hls.loadLevel = preferredLevel;
-		hls.nextLevel = preferredLevel;
-		hls.currentLevel = preferredLevel;
-	};
-
-	const syncAudioTracks = () => {
-		const tracks = hls.audioTracks.map((_track, id) => {
-			const serverTrack = serverTrackByManifestIndex("AUDIO", id);
-			return { id, label: serverTrack?.displayName ?? `Audio ${id + 1}` };
-		});
-
-		setPlayerState({
-			audioTrackOptions: tracks,
-			selectedAudioTrackId: hls.audioTrack >= 0 ? hls.audioTrack : null,
-		});
-	};
-
-	const applyRecommendations = () => {
-		for (const recommendation of recommendations) {
-			if (recommendation.trackType === "AUDIO" && recommendation.enabled) {
-				hls.audioTrack = recommendation.manifestIndex;
-			}
+		if (shouldAutoplay && videoRef.current) {
+			void videoRef.current.play().catch(() => {});
 		}
 	};
 
@@ -156,10 +101,6 @@ export const createHlsPlayer = async (
 	});
 
 	hls.on(Hls.Events.MANIFEST_PARSED, () => {
-		applyPreferredVideoLevel();
-		syncAudioTracks();
-		applyRecommendations();
-
 		if (
 			typeof initialPositionSeconds === "number" &&
 			Number.isFinite(initialPositionSeconds) &&
@@ -178,10 +119,7 @@ export const createHlsPlayer = async (
 			return;
 		}
 
-		const levelDurations = hls.levels
-			.map((level) => level.details?.totalduration)
-			.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-		const durationSeconds = levelDurations[0] ?? runtimeDurationSeconds;
+		const durationSeconds = hls.levels[0]?.details?.totalduration ?? runtimeDurationSeconds;
 		const resumePosition = durationSeconds == null ? null : clampResumePosition(durationSeconds);
 
 		if (resumePosition == null) {
@@ -190,7 +128,11 @@ export const createHlsPlayer = async (
 		}
 
 		if (shouldPromptResume) {
-			// keep the callbacks in controls state so the dialog can resolve the prompt without prop drilling.
+			if (videoRef.current) {
+				videoRef.current.autoplay = false;
+				videoRef.current.pause();
+			}
+			setPlayerState({ playing: false });
 			setPlayerControls({
 				resumePromptPosition: resumePosition,
 				confirmResumePrompt: () => {
@@ -210,20 +152,10 @@ export const createHlsPlayer = async (
 		startLoadAt(resumePosition);
 	});
 
-	hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, syncAudioTracks);
-	hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
-		if (typeof data.id === "number") {
-			setPlayerState({ selectedAudioTrackId: data.id });
-		}
-	});
-
 	hls.loadSource(hlsUrl);
 	hls.attachMedia(video);
 
 	return {
-		setAudioTrack(id) {
-			hls.audioTrack = id;
-		},
 		destroy() {
 			hls.destroy();
 		},

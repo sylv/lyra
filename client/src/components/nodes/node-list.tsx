@@ -19,6 +19,7 @@ type FilterVariants =
 type NodeListProps = FilterVariants & {
 	perPage?: number;
 	filterOverride?: NodeFilter;
+	defaultOrderBy: OrderBy;
 };
 
 export interface PageVariables {
@@ -49,7 +50,7 @@ const KIND_NAME_MAP: Record<NodeKind, string> = {
 	[NodeKind.Episode]: "Episodes",
 };
 
-export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...variant }) => {
+export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, defaultOrderBy, ...variant }) => {
 	const displayKind = FILTER_DISPLAY_MAP[variant.type];
 	const possibleKinds = FILTER_NODE_MAP[variant.type];
 	const schema = useMemo(() => {
@@ -57,12 +58,12 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 			kinds: z.array(z.enum(NodeKind)).default(possibleKinds),
 			availability: z.enum(NodeAvailability).default(NodeAvailability.Available),
 			watched: z.boolean().nullable(),
-			orderBy: z.enum(OrderBy).default(OrderBy.LastAired),
+			orderBy: z.enum(OrderBy).default(defaultOrderBy),
 			orderDirection: z.enum(OrderDirection).nullable(),
 		});
 
 		return FilterSchema;
-	}, [variant.type]);
+	}, [defaultOrderBy, possibleKinds]);
 	const [queryFilter, setFilter] = useQueryState({ schema });
 	const [selectedKinds, setSelectedKinds] = useState<NodeKind[]>([]);
 	const [pageVariables, setPageVariables] = useState<PageVariables[]>([
@@ -122,7 +123,7 @@ export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, ...varian
 					{(!filterOverride || filterOverride.orderBy == null) && (
 						<FilterSelect
 							label="Order By"
-							value={queryFilter.orderBy || OrderBy.LastAired}
+							value={queryFilter.orderBy || defaultOrderBy}
 							options={[
 								{ value: OrderBy.Alphabetical, label: "Alphabetical", icon: SortAscIcon },
 								{ value: OrderBy.Rating, label: "Rating", icon: StarIcon },

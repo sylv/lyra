@@ -100,7 +100,20 @@ impl Job for FileProbeJob {
         }
 
         if needs_keyframes {
-            let keyframes = extract_keyframes(&file_path, ctx.get_cancellation_token()).await?;
+            let probe = file_analysis::load_cached_probe(db, &file.id)
+                .await?
+                .context("probe data must exist before extracting keyframes")?;
+            let video_stream_index = probe
+                .get_video_stream()
+                .map(|stream| stream.index)
+                .context("file has no video stream for keyframe extraction")?;
+            let keyframes = extract_keyframes(
+                &file_path,
+                &probe,
+                video_stream_index,
+                ctx.get_cancellation_token(),
+            )
+            .await?;
             let Some(keyframes) = keyframes else {
                 return Ok(JobOutcome::Cancelled);
             };

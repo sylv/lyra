@@ -1,9 +1,10 @@
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     process::{Output, Stdio},
 };
 
 use image::{GenericImageView, ImageFormat};
+use lyra_probe::get_ffmpeg_path;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -18,7 +19,6 @@ pub const SCENE_THRESHOLD: f32 = 0.35;
 
 #[derive(Clone, Debug)]
 pub struct ThumbnailOptions {
-    pub ffmpeg_bin: PathBuf,
     pub max_dimension_px: u32,
     pub webp_quality: f32,
 }
@@ -26,7 +26,6 @@ pub struct ThumbnailOptions {
 impl Default for ThumbnailOptions {
     fn default() -> Self {
         Self {
-            ffmpeg_bin: PathBuf::from("ffmpeg"),
             max_dimension_px: MAX_DIMENSION_PX,
             webp_quality: WEBP_QUALITY,
         }
@@ -112,8 +111,9 @@ async fn encode_webp(
     filter: &str,
     cancellation_token: &CancellationToken,
 ) -> anyhow::Result<Option<Vec<u8>>> {
+    let ffmpeg_bin = get_ffmpeg_path();
     let output = run_ffmpeg_output(
-        Command::new(&options.ffmpeg_bin)
+        Command::new(&ffmpeg_bin)
             .args([
                 "-hide_banner",
                 "-loglevel",

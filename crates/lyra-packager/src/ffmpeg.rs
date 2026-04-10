@@ -1,505 +1,247 @@
-use crate::{
-    profiles::ProfileContext,
-    state::{FfmpegState, StreamProfileState},
-};
-use anyhow::{Context, Result, bail};
 use lyra_probe::get_ffmpeg_path;
 use std::{
-    path::Path,
-    process::Stdio,
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
+    ffi::OsString,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize},
+    },
 };
 use tokio::{
-    fs,
+    io::AsyncRead,
     io::{AsyncBufReadExt, BufReader},
-    process::Command,
-    time::{Instant, sleep},
+    sync::Notify,
 };
 
-const THROTTLE_AHEAD_SEGMENTS: i64 = 4;
-const UNTHROTTLE_WITHIN_SEGMENTS: i64 = 1;
-const SEEK_RESTART_THRESHOLD_SECONDS: f64 = 24.0;
+pub(crate) const BUFFER_AHEAD_SEGMENTS: usize = 1;
+pub(crate) const MAX_REQUEST_AHEAD: usize = 4;
 
-pub async fn ensure_ffmpeg_for_init(state: &Arc<StreamProfileState>) -> Result<()> {
-    let _guard = state.ffmpeg_ops.lock().await;
-    let needs_start = {
-        let mut ffmpeg = state.ffmpeg.lock().await;
-        update_child_status(state, &mut ffmpeg)?;
-        ffmpeg.child.is_none()
-    };
+pub(crate) struct FfmpegManager {
+    process: tokio::process::Child,
+    current_generating_segment: Arc<AtomicUsize>,
+    last_requested_segment: Arc<AtomicUsize>,
+    start_segment: usize,
+    watcher_handle: tokio::task::JoinHandle<()>,
+    segment_notify: Arc<Notify>,
+    is_paused: Arc<AtomicBool>,
+}
 
-    if needs_start {
-        tracing::info!(
-            stream_id = state.stream.stream_id,
-            profile = state.profile.id_name(),
-            "starting ffmpeg for init segment"
+impl FfmpegManager {
+    pub fn new(
+        args: Vec<OsString>,
+        start_segment: usize,
+        work_dir: PathBuf,
+    ) -> anyhow::Result<Self> {
+        let ffmpeg_bin = get_ffmpeg_path();
+        let mut command = tokio::process::Command::new(ffmpeg_bin);
+        command.current_dir(work_dir);
+        command.args(args);
+        let mut process = command
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|error| anyhow::anyhow!("failed to spawn ffmpeg process: {error}"))?;
+
+        let current_generating_segment = Arc::new(AtomicUsize::new(start_segment));
+        let segment_notify = Arc::new(Notify::new());
+        let is_paused = Arc::new(AtomicBool::new(false));
+        let last_requested_segment = Arc::new(AtomicUsize::new(start_segment));
+        let stdout = process
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("failed to capture ffmpeg stdout"))?;
+        let stderr = process
+            .stderr
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("failed to capture ffmpeg stderr"))?;
+
+        let watcher_handle = spawn_watcher(
+            stdout,
+            stderr,
+            current_generating_segment.clone(),
+            segment_notify.clone(),
+            is_paused.clone(),
+            last_requested_segment.clone(),
+            process.id().unwrap_or_default() as i32,
         );
-        clean_segments(&state.segment_dir).await?;
-        start_ffmpeg(state, 0).await?;
-    }
-    Ok(())
-}
 
-pub async fn ensure_ffmpeg_for_segment(
-    state: &Arc<StreamProfileState>,
-    requested_segment: i64,
-    requested_start_pts: Option<i64>,
-) -> Result<()> {
-    if requested_segment < 0 {
-        return Ok(());
-    }
-    tracing::debug!(
-        stream_id = state.stream.stream_id,
-        profile = state.profile.id_name(),
-        requested_segment,
-        requested_start_pts,
-        "segment request received"
-    );
-    let segment_count = state.segment_start_pts.len() as i64;
-    if requested_segment >= segment_count {
-        bail!("segment {requested_segment} out of range");
+        Ok(Self {
+            process,
+            current_generating_segment,
+            last_requested_segment,
+            start_segment,
+            watcher_handle,
+            segment_notify,
+            is_paused,
+        })
     }
 
-    if let (Some(start_pts), Some(expected)) = (
-        requested_start_pts,
-        state.segment_start_pts.get(requested_segment as usize),
-    ) {
-        if *expected != start_pts {
-            tracing::warn!(expected, start_pts, "segment startPts mismatch");
-        }
+    pub fn start_segment(&self) -> usize {
+        self.start_segment
     }
 
-    let _guard = state.ffmpeg_ops.lock().await;
-    let last_generated =
-        find_last_generated(&state.segment_dir, state.profile.segment_file_extension())
-            .await
-            .unwrap_or(-1);
-    state
-        .last_generated
-        .store(last_generated, Ordering::Relaxed);
-    let segment_ready = {
-        let path = state.segment_dir.join(format!(
-            "{requested_segment}.{}",
-            state.profile.segment_file_extension()
-        ));
-        match fs::metadata(&path).await {
-            Ok(metadata) => metadata.len() > 0,
-            Err(_) => false,
-        }
-    };
-
-    let action = {
-        let mut ffmpeg = state.ffmpeg.lock().await;
-        update_child_status(state, &mut ffmpeg)?;
-
-        if ffmpeg.child.is_none() {
-            ffmpeg.last_requested_segment = requested_segment;
-            if segment_ready {
-                FfmpegAction::None
-            } else {
-                FfmpegAction::Start
-            }
-        } else if should_restart_ffmpeg(state, &ffmpeg, requested_segment, last_generated) {
-            tracing::info!(
-                requested_segment,
-                start_segment = ffmpeg.start_segment,
-                last_generated,
-                "restart required for seek"
-            );
-            ffmpeg.last_requested_segment = requested_segment;
-            FfmpegAction::Restart
-        } else {
-            ffmpeg.last_requested_segment = requested_segment;
-            FfmpegAction::None
-        }
-    };
-
-    match action {
-        FfmpegAction::None => Ok(()),
-        FfmpegAction::Start => {
-            tracing::info!(start_segment = requested_segment, "starting ffmpeg");
-            clean_segments(&state.segment_dir).await?;
-            start_ffmpeg(state, requested_segment).await
-        }
-        FfmpegAction::Restart => {
-            tracing::info!(start_segment = requested_segment, "restarting ffmpeg");
-            stop_ffmpeg(state).await?;
-            clean_segments(&state.segment_dir).await?;
-            start_ffmpeg(state, requested_segment).await
-        }
-    }
-}
-
-pub async fn wait_for_file(path: &Path, timeout: Duration) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        match fs::metadata(path).await {
-            Ok(metadata) if metadata.len() > 0 => return Ok(()),
-            Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(err.into()),
-        }
-        if start.elapsed() > timeout {
-            bail!("timed out waiting for {}", path.display());
-        }
-        sleep(Duration::from_millis(50)).await;
-    }
-}
-
-pub fn parse_segment_index(name: &str) -> Option<i64> {
-    if name == "init.mp4" || name == "-1.mp4" {
-        return Some(-1);
-    }
-    for suffix in [".m4s", ".vtt"] {
-        if let Some(name) = name.strip_suffix(suffix) {
-            return name.parse::<i64>().ok();
-        }
-    }
-    None
-}
-
-async fn start_ffmpeg(state: &Arc<StreamProfileState>, start_segment: i64) -> Result<()> {
-    let start_pts = state.segment_start_pts[start_segment as usize];
-    let start_seconds = pts_to_seconds(
-        start_pts,
-        state.timeline_time_base_num,
-        state.timeline_time_base_den,
-    );
-
-    tracing::info!(
-        stream_id = state.stream.stream_id,
-        profile = state.profile.id_name(),
-        start_segment,
-        start_pts,
-        start_seconds,
-        "starting ffmpeg"
-    );
-
-    let ctx = ProfileContext {
-        input: state.input.clone(),
-        stream: state.stream.clone(),
-        stream_info: state.stream_info.clone(),
-        keyframes: state.keyframes.clone(),
-    };
-
-    let args = state
-        .profile
-        .build_args(&ctx, start_segment, start_seconds, &state.hls_cuts);
-    let ffmpeg_bin = get_ffmpeg_path();
-
-    tracing::debug!(
-        cwd = %state.segment_dir.display(),
-        ffmpeg_bin,
-        args = ?args,
-        "ffmpeg args"
-    );
-
-    let mut command = Command::new(&ffmpeg_bin);
-    command.current_dir(&state.segment_dir);
-    command
-        .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("failed to start ffmpeg with {ffmpeg_bin}"))?;
-    let pid = child.id().context("ffmpeg missing pid")?;
-
-    if let Some(stdout) = child.stdout.take() {
-        let last_generated = Arc::clone(&state.last_generated);
-        tokio::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Some(index) = parse_segment_index_from_line(&line) {
-                    last_generated.store(index, Ordering::Relaxed);
-                }
-            }
-        });
+    pub fn current_generating_segment(&self) -> usize {
+        self.current_generating_segment
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    if let Some(stderr) = child.stderr.take() {
-        tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!(target: "ffmpeg", "{line}");
-            }
-        });
+    pub fn completed_range(&self) -> std::ops::Range<usize> {
+        self.start_segment..self.current_generating_segment()
     }
 
-    {
-        let mut ffmpeg = state.ffmpeg.lock().await;
-        ffmpeg.child = Some(child);
-        ffmpeg.pid = Some(pid);
-        ffmpeg.start_segment = start_segment;
-        ffmpeg.last_requested_segment = start_segment;
-        ffmpeg.throttled = false;
-    }
-
-    let state_clone = state.clone();
-    let handle = tokio::spawn(async move {
-        throttle_loop(state_clone).await;
-    });
-    let mut ffmpeg = state.ffmpeg.lock().await;
-    ffmpeg.throttle_task = Some(handle);
-
-    Ok(())
-}
-
-async fn stop_ffmpeg(state: &Arc<StreamProfileState>) -> Result<()> {
-    let (mut child, pid, handle) = {
-        let mut ffmpeg = state.ffmpeg.lock().await;
-        (
-            ffmpeg.child.take(),
-            ffmpeg.pid.take(),
-            ffmpeg.throttle_task.take(),
-        )
-    };
-
-    if let Some(handle) = handle {
-        handle.abort();
-    }
-
-    if let Some(pid) = pid {
-        tracing::info!(pid, "resuming ffmpeg before shutdown");
-        let _ = send_signal(pid, libc::SIGCONT);
-    }
-
-    if let Some(mut child) = child.take() {
-        tracing::info!("killing ffmpeg process");
-        let _ = child.kill().await;
-        let _ = child.wait().await;
-    }
-
-    Ok(())
-}
-
-async fn throttle_loop(state: Arc<StreamProfileState>) {
-    loop {
-        sleep(Duration::from_millis(300)).await;
-        let last_generated =
-            match find_last_generated(&state.segment_dir, state.profile.segment_file_extension())
-                .await
-            {
-                Ok(value) => value,
-                Err(err) => {
-                    tracing::warn!(error = %err, "failed to scan segments");
-                    continue;
-                }
-            };
-        state
-            .last_generated
-            .store(last_generated, Ordering::Relaxed);
-
-        let mut ffmpeg = state.ffmpeg.lock().await;
-        if ffmpeg.child.is_none() {
-            break;
+    pub async fn wait_for_segment(&self, target_segment: usize) -> Result<(), WaitForSegmentError> {
+        if target_segment < self.start_segment {
+            return Err(WaitForSegmentError::OutOfRange);
         }
 
-        update_child_status(&state, &mut ffmpeg).ok();
-        if ffmpeg.child.is_none() {
-            break;
+        let current_generating = self.current_generating_segment();
+        if target_segment
+            > current_generating
+                .saturating_sub(1)
+                .saturating_add(MAX_REQUEST_AHEAD)
+        {
+            return Err(WaitForSegmentError::OutOfRange);
         }
 
-        let delta = last_generated - ffmpeg.last_requested_segment;
+        self.last_requested_segment
+            .fetch_max(target_segment, std::sync::atomic::Ordering::SeqCst);
 
-        if let Some(pid) = ffmpeg.pid {
-            if delta > THROTTLE_AHEAD_SEGMENTS && !ffmpeg.throttled {
-                if send_signal(pid, libc::SIGSTOP).is_ok() {
-                    tracing::info!(
-                        pid,
-                        last_generated,
-                        last_requested = ffmpeg.last_requested_segment,
-                        "ffmpeg throttled"
-                    );
-                    ffmpeg.throttled = true;
-                }
-            } else if delta <= UNTHROTTLE_WITHIN_SEGMENTS && ffmpeg.throttled {
-                if send_signal(pid, libc::SIGCONT).is_ok() {
-                    tracing::info!(
-                        pid,
-                        last_generated,
-                        last_requested = ffmpeg.last_requested_segment,
-                        "ffmpeg resumed"
-                    );
-                    ffmpeg.throttled = false;
-                }
+        if target_segment < current_generating {
+            return Ok(());
+        }
+
+        if self.is_paused.load(std::sync::atomic::Ordering::SeqCst) {
+            if let Some(pid) = self.process.id() {
+                resume(&self.is_paused, pid as i32);
             }
         }
-    }
-}
 
-fn send_signal(pid: u32, signal: i32) -> Result<()> {
-    let result = unsafe { libc::kill(pid as i32, signal) };
-    if result == 0 {
+        loop {
+            let current_generating = self.current_generating_segment();
+            if target_segment < current_generating {
+                break;
+            }
+
+            self.segment_notify.notified().await;
+        }
+
         Ok(())
-    } else {
-        let err = std::io::Error::last_os_error();
-        bail!("failed to signal ffmpeg pid {pid}: {err}")
+    }
+
+    pub async fn kill(&mut self) {
+        let _ = self.process.kill().await;
+        self.watcher_handle.abort();
+    }
+
+    pub fn start_kill(&mut self) {
+        let _ = self.process.start_kill();
+        self.watcher_handle.abort();
     }
 }
 
-async fn clean_segments(dir: &Path) -> Result<()> {
-    tracing::debug!(dir = %dir.display(), "cleaning segment files");
-    let mut entries = fs::read_dir(dir).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext == "mp4" || ext == "m4s" || ext == "m3u8" || ext == "vtt" {
-                    let _ = fs::remove_file(&path).await;
-                }
-            }
-        }
-    }
-    Ok(())
+fn spawn_watcher(
+    stdout: tokio::process::ChildStdout,
+    stderr: tokio::process::ChildStderr,
+    current_generating_segment: Arc<AtomicUsize>,
+    segment_notify: Arc<Notify>,
+    is_paused: Arc<AtomicBool>,
+    last_requested_segment: Arc<AtomicUsize>,
+    pid: i32,
+) -> tokio::task::JoinHandle<()> {
+    tokio::task::spawn(async move {
+        let stdout_task = watch_ffmpeg_stream(
+            stdout,
+            Some(StreamWatcherState {
+                current_generating_segment,
+                segment_notify,
+                is_paused,
+                last_requested_segment,
+                pid,
+            }),
+        );
+        let stderr_task = watch_ffmpeg_stream(stderr, None);
+
+        let _ = tokio::join!(stdout_task, stderr_task);
+    })
 }
 
-async fn find_last_generated(dir: &Path, extension: &str) -> Result<i64> {
-    let mut entries = fs::read_dir(dir).await?;
-    let mut max_index = -1;
-    let suffix = format!(".{extension}");
-    while let Some(entry) = entries.next_entry().await? {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.ends_with(&suffix) {
+struct StreamWatcherState {
+    current_generating_segment: Arc<AtomicUsize>,
+    segment_notify: Arc<Notify>,
+    is_paused: Arc<AtomicBool>,
+    last_requested_segment: Arc<AtomicUsize>,
+    pid: i32,
+}
+
+// Stdout carries the generated playlist entries we need for segment tracking, while
+// stderr is just ffmpeg diagnostics. Both get logged uniformly through tracing.
+async fn watch_ffmpeg_stream<R>(stream: R, state: Option<StreamWatcherState>)
+where
+    R: AsyncRead + Unpin,
+{
+    let mut lines = BufReader::new(stream).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        tracing::debug!("ffmpeg: {line}");
+
+        let Some(state) = state.as_ref() else {
             continue;
-        }
-        let stem = &name[..name.len() - suffix.len()];
-        if let Ok(index) = stem.parse::<i64>() {
-            if index > max_index {
-                max_index = index;
+        };
+
+        if let Some(last_generated_segment) = parse_generated_segment(&line) {
+            state.current_generating_segment.store(
+                last_generated_segment + 1,
+                std::sync::atomic::Ordering::SeqCst,
+            );
+            state.segment_notify.notify_waiters();
+
+            let last_requested = state
+                .last_requested_segment
+                .load(std::sync::atomic::Ordering::SeqCst);
+            let dist_to_last_requested = last_generated_segment.saturating_sub(last_requested);
+            if dist_to_last_requested > BUFFER_AHEAD_SEGMENTS {
+                pause(&state.is_paused, state.pid);
             }
         }
     }
-    Ok(max_index)
 }
 
-fn update_child_status(state: &StreamProfileState, ffmpeg: &mut FfmpegState) -> Result<()> {
-    if let Some(child) = ffmpeg.child.as_mut() {
-        if let Ok(Some(status)) = child.try_wait() {
-            let last_generated = find_last_generated_blocking(
-                &state.segment_dir,
-                state.profile.segment_file_extension(),
-            )
-            .unwrap_or_else(|| state.last_generated.load(Ordering::Relaxed));
-            state
-                .last_generated
-                .store(last_generated, Ordering::Relaxed);
-            let last_index = state.segment_start_pts.len() as i64 - 1;
-            if last_index >= 0 && last_generated >= last_index {
-                if status.success() {
-                    tracing::info!(
-                        ?status,
-                        last_generated,
-                        last_index,
-                        "ffmpeg exited after segment generation"
-                    );
-                } else {
-                    tracing::warn!(
-                        ?status,
-                        last_generated,
-                        last_index,
-                        "ffmpeg exited with a non-zero status after segment generation"
-                    );
-                }
-            } else {
-                tracing::error!(
-                    ?status,
-                    last_generated,
-                    last_index,
-                    "ffmpeg exited prematurely"
-                );
-            }
-            ffmpeg.child = None;
-            ffmpeg.pid = None;
-            ffmpeg.throttled = false;
-            ffmpeg.throttle_task = None;
-        }
+fn parse_generated_segment(line: &str) -> Option<usize> {
+    let stripped = line
+        .strip_prefix("seg")
+        .and_then(|value| value.strip_suffix(".m4s"))?;
+    stripped.parse::<usize>().ok()
+}
+
+impl Drop for FfmpegManager {
+    fn drop(&mut self) {
+        self.start_kill();
     }
-    Ok(())
 }
 
-fn find_last_generated_blocking(dir: &Path, extension: &str) -> Option<i64> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    let suffix = format!(".{extension}");
-    let mut max_index = -1;
-
-    for entry in entries {
-        let entry = entry.ok()?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.ends_with(&suffix) {
-            continue;
-        }
-        let stem = &name[..name.len() - suffix.len()];
-        if let Ok(index) = stem.parse::<i64>() {
-            if index > max_index {
-                max_index = index;
-            }
-        }
+fn pause(is_paused: &Arc<AtomicBool>, pid: i32) {
+    if pid == 0 {
+        return;
     }
 
-    Some(max_index)
+    unsafe {
+        libc::kill(pid, libc::SIGSTOP);
+    }
+    is_paused.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
-fn should_restart_ffmpeg(
-    state: &StreamProfileState,
-    ffmpeg: &FfmpegState,
-    requested_segment: i64,
-    last_generated: i64,
-) -> bool {
-    if requested_segment < ffmpeg.start_segment {
-        return true;
+fn resume(is_paused: &Arc<AtomicBool>, pid: i32) {
+    if pid == 0 {
+        return;
     }
 
-    let baseline = if last_generated >= 0 {
-        last_generated
-    } else {
-        ffmpeg.start_segment
-    };
-    if requested_segment <= baseline {
-        return false;
+    unsafe {
+        libc::kill(pid, libc::SIGCONT);
     }
-
-    let requested_start = pts_to_av_time(
-        state.segment_start_pts[requested_segment as usize],
-        state.timeline_time_base_num,
-        state.timeline_time_base_den,
-    );
-    let baseline_start = pts_to_av_time(
-        state.segment_start_pts[baseline as usize],
-        state.timeline_time_base_num,
-        state.timeline_time_base_den,
-    );
-    requested_start - baseline_start > (SEEK_RESTART_THRESHOLD_SECONDS * 1_000_000.0) as i64
+    is_paused.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
-fn parse_segment_index_from_line(line: &str) -> Option<i64> {
-    let trimmed = line.trim();
-    for suffix in [".m4s", ".vtt"] {
-        if let Some(candidate) = trimmed.strip_suffix(suffix) {
-            if let Ok(index) = candidate.parse::<i64>() {
-                return Some(index);
-            }
-        }
-    }
-    None
-}
-
-enum FfmpegAction {
-    None,
-    Start,
-    Restart,
-}
-
-fn pts_to_seconds(pts: i64, time_base_num: i64, time_base_den: i64) -> f64 {
-    (pts as f64) * (time_base_num as f64) / (time_base_den as f64)
-}
-
-fn pts_to_av_time(pts: i64, time_base_num: i64, time_base_den: i64) -> i64 {
-    let num = pts as i128 * time_base_num as i128 * 1_000_000i128;
-    let den = time_base_den as i128;
-    (num / den) as i64
+#[derive(thiserror::Error, Debug)]
+pub enum WaitForSegmentError {
+    #[error("segment out of range for this ffmpeg process")]
+    OutOfRange,
 }

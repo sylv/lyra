@@ -1,4 +1,5 @@
 import { NodeList } from "@/components/nodes/node-list";
+import { OrderBy } from "../@generated/gql/graphql";
 import { useParams } from "react-router";
 
 export function LibraryRoute() {
@@ -6,5 +7,5 @@ export function LibraryRoute() {
 	if (!libraryId) {
 		return null;
 	}
-	return <NodeList type="movies_series" filterOverride={{ libraryId }} />;
+	return <NodeList type="movies_series" defaultOrderBy={OrderBy.ReleasedAt} filterOverride={{ libraryId }} />;
 }

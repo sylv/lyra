@@ -14,7 +14,6 @@ pub const MAX_FRAMES_PER_SHEET: usize = 256;
 
 #[derive(Clone, Debug)]
 pub struct PreviewOptions {
-    pub ffmpeg_bin: PathBuf,
     pub frame_interval_seconds: f64,
     pub width_px: u32,
     pub working_dir: PathBuf,
@@ -23,7 +22,6 @@ pub struct PreviewOptions {
 impl Default for PreviewOptions {
     fn default() -> Self {
         Self {
-            ffmpeg_bin: PathBuf::from("ffmpeg"),
             frame_interval_seconds: FRAME_INTERVAL_SECONDS,
             width_px: THUMBNAIL_WIDTH_PX,
             working_dir: std::env::temp_dir().join("lyra-timeline-preview"),

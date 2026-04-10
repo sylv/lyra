@@ -90,7 +90,7 @@ impl Related<super::nodes::Entity> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
-    pub fn decode_keyframes(&self) -> anyhow::Result<Vec<i64>> {
+    pub fn decode_keyframes(&self) -> anyhow::Result<lyra_probe::VideoKeyframes> {
         json_encoding::decode_json_zstd(
             self.keyframes_json
                 .as_deref()

@@ -11,6 +11,15 @@ pub struct ProbeData {
 }
 
 impl ProbeData {
+    pub fn stream(&self, index: u32) -> Option<&Stream> {
+        self.streams.iter().find(|stream| stream.index == index)
+    }
+
+    pub fn video_stream(&self, index: u32) -> Option<&Stream> {
+        self.stream(index)
+            .filter(|stream| stream.kind() == StreamKind::Video)
+    }
+
     pub fn get_video_stream(&self) -> Option<&Stream> {
         let mut best = None;
         for stream in &self.streams {
@@ -254,6 +263,12 @@ pub enum StreamDetails {
         time_base_den: i64,
         #[serde(skip_serializing_if = "Option::is_none")]
         frame_rate: Option<f32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        level: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        codec_tag_string: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         bit_depth: Option<u8>,
         #[serde(skip_serializing_if = "Option::is_none")]

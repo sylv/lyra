@@ -21,6 +21,24 @@ type Asset {
 	signedUrl: String!
 }
 
+type AudioRenditionOption {
+	renditionId: String!
+	codecName: String!
+	bitrate: Int
+	channels: Int
+	sampleRate: Int
+	codecTag: String!
+	onDemand: Boolean!
+}
+
+type AudioTrackOption {
+	streamIndex: Int!
+	displayName: String!
+	language: String
+	recommended: Boolean!
+	renditions: [AudioRenditionOption!]!
+}
+
 type Collection {
 	id: String!
 	name: String!
@@ -81,9 +99,8 @@ type File {
 	unavailableAt: Int
 	scannedAt: Int
 	discoveredAt: Int!
+	playbackOptions: PlaybackOptions!
 	timelinePreview: [TimelinePreviewSheet!]!
-	tracks: [TrackInfo!]!
-	recommendedTracks: [RecommendedTrack!]!
 	subtitleTracks: [SubtitleTrack!]!
 	recommendedSubtitleTrackId: String
 	segments: [FileSegment!]!
@@ -189,6 +206,8 @@ type Mutation {
 	leaveWatchSession(sessionId: String!, playerId: String!): Boolean!
 	watchSessionHeartbeat(input: WatchSessionHeartbeatInput!): WatchSessionBeacon!
 	watchSessionAction(input: WatchSessionActionInput!): WatchSessionBeacon!
+	mintPlaybackUrl(input: PlaybackUrlInput!): PlaybackUrlPayload!
+	mintSubtitleUrl(input: SubtitleUrlInput!): SubtitleUrlPayload!
 }
 
 type Node {
@@ -342,6 +361,25 @@ type PageInfo {
 	endCursor: String
 }
 
+type PlaybackOptions {
+	videoRenditions: [VideoRenditionOption!]!
+	audioTracks: [AudioTrackOption!]!
+	subtitleTracks: [SubtitlePlaybackTrack!]!
+}
+
+input PlaybackUrlInput {
+	fileId: String!
+	playerId: String!
+	videoRenditionId: String!
+	audioStreamIndex: Int!
+	audioRenditionId: String!
+}
+
+type PlaybackUrlPayload {
+	url: String!
+	packagerId: String!
+}
+
 type Query {
 	nodeList(filter: NodeFilter!, after: String, first: Int): NodeConnection!
 	node(nodeId: String!): Node!
@@ -358,12 +396,6 @@ type Query {
 	activities: [Activity!]!
 }
 
-type RecommendedTrack {
-	manifestIndex: Int!
-	trackType: TrackType!
-	enabled: Boolean!
-}
-
 type SubscriptionRoot {
 	contentUpdates: ContentUpdateEvent!
 	watchSessionBeacons(sessionId: String!, playerId: String!): WatchSessionBeacon!
@@ -378,6 +410,21 @@ enum SubtitleKind {
 	TTML
 	PGS
 	VOB_SUB
+}
+
+type SubtitlePlaybackTrack {
+	subtitleId: String!
+	streamIndex: Int!
+	displayName: String!
+	language: String
+	recommended: Boolean!
+	renditions: [SubtitleRenditionOption!]!
+}
+
+type SubtitleRenditionOption {
+	renditionId: String!
+	codecName: String!
+	onDemand: Boolean!
 }
 
 enum SubtitleSource {
@@ -399,6 +446,16 @@ type SubtitleTrack {
 	derivedFromSubtitleId: String
 }
 
+input SubtitleUrlInput {
+	fileId: String!
+	subtitleId: String!
+	renditionId: String!
+}
+
+type SubtitleUrlPayload {
+	url: String!
+}
+
 type TimelinePreviewSheet {
 	positionMs: Int!
 	endMs: Int!
@@ -413,33 +470,6 @@ enum TrackDispositionPreference {
 	COMMENTARY
 }
 
-type TrackInfo {
-	"""
-	original media stream index
-	"""
-	trackIndex: Int!
-	"""
-	0-based index within type (maps to HLS.js index directly)
-	"""
-	manifestIndex: Int!
-	trackType: TrackType!
-	displayName: String!
-	"""
-	iso 639 language code, null if unparseable
-	"""
-	language: String
-	"""
-	null if forced or unparseable
-	"""
-	disposition: TrackDispositionPreference
-	isForced: Boolean!
-}
-
-enum TrackType {
-	AUDIO
-	SUBTITLE
-}
-
 type User {
 	id: String!
 	username: String!
@@ -452,6 +482,14 @@ type User {
 	preferredSubtitleDisposition: String
 	lastSeenAt: Int
 	libraries: [Library!]!
+}
+
+type VideoRenditionOption {
+	renditionId: String!
+	displayName: String!
+	displayInfo: String!
+	codecTag: String!
+	onDemand: Boolean!
 }
 
 type WatchProgress {

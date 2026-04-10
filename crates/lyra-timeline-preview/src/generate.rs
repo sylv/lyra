@@ -6,6 +6,7 @@ use crate::{
     GAP_PX, MAX_FRAMES_PER_SHEET, MAX_UNCOMPRESSED_SIZE_BYTES, PreviewOptions, TimelinePreview,
     WEBP_QUALITY,
 };
+use lyra_probe::get_ffmpeg_path;
 
 #[derive(Clone, Copy, Debug)]
 struct SheetLayout {
@@ -71,8 +72,7 @@ pub(crate) async fn generate_sheets(
             blit_frame(&mut sheet_rgb, sheet_width, &frame, dest_x, dest_y);
         }
 
-        let webp_bytes =
-            convert_rgb_to_webp(&options.ffmpeg_bin, sheet_width, sheet_height, &sheet_rgb).await?;
+        let webp_bytes = convert_rgb_to_webp(sheet_width, sheet_height, &sheet_rgb).await?;
 
         timeline_previews.push(TimelinePreview {
             preview_bytes: webp_bytes,
@@ -188,12 +188,7 @@ fn blit_frame(
     }
 }
 
-async fn convert_rgb_to_webp(
-    ffmpeg_bin: &PathBuf,
-    width: u32,
-    height: u32,
-    rgb: &[u8],
-) -> anyhow::Result<Vec<u8>> {
+async fn convert_rgb_to_webp(width: u32, height: u32, rgb: &[u8]) -> anyhow::Result<Vec<u8>> {
     let expected_len = rgb_buffer_len(width, height)?;
     if rgb.len() != expected_len {
         anyhow::bail!(
@@ -203,6 +198,7 @@ async fn convert_rgb_to_webp(
         );
     }
 
+    let ffmpeg_bin = get_ffmpeg_path();
     let mut child = Command::new(ffmpeg_bin)
         .kill_on_drop(true)
         .args([

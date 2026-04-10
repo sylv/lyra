@@ -5,6 +5,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Default)]
 struct HeavyJobState {
     active_blocks: u64,
+    active_sessions: usize,
     next_job_id: u64,
     active_job_id: Option<u64>,
     current_cancel: Option<CancellationToken>,
@@ -48,7 +49,7 @@ impl HeavyJobController {
     pub async fn acquire_background_lease(&self) -> JobLease {
         loop {
             let mut state = self.state.lock().await;
-            if state.active_blocks > 0 {
+            if state.active_blocks > 0 || state.active_sessions > 0 {
                 drop(state);
                 tokio::select! {
                     _ = self.no_blocks_notify.notified() => {},
@@ -66,6 +67,25 @@ impl HeavyJobController {
             drop(state);
 
             return JobLease::new_cancellable(self.state.clone(), job_id, cancel_token);
+        }
+    }
+
+    pub async fn set_active_session_count(&self, count: usize) {
+        let mut state = self.state.lock().await;
+        let previous = state.active_sessions;
+        state.active_sessions = count;
+
+        if previous == 0 && count > 0 {
+            tracing::info!(
+                active_sessions = count,
+                "blocking heavy jobs while playback sessions are active"
+            );
+            if let Some(token) = &state.current_cancel {
+                token.cancel();
+            }
+        } else if previous > 0 && count == 0 {
+            tracing::info!("playback session block lifted");
+            self.no_blocks_notify.notify_waiters();
         }
     }
 }

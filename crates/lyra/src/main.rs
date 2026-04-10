@@ -24,8 +24,8 @@ use axum::{
     response::{Html, IntoResponse},
     routing::{get, post},
 };
-use lyra_packager::Package as PackagerState;
 use reqwest::header::USER_AGENT;
+use lyra_packager::SessionManager;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde::Serialize;
 use serde_json::json;
@@ -81,7 +81,7 @@ struct AppState {
     heavy_job_controller: Arc<HeavyJobController>,
     setup_code: u32,
     last_setup_code_attempt: Arc<AtomicI64>,
-    packager_states: Arc<Mutex<HashMap<String, Arc<PackagerState>>>>,
+    playback_registry: hls::PlaybackRegistry,
 }
 
 async fn get_graphql(_auth: RequestAuth) -> impl IntoResponse {
@@ -289,13 +289,42 @@ async fn main() {
         });
     }
 
+    let playback_sessions = Arc::new(
+        SessionManager::new(
+            get_config().get_transcode_cache_dir().join("sessions"),
+            Duration::from_secs(15 * 60),
+        )
+        .await
+        .expect("Failed to initialize playback session manager"),
+    );
+    let playback_registry = hls::PlaybackRegistry {
+        sessions: playback_sessions.clone(),
+        player_sessions: Arc::new(Mutex::new(HashMap::new())),
+    };
+
+    let heavy_job_controller_for_sessions = heavy_job_controller.clone();
+    let mut playback_session_count = playback_sessions.subscribe_session_count();
+    background_workers.spawn(async move {
+        let mut current_count = *playback_session_count.borrow_and_update();
+        heavy_job_controller_for_sessions
+            .set_active_session_count(current_count)
+            .await;
+        while playback_session_count.changed().await.is_ok() {
+            current_count = *playback_session_count.borrow_and_update();
+            heavy_job_controller_for_sessions
+                .set_active_session_count(current_count)
+                .await;
+        }
+        Ok(())
+    });
+
     let schema: AppSchema = Schema::build(
         graphql::query::Query,
         graphql::mutation::Mutation,
         graphql::subscription::SubscriptionRoot,
     )
-    .limit_depth(8)
-    .limit_complexity(100)
+    .limit_depth(10)
+    .limit_complexity(200)
     .limit_directives(5)
     .data(pool.clone())
     .data(DataLoader::new(
@@ -306,6 +335,7 @@ async fn main() {
         graphql::dataloaders::node_counts::NodeCountsLoader::new(pool.clone()),
         tokio::spawn,
     ))
+    .data(playback_registry.clone())
     .data(watch_session_registry)
     .finish();
 
@@ -336,7 +366,7 @@ async fn main() {
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))
         .with_state(AppState {
-            packager_states: Arc::new(Mutex::new(HashMap::new())),
+            playback_registry,
             pool: pool.clone(),
             schema: Arc::new(schema),
             job_wake_signal,

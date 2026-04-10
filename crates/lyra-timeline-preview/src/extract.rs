@@ -11,6 +11,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::PreviewOptions;
+use lyra_probe::get_ffmpeg_path;
 
 pub(crate) async fn extract_frame_paths(
     video_path: &PathBuf,
@@ -83,7 +84,8 @@ async fn extract_frames(
     ];
 
     tracing::info!("running ffmpeg with args: {}", args.join(" "));
-    let mut child = Command::new(&options.ffmpeg_bin)
+    let ffmpeg_bin = get_ffmpeg_path();
+    let mut child = Command::new(&ffmpeg_bin)
         .kill_on_drop(true)
         .args(&args)
         .stdout(Stdio::piped())

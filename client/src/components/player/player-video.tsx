@@ -6,8 +6,6 @@ import { type ItemPlaybackQuery, WatchSessionActionKind, WatchSessionIntent } fr
 import { createHlsPlayer } from "./hls";
 import {
 	playerContext,
-	resetPlayerControls,
-	resetPlayerState,
 	setPlayerActions,
 	setPlayerLoading,
 	setPlayerMedia,
@@ -19,6 +17,7 @@ import {
 	usePlayerContext,
 } from "./player-context";
 import {
+	MintPlaybackUrl,
 	UpdateWatchState,
 	WatchSessionAction,
 	WatchSessionBeaconFragment,
@@ -37,9 +36,36 @@ interface PlayerVideoProps {
 	shouldPromptResume: boolean;
 }
 
+const pickPlayableVideoRendition = (
+	renditions: NonNullable<NonNullable<CurrentMedia["file"]>["playbackOptions"]>["videoRenditions"] | null | undefined,
+) => {
+	if (!renditions || renditions.length === 0) return null;
+	const probe = document.createElement("video");
+	const playable =
+		renditions.find((rendition) => {
+			const mimeType = `video/mp4; codecs="${rendition.codecTag}"`;
+			const support = probe.canPlayType(mimeType);
+			console.info("[player] probed video rendition", {
+				renditionId: rendition.renditionId,
+				displayName: rendition.displayName,
+				codecTag: rendition.codecTag,
+				mimeType,
+				canPlayType: support,
+			});
+			return support === "probably" || support === "maybe";
+		}) ?? renditions[0];
+	console.info("[player] selected video rendition", {
+		renditionId: playable.renditionId,
+		displayName: playable.displayName,
+		codecTag: playable.codecTag,
+	});
+	return playable;
+};
+
 export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shouldPromptResume }) => {
 	const { videoRef, controllerRef } = usePlayerRefsContext();
 	const subtitleTrackElementsRef = useRef(new Map<string, HTMLTrackElement>());
+	const [, mintPlaybackUrl] = useMutation(MintPlaybackUrl);
 	const [, updateWatchProgress] = useMutation(UpdateWatchState);
 	const [, watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
 	const [, watchSessionAction] = useMutation(WatchSessionAction);
@@ -64,6 +90,37 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 	const pendingActionRef = useRef<Promise<unknown> | null>(null);
 	const heartbeatRef = useRef<(() => void) | null>(null);
 	const [isWatchSessionRegistered, setIsWatchSessionRegistered] = useState(false);
+	const selectedAudioTrackId = usePlayerContext((ctx) => ctx.state.selectedAudioTrackId);
+	const playbackOptions = currentMedia?.file?.playbackOptions ?? null;
+	const recommendedAudioTrack =
+		playbackOptions?.audioTracks.find((track) => track.recommended) ?? playbackOptions?.audioTracks[0] ?? null;
+	const activeAudioTrack =
+		playbackOptions?.audioTracks.find((track) => track.streamIndex === selectedAudioTrackId) ?? recommendedAudioTrack;
+	const activeAudioRendition = activeAudioTrack?.renditions[0] ?? null;
+	const activeVideoRendition = pickPlayableVideoRendition(playbackOptions?.videoRenditions);
+
+	useEffect(() => {
+		if (!playbackOptions?.audioTracks?.length) return;
+		for (const track of playbackOptions.audioTracks) {
+			for (const rendition of track.renditions) {
+				console.info("[player] available audio rendition", {
+					streamIndex: track.streamIndex,
+					displayName: track.displayName,
+					renditionId: rendition.renditionId,
+					codecName: rendition.codecName,
+					codecTag: rendition.codecTag,
+				});
+			}
+		}
+		if (!activeAudioTrack || !activeAudioRendition) return;
+		console.info("[player] selected audio rendition", {
+			streamIndex: activeAudioTrack.streamIndex,
+			displayName: activeAudioTrack.displayName,
+			renditionId: activeAudioRendition.renditionId,
+			codecName: activeAudioRendition.codecName,
+			codecTag: activeAudioRendition.codecTag,
+		});
+	}, [activeAudioRendition, activeAudioTrack, playbackOptions?.audioTracks]);
 
 	const [watchSessionBeaconsResult] = useSubscription({
 		query: WatchSessionBeacons,
@@ -186,7 +243,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 		};
 
 		const setAudioTrack = (trackId: number) => {
-			controllerRef.current?.setAudioTrack(trackId);
+			setPlayerState({ selectedAudioTrackId: trackId });
 		};
 
 		const setSubtitleTrack = (trackId: string | null) => {
@@ -234,12 +291,8 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 
 	useEffect(() => {
 		if (!videoRef.current || !currentMedia) return;
+		if (!watchSession.playerId) return;
 		const video = videoRef.current;
-
-		if (controllerRef.current) {
-			controllerRef.current.destroy();
-			controllerRef.current = null;
-		}
 
 		if (!autoplay) {
 			video.pause();
@@ -255,20 +308,6 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 
 		setPlayerState({ errorMessage: null });
 		setPlayerLoading(true);
-		setPlayerState({
-			subtitleTrackOptions:
-				currentMedia.file.subtitleTracks?.map((track) => ({
-					id: track.id,
-					label: track.label,
-					source: track.source,
-					tags: track.dispositions.concat(track.source === "EXTRACTED" ? [] : [track.source]),
-					language: track.language ?? null,
-					signedUrl: track.asset.signedUrl,
-				})) ?? [],
-			selectedSubtitleTrackId: null,
-		});
-
-		const hlsUrl = `/api/hls/stream/${currentMedia.file.id}/master.m3u8`;
 		const initialPositionSeconds = playerContext.getState().state.pendingInitialPosition;
 		const watchProgressPercent = currentMedia.watchProgress?.completed
 			? null
@@ -280,37 +319,95 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 				: null;
 
 		let active = true;
+		if (!activeAudioTrack || !activeAudioRendition || !activeVideoRendition) {
+			setPlayerState({ errorMessage: "Sorry, this item has no playable stream" });
+			setPlayerLoading(false);
+			return;
+		}
 
-		createHlsPlayer(video, hlsUrl, currentMedia.file.tracks ?? [], currentMedia.file.recommendedTracks ?? [], {
-			initialPositionSeconds,
-			watchProgressPercent,
-			runtimeDurationSeconds,
-			shouldPromptResume,
-			pauseAfterInitialSeek: initialPositionSeconds != null,
-			videoRef,
-		}).then((controller) => {
-			if (!active) {
-				controller?.destroy();
-				return;
-			}
-			controllerRef.current = controller;
-			if (initialPositionSeconds != null) {
-				setPlayerState({ pendingInitialPosition: null, playing: false });
-			}
-		});
+		controllerRef.current?.destroy();
+		controllerRef.current = null;
+
+		void mintPlaybackUrl({
+			input: {
+				fileId: currentMedia.file.id,
+				playerId: watchSession.playerId,
+				videoRenditionId: activeVideoRendition.renditionId,
+				audioStreamIndex: activeAudioTrack.streamIndex,
+				audioRenditionId: activeAudioRendition.renditionId,
+			},
+		})
+			.then((result) => {
+				if (!active) return;
+				if (result.error || !result.data?.mintPlaybackUrl.url) {
+					throw result.error ?? new Error("Failed to mint playback URL");
+				}
+				return createHlsPlayer(video, result.data.mintPlaybackUrl.url, {
+					initialPositionSeconds,
+					watchProgressPercent,
+					runtimeDurationSeconds,
+					shouldPromptResume,
+					shouldAutoplay: autoplay,
+					pauseAfterInitialSeek: initialPositionSeconds != null,
+					videoRef,
+				});
+			})
+			.then((controller) => {
+				if (!active) {
+					controller?.destroy();
+					return;
+				}
+				controllerRef.current = controller ?? null;
+				if (initialPositionSeconds != null) {
+					setPlayerState({ pendingInitialPosition: null, playing: false });
+				}
+			})
+			.catch((error: unknown) => {
+				console.error("failed to start playback", error);
+				if (!active) return;
+				setPlayerState({ errorMessage: "Sorry, this item is unavailable" });
+				setPlayerLoading(false);
+			});
 
 		return () => {
 			active = false;
-			resetPlayerState({
-				autoplay: playerContext.getState().state.autoplay,
-				shouldPromptResume: false,
-				isFullscreen: playerContext.getState().state.isFullscreen,
-			});
-			resetPlayerControls();
 			controllerRef.current?.destroy();
 			controllerRef.current = null;
 		};
-	}, [autoplay, currentMediaId, currentFileId, controllerRef, shouldPromptResume, videoRef]);
+	}, [
+		autoplay,
+		controllerRef,
+		currentFileId,
+		currentMediaId,
+		activeAudioRendition?.renditionId,
+		activeAudioTrack?.streamIndex,
+		activeVideoRendition?.renditionId,
+		mintPlaybackUrl,
+		shouldPromptResume,
+		videoRef,
+		watchSession.playerId,
+	]);
+
+	useEffect(() => {
+		setPlayerState({
+			audioTrackOptions:
+				playbackOptions?.audioTracks.map((track) => ({
+					id: track.streamIndex,
+					label: track.displayName,
+				})) ?? [],
+			selectedAudioTrackId: activeAudioTrack?.streamIndex ?? null,
+			subtitleTrackOptions:
+				currentMedia?.file?.subtitleTracks?.map((track) => ({
+					id: track.id,
+					label: track.label,
+					source: track.source,
+					tags: track.dispositions.concat(track.source === "EXTRACTED" ? [] : [track.source]),
+					language: track.language ?? null,
+					signedUrl: track.asset.signedUrl,
+				})) ?? [],
+			selectedSubtitleTrackId: null,
+		});
+	}, [activeAudioTrack?.streamIndex, currentMedia?.file?.subtitleTracks, playbackOptions?.audioTracks]);
 
 	useEffect(() => {
 		const selectedSubtitleTrackId = playerContext.getState().state.selectedSubtitleTrackId;

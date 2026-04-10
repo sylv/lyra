@@ -23,6 +23,7 @@ samples*/
 frames*/
 dump*/
 crates/lyra-bitsubconvert/models/
+.segments
 
 *.sup
 *.idx

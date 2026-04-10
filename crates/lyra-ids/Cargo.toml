@@ -1,0 +1,9 @@
+[package]
+name = "lyra-ids"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rand.workspace = true
+sha2.workspace = true
+ulid.workspace = true

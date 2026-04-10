@@ -15,7 +15,6 @@ use lyra_bitsubconvert::{
     BitmapSubtitleKind, BitmapToWebVttOptions, ExtractedSubtitleInput,
     convert_extracted_bitmap_subtitles_to_webvtt,
 };
-use lyra_packager::state::build_track_display_name;
 use lyra_probe::{ProbeData, Stream, get_ffmpeg_path};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
@@ -45,14 +44,7 @@ pub fn subtitle_descriptor_from_stream(stream: &Stream) -> Option<SubtitleDescri
         kind,
         stream_index: i64::from(stream.index),
         language_bcp47: stream.language_bcp47.clone(),
-        display_name: build_track_display_name(
-            stream.language_bcp47.as_deref(),
-            stream.original_title.as_deref(),
-            &fallback,
-            stream.is_forced(),
-            stream.is_hearing_impaired(),
-            stream.is_commentary(),
-        ),
+        display_name: stream.display_name.clone().unwrap_or(fallback),
         disposition_bits: subtitle_disposition_bits(stream.disposition),
     })
 }

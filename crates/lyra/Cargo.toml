@@ -66,6 +66,7 @@ regex.workspace = true
 lazy_static.workspace = true
 glob.workspace = true
 lyra-packager = { path = "../lyra-packager", default-features = false }
+lyra-ids = { path = "../lyra-ids" }
 isolang.workspace = true
 lyra-metadata = { path = "../lyra-metadata" }
 lyra-metadata-tmdb = { path = "../lyra-metadata-tmdb" }

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/lyra",
+    "crates/lyra-ids",
     "crates/lyra-tracing",
     "crates/lyra-docker-init",
     "crates/lyra-metadata",

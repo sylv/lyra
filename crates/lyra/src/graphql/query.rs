@@ -6,6 +6,7 @@ use crate::{
         recently_released_id,
     },
     entities::{collections, libraries, node_metadata, nodes, users, watch_progress},
+    graphql::types::collection::collection_item_count,
     metadata::read,
     watch_session::WatchSessionRegistry,
 };
@@ -639,13 +640,13 @@ impl Query {
                 continue;
             }
 
-            if crate::graphql::collection::collection_item_count(ctx, &collection).await? > 0 {
+            if collection_item_count(ctx, &collection).await? > 0 {
                 visible_sections.push(collection);
             }
         }
 
         for collection in [recently_released_collection(), recently_added_collection()] {
-            if crate::graphql::collection::collection_item_count(ctx, &collection).await? > 0 {
+            if collection_item_count(ctx, &collection).await? > 0 {
                 visible_sections.push(collection);
             }
         }
@@ -655,7 +656,7 @@ impl Query {
             .await?
         {
             if is_watchlist_collection(&watchlist)
-                && crate::graphql::collection::collection_item_count(ctx, &watchlist).await? > 0
+                && collection_item_count(ctx, &watchlist).await? > 0
             {
                 visible_sections.push(watchlist);
             }
@@ -698,7 +699,7 @@ impl Query {
                 continue;
             }
 
-            if crate::graphql::collection::collection_item_count(ctx, &collection).await? > 0 {
+            if collection_item_count(ctx, &collection).await? > 0 {
                 visible_collections.push(collection);
             }
         }
@@ -709,7 +710,7 @@ impl Query {
                 .await?
             {
                 if is_watchlist_collection(&watchlist)
-                    && crate::graphql::collection::collection_item_count(ctx, &watchlist).await? > 0
+                    && collection_item_count(ctx, &watchlist).await? > 0
                 {
                     visible_collections.push(watchlist);
                 }
@@ -730,7 +731,7 @@ impl Query {
         let user_id = auth.get_user_or_err()?.id.clone();
 
         if let Some(collection) = synthetic_collection_for_viewer(&collection_id) {
-            if crate::graphql::collection::collection_item_count(ctx, &collection).await? == 0 {
+            if collection_item_count(ctx, &collection).await? == 0 {
                 return Ok(None);
             }
 
@@ -748,7 +749,7 @@ impl Query {
             return Ok(None);
         }
 
-        if crate::graphql::collection::collection_item_count(ctx, &collection).await? == 0 {
+        if collection_item_count(ctx, &collection).await? == 0 {
             return Ok(None);
         }
 

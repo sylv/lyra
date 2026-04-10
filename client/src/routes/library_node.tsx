@@ -12,7 +12,7 @@ import { useState, type JSX } from "react";
 import { Link, Navigate, useParams } from "react-router";
 import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
-import { NodeAvailability } from "../@generated/gql/graphql";
+import { NodeAvailability, OrderBy } from "../@generated/gql/graphql";
 import { useTitle } from "../hooks/use-title";
 import { formatReleaseYear } from "../lib/format-release-year";
 import { getPathForNode } from "../lib/getPathForMedia";
@@ -166,11 +166,19 @@ export function LibraryNodeRoute() {
 	let inlineEpisodeList: JSX.Element | null = null;
 	if (isSeason) {
 		inlineEpisodeList = (
-			<NodeList type="episodes" filterOverride={{ parentId: node.id, availability: directAvailabilityFilter }} />
+			<NodeList
+				type="episodes"
+				defaultOrderBy={OrderBy.Order}
+				filterOverride={{ parentId: node.id, availability: directAvailabilityFilter }}
+			/>
 		);
 	} else if (isEpisodesView) {
 		inlineEpisodeList = (
-			<NodeList type="episodes" filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }} />
+			<NodeList
+				type="episodes"
+				defaultOrderBy={OrderBy.Order}
+				filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }}
+			/>
 		);
 	}
 
@@ -236,6 +244,7 @@ export function LibraryNodeRoute() {
 							<div className="container py-6">
 								<NodeList
 									type="episodes"
+									defaultOrderBy={OrderBy.Order}
 									filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }}
 								/>
 							</div>
