@@ -1,9 +1,26 @@
 use ed25519_dalek::SigningKey;
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const SIGNING_KEY_FILENAME: &str = "signing_key";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BackupConfig {
+    pub enabled: bool,
+    pub directory: Option<PathBuf>,
+    pub retention_days: u32,
+}
+
+impl BackupConfig {
+    pub fn get_directory(&self, data_dir: &Path) -> PathBuf {
+        if let Some(directory) = self.directory.as_ref() {
+            directory.clone()
+        } else {
+            data_dir.join("backups")
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -11,6 +28,7 @@ pub struct Config {
     pub transcode_cache_dir: Option<PathBuf>,
     pub image_dir: Option<PathBuf>,
     pub asset_store_dir: Option<PathBuf>,
+    pub backup: BackupConfig,
     pub host: String,
     pub port: u16,
     pub clear_transcode_cache_on_start: bool,
@@ -70,6 +88,8 @@ fn init() -> Result<(Config, SigningKey), Box<dyn std::error::Error>> {
         .add_source(config::Environment::with_prefix("lyra"))
         .add_source(config::File::with_name("lyra.yml").required(false))
         .set_default("data_dir", ".lyra")?
+        .set_default("backup.enabled", true)?
+        .set_default("backup.retention_days", 7)?
         .set_default("host", "127.0.0.1")?
         .set_default("port", "8000")?
         .set_default("clear_transcode_cache_on_start", false)?
@@ -98,6 +118,9 @@ fn init() -> Result<(Config, SigningKey), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&config.get_image_dir())?;
     std::fs::create_dir_all(&config.get_asset_store_dir())?;
     std::fs::create_dir_all(&config.get_tmp_dir())?;
+    if config.backup.enabled {
+        std::fs::create_dir_all(config.backup.get_directory(&config.data_dir))?;
+    }
 
     tracing::info!(
         data_dir = ?config.data_dir,

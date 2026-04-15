@@ -3,8 +3,9 @@ use crate::entities::{
     assets,
     file_assets::{self, FileAssetRole},
     files, node_files, node_metadata, node_metadata_content_ratings, node_metadata_genres,
-    node_metadata_images, node_metadata_images::NodeMetadataImageKind, nodes, people,
-    root_node_cast,
+    node_metadata_images,
+    node_metadata_images::NodeMetadataImageKind,
+    nodes, people, root_node_cast,
 };
 use crate::graphql::dataloaders::{
     node_counts::NodeCountsLoader,

@@ -82,6 +82,7 @@ zstd.workspace = true
 rusty-chromaprint.workspace = true
 postcard = { workspace = true, features = ["use-std"] }
 tar.workspace = true
+thiserror.workspace = true
 
 [features]
 static = []

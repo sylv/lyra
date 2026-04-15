@@ -1,5 +1,6 @@
 use crate::{
     auth::RequestAuth,
+    backup::{BackupManager, run_backup_worker, run_migrations_with_backups},
     cleanup::start_cleanup_worker,
     collections::reconcile_system_collections,
     config::get_config,
@@ -46,6 +47,7 @@ use tower_http::compression::CompressionLayer;
 mod activity;
 mod assets;
 mod auth;
+mod backup;
 mod cleanup;
 mod collections;
 mod config;
@@ -210,7 +212,7 @@ async fn main() {
 
     let config = get_config();
     let db_path = config.data_dir.join("data.db");
-    let pool = SqlitePoolOptions::new()
+    let sqlx_pool = SqlitePoolOptions::new()
         .max_connections(8)
         .acquire_timeout(Duration::from_secs(300))
         .connect_with(
@@ -229,15 +231,15 @@ async fn main() {
         )
         .await
         .expect("Failed to connect to SQLite");
+    let backup_manager = Arc::new(BackupManager::new(sqlx_pool.clone()));
 
     tracing::info!("Running database migrations");
-    sqlx::migrate!("../../migrations")
-        .run(&pool)
+    run_migrations_with_backups(&sqlx_pool, backup_manager.as_ref())
         .await
         .expect("Failed to run migrations");
     tracing::info!("Database migrations complete");
 
-    let pool = DatabaseConnection::from(pool);
+    let pool = DatabaseConnection::from(sqlx_pool);
     reconcile_system_collections(&pool)
         .await
         .expect("Failed to reconcile system collections");
@@ -273,6 +275,9 @@ async fn main() {
     background_workers.spawn(async move {
         start_cleanup_worker(cleanup_pool, cleanup_startup_scans_complete).await
     });
+
+    let backup_manager_for_worker = backup_manager.clone();
+    background_workers.spawn(async move { run_backup_worker(backup_manager_for_worker).await });
 
     let registered_jobs = load_registered_jobs(
         &pool,

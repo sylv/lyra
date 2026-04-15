@@ -2751,6 +2751,7 @@ dependencies = [
  "sqlx",
  "tar",
  "tempfile",
+ "thiserror",
  "thumbhash",
  "tokio",
  "tokio-util",

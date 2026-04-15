@@ -6,9 +6,8 @@ use crate::entities::{
 };
 use crate::graphql::properties::{
     AudioRenditionOption, AudioTrackOption, FileProbe, FileSegment, FileSegmentKind,
-    PlaybackOptions, SubtitleKind, SubtitlePlaybackTrack, SubtitleRenditionOption,
-    SubtitleSource, SubtitleTrack, TimelinePreviewSheet, TrackDispositionPreference,
-    VideoRenditionOption,
+    PlaybackOptions, SubtitleKind, SubtitlePlaybackTrack, SubtitleRenditionOption, SubtitleSource,
+    SubtitleTrack, TimelinePreviewSheet, TrackDispositionPreference, VideoRenditionOption,
 };
 use crate::hls;
 use crate::segment_markers::StoredFileSegmentKind;
@@ -23,7 +22,9 @@ use std::collections::HashMap;
 impl files::Model {
     pub async fn probe(&self, ctx: &Context<'_>) -> Result<Option<FileProbe>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let probe = file_probe::Entity::find_by_id(self.id.clone()).one(pool).await?;
+        let probe = file_probe::Entity::find_by_id(self.id.clone())
+            .one(pool)
+            .await?;
         Ok(probe
             .as_ref()
             .and_then(|probe| probe.get_probe().ok())
