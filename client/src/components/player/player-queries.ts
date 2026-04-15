@@ -10,7 +10,6 @@ export const ItemPlaybackQuery = graphql(`
         displayName
         seasonNumber
         episodeNumber
-        runtimeMinutes
         firstAired
         lastAired
       }
@@ -27,8 +26,11 @@ export const ItemPlaybackQuery = graphql(`
         completed
         updatedAt
       }
-      file {
+      defaultFile {
         id
+        probe {
+          runtimeMinutes
+        }
         playbackOptions {
           videoRenditions {
             renditionId

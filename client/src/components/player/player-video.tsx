@@ -37,7 +37,10 @@ interface PlayerVideoProps {
 }
 
 const pickPlayableVideoRendition = (
-  renditions: NonNullable<NonNullable<CurrentMedia["file"]>["playbackOptions"]>["videoRenditions"] | null | undefined,
+  renditions:
+    | NonNullable<NonNullable<CurrentMedia["defaultFile"]>["playbackOptions"]>["videoRenditions"]
+    | null
+    | undefined,
 ) => {
   if (!renditions || renditions.length === 0) return null;
   const probe = document.createElement("video");
@@ -70,7 +73,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
   const [, watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
   const [, watchSessionAction] = useMutation(WatchSessionAction);
   const currentMediaId = currentMedia?.id ?? null;
-  const currentFileId = currentMedia?.file?.id ?? null;
+  const currentFileId = currentMedia?.defaultFile?.id ?? null;
   const watchSession = usePlayerContext((ctx) => ctx.watchSession);
   const snapshotUpdateRef = useRef<{ mediaId: string | null; lastPosition: number | null; lastUpdatedAt: number }>({
     mediaId: null,
@@ -91,7 +94,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
   const heartbeatRef = useRef<(() => void) | null>(null);
   const [isWatchSessionRegistered, setIsWatchSessionRegistered] = useState(false);
   const selectedAudioTrackId = usePlayerContext((ctx) => ctx.state.selectedAudioTrackId);
-  const playbackOptions = currentMedia?.file?.playbackOptions ?? null;
+  const playbackOptions = currentMedia?.defaultFile?.playbackOptions ?? null;
   const recommendedAudioTrack =
     playbackOptions?.audioTracks.find((track) => track.recommended) ?? playbackOptions?.audioTracks[0] ?? null;
   const activeAudioTrack =
@@ -248,10 +251,10 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 
     const setSubtitleTrack = (trackId: string | null) => {
       const video = videoRef.current;
-      if (!video || !currentMedia?.file?.subtitleTracks) return;
+      if (!video || !currentMedia?.defaultFile?.subtitleTracks) return;
 
-      const selectedTrackId = trackId === null ? currentMedia.file.recommendedSubtitleTrackId : trackId;
-      for (const track of currentMedia.file.subtitleTracks) {
+      const selectedTrackId = trackId === null ? currentMedia.defaultFile.recommendedSubtitleTrackId : trackId;
+      for (const track of currentMedia.defaultFile.subtitleTracks) {
         const element = subtitleTrackElementsRef.current.get(track.id);
         if (!element?.track) continue;
         element.track.mode = selectedTrackId === track.id ? "showing" : "disabled";
@@ -283,8 +286,8 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
     });
   }, [
     controllerRef,
-    currentMedia?.file?.recommendedSubtitleTrackId,
-    currentMedia?.file?.subtitleTracks,
+    currentMedia?.defaultFile?.recommendedSubtitleTrackId,
+    currentMedia?.defaultFile?.subtitleTracks,
     videoRef,
     watchSessionAction,
   ]);
@@ -305,7 +308,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       setPlayerState({ playing: false });
     }
 
-    if (!currentMedia.file) {
+    if (!currentMedia.defaultFile) {
       video.pause();
       setPlayerState({ errorMessage: "Sorry, this item is unavailable" });
       setPlayerLoading(false);
@@ -318,7 +321,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
     const watchProgressPercent = currentMedia.watchProgress?.completed
       ? null
       : currentMedia.watchProgress?.progressPercent;
-    const runtimeMinutes = currentMedia.properties.runtimeMinutes;
+    const runtimeMinutes = currentMedia.defaultFile.probe?.runtimeMinutes;
     const runtimeDurationSeconds =
       typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
         ? runtimeMinutes * 60
@@ -336,7 +339,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 
     void mintPlaybackUrl({
       input: {
-        fileId: currentMedia.file.id,
+        fileId: currentMedia.defaultFile.id,
         playerId: watchSession.playerId,
         videoRenditionId: activeVideoRendition.renditionId,
         audioStreamIndex: activeAudioTrack.streamIndex,
@@ -403,7 +406,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
         })) ?? [],
       selectedAudioTrackId: activeAudioTrack?.streamIndex ?? null,
       subtitleTrackOptions:
-        currentMedia?.file?.subtitleTracks?.map((track) => ({
+        currentMedia?.defaultFile?.subtitleTracks?.map((track) => ({
           id: track.id,
           label: track.label,
           source: track.source,
@@ -413,15 +416,15 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
         })) ?? [],
       selectedSubtitleTrackId: null,
     });
-  }, [activeAudioTrack?.streamIndex, currentMedia?.file?.subtitleTracks, playbackOptions?.audioTracks]);
+  }, [activeAudioTrack?.streamIndex, currentMedia?.defaultFile?.subtitleTracks, playbackOptions?.audioTracks]);
 
   useEffect(() => {
     const selectedSubtitleTrackId = playerContext.getState().state.selectedSubtitleTrackId;
     playerContext.getState().actions.setSubtitleTrack(selectedSubtitleTrackId);
-  }, [currentMedia?.file?.recommendedSubtitleTrackId, currentMedia?.file?.subtitleTracks]);
+  }, [currentMedia?.defaultFile?.recommendedSubtitleTrackId, currentMedia?.defaultFile?.subtitleTracks]);
 
   useEffect(() => {
-    if (!currentMedia?.file) return;
+    if (!currentMedia?.defaultFile) return;
     if (watchSession.sessionId && watchSession.playerId) return;
 
     const pendingSessionId = watchSession.pendingSessionId;
@@ -433,7 +436,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       sessionId: shouldJoin ? pendingSessionId : createLocalWatchSessionId(),
       playerId: createLocalWatchSessionId(),
       nodeId: currentMedia.id,
-      fileId: currentMedia.file.id,
+      fileId: currentMedia.defaultFile.id,
       mode: "ADVISORY",
       intent: playerContext.getState().state.playing ? "PLAYING" : "PAUSED",
       effectiveState: playerContext.getState().state.playing ? "PLAYING" : "PAUSED",
@@ -446,9 +449,9 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       pendingNodeId: null,
     });
   }, [
-    currentMedia?.file,
+    currentMedia?.defaultFile,
     currentMedia?.id,
-    currentMedia?.file?.id,
+    currentMedia?.defaultFile?.id,
     videoRef,
     watchSession.pendingNodeId,
     watchSession.pendingSessionId,
@@ -673,18 +676,18 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
     };
 
     const syncWatchProgress = () => {
-      if (!currentMedia?.file || video.duration <= 0) return;
+      if (!currentMedia?.defaultFile || video.duration <= 0) return;
 
       const progressPercent = video.currentTime / video.duration;
       if (!Number.isFinite(progressPercent)) return;
 
       if (
         watchProgressRef.current.mediaId !== currentMedia.id ||
-        watchProgressRef.current.fileId !== currentMedia.file.id
+        watchProgressRef.current.fileId !== currentMedia.defaultFile.id
       ) {
         watchProgressRef.current = {
           mediaId: currentMedia.id,
-          fileId: currentMedia.file.id,
+          fileId: currentMedia.defaultFile.id,
           lastProgressPercent: null,
         };
       }
@@ -693,7 +696,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       watchProgressRef.current.lastProgressPercent = progressPercent;
 
       updateWatchProgress({
-        fileId: currentMedia.file.id,
+        fileId: currentMedia.defaultFile.id,
         progressPercent,
       })
         .then((result) => {
@@ -832,7 +835,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       controls={false}
       disablePictureInPicture
     >
-      {currentMedia?.file?.subtitleTracks?.map((track) => (
+      {currentMedia?.defaultFile?.subtitleTracks?.map((track) => (
         <track
           key={track.id}
           ref={(element) => {
@@ -843,7 +846,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
           label={track.label}
           srcLang={track.language ?? undefined}
           kind="subtitles"
-          default={currentMedia.file?.recommendedSubtitleTrackId === track.id}
+          default={currentMedia.defaultFile?.recommendedSubtitleTrackId === track.id}
         />
       ))}
     </video>
@@ -853,5 +856,5 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 export const getTimelinePreviewSheets = (
   currentMedia: CurrentMedia | null,
 ): FragmentType<typeof PlayerTimelinePreviewSheetFragment>[] => {
-  return Array.isArray(currentMedia?.file?.timelinePreview) ? currentMedia.file.timelinePreview : [];
+  return Array.isArray(currentMedia?.defaultFile?.timelinePreview) ? currentMedia.defaultFile.timelinePreview : [];
 };

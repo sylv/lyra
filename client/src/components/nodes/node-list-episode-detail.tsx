@@ -23,7 +23,11 @@ const Fragment = graphql(`
       seasonNumber
       episodeNumber
       firstAired
-      runtimeMinutes
+    }
+    defaultFile {
+      probe {
+        runtimeMinutes
+      }
     }
     watchProgress {
       id
@@ -61,7 +65,7 @@ export const EpisodePosterDetail: FC<EpisodePosterDetailProps> = ({ episode: epi
             <span className="font-semibold">{episode.properties.displayName}</span>
           </span>
         </Link>
-        <div className="text-xs text-zinc-400">{formatRuntime(episode.properties.runtimeMinutes)}</div>
+        <div className="text-xs text-zinc-400">{formatRuntime(episode.defaultFile?.probe?.runtimeMinutes ?? null)}</div>
       </div>
     </div>
   );

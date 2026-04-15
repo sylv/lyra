@@ -34,15 +34,15 @@ export const SessionCard: FC<{ session: FragmentType<typeof SessionCardFragment>
     ? `S${node?.properties.seasonNumber}E${node?.properties.episodeNumber} ${node?.properties.displayName}`
     : (releaseYear ?? "Release year unavailable");
   const runtimeSeconds =
-    typeof node?.properties.runtimeMinutes === "number" && Number.isFinite(node.properties.runtimeMinutes)
-      ? node.properties.runtimeMinutes * 60
+    typeof node?.defaultFile?.probe?.runtimeMinutes === "number" &&
+    Number.isFinite(node.defaultFile.probe.runtimeMinutes)
+      ? node.defaultFile.probe.runtimeMinutes * 60
       : null;
   const positionSeconds = Math.max(0, session.currentPositionMs / 1000);
   const positionLabel =
     runtimeSeconds != null && runtimeSeconds > 0
       ? `${formatPlayerTime(positionSeconds)} / ${formatPlayerTime(runtimeSeconds)}`
       : formatPlayerTime(positionSeconds);
-  const playerCountLabel = `${session.players.length} ${session.players.length === 1 ? "viewer" : "viewers"}`;
 
   return (
     <article className="flex flex-col rounded-md overflow-hidden bg-zinc-950/30">

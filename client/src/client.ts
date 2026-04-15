@@ -51,6 +51,7 @@ export const client = createUrqlClient({
     cacheExchange({
       keys: {
         NodeProperties: () => null,
+        FileProbe: () => null,
         HomeView: () => null,
         PlaybackOptions: () => null,
         VideoRenditionOption: () => null,
@@ -60,7 +61,7 @@ export const client = createUrqlClient({
         SubtitleRenditionOption: () => null,
         CastMember: () => null,
         ContentRating: () => null,
-        MetadataGenre: (data) => [data.providerId, data.genreId] as any,
+        MetadataGenre: () => null,
         Activity: (data) => data.taskType as any,
       },
       updates: cacheUpdates,

@@ -5,9 +5,10 @@ use crate::entities::{
     file_probe, file_subtitles, files, users,
 };
 use crate::graphql::properties::{
-    AudioRenditionOption, AudioTrackOption, FileSegment, FileSegmentKind, PlaybackOptions,
-    SubtitleKind, SubtitlePlaybackTrack, SubtitleRenditionOption, SubtitleSource, SubtitleTrack,
-    TimelinePreviewSheet, TrackDispositionPreference, VideoRenditionOption,
+    AudioRenditionOption, AudioTrackOption, FileProbe, FileSegment, FileSegmentKind,
+    PlaybackOptions, SubtitleKind, SubtitlePlaybackTrack, SubtitleRenditionOption,
+    SubtitleSource, SubtitleTrack, TimelinePreviewSheet, TrackDispositionPreference,
+    VideoRenditionOption,
 };
 use crate::hls;
 use crate::segment_markers::StoredFileSegmentKind;
@@ -20,6 +21,15 @@ use std::collections::HashMap;
 
 #[ComplexObject]
 impl files::Model {
+    pub async fn probe(&self, ctx: &Context<'_>) -> Result<Option<FileProbe>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let probe = file_probe::Entity::find_by_id(self.id.clone()).one(pool).await?;
+        Ok(probe
+            .as_ref()
+            .and_then(|probe| probe.get_probe().ok())
+            .map(|probe| summarize_probe(&probe)))
+    }
+
     pub async fn playback_options(
         &self,
         ctx: &Context<'_>,
@@ -294,6 +304,37 @@ impl files::Model {
             })
             .collect())
     }
+}
+
+fn summarize_probe(probe: &lyra_probe::ProbeData) -> FileProbe {
+    let video = probe.get_video_stream();
+    let audio = probe.get_audio_stream();
+    let duration_seconds = probe
+        .duration_secs
+        .map(|value| value.max(0.0).floor() as i64)
+        .filter(|seconds| *seconds > 0);
+
+    FileProbe {
+        runtime_minutes: duration_seconds.map(minutes_from_seconds_ceil),
+        duration_seconds,
+        width: video.and_then(|stream| stream.width()).map(i64::from),
+        height: video.and_then(|stream| stream.height()).map(i64::from),
+        video_codec: video.map(|stream| stream.codec.to_string()),
+        audio_codec: audio.map(|stream| stream.codec.to_string()),
+        fps: video.and_then(|stream| stream.frame_rate()).map(f64::from),
+        video_bitrate: video
+            .and_then(|stream| stream.bit_rate)
+            .and_then(|value| i64::try_from(value).ok()),
+        audio_bitrate: audio
+            .and_then(|stream| stream.bit_rate)
+            .and_then(|value| i64::try_from(value).ok()),
+        audio_channels: audio.and_then(|stream| stream.channels()).map(i64::from),
+        has_subtitles: probe.has_subtitles(),
+    }
+}
+
+fn minutes_from_seconds_ceil(seconds: i64) -> i64 {
+    (seconds + 59) / 60
 }
 
 fn derive_video_renditions(

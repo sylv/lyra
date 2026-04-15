@@ -18,7 +18,7 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
     playerContext.getState().actions.setAudioTrack(trackId);
     setPlayerState({ selectedAudioTrackId: trackId });
 
-    const serverTrack = currentMedia?.file?.playbackOptions?.audioTracks?.find(
+    const serverTrack = currentMedia?.defaultFile?.playbackOptions?.audioTracks?.find(
       (track) => track.streamIndex === trackId,
     );
     if (serverTrack?.language != null) {
@@ -56,7 +56,7 @@ export const useTrackSelection = (currentMedia: CurrentMedia | null, itemId: str
     setSubtitleTrack(trackId);
     setPlayerState({ selectedSubtitleTrackId: trackId });
 
-    const serverTrack = currentMedia?.file?.subtitleTracks?.find((track) => track.id === trackId);
+    const serverTrack = currentMedia?.defaultFile?.subtitleTracks?.find((track) => track.id === trackId);
     const disposition = serverTrack?.dispositions?.includes("Commentary")
       ? TrackDispositionPreference.Commentary
       : serverTrack?.dispositions?.includes("SDH")

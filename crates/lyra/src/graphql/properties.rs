@@ -199,18 +199,6 @@ pub struct NodeProperties {
     pub rating: Option<f64>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
-    pub runtime_minutes: Option<i64>,
-    pub duration_seconds: Option<i64>,
-    pub width: Option<i64>,
-    pub height: Option<i64>,
-    pub video_codec: Option<String>,
-    pub audio_codec: Option<String>,
-    pub fps: Option<f64>,
-    pub video_bitrate: Option<i64>,
-    pub audio_bitrate: Option<i64>,
-    pub audio_channels: Option<i64>,
-    pub has_subtitles: Option<bool>,
-    pub file_size_bytes: Option<i64>,
     pub first_aired: Option<i64>,
     pub last_aired: Option<i64>,
     pub status: Option<MetadataStatus>,
@@ -227,4 +215,19 @@ pub struct NodeProperties {
     pub parent_id: Option<String>,
     #[graphql(skip)]
     pub kind: nodes::NodeKind,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct FileProbe {
+    pub runtime_minutes: Option<i64>,
+    pub duration_seconds: Option<i64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    pub fps: Option<f64>,
+    pub video_bitrate: Option<i64>,
+    pub audio_bitrate: Option<i64>,
+    pub audio_channels: Option<i64>,
+    pub has_subtitles: bool,
 }

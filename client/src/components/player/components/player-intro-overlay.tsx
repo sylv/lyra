@@ -13,7 +13,7 @@ export const PlayerIntroOverlay: FC<{ media: CurrentMedia }> = ({ media }) => {
   const { seekTo } = usePlayerActions();
 
   const introSegment = useMemo(() => {
-    const segments = media.file?.segments;
+    const segments = media.defaultFile?.segments;
     if (!Array.isArray(segments)) return null;
     return (
       segments.find(
@@ -24,7 +24,7 @@ export const PlayerIntroOverlay: FC<{ media: CurrentMedia }> = ({ media }) => {
           segment.endMs > segment.startMs,
       ) ?? null
     );
-  }, [media.file?.segments]);
+  }, [media.defaultFile?.segments]);
 
   const introProgressPercent = useMemo(() => {
     if (!introSegment) return 0;

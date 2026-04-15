@@ -6,7 +6,7 @@ import { PlayWrapper } from "@/components/play-wrapper";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
 import { WatchlistButton } from "@/components/watchlist-controls";
 import { useDynamicBackground } from "@/hooks/use-background";
-import { ChevronRightIcon, Drama, FolderPlusIcon, PlayIcon } from "lucide-react";
+import { ChevronRightIcon, FolderPlusIcon, PlayIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
 import { graphql } from "../@generated/gql";
@@ -61,11 +61,6 @@ const Query = graphql(`
           signedUrl
           aspectRatio
         }
-        runtimeMinutes
-        width
-        height
-        videoCodec
-        videoBitrate
         description
         contentRating {
           rating
@@ -102,7 +97,14 @@ const Query = graphql(`
           updatedAt
         }
       }
-      file {
+      defaultFile {
+        probe {
+          runtimeMinutes
+          width
+          height
+          videoCodec
+          videoBitrate
+        }
         subtitleTracks {
           label
           language
@@ -166,52 +168,53 @@ function formatSubtitles(tracks: SubtitleEntry[]): string | null {
 
 type NodeDetailsSectionProps = {
   node: {
-    properties: {
-      width?: number | null;
-      height?: number | null;
-      videoCodec?: string | null;
-      videoBitrate?: number | null;
-    };
-    file?: {
+    defaultFile?: {
+      probe?: {
+        width?: number | null;
+        height?: number | null;
+        videoCodec?: string | null;
+        videoBitrate?: number | null;
+      } | null;
       subtitleTracks: SubtitleEntry[];
     } | null;
   };
 };
 
 const NodeDetailsSection = ({ node }: NodeDetailsSectionProps) => {
-  const resolution = formatResolution(node.properties.width, node.properties.height);
-  const codec = formatVideoCodec(node.properties.videoCodec);
-  const bitrate = formatBitrate(node.properties.videoBitrate);
-  const subtitleStr = node.file ? formatSubtitles(node.file.subtitleTracks) : null;
+  const probe = node.defaultFile?.probe;
+  const resolution = formatResolution(probe?.width, probe?.height);
+  const codec = formatVideoCodec(probe?.videoCodec);
+  const bitrate = formatBitrate(probe?.videoBitrate);
+  const subtitleStr = node.defaultFile ? formatSubtitles(node.defaultFile.subtitleTracks) : null;
 
   if (!resolution && !codec && !bitrate && !subtitleStr) return null;
 
   return (
     <div className="container">
       <span className="text-xl font-semibold">Details</span>
-      <dl className="mt-3 flex flex-col gap-1.5">
+      <dl className="mt-3 flex flex-col gap-1.5 text-xs">
         {resolution && (
           <div className="flex gap-6">
-            <dt className="text-sm text-zinc-400 w-32 shrink-0">Video Resolution</dt>
-            <dd className="text-sm text-zinc-100">{resolution}</dd>
+            <dt className="text-zinc-400 w-32 shrink-0">Video Resolution</dt>
+            <dd className="text-zinc-100">{resolution}</dd>
           </div>
         )}
         {codec && (
           <div className="flex gap-6">
-            <dt className="text-sm text-zinc-400 w-32 shrink-0">Video Codec</dt>
-            <dd className="text-sm text-zinc-100">{codec}</dd>
+            <dt className="text-zinc-400 w-32 shrink-0">Video Codec</dt>
+            <dd className="text-zinc-100">{codec}</dd>
           </div>
         )}
         {bitrate && (
           <div className="flex gap-6">
-            <dt className="text-sm text-zinc-400 w-32 shrink-0">Video Bitrate</dt>
-            <dd className="text-sm text-zinc-100">{bitrate}</dd>
+            <dt className="text-zinc-400 w-32 shrink-0">Video Bitrate</dt>
+            <dd className="text-zinc-100">{bitrate}</dd>
           </div>
         )}
         {subtitleStr && (
           <div className="flex gap-6">
-            <dt className="text-sm text-zinc-400 w-32 shrink-0">Subtitles</dt>
-            <dd className="text-sm text-zinc-100 max-w-[calc(max(20vw,200px))]">{subtitleStr}</dd>
+            <dt className="text-zinc-400 w-32 shrink-0">Subtitles</dt>
+            <dd className="text-zinc-100 max-w-[calc(max(20vw,200px))]">{subtitleStr}</dd>
           </div>
         )}
       </dl>
@@ -323,6 +326,7 @@ export function LibraryNodeRoute() {
   if (node.kind === NodeKind.Episode) {
     const rootPath = node.root ? getPathForNode(node.root) : null;
     const episodePlayText = node.watchProgress?.progressPercent ? "Resume" : "Play";
+    const runtimeMinutes = node.defaultFile?.probe?.runtimeMinutes;
 
     return (
       <>
@@ -382,9 +386,7 @@ export function LibraryNodeRoute() {
                   <WatchlistButton nodeId={node.id} inWatchlist={node.inWatchlist} />
                 </div>
                 <div className="flex items-center gap-3">
-                  {node.properties.runtimeMinutes && (
-                    <p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
-                  )}
+                  {runtimeMinutes && <p className="text-sm text-zinc-400">{runtimeMinutes} minutes</p>}
                   {node.properties.contentRating && (
                     <p className="text-sm text-zinc-400">{node.properties.contentRating.rating}</p>
                   )}
@@ -431,6 +433,7 @@ export function LibraryNodeRoute() {
   const playableItemId = node.nextPlayable?.id;
   const playableWatchProgress =
     node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
+  const runtimeMinutes = node.defaultFile?.probe?.runtimeMinutes;
 
   return (
     <>
@@ -492,9 +495,7 @@ export function LibraryNodeRoute() {
                 <WatchlistButton nodeId={node.id} inWatchlist={node.inWatchlist} />
               </div>
               <div className="flex items-center gap-3">
-                {node.properties.runtimeMinutes && (
-                  <p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
-                )}
+                {runtimeMinutes && <p className="text-sm text-zinc-400">{runtimeMinutes} minutes</p>}
                 {/* todo: should be clickable */}
                 {node.properties.genres.map((genre) => (
                   <p key={genre.name} className="text-sm text-zinc-400">

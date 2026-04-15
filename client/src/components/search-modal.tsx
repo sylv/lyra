@@ -40,7 +40,11 @@ const SearchNodeResultFragment = graphql(`
       episodeNumber
       firstAired
       lastAired
-      runtimeMinutes
+    }
+    defaultFile {
+      probe {
+        runtimeMinutes
+      }
     }
     ...GetPathForNode
   }
@@ -76,7 +80,7 @@ const SearchNodeCard: FC<{ node: SearchNodeResultData; onSelect: () => void }> =
   const path = getPathForNode(node);
 
   if (node.kind === "EPISODE") {
-    const runtime = formatRuntime(node.properties.runtimeMinutes);
+    const runtime = formatRuntime(node.defaultFile?.probe?.runtimeMinutes ?? null);
     const index =
       node.properties.seasonNumber && node.properties.episodeNumber
         ? `S${node.properties.seasonNumber}E${node.properties.episodeNumber}`

@@ -134,10 +134,14 @@ impl nodes::Model {
         NodeProperties::from_node(pool, self, metadata).await
     }
 
-    pub async fn file(
+    pub async fn default_file(
         &self,
         ctx: &Context<'_>,
     ) -> Result<Option<crate::entities::files::Model>, sea_orm::DbErr> {
+        if !is_playable_node(self) {
+            return Ok(None);
+        }
+
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         NodeProperties::primary_file_for_node(pool, &self.id).await
     }

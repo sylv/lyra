@@ -22,7 +22,6 @@ export const SessionCardFragment = graphql(`
         displayName
         seasonNumber
         episodeNumber
-        runtimeMinutes
         firstAired
         lastAired
         posterImage {
@@ -30,6 +29,11 @@ export const SessionCardFragment = graphql(`
         }
         thumbnailImage {
           ...ImageAsset
+        }
+      }
+      defaultFile {
+        probe {
+          runtimeMinutes
         }
       }
       root {

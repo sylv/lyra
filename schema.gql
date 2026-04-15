@@ -111,11 +111,26 @@ type File {
 	unavailableAt: Int
 	scannedAt: Int
 	discoveredAt: Int!
+	probe: FileProbe
 	playbackOptions: PlaybackOptions!
 	timelinePreview: [TimelinePreviewSheet!]!
 	subtitleTracks: [SubtitleTrack!]!
 	recommendedSubtitleTrackId: String
 	segments: [FileSegment!]!
+}
+
+type FileProbe {
+	runtimeMinutes: Int
+	durationSeconds: Int
+	width: Int
+	height: Int
+	videoCodec: String
+	audioCodec: String
+	fps: Float
+	videoBitrate: Int
+	audioBitrate: Int
+	audioChannels: Int
+	hasSubtitles: Boolean!
 }
 
 type FileSegment {
@@ -256,7 +271,7 @@ type Node {
 	parent: Node
 	children: [Node!]!
 	properties: NodeProperties!
-	file: File
+	defaultFile: File
 	watchProgress: WatchProgress
 	inWatchlist: Boolean!
 	nextPlayable: Node
@@ -331,18 +346,6 @@ type NodeProperties {
 	rating: Float
 	seasonNumber: Int
 	episodeNumber: Int
-	runtimeMinutes: Int
-	durationSeconds: Int
-	width: Int
-	height: Int
-	videoCodec: String
-	audioCodec: String
-	fps: Float
-	videoBitrate: Int
-	audioBitrate: Int
-	audioChannels: Int
-	hasSubtitles: Boolean
-	fileSizeBytes: Int
 	firstAired: Int
 	lastAired: Int
 	status: MetadataStatus
