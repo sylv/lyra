@@ -17,44 +17,44 @@ import { Spinner } from "./components/ui/spinner";
 import { AppRoutes } from "./routes";
 
 export const App: FC = () => {
-	return (
-		<UrqlProvider value={client}>
-			<TooltipProvider>
-				<AppErrorBoundary className="fixed inset-0">
-					<SetupWrapper>
-						<ContentUpdateListener />
-						<WatchSessionListener />
-						<AppErrorBoundary className="fixed inset-0">
-							<Suspense
-								fallback={
-									<div className="fixed h-dvh w-dvw z-9999 flex items-center justify-center">
-										<IconText icon={<Spinner className="size-4" />} text={<LoadingText />} />
-									</div>
-								}
-							>
-								<LayoutWrapper />
-							</Suspense>
-						</AppErrorBoundary>
-					</SetupWrapper>
-				</AppErrorBoundary>
-				<Toaster />
-				<DynamicBackground />
-			</TooltipProvider>
-		</UrqlProvider>
-	);
+  return (
+    <UrqlProvider value={client}>
+      <TooltipProvider>
+        <AppErrorBoundary className="fixed inset-0">
+          <SetupWrapper>
+            <ContentUpdateListener />
+            <WatchSessionListener />
+            <AppErrorBoundary className="fixed inset-0">
+              <Suspense
+                fallback={
+                  <div className="fixed h-dvh w-dvw z-9999 flex items-center justify-center">
+                    <IconText icon={<Spinner className="size-4" />} text={<LoadingText />} />
+                  </div>
+                }
+              >
+                <LayoutWrapper />
+              </Suspense>
+            </AppErrorBoundary>
+          </SetupWrapper>
+        </AppErrorBoundary>
+        <Toaster />
+        <DynamicBackground />
+      </TooltipProvider>
+    </UrqlProvider>
+  );
 };
 
 export const LayoutWrapper: FC = () => {
-	const location = useLocation();
-	const isSetupRoute = location.pathname.startsWith("/setup");
+  const location = useLocation();
+  const isSetupRoute = location.pathname.startsWith("/setup");
 
-	if (isSetupRoute) return <AppRoutes />;
-	return (
-		<>
-			<Sidebar>
-				<AppRoutes />
-			</Sidebar>
-			<PlayerWrapper />
-		</>
-	);
+  if (isSetupRoute) return <AppRoutes />;
+  return (
+    <>
+      <Sidebar>
+        <AppRoutes />
+      </Sidebar>
+      <PlayerWrapper />
+    </>
+  );
 };

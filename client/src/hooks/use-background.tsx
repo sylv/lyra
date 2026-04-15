@@ -7,17 +7,17 @@ import { Fragment } from "../components/image";
 export const backgroundStore = create<ImageAssetFragment | null>(() => null);
 
 export const useDynamicBackground = (assetRaw: FragmentType<typeof Fragment> | null, use?: boolean) => {
-	const asset = unmask(Fragment, assetRaw);
-	useEffect(() => {
-		if (use === false) return;
-		backgroundStore.setState(asset, true);
-		return () => {
-			if (!asset) return;
-			backgroundStore.setState((prev) => {
-				if (!prev) return prev;
-				if (prev.id !== asset.id) return prev;
-				return null;
-			}, true);
-		};
-	}, [asset?.id, use]);
+  const asset = unmask(Fragment, assetRaw);
+  useEffect(() => {
+    if (use === false) return;
+    backgroundStore.setState(asset, true);
+    return () => {
+      if (!asset) return;
+      backgroundStore.setState((prev) => {
+        if (!prev) return prev;
+        if (prev.id !== asset.id) return prev;
+        return null;
+      }, true);
+    };
+  }, [asset?.id, use]);
 };

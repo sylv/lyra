@@ -4,87 +4,87 @@ import type { GetActivitiesQuery } from "../@generated/gql/graphql";
 import { Spinner } from "./ui/spinner";
 
 export const ActivityPanelQuery = graphql(`
-	query GetActivities {
-		activities {
-			taskType
-			title
-			current
-			total
-			progressPercent
-		}
-	}
+  query GetActivities {
+    activities {
+      taskType
+      title
+      current
+      total
+      progressPercent
+    }
+  }
 `);
 
 const CIRCLE_RADIUS = 12;
 const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS;
 
 const CircularProgress: FC<{ progress: number }> = ({ progress }) => {
-	const clampedProgress = Math.max(0, Math.min(1, progress));
-	const strokeDashoffset = CIRCLE_CIRCUMFERENCE * (1 - clampedProgress);
+  const clampedProgress = Math.max(0, Math.min(1, progress));
+  const strokeDashoffset = CIRCLE_CIRCUMFERENCE * (1 - clampedProgress);
 
-	return (
-		<div className="relative h-10 w-10 shrink-0">
-			<svg className="h-10 w-10 -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
-				<circle cx="18" cy="18" r={CIRCLE_RADIUS} className="fill-none stroke-zinc-700/80" strokeWidth="3" />
-				<circle
-					cx="18"
-					cy="18"
-					r={CIRCLE_RADIUS}
-					className="fill-none stroke-zinc-200 transition-all duration-300"
-					strokeWidth="3"
-					strokeLinecap="round"
-					strokeDasharray={CIRCLE_CIRCUMFERENCE}
-					strokeDashoffset={strokeDashoffset}
-				/>
-			</svg>
-		</div>
-	);
+  return (
+    <div className="relative h-10 w-10 shrink-0">
+      <svg className="h-10 w-10 -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
+        <circle cx="18" cy="18" r={CIRCLE_RADIUS} className="fill-none stroke-zinc-700/80" strokeWidth="3" />
+        <circle
+          cx="18"
+          cy="18"
+          r={CIRCLE_RADIUS}
+          className="fill-none stroke-zinc-200 transition-all duration-300"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={CIRCLE_CIRCUMFERENCE}
+          strokeDashoffset={strokeDashoffset}
+        />
+      </svg>
+    </div>
+  );
 };
 
 const ActivityIndicator: FC<{ progress: number | null | undefined }> = ({ progress }) => {
-	if (progress == null) {
-		return (
-			<div className="relative h-10 w-10 shrink-0 flex items-center justify-center">
-				<Spinner className="size-5" />
-			</div>
-		);
-	}
+  if (progress == null) {
+    return (
+      <div className="relative h-10 w-10 shrink-0 flex items-center justify-center">
+        <Spinner className="size-5" />
+      </div>
+    );
+  }
 
-	return <CircularProgress progress={progress} />;
+  return <CircularProgress progress={progress} />;
 };
 
 export const ActivityPanel: FC<{ data?: GetActivitiesQuery; open: boolean }> = ({ data }) => {
-	// todo: animations when activities enter/leave so the modal doesn't jump around as much
-	return (
-		<div className="w-95 max-h-[70vh] overflow-y-auto bg-black p-3 shadow-lg shadow-black/30 min-h-[30vh]">
-			<h2 className="px-1 pt-1 text-xs font-semibold">Activity</h2>
-			{!data && <p className="text-sm text-zinc-400">Loading activity...</p>}
-			{data?.activities?.length === 0 && (
-				<p className="text-xs text-zinc-400 px-1 mt-2">No activity is currently running.</p>
-			)}
-			<div className="mt-1 space-y-2">
-				{data?.activities?.map((task) => {
-					const isIndeterminate = task.current == null || task.total == null;
-					const current = task.current ?? 0;
-					const total = task.total ?? 0;
-					return (
-						<div key={task.taskType} className="flex items-center gap-3 py-2">
-							<ActivityIndicator progress={task.progressPercent} />
-							<div className="flex-1">
-								<p className="text-sm font-semibold text-zinc-100">{task.title}</p>
-								{isIndeterminate ? (
-									<p className="text-[0.67rem] text-zinc-400">Processing</p>
-								) : (
-									<p className="text-[0.67rem] text-zinc-400">
-										{current < total ? "Processing" : "Processed"} {current.toLocaleString()} of{" "}
-										{total.toLocaleString()}
-									</p>
-								)}
-							</div>
-						</div>
-					);
-				})}
-			</div>
-		</div>
-	);
+  // todo: animations when activities enter/leave so the modal doesn't jump around as much
+  return (
+    <div className="w-95 max-h-[70vh] overflow-y-auto bg-black p-3 shadow-lg shadow-black/30 min-h-[30vh]">
+      <h2 className="px-1 pt-1 text-xs font-semibold">Activity</h2>
+      {!data && <p className="text-sm text-zinc-400">Loading activity...</p>}
+      {data?.activities?.length === 0 && (
+        <p className="text-xs text-zinc-400 px-1 mt-2">No activity is currently running.</p>
+      )}
+      <div className="mt-1 space-y-2">
+        {data?.activities?.map((task) => {
+          const isIndeterminate = task.current == null || task.total == null;
+          const current = task.current ?? 0;
+          const total = task.total ?? 0;
+          return (
+            <div key={task.taskType} className="flex items-center gap-3 py-2">
+              <ActivityIndicator progress={task.progressPercent} />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-zinc-100">{task.title}</p>
+                {isIndeterminate ? (
+                  <p className="text-[0.67rem] text-zinc-400">Processing</p>
+                ) : (
+                  <p className="text-[0.67rem] text-zinc-400">
+                    {current < total ? "Processing" : "Processed"} {current.toLocaleString()} of{" "}
+                    {total.toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 };

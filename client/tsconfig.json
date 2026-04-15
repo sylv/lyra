@@ -1,23 +1,23 @@
 {
-	"compilerOptions": {
-		"strict": true,
-		"esModuleInterop": true,
-		"forceConsistentCasingInFileNames": true,
-		"resolveJsonModule": true,
-		"skipLibCheck": true,
-		"sourceMap": true,
-		"verbatimModuleSyntax": true,
-		"module": "ESNext",
-		"noEmit": true,
-		"moduleResolution": "Bundler",
-		"target": "ES2022",
-		"lib": ["DOM", "DOM.Iterable", "ESNext"],
-		"types": ["vite/client"],
-		"jsx": "preserve",
-		"jsxImportSource": "react",
-		"paths": {
-			"@/*": ["./src/*"]
-		}
-	},
-	"exclude": ["dist", "src/@generated"]
+  "compilerOptions": {
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "verbatimModuleSyntax": true,
+    "module": "ESNext",
+    "noEmit": true,
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "types": ["vite/client"],
+    "jsx": "preserve",
+    "jsxImportSource": "react",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "exclude": ["dist", "src/@generated"]
 }

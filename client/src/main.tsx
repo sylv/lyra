@@ -6,11 +6,11 @@ import "@fontsource-variable/inter/wght.css";
 
 const rootElement = document.getElementById("app");
 if (!rootElement) {
-	throw new Error("Missing #app root element");
+  throw new Error("Missing #app root element");
 }
 
 createRoot(rootElement).render(
-	<BrowserRouter unstable_useTransitions>
-		<App />
-	</BrowserRouter>,
+  <BrowserRouter unstable_useTransitions>
+    <App />
+  </BrowserRouter>,
 );
