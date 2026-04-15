@@ -1,74 +1,89 @@
-import { FolderPlusIcon, PlayIcon } from "lucide-react";
 import { AddToCollectionModal } from "@/components/add-to-collection-modal";
 import { Button, ButtonSize, ButtonStyle } from "@/components/button";
+import { FilterButton } from "@/components/filter-button";
 import { Image, ImageType } from "@/components/image";
-import { NodeList } from "@/components/nodes/node-list";
 import { PlayWrapper } from "@/components/play-wrapper";
-import { SeasonCard } from "@/components/season-card";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
 import { WatchlistButton } from "@/components/watchlist-controls";
 import { useDynamicBackground } from "@/hooks/use-background";
-import { useState, type JSX } from "react";
+import { ChevronRightIcon, Drama, FolderPlusIcon, PlayIcon } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
-import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
-import { NodeAvailability, OrderBy } from "../@generated/gql/graphql";
-import { useTitle } from "../hooks/use-title";
-import { formatReleaseYear } from "../lib/format-release-year";
-import { getPathForNode } from "../lib/getPathForMedia";
+import { NodeAvailability, NodeKind, OrderBy } from "../@generated/gql/graphql";
+import { DisplayKind, NodeList } from "../components/nodes/node-list";
+import { NodePosterDetail } from "../components/nodes/node-poster-detail";
 import { openPlayerMedia } from "../components/player/player-context";
+import { ShelfCarousel } from "../components/shelf-carousel";
+import { useSuspenseQuery } from "../hooks/use-suspense-query";
+import { useTitle } from "../hooks/use-title";
+import { getPathForNode } from "../lib/getPathForMedia";
 
 const Query = graphql(`
 	query GetNodeById($nodeId: String!) {
 		node(nodeId: $nodeId) {
 			id
-			libraryId
 			kind
 			inWatchlist
 			unavailableAt
+			unplayedCount
+			seasonCount
 			seasonNumber
 			episodeNumber
-			unplayedCount
-			episodeCount
 			...GetPathForNode
 			parent {
 				id
-				libraryId
-				properties {
-					displayName
-				}
 				...GetPathForNode
 			}
 			root {
 				id
+				...GetPathForNode
 				properties {
 					displayName
 				}
 			}
-			children {
-				id
-				kind
-				order
-				properties {
-					seasonNumber
-				}
-				...SeasonCard
-			}
 			properties {
 				displayName
+				tagline
 				posterImage {
-					...ImageAsset
-				}
-				backgroundImage {
 					...ImageAsset
 				}
 				thumbnailImage {
 					...ImageAsset
 				}
-				firstAired
-				lastAired
+				logoImage {
+					id
+					signedUrl
+					aspectRatio
+				}
+				backdropImage {
+					...ImageAsset
+					signedUrl
+					aspectRatio
+				}
 				runtimeMinutes
+				width
+				height
+				videoCodec
+				videoBitrate
 				description
+				contentRating {
+					rating
+				}
+				genres {
+					name
+				}
+				cast {
+					characterName
+					department
+					person {
+						id
+						name
+						profileImage {
+							...ImageAsset
+						}
+					}
+				}
 			}
 			watchProgress {
 				id
@@ -78,6 +93,8 @@ const Query = graphql(`
 			}
 			nextPlayable {
 				id
+				seasonNumber
+				episodeNumber
 				watchProgress {
 					id
 					progressPercent
@@ -85,122 +102,370 @@ const Query = graphql(`
 					updatedAt
 				}
 			}
-			previousPlayable {
+			file {
+				subtitleTracks {
+					label
+					language
+					kind
+				}
+			}
+			recommendedNodes {
 				id
+				...NodePoster
 			}
 		}
 	}
 `);
 
-type SeasonEntry = { id: string; seasonNumber: number | null };
+function formatResolution(width?: number | null, height?: number | null): string | null {
+	if (!height) return null;
+	if (height >= 2160) return "4K";
+	if (height >= 1440) return "1440p";
+	if (height >= 1080) return "1080p";
+	if (height >= 720) return "720p";
+	if (height >= 480) return "480p";
+	if (width) return `${width}×${height}`;
+	return `${height}p`;
+}
+
+function formatVideoCodec(codec?: string | null): string | null {
+	if (!codec) return null;
+	switch (codec.toLowerCase()) {
+		case "h264":
+			return "H.264";
+		case "h265":
+			return "H.265";
+		case "av1":
+			return "AV1";
+		default:
+			return codec.toUpperCase();
+	}
+}
+
+function formatBitrate(bitsPerSecond?: number | null): string | null {
+	if (!bitsPerSecond) return null;
+	return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbps`;
+}
+
+type SubtitleEntry = { label: string; language?: string | null; kind: string };
+
+function formatSubtitles(tracks: SubtitleEntry[]): string | null {
+	if (tracks.length === 0) return null;
+	// Deduplicate by label, prefer shorter unique label list
+	const seen = new Set<string>();
+	const labels: string[] = [];
+	for (const t of tracks) {
+		const key = t.label;
+		if (!seen.has(key)) {
+			seen.add(key);
+			labels.push(t.label);
+		}
+	}
+	return labels.join(", ");
+}
+
+type NodeDetailsSectionProps = {
+	node: {
+		properties: {
+			width?: number | null;
+			height?: number | null;
+			videoCodec?: string | null;
+			videoBitrate?: number | null;
+		};
+		file?: {
+			subtitleTracks: SubtitleEntry[];
+		} | null;
+	};
+};
+
+const NodeDetailsSection = ({ node }: NodeDetailsSectionProps) => {
+	const resolution = formatResolution(node.properties.width, node.properties.height);
+	const codec = formatVideoCodec(node.properties.videoCodec);
+	const bitrate = formatBitrate(node.properties.videoBitrate);
+	const subtitleStr = node.file ? formatSubtitles(node.file.subtitleTracks) : null;
+
+	if (!resolution && !codec && !bitrate && !subtitleStr) return null;
+
+	return (
+		<div className="container">
+			<span className="text-xl font-semibold">Details</span>
+			<dl className="mt-3 flex flex-col gap-1.5">
+				{resolution && (
+					<div className="flex gap-6">
+						<dt className="text-sm text-zinc-400 w-32 shrink-0">Video Resolution</dt>
+						<dd className="text-sm text-zinc-100">{resolution}</dd>
+					</div>
+				)}
+				{codec && (
+					<div className="flex gap-6">
+						<dt className="text-sm text-zinc-400 w-32 shrink-0">Video Codec</dt>
+						<dd className="text-sm text-zinc-100">{codec}</dd>
+					</div>
+				)}
+				{bitrate && (
+					<div className="flex gap-6">
+						<dt className="text-sm text-zinc-400 w-32 shrink-0">Video Bitrate</dt>
+						<dd className="text-sm text-zinc-100">{bitrate}</dd>
+					</div>
+				)}
+				{subtitleStr && (
+					<div className="flex gap-6">
+						<dt className="text-sm text-zinc-400 w-32 shrink-0">Subtitles</dt>
+						<dd className="text-sm text-zinc-100 max-w-[calc(max(20vw,200px))]">{subtitleStr}</dd>
+					</div>
+				)}
+			</dl>
+		</div>
+	);
+};
+
+const BackdropOverlay = ({
+	node,
+}: {
+	node: { properties: { backdropImage?: { signedUrl: string } | null; displayName: string } };
+}) => {
+	if (!node.properties.backdropImage) return null;
+	return (
+		<div
+			className="absolute -z-10 -bottom-12 -right-23 -top-6 left-0 opacity-15"
+			style={{
+				WebkitMaskImage: `
+					linear-gradient(to right,
+						transparent 0%,
+						black 30%,
+						black 100%
+					),
+					linear-gradient(to bottom,
+						black 0%,
+						black 30%,
+						transparent 100%
+					)
+				`,
+				maskImage: `
+					linear-gradient(to right,
+						transparent 0%,
+						black 30%,
+						black 100%
+					),
+					linear-gradient(to bottom,
+						black 0%,
+						black 30%,
+						transparent 100%
+					)
+				`,
+				WebkitMaskComposite: "source-in",
+				maskComposite: "intersect",
+			}}
+		>
+			<img
+				src={node.properties.backdropImage.signedUrl}
+				alt={`${node.properties.displayName} backdrop`}
+				className="h-full w-full object-cover"
+			/>
+		</div>
+	);
+};
 
 export function LibraryNodeRoute() {
 	const { nodeId } = useParams<{ nodeId: string }>();
-	const [{ data }] = useQuery({
+	const queryVariables = useMemo(() => ({ nodeId: nodeId! }), [nodeId]);
+	const [{ data }] = useSuspenseQuery({
 		query: Query,
-		variables: { nodeId: nodeId! },
-		context: { suspense: true },
+		variables: queryVariables,
 	});
 
-	const [view, setView] = useState<"episodes" | undefined>();
 	const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
-	const node = data?.node;
+	const [selectedSeasonNumbers, setSelectedSeasonNumbers] = useState<number[]>([1]);
+	const node = data.node;
 
-	const poster = node?.properties.posterImage ?? node?.properties.thumbnailImage;
-	useDynamicBackground((node?.properties.backgroundImage ?? poster) || null);
-	useTitle(node?.root?.properties.displayName ?? node?.properties.displayName);
+	useDynamicBackground(node.kind === NodeKind.Episode ? node.properties.thumbnailImage : node.properties.posterImage);
+	useTitle(node.root?.properties.displayName ?? node.properties.displayName);
 
-	if (!node) return null;
+	const playText = useMemo(() => {
+		if (!node?.nextPlayable) return "Play";
 
-	const playableItemId = node.nextPlayable?.id ?? (node.kind === "MOVIE" || node.kind === "EPISODE" ? node.id : null);
-	const playableWatchProgress =
-		node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
-	const nodePath = getPathForNode(node);
-	const parentPath = node.parent ? getPathForNode(node.parent) : null;
-	const releaseYear = formatReleaseYear(node.properties.firstAired, node.properties.lastAired ?? null);
-	const sortedChildren = [...node.children].sort((a, b) => {
-		if (a.kind !== b.kind) {
-			return a.kind === "SEASON" ? -1 : 1;
+		const parts = [];
+		if (node.nextPlayable.seasonNumber && node.nextPlayable.episodeNumber) {
+			parts.push(`S${node.nextPlayable.seasonNumber}E${node.nextPlayable.episodeNumber}`);
 		}
 
-		return a.order - b.order;
-	});
+		if (node.nextPlayable.watchProgress?.progressPercent) parts.unshift("Resume");
+		else parts.unshift("Play");
 
-	if (node.kind === "EPISODE" && node.parent) {
+		return parts.join(" ");
+	}, [node.nextPlayable]);
+
+	const allSeasonNumbers = Array.from({ length: node.seasonCount }, (_, i) => i + 1);
+	const showAllSeasonsButton = node.seasonCount > 1;
+	const allSeasonsSelected =
+		selectedSeasonNumbers.length === allSeasonNumbers.length &&
+		allSeasonNumbers.every((seasonNumber) => selectedSeasonNumbers.includes(seasonNumber));
+
+	const toggleSeason = (seasonNumber: number, additive: boolean) => {
+		if (!additive) {
+			setSelectedSeasonNumbers([seasonNumber]);
+			return;
+		}
+
+		setSelectedSeasonNumbers((prev) => {
+			if (prev.includes(seasonNumber)) return prev.filter((value) => value !== seasonNumber);
+			return [...prev, seasonNumber].sort((a, b) => a - b);
+		});
+	};
+
+	if (node.kind === NodeKind.Season && node.parent) {
 		const path = getPathForNode(node.parent);
 		return <Navigate to={path} replace={true} />;
 	}
 
-	const isSeason = node.kind === "SEASON";
-	const isEpisodesView = view === "episodes";
-	const hasSeasons = sortedChildren.filter((c) => c.kind === "SEASON").length > 1;
-	const seasonEntries: SeasonEntry[] = sortedChildren
-		.filter((c) => c.kind === "SEASON")
-		.map((c) => ({ id: c.id, seasonNumber: c.properties.seasonNumber }));
-	const hasEpisodeChildren = sortedChildren.some((child) => child.kind === "EPISODE");
-	const directAvailabilityFilter = node.unavailableAt != null ? NodeAvailability.Both : undefined;
+	const nodePath = getPathForNode(node);
 
-	// Breadcrumb above the title: back button for episodes view, parent link or release year otherwise.
-	let breadcrumb: JSX.Element | null = null;
-	if (isEpisodesView) {
-		breadcrumb = (
-			<button
-				type="button"
-				onClick={() => setView(undefined)}
-				className="-mb-2 text-left text-sm text-zinc-400 hover:text-zinc-200 hover:underline"
-			>
-				{node.properties.displayName}
-			</button>
+	if (node.kind === NodeKind.Episode) {
+		const rootPath = node.root ? getPathForNode(node.root) : null;
+		const episodePlayText = node.watchProgress?.progressPercent ? "Resume" : "Play";
+
+		return (
+			<>
+				<div className="pt-6 space-y-6 pb-36">
+					<div className="container flex flex-col items-start lg:flex-row lg:gap-8 relative">
+						<BackdropOverlay node={node} />
+						<div className="shrink-0 hidden lg:block">
+							<PlayWrapper
+								itemId={node.id}
+								path={nodePath}
+								unavailable={node.unavailableAt != null}
+								watchProgress={node.watchProgress}
+							>
+								<Image
+									type={ImageType.Thumbnail}
+									asset={node.properties.thumbnailImage}
+									alt={node.properties.displayName}
+									className="w-96"
+								/>
+							</PlayWrapper>
+						</div>
+						<div className="flex w-full flex-col gap-2 relative">
+							<div className="mb-8 flex flex-col gap-2">
+								{rootPath && node.root && (
+									<div className="flex items-center gap-1.5 text-sm text-zinc-400">
+										<Link to={rootPath} className="hover:text-zinc-100 transition-colors">
+											{node.root.properties.displayName}
+										</Link>
+										<ChevronRightIcon className="size-3 shrink-0" />
+										<span>
+											S{node.seasonNumber}E{node.episodeNumber}
+										</span>
+									</div>
+								)}
+								<h1 className="text-2xl font-bold">{node.properties.displayName}</h1>
+								<div className="flex flex-wrap items-center gap-2">
+									<Button
+										style={ButtonStyle.Primary}
+										size={ButtonSize.Smol}
+										className="w-fit"
+										icon={["play", PlayIcon]}
+										iconSide="left"
+										onClick={() => openPlayerMedia(node.id, true)}
+									>
+										{episodePlayText}
+									</Button>
+									<Button
+										style={ButtonStyle.Glass}
+										size={ButtonSize.Smol}
+										className="w-fit"
+										icon={["add-to-collection", FolderPlusIcon]}
+										iconSide="left"
+										onClick={() => setIsAddToCollectionOpen(true)}
+									>
+										Add to Collection
+									</Button>
+									<WatchlistButton nodeId={node.id} inWatchlist={node.inWatchlist} />
+								</div>
+								<div className="flex items-center gap-3">
+									{node.properties.runtimeMinutes && (
+										<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
+									)}
+									{node.properties.contentRating && (
+										<p className="text-sm text-zinc-400">{node.properties.contentRating.rating}</p>
+									)}
+									{node.properties.genres.map((genre) => (
+										<p key={genre.name} className="text-sm text-zinc-400">
+											{genre.name}
+										</p>
+									))}
+								</div>
+								{node.properties.description && (
+									<p className="text-sm text-zinc-400 lg:max-w-[35vw]">{node.properties.description}</p>
+								)}
+							</div>
+						</div>
+					</div>
+					{node.properties.cast.length > 0 && (
+						<div className="container">
+							<ShelfCarousel title={<span className="text-xl font-semibold">Cast</span>}>
+								{/* todo: should be clickable */}
+								{node.properties.cast.map((castEntry, index) => (
+									<div key={index} className="min-w-0 flex-[0_0_8.25rem]">
+										<Image
+											type={ImageType.Avatar}
+											asset={castEntry.person.profileImage}
+											alt={castEntry.person.name}
+											className="w-full"
+										/>
+										<div className="mt-2 text-sm">{castEntry.person.name}</div>
+										<div className="text-xs text-zinc-400">
+											{castEntry.characterName ? `as ${castEntry.characterName}` : castEntry.department}
+										</div>
+									</div>
+								))}
+							</ShelfCarousel>
+						</div>
+					)}
+					<NodeDetailsSection node={node} />
+				</div>
+				<AddToCollectionModal nodeId={node.id} open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen} />
+			</>
 		);
-	} else if (parentPath) {
-		breadcrumb = (
-			<Link to={parentPath} className="-mb-2 text-sm text-zinc-400 hover:text-zinc-200 hover:underline">
-				{node.parent?.properties.displayName}
-			</Link>
-		);
-	} else if (releaseYear) {
-		breadcrumb = <span className="-mb-2 text-sm text-zinc-400">{releaseYear}</span>;
 	}
 
-	// Episode list rendered inline in the right column: by parentId for seasons, by rootId for the episodes view.
-	let inlineEpisodeList: JSX.Element | null = null;
-	if (isSeason) {
-		inlineEpisodeList = (
-			<NodeList
-				type="episodes"
-				defaultOrderBy={OrderBy.Order}
-				filterOverride={{ parentId: node.id, availability: directAvailabilityFilter }}
-			/>
-		);
-	} else if (isEpisodesView) {
-		inlineEpisodeList = (
-			<NodeList
-				type="episodes"
-				defaultOrderBy={OrderBy.Order}
-				filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }}
-			/>
-		);
-	}
+	const playableItemId = node.nextPlayable?.id;
+	const playableWatchProgress =
+		node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
 
 	return (
 		<>
-			<div className="pt-6">
-				<div className="container flex flex-col lg:flex-row lg:gap-6">
-					<div className="shrink-0">
+			<div className="pt-6 space-y-6 pb-36">
+				<div className="container flex flex-col items-end lg:flex-row lg:gap-8 relative">
+					<BackdropOverlay node={node} />
+					<div className="shrink-0 hidden lg:block">
 						<PlayWrapper
 							itemId={playableItemId}
 							path={nodePath}
 							unavailable={node.unavailableAt != null}
 							watchProgress={playableWatchProgress}
 						>
-							<Image type={ImageType.Poster} asset={poster} alt={node.properties.displayName} className="h-96" />
+							<Image
+								type={ImageType.Poster}
+								asset={node.properties.posterImage}
+								alt={node.properties.displayName}
+								className="h-92"
+							/>
 							<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
 						</PlayWrapper>
 					</div>
-					<div className="flex w-full flex-col gap-2">
-						<div className="mt-3 flex flex-col gap-2">
-							{breadcrumb}
-							<h1 className="text-2xl font-bold">{isEpisodesView ? "All Episodes" : node.properties.displayName}</h1>
+					<div className="flex w-full flex-col gap-2 relative">
+						<div className="my-8 flex flex-col gap-2">
+							{!node.properties.logoImage && <h1 className="text-2xl font-bold">{node.properties.displayName}</h1>}
+							{node.properties.logoImage && (
+								<img
+									className="h-20 w-fit mb-4"
+									src={node.properties.logoImage.signedUrl}
+									alt={node.properties.displayName}
+									style={{
+										aspectRatio: node.properties.logoImage.aspectRatio || undefined,
+									}}
+								/>
+							)}
 							<div className="flex flex-wrap items-center gap-2">
 								{node.nextPlayable && (
 									<Button
@@ -211,7 +476,7 @@ export function LibraryNodeRoute() {
 										iconSide="left"
 										onClick={() => openPlayerMedia(node.nextPlayable!.id, true)}
 									>
-										{node.nextPlayable.watchProgress ? "Resume" : "Play"}
+										{playText}
 									</Button>
 								)}
 								<Button
@@ -226,64 +491,92 @@ export function LibraryNodeRoute() {
 								</Button>
 								<WatchlistButton nodeId={node.id} inWatchlist={node.inWatchlist} />
 							</div>
-							{!isEpisodesView && node.properties.runtimeMinutes && (
-								<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
-							)}
-							{!isEpisodesView && (
-								<p className="text-sm text-zinc-400">
-									{node.properties.description || (!isSeason ? "No description available" : null)}
-								</p>
-							)}
+							<div className="flex items-center gap-3">
+								{node.properties.runtimeMinutes && (
+									<p className="text-sm text-zinc-400">{node.properties.runtimeMinutes} minutes</p>
+								)}
+								{/* todo: should be clickable */}
+								{node.properties.genres.map((genre) => (
+									<p key={genre.name} className="text-sm text-zinc-400">
+										{genre.name}
+									</p>
+								))}
+							</div>
+							{node.properties.tagline && <p className="text-sm italic text-zinc-300">{node.properties.tagline}</p>}
+							<p className="text-sm text-zinc-400 lg:max-w-[35vw]">{node.properties.description}</p>
 						</div>
-						{inlineEpisodeList && <div className="pb-16">{inlineEpisodeList}</div>}
 					</div>
 				</div>
-				{!isSeason && !isEpisodesView && (
-					<>
-						{hasEpisodeChildren && seasonEntries.length === 0 ? (
-							<div className="container py-6">
-								<NodeList
-									type="episodes"
-									defaultOrderBy={OrderBy.Order}
-									filterOverride={{ rootId: node.id, availability: directAvailabilityFilter }}
-								/>
-							</div>
-						) : null}
-						{sortedChildren.length > 0 && seasonEntries.length > 0 && (
-							<div className="container py-6">
-								<div className="flex flex-wrap gap-4">
-									{hasSeasons && (
-										<div className="flex w-38 flex-col gap-2 overflow-hidden">
-											<PlayWrapper
-												itemId={playableItemId}
-												path={nodePath}
-												unavailable={node.unavailableAt != null}
-												watchProgress={playableWatchProgress}
-											>
-												<Image type={ImageType.Poster} asset={poster} alt="All Episodes" className="w-full" />
-												<UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
-											</PlayWrapper>
-											<button
-												type="button"
-												onClick={() => setView("episodes")}
-												className="block w-full truncate text-left text-sm group"
-											>
-												<span className="group-hover:underline">All Episodes</span>
-												{node.episodeCount > 0 && (
-													<p className="-mt-0.5 text-xs text-zinc-500">
-														{node.episodeCount} {node.episodeCount === 1 ? "episode" : "episodes"}
-													</p>
-												)}
-											</button>
-										</div>
-									)}
-									{sortedChildren.map((child) =>
-										child.kind === "SEASON" ? <SeasonCard key={child.id} season={child} /> : null,
-									)}
+				{node.kind === NodeKind.Series && (
+					<div className="container">
+						<span className="text-xl font-semibold">Episodes</span>
+						<div className="mt-3 flex flex-wrap gap-2">
+							{showAllSeasonsButton && (
+								<FilterButton active={allSeasonsSelected} onClick={() => setSelectedSeasonNumbers(allSeasonNumbers)}>
+									All Seasons
+								</FilterButton>
+							)}
+							{allSeasonNumbers.map((seasonNumber) => (
+								<FilterButton
+									key={seasonNumber}
+									active={selectedSeasonNumbers.includes(seasonNumber)}
+									onClick={(event) => toggleSeason(seasonNumber, event.shiftKey)}
+								>
+									Season {seasonNumber}
+								</FilterButton>
+							))}
+						</div>
+						<div className="mt-2 flex flex-wrap gap-4">
+							<div className="relative w-full">
+								<div
+									className="grid gap-4"
+									style={{ gridTemplateColumns: "repeat(auto-fill, minmax(clamp(200px, 50vw, 260px), 1fr))" }}
+								>
+									<NodeList
+										displayKind={DisplayKind.Episode}
+										filter={{
+											rootId: node.id,
+											kinds: [NodeKind.Episode],
+											orderBy: OrderBy.Order,
+											availability: NodeAvailability.Available,
+											seasonNumbers: selectedSeasonNumbers,
+										}}
+									/>
 								</div>
 							</div>
-						)}
-					</>
+						</div>
+					</div>
+				)}
+				{node.properties.cast.length > 0 && (
+					<div className="container">
+						<ShelfCarousel title={<span className="text-xl font-semibold">Cast</span>}>
+							{/* todo: should be clickable */}
+							{node.properties.cast.map((castEntry, index) => (
+								<div key={index} className="min-w-0 flex-[0_0_8.25rem]">
+									<Image
+										type={ImageType.Avatar}
+										asset={castEntry.person.profileImage}
+										alt={castEntry.person.name}
+										className="w-full"
+									/>
+									<div className="mt-2 text-sm">{castEntry.person.name}</div>
+									<div className="text-xs text-zinc-400">
+										{castEntry.characterName ? `as ${castEntry.characterName}` : castEntry.department}
+									</div>
+								</div>
+							))}
+						</ShelfCarousel>
+					</div>
+				)}
+				<NodeDetailsSection node={node} />
+				{node.recommendedNodes.length > 0 && (
+					<div className="container">
+						<ShelfCarousel title={<span className="text-xl font-semibold">You might also like</span>}>
+							{node.recommendedNodes.map((rec) => (
+								<NodePosterDetail key={rec.id} node={rec} className="min-w-0 flex-[0_0_8.25rem]" />
+							))}
+						</ShelfCarousel>
+					</div>
 				)}
 			</div>
 			<AddToCollectionModal nodeId={node.id} open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen} />

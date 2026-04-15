@@ -1,9 +1,19 @@
-import { Activity, BookmarkIcon, FolderIcon, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
+import {
+	Activity,
+	BookmarkIcon,
+	FolderIcon,
+	HomeIcon,
+	MenuIcon,
+	SearchIcon,
+	SettingsIcon,
+	type LucideIcon,
+} from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import BrandLogo from "../assets/logo.svg";
+import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { getPathForCollection } from "../lib/getPathForMedia";
 import { ADMIN_BIT } from "../lib/user-permissions";
 import { cn } from "../lib/utils";
@@ -81,9 +91,13 @@ const SidebarHeader: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 	const pathname = location.pathname;
 	const [isActivityOpen, setIsActivityOpen] = useState(false);
 	const isSettingsPage = pathname.startsWith("/settings");
-	const [{ data: viewerData }] = useQuery({ query: SidebarViewerQuery, context: { suspense: true } });
-	const isAdmin = ((viewerData?.viewer?.permissions ?? 0) & ADMIN_BIT) !== 0;
-	const [{ data: activityData }] = useQuery({ query: ActivityPanelQuery, pause: !isAdmin });
+	const [{ data: viewerData }] = useSuspenseQuery({ query: SidebarViewerQuery });
+	const isAdmin = ((viewerData.viewer?.permissions ?? 0) & ADMIN_BIT) !== 0;
+	const [{ data: activityData }] = useQuery({
+		query: ActivityPanelQuery,
+		pause: !isAdmin,
+	});
+
 	const activitiesRunning = (activityData?.activities.length ?? 0) > 0;
 
 	return (
@@ -164,7 +178,7 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 	const location = useLocation();
 	const pathname = location.pathname;
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
-	const [{ data }] = useQuery({ query: LibrariesQuery, context: { suspense: true } });
+	const [{ data }] = useSuspenseQuery({ query: LibrariesQuery });
 
 	return (
 		<>
@@ -194,22 +208,24 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 				>
 					Collections
 				</SidebarLink>
-				{data?.libraries?.filter((library) => library.pinned).map((library) => {
-					const libraryPath = `/library/${library.id}`;
-					const isActive = pathname.startsWith(libraryPath);
-					return (
-						<SidebarLink
-							to={libraryPath}
-							media={<LibraryIcon createdAt={library.createdAt} className="h-full w-full" size={32} />}
-							active={isActive}
-							key={library.id}
-							onClick={onNavigate}
-						>
-							{library.name}
-						</SidebarLink>
-					);
-				})}
-				{data?.collections?.map((collection) => {
+				{data.libraries
+					.filter((library) => library.pinned)
+					.map((library) => {
+						const libraryPath = `/library/${library.id}`;
+						const isActive = pathname.startsWith(libraryPath);
+						return (
+							<SidebarLink
+								to={libraryPath}
+								media={<LibraryIcon createdAt={library.createdAt} className="h-full w-full" size={32} />}
+								active={isActive}
+								key={library.id}
+								onClick={onNavigate}
+							>
+								{library.name}
+							</SidebarLink>
+						);
+					})}
+				{data.collections.map((collection) => {
 					const collectionPath = getPathForCollection(collection.id);
 					const isActive = pathname.startsWith(collectionPath);
 					const isWatchlist = collection.createdById != null && collection.id === collection.createdById;

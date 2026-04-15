@@ -22,6 +22,7 @@ pub struct Model {
     #[sea_orm(column_type = "Blob", nullable)]
     pub thumbhash: Option<Vec<u8>>,
     pub created_at: i64,
+    pub updated_at: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -43,9 +44,11 @@ impl ActiveModelBehavior for ActiveModel {}
 pub enum AssetKind {
     Poster = 0,
     Thumbnail = 1,
-    Background = 2,
+    Backdrop = 2,
     TimelinePreviewSheet = 3,
     Subtitle = 4,
+    Logo = 5,
+    Profile = 6,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]

@@ -1,5 +1,5 @@
 import { Trash2Icon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery } from "urql";
 import { graphql } from "../@generated/gql";
@@ -43,11 +43,13 @@ export function CollectionRoute() {
 	const navigate = useNavigate();
 	const [after, setAfter] = useState<string | null>(null);
 	const [items, setItems] = useState<any[]>([]);
+	const queryVariables = useMemo(() => ({ collectionId: collectionId!, after, first: PAGE_SIZE }), [after, collectionId]);
+	const collectionQueryContext = useMemo(() => ({ suspense: after == null }), [after]);
 	const [{ data, fetching }] = useQuery({
 		query: CollectionQuery,
-		variables: { collectionId: collectionId!, after, first: PAGE_SIZE },
+		variables: queryVariables,
 		pause: !collectionId,
-		context: { suspense: after == null },
+		context: collectionQueryContext,
 	});
 	const [{ fetching: deleting }, deleteCollection] = useMutation(DeleteCollectionMutation);
 

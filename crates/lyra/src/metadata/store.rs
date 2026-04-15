@@ -1,11 +1,19 @@
 use crate::entities::{
     assets::{self, AssetKind, AssetType},
     metadata_source::MetadataSource,
-    node_metadata, nodes,
+    node_metadata, node_metadata_content_ratings, node_metadata_genres, node_metadata_images,
+    node_metadata_images::NodeMetadataImageKind,
+    node_metadata_recommendations,
+    node_metadata_recommendations::RecommendationMediaKind,
+    nodes, people, root_node_cast,
 };
 use crate::ids;
 use crate::metadata::local::{LOCAL_METADATA_PROVIDER_ID, NodeLocalMetadataInput};
-use lyra_metadata::{EpisodeMetadata, ImageSet, MovieMetadata, SeasonMetadata, SeriesMetadata};
+use lyra_metadata::{
+    CastCredit, ContentRating, EpisodeMetadata, ImageSet, MetadataGenre, MetadataStatus,
+    MovieMetadata, PersonMetadata, Recommendation, RecommendedMediaKind, SeasonMetadata,
+    SeriesMetadata,
+};
 use sea_orm::sea_query::{Expr, OnConflict, Query};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
@@ -36,12 +44,11 @@ pub async fn upsert_local_node_metadata_rows(
             score_normalized: Set(None),
             first_aired: Set(None),
             last_aired: Set(None),
-            poster_asset_id: Set(None),
-            thumbnail_asset_id: Set(None),
-            background_asset_id: Set(None),
+            status: Set(None),
+            tagline: Set(None),
+            next_aired: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
-            ..Default::default()
         }
     }))
     .on_conflict(
@@ -56,9 +63,9 @@ pub async fn upsert_local_node_metadata_rows(
                 node_metadata::Column::ScoreNormalized,
                 node_metadata::Column::FirstAired,
                 node_metadata::Column::LastAired,
-                node_metadata::Column::PosterAssetId,
-                node_metadata::Column::ThumbnailAssetId,
-                node_metadata::Column::BackgroundAssetId,
+                node_metadata::Column::Status,
+                node_metadata::Column::Tagline,
+                node_metadata::Column::NextAired,
                 node_metadata::Column::UpdatedAt,
             ])
             .to_owned(),
@@ -143,6 +150,12 @@ pub async fn upsert_remote_episode_metadata_for_batch(
                 score_normalized: episode.score_normalized,
                 first_aired: episode.first_aired,
                 last_aired: episode.last_aired,
+                status: map_status(episode.status),
+                tagline: episode.tagline.clone(),
+                next_aired: episode.next_aired,
+                genres: episode.genres.clone(),
+                content_ratings: episode.content_ratings.clone(),
+                recommendations: episode.recommendations.clone(),
                 images: episode.images.clone(),
             },
             now,
@@ -188,6 +201,12 @@ pub async fn upsert_remote_season_metadata_for_batch(
                 score_normalized: season.score_normalized,
                 first_aired: season.first_aired,
                 last_aired: season.last_aired,
+                status: map_status(season.status),
+                tagline: season.tagline.clone(),
+                next_aired: season.next_aired,
+                genres: season.genres.clone(),
+                content_ratings: season.content_ratings.clone(),
+                recommendations: season.recommendations.clone(),
                 images: season.images.clone(),
             },
             now,
@@ -211,6 +230,76 @@ pub async fn clear_remote_node_metadata_for_root_except(
     keep_node_ids: &[String],
 ) -> anyhow::Result<()> {
     delete_metadata_for_root_except(pool, root_id, MetadataSource::Remote, keep_node_ids).await
+}
+
+pub async fn clear_root_cast(pool: &impl ConnectionTrait, root_id: &str) -> anyhow::Result<()> {
+    root_node_cast::Entity::delete_many()
+        .filter(root_node_cast::Column::RootNodeId.eq(root_id.to_string()))
+        .exec(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn replace_root_cast(
+    pool: &impl ConnectionTrait,
+    root_id: &str,
+    provider_id: &str,
+    cast: &[CastCredit],
+    people_metadata: &[PersonMetadata],
+    now: i64,
+) -> anyhow::Result<()> {
+    root_node_cast::Entity::delete_many()
+        .filter(root_node_cast::Column::RootNodeId.eq(root_id.to_string()))
+        .exec(pool)
+        .await?;
+
+    if cast.is_empty() {
+        return Ok(());
+    }
+
+    let people_by_provider_person_id = people_metadata
+        .iter()
+        .map(|person| (person.provider_person_id.as_str(), person))
+        .collect::<HashMap<_, _>>();
+
+    let mut person_id_by_provider_person_id = HashMap::new();
+    for credit in cast {
+        if person_id_by_provider_person_id.contains_key(credit.provider_person_id.as_str()) {
+            continue;
+        }
+
+        let fallback = PersonMetadata {
+            provider_person_id: credit.provider_person_id.clone(),
+            name: credit.name.clone(),
+            birthday: None,
+            description: None,
+            profile_image_url: None,
+        };
+        let person = people_by_provider_person_id
+            .get(credit.provider_person_id.as_str())
+            .copied()
+            .unwrap_or(&fallback);
+        let person_id = upsert_person(pool, provider_id, person, now).await?;
+        person_id_by_provider_person_id.insert(credit.provider_person_id.clone(), person_id);
+    }
+
+    root_node_cast::Entity::insert_many(cast.iter().enumerate().map(|(position, credit)| {
+        root_node_cast::ActiveModel {
+            id: Set(ids::generate_ulid()),
+            root_node_id: Set(root_id.to_string()),
+            person_id: Set(
+                person_id_by_provider_person_id[credit.provider_person_id.as_str()].clone(),
+            ),
+            character_name: Set(credit.character_name.clone()),
+            department: Set(credit.department.clone()),
+            position: Set(position as i64),
+            created_at: Set(now),
+        }
+    }))
+    .exec(pool)
+    .await?;
+
+    Ok(())
 }
 
 async fn delete_metadata_for_root_except(
@@ -250,6 +339,12 @@ struct MetadataFields {
     score_normalized: Option<i64>,
     first_aired: Option<i64>,
     last_aired: Option<i64>,
+    status: Option<node_metadata::MetadataStatus>,
+    tagline: Option<String>,
+    next_aired: Option<i64>,
+    genres: Vec<MetadataGenre>,
+    content_ratings: Vec<ContentRating>,
+    recommendations: Vec<Recommendation>,
     images: ImageSet,
 }
 
@@ -263,6 +358,12 @@ fn metadata_fields_from_series(metadata: &SeriesMetadata) -> MetadataFields {
         score_normalized: metadata.score_normalized,
         first_aired: metadata.first_aired,
         last_aired: metadata.last_aired,
+        status: map_status(metadata.status),
+        tagline: metadata.tagline.clone(),
+        next_aired: metadata.next_aired,
+        genres: metadata.genres.clone(),
+        content_ratings: metadata.content_ratings.clone(),
+        recommendations: metadata.recommendations.clone(),
         images: metadata.images.clone(),
     }
 }
@@ -277,6 +378,12 @@ fn metadata_fields_from_movie(metadata: &MovieMetadata) -> MetadataFields {
         score_normalized: metadata.score_normalized,
         first_aired: metadata.first_aired,
         last_aired: metadata.last_aired,
+        status: map_status(metadata.status),
+        tagline: metadata.tagline.clone(),
+        next_aired: None,
+        genres: metadata.genres.clone(),
+        content_ratings: metadata.content_ratings.clone(),
+        recommendations: metadata.recommendations.clone(),
         images: metadata.images.clone(),
     }
 }
@@ -288,47 +395,24 @@ async fn upsert_remote_node_metadata(
     metadata: MetadataFields,
     now: i64,
 ) -> anyhow::Result<()> {
-    let poster_asset_id = ensure_remote_asset(
-        pool,
-        metadata.images.poster_url.as_deref(),
-        AssetKind::Poster,
-        now,
-    )
-    .await?;
-    let thumbnail_asset_id = ensure_remote_asset(
-        pool,
-        metadata.images.thumbnail_url.as_deref(),
-        AssetKind::Thumbnail,
-        now,
-    )
-    .await?;
-    let background_asset_id = ensure_remote_asset(
-        pool,
-        metadata.images.background_url.as_deref(),
-        AssetKind::Background,
-        now,
-    )
-    .await?;
-
     node_metadata::Entity::insert(node_metadata::ActiveModel {
         id: Set(ids::generate_ulid()),
         node_id: Set(node_id.to_string()),
         source: Set(MetadataSource::Remote),
         provider_id: Set(provider_id.to_string()),
-        imdb_id: Set(metadata.imdb_id),
+        imdb_id: Set(metadata.imdb_id.clone()),
         tmdb_id: Set(metadata.tmdb_id),
-        name: Set(metadata.name),
-        description: Set(metadata.description),
-        score_display: Set(metadata.score_display),
+        name: Set(metadata.name.clone()),
+        description: Set(metadata.description.clone()),
+        score_display: Set(metadata.score_display.clone()),
         score_normalized: Set(metadata.score_normalized),
         first_aired: Set(metadata.first_aired),
         last_aired: Set(metadata.last_aired),
-        poster_asset_id: Set(poster_asset_id),
-        thumbnail_asset_id: Set(thumbnail_asset_id),
-        background_asset_id: Set(background_asset_id),
+        status: Set(metadata.status),
+        tagline: Set(metadata.tagline.clone()),
+        next_aired: Set(metadata.next_aired),
         created_at: Set(now),
         updated_at: Set(now),
-        ..Default::default()
     })
     .on_conflict(
         OnConflict::columns([node_metadata::Column::NodeId, node_metadata::Column::Source])
@@ -342,9 +426,9 @@ async fn upsert_remote_node_metadata(
                 node_metadata::Column::ScoreNormalized,
                 node_metadata::Column::FirstAired,
                 node_metadata::Column::LastAired,
-                node_metadata::Column::PosterAssetId,
-                node_metadata::Column::ThumbnailAssetId,
-                node_metadata::Column::BackgroundAssetId,
+                node_metadata::Column::Status,
+                node_metadata::Column::Tagline,
+                node_metadata::Column::NextAired,
                 node_metadata::Column::UpdatedAt,
             ])
             .to_owned(),
@@ -352,10 +436,168 @@ async fn upsert_remote_node_metadata(
     .exec(pool)
     .await?;
 
+    let row = node_metadata::Entity::find()
+        .filter(node_metadata::Column::NodeId.eq(node_id.to_string()))
+        .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
+        .one(pool)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("remote metadata row missing after upsert"))?;
+
+    replace_metadata_children(pool, &row.id, metadata, now).await?;
+
     Ok(())
 }
 
-async fn ensure_remote_asset(
+async fn replace_metadata_children(
+    pool: &impl ConnectionTrait,
+    metadata_id: &str,
+    metadata: MetadataFields,
+    now: i64,
+) -> anyhow::Result<()> {
+    node_metadata_images::Entity::delete_many()
+        .filter(node_metadata_images::Column::NodeMetadataId.eq(metadata_id.to_string()))
+        .exec(pool)
+        .await?;
+    node_metadata_recommendations::Entity::delete_many()
+        .filter(node_metadata_recommendations::Column::NodeMetadataId.eq(metadata_id.to_string()))
+        .exec(pool)
+        .await?;
+    node_metadata_genres::Entity::delete_many()
+        .filter(node_metadata_genres::Column::NodeMetadataId.eq(metadata_id.to_string()))
+        .exec(pool)
+        .await?;
+    node_metadata_content_ratings::Entity::delete_many()
+        .filter(node_metadata_content_ratings::Column::NodeMetadataId.eq(metadata_id.to_string()))
+        .exec(pool)
+        .await?;
+
+    insert_metadata_images(pool, metadata_id, metadata.images, now).await?;
+
+    if !metadata.recommendations.is_empty() {
+        node_metadata_recommendations::Entity::insert_many(
+            metadata
+                .recommendations
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(position, row)| node_metadata_recommendations::ActiveModel {
+                        id: Set(ids::generate_ulid()),
+                        node_metadata_id: Set(metadata_id.to_string()),
+                        provider_id: Set("tmdb".to_string()),
+                        media_kind: Set(match row.media_kind {
+                            RecommendedMediaKind::Movie => RecommendationMediaKind::Movie,
+                            RecommendedMediaKind::Series => RecommendationMediaKind::Series,
+                        }),
+                        tmdb_id: Set(row.tmdb_id.and_then(|value| i64::try_from(value).ok())),
+                        imdb_id: Set(row.imdb_id),
+                        name: Set(row.name),
+                        first_aired: Set(row.first_aired),
+                        position: Set(position as i64),
+                        created_at: Set(now),
+                    },
+                ),
+        )
+        .exec(pool)
+        .await?;
+    }
+
+    if !metadata.genres.is_empty() {
+        node_metadata_genres::Entity::insert_many(metadata.genres.into_iter().enumerate().map(
+            |(position, row)| node_metadata_genres::ActiveModel {
+                id: Set(ids::generate_ulid()),
+                node_metadata_id: Set(metadata_id.to_string()),
+                provider_id: Set(row.provider_id),
+                external_id: Set(row.external_id),
+                name: Set(row.name),
+                position: Set(position as i64),
+                created_at: Set(now),
+            },
+        ))
+        .exec(pool)
+        .await?;
+    }
+
+    if !metadata.content_ratings.is_empty() {
+        node_metadata_content_ratings::Entity::insert_many(
+            metadata
+                .content_ratings
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(position, row)| node_metadata_content_ratings::ActiveModel {
+                        id: Set(ids::generate_ulid()),
+                        node_metadata_id: Set(metadata_id.to_string()),
+                        country_code: Set(row.country_code),
+                        rating: Set(row.rating),
+                        release_date: Set(row.release_date),
+                        release_type: Set(row.release_type),
+                        position: Set(position as i64),
+                        created_at: Set(now),
+                    },
+                ),
+        )
+        .exec(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn insert_metadata_images(
+    pool: &impl ConnectionTrait,
+    metadata_id: &str,
+    images: ImageSet,
+    now: i64,
+) -> anyhow::Result<()> {
+    let grouped = [
+        (NodeMetadataImageKind::Poster, images.posters),
+        (NodeMetadataImageKind::Thumbnail, images.thumbnails),
+        (NodeMetadataImageKind::Backdrop, images.backdrops),
+        (NodeMetadataImageKind::Logo, images.logos),
+    ];
+
+    let mut rows = Vec::new();
+    for (kind, group) in grouped {
+        for (position, image) in group.into_iter().enumerate() {
+            let asset_kind = match kind {
+                NodeMetadataImageKind::Poster => AssetKind::Poster,
+                NodeMetadataImageKind::Thumbnail => AssetKind::Thumbnail,
+                NodeMetadataImageKind::Backdrop => AssetKind::Backdrop,
+                NodeMetadataImageKind::Logo => AssetKind::Logo,
+            };
+            let asset_id =
+                ensure_remote_asset(pool, Some(image.url.as_str()), asset_kind, now).await?;
+            let Some(asset_id) = asset_id else {
+                continue;
+            };
+            rows.push(node_metadata_images::ActiveModel {
+                id: Set(ids::generate_ulid()),
+                node_metadata_id: Set(metadata_id.to_string()),
+                asset_id: Set(asset_id),
+                kind: Set(kind),
+                position: Set(position as i64),
+                language: Set(image.language),
+                vote_average: Set(image.vote_average),
+                vote_count: Set(image.vote_count),
+                width: Set(image.width),
+                height: Set(image.height),
+                file_type: Set(image.file_type),
+                is_active: Set(position == 0),
+                created_at: Set(now),
+            });
+        }
+    }
+
+    if !rows.is_empty() {
+        node_metadata_images::Entity::insert_many(rows)
+            .exec(pool)
+            .await?;
+    }
+
+    Ok(())
+}
+
+pub async fn ensure_remote_asset(
     pool: &impl ConnectionTrait,
     source_url: Option<&str>,
     kind: AssetKind,
@@ -368,7 +610,6 @@ async fn ensure_remote_asset(
         return Ok(None);
     }
 
-    // The same upstream URL can legitimately back multiple attachment roles.
     if let Some(existing) = assets::Entity::find()
         .filter(assets::Column::SourceUrl.eq(source_url.to_string()))
         .filter(assets::Column::Kind.eq(kind))
@@ -376,15 +617,20 @@ async fn ensure_remote_asset(
         .one(pool)
         .await?
     {
-        return Ok(Some(existing.id));
+        let mut active: assets::ActiveModel = existing.clone().into();
+        active.updated_at = Set(Some(now));
+        let updated = active.update(pool).await?;
+        return Ok(Some(updated.id));
     }
 
+    let asset_id = crate::ids::generate_prefixed_hashid("a", [source_url]);
     let asset = assets::ActiveModel {
-        id: Set(ids::generate_ulid()),
+        id: Set(asset_id),
         kind: Set(kind),
         asset_type: Set(AssetType::Image),
         source_url: Set(Some(source_url.to_string())),
         created_at: Set(now),
+        updated_at: Set(Some(now)),
         ..Default::default()
     }
     .insert(pool)
@@ -393,228 +639,57 @@ async fn ensure_remote_asset(
     Ok(Some(asset.id))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::entities::{libraries, metadata_source::MetadataSource};
-    use sea_orm::{ActiveValue::Set, Database, DatabaseConnection};
+async fn upsert_person(
+    pool: &impl ConnectionTrait,
+    provider_id: &str,
+    person: &PersonMetadata,
+    now: i64,
+) -> anyhow::Result<String> {
+    let person_id = ids::generate_hashid([provider_id, person.provider_person_id.as_str()]);
+    let profile_asset_id = ensure_remote_asset(
+        pool,
+        person.profile_image_url.as_deref(),
+        AssetKind::Profile,
+        now,
+    )
+    .await?;
 
-    async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {
-        let pool = Database::connect("sqlite::memory:").await?;
-        sqlx::migrate!("../../migrations")
-            .run(pool.get_sqlite_connection_pool())
-            .await?;
+    people::Entity::insert(people::ActiveModel {
+        id: Set(person_id.clone()),
+        provider_id: Set(provider_id.to_string()),
+        provider_person_id: Set(person.provider_person_id.clone()),
+        name: Set(person.name.clone()),
+        birthday: Set(person.birthday.clone()),
+        description: Set(person.description.clone()),
+        profile_asset_id: Set(profile_asset_id.clone()),
+        created_at: Set(now),
+        updated_at: Set(now),
+    })
+    .on_conflict(
+        OnConflict::columns([people::Column::ProviderId, people::Column::ProviderPersonId])
+            .update_columns([
+                people::Column::Name,
+                people::Column::Birthday,
+                people::Column::Description,
+                people::Column::ProfileAssetId,
+                people::Column::UpdatedAt,
+            ])
+            .to_owned(),
+    )
+    .exec(pool)
+    .await?;
 
-        Ok(pool)
-    }
+    Ok(person_id)
+}
 
-    async fn insert_library(pool: &DatabaseConnection) -> anyhow::Result<()> {
-        libraries::Entity::insert(libraries::ActiveModel {
-            id: Set("lib".to_owned()),
-            path: Set("/library".to_owned()),
-            name: Set("Library".to_owned()),
-            pinned: Set(false),
-            last_scanned_at: Set(None),
-            unavailable_at: Set(None),
-            created_at: Set(0),
-        })
-        .exec(pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn insert_node(
-        pool: &DatabaseConnection,
-        id: &str,
-        root_id: &str,
-        parent_id: Option<&str>,
-        kind: nodes::NodeKind,
-        name: &str,
-        season_number: Option<i64>,
-        order: i64,
-    ) -> anyhow::Result<nodes::Model> {
-        nodes::Entity::insert(nodes::ActiveModel {
-            id: Set(id.to_owned()),
-            library_id: Set("lib".to_owned()),
-            root_id: Set(root_id.to_owned()),
-            parent_id: Set(parent_id.map(str::to_owned)),
-            kind: Set(kind),
-            name: Set(name.to_owned()),
-            order: Set(order),
-            season_number: Set(season_number),
-            episode_number: Set(None),
-            last_added_at: Set(0),
-            last_fingerprint_version: Set(None),
-            unavailable_at: Set(None),
-            created_at: Set(0),
-            updated_at: Set(0),
-        })
-        .exec(pool)
-        .await?;
-
-        Ok(nodes::Entity::find_by_id(id.to_owned())
-            .one(pool)
-            .await?
-            .unwrap())
-    }
-
-    #[tokio::test]
-    async fn upsert_remote_season_metadata_keeps_root_remote_metadata() -> anyhow::Result<()> {
-        let pool = setup_test_db().await?;
-        insert_library(&pool).await?;
-        insert_node(
-            &pool,
-            "root",
-            "root",
-            None,
-            nodes::NodeKind::Series,
-            "Show",
-            None,
-            0,
-        )
-        .await?;
-        let season = insert_node(
-            &pool,
-            "season-1",
-            "root",
-            Some("root"),
-            nodes::NodeKind::Season,
-            "Season 1",
-            Some(1),
-            1,
-        )
-        .await?;
-
-        upsert_remote_node_metadata_from_series(
-            &pool,
-            "root",
-            "tmdb",
-            &SeriesMetadata {
-                imdb_id: None,
-                tmdb_id: Some(1),
-                name: "Show".to_owned(),
-                description: Some("root description".to_owned()),
-                score_display: None,
-                score_normalized: None,
-                first_aired: None,
-                last_aired: None,
-                images: ImageSet::default(),
-            },
-            1,
-        )
-        .await?;
-
-        upsert_remote_season_metadata_for_batch(
-            &pool,
-            "tmdb",
-            &[season],
-            &[SeasonMetadata {
-                root_id: "root".to_owned(),
-                season_number: 1,
-                name: "Season 1".to_owned(),
-                description: Some("season description".to_owned()),
-                score_display: None,
-                score_normalized: None,
-                first_aired: None,
-                last_aired: None,
-                images: ImageSet::default(),
-            }],
-            2,
-        )
-        .await?;
-
-        let root_remote = node_metadata::Entity::find()
-            .filter(node_metadata::Column::NodeId.eq("root"))
-            .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
-            .one(&pool)
-            .await?
-            .unwrap();
-        let season_remote = node_metadata::Entity::find()
-            .filter(node_metadata::Column::NodeId.eq("season-1"))
-            .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
-            .one(&pool)
-            .await?
-            .unwrap();
-
-        assert_eq!(root_remote.description.as_deref(), Some("root description"));
-        assert_eq!(
-            season_remote.description.as_deref(),
-            Some("season description")
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn upsert_remote_series_metadata_keeps_distinct_asset_kinds_per_relation()
-    -> anyhow::Result<()> {
-        let pool = setup_test_db().await?;
-        insert_library(&pool).await?;
-        insert_node(
-            &pool,
-            "root",
-            "root",
-            None,
-            nodes::NodeKind::Series,
-            "Show",
-            None,
-            0,
-        )
-        .await?;
-
-        upsert_remote_node_metadata_from_series(
-            &pool,
-            "root",
-            "tmdb",
-            &SeriesMetadata {
-                imdb_id: None,
-                tmdb_id: Some(1),
-                name: "Show".to_owned(),
-                description: None,
-                score_display: None,
-                score_normalized: None,
-                first_aired: None,
-                last_aired: None,
-                images: ImageSet {
-                    poster_url: Some("https://example.com/shared.jpg".to_owned()),
-                    thumbnail_url: Some("https://example.com/shared.jpg".to_owned()),
-                    background_url: Some("https://example.com/shared.jpg".to_owned()),
-                },
-            },
-            1,
-        )
-        .await?;
-
-        let remote = node_metadata::Entity::find()
-            .filter(node_metadata::Column::NodeId.eq("root"))
-            .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
-            .one(&pool)
-            .await?
-            .unwrap();
-
-        let poster_asset = assets::Entity::find_by_id(remote.poster_asset_id.unwrap())
-            .one(&pool)
-            .await?
-            .unwrap();
-        let thumbnail_asset = assets::Entity::find_by_id(remote.thumbnail_asset_id.unwrap())
-            .one(&pool)
-            .await?
-            .unwrap();
-        let background_asset = assets::Entity::find_by_id(remote.background_asset_id.unwrap())
-            .one(&pool)
-            .await?
-            .unwrap();
-
-        assert_ne!(poster_asset.id, thumbnail_asset.id);
-        assert_ne!(poster_asset.id, background_asset.id);
-        assert_ne!(thumbnail_asset.id, background_asset.id);
-        assert_eq!(poster_asset.kind, AssetKind::Poster);
-        assert_eq!(thumbnail_asset.kind, AssetKind::Thumbnail);
-        assert_eq!(background_asset.kind, AssetKind::Background);
-        assert_eq!(poster_asset.asset_type, AssetType::Image);
-        assert_eq!(thumbnail_asset.asset_type, AssetType::Image);
-        assert_eq!(background_asset.asset_type, AssetType::Image);
-
-        Ok(())
+fn map_status(status: Option<MetadataStatus>) -> Option<node_metadata::MetadataStatus> {
+    match status? {
+        MetadataStatus::Upcoming => Some(node_metadata::MetadataStatus::Upcoming),
+        MetadataStatus::Airing => Some(node_metadata::MetadataStatus::Airing),
+        MetadataStatus::Returning => Some(node_metadata::MetadataStatus::Returning),
+        MetadataStatus::Finished => Some(node_metadata::MetadataStatus::Finished),
+        MetadataStatus::Cancelled => Some(node_metadata::MetadataStatus::Cancelled),
+        MetadataStatus::InTheaters => Some(node_metadata::MetadataStatus::InTheaters),
+        MetadataStatus::Released => Some(node_metadata::MetadataStatus::Released),
     }
 }

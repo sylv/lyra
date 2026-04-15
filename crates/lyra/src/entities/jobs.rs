@@ -45,6 +45,8 @@ pub enum JobKind {
     FileExtractSubtitles,
     #[sea_orm(num_value = 9)]
     FileProcessSubtitle,
+    #[sea_orm(num_value = 10)]
+    AssetCleanup,
 }
 
 impl JobKind {
@@ -59,6 +61,7 @@ impl JobKind {
             JobKind::NodeSyncMetadataRoot => 7,
             JobKind::FileExtractSubtitles => 8,
             JobKind::FileProcessSubtitle => 9,
+            JobKind::AssetCleanup => 10,
         }
     }
 }

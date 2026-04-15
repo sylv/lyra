@@ -1,20 +1,18 @@
-import { useEffect, useState, type FC } from "react";
+import { useMemo, type FC } from "react";
 import { useQuery } from "urql";
 import { graphql } from "../../@generated/gql";
-import type { NodeFilter } from "../../@generated/gql/graphql";
-import { EpisodeCard } from "../episode-card";
-import { DisplayKind, type PageVariables } from "./node-list";
-import { NodePosterDetail } from "./node-poster-detail";
-import { ViewLoader } from "../view-loader";
+import type { NodePageQueryVariables } from "../../@generated/gql/graphql";
 import { Spinner } from "../ui/spinner";
+import { ViewLoader } from "../view-loader";
+import { DisplayKind } from "./node-list";
+import { EpisodePosterDetail } from "./node-list-episode-detail";
+import { NodePosterDetail } from "./node-poster-detail";
 
 interface NodePageProps {
 	displayKind: DisplayKind;
-	filter: NodeFilter;
-	perPage: number;
-	variables: PageVariables;
-	isLast: boolean;
+	variables: NodePageQueryVariables;
 	isFirst: boolean;
+	isLast: boolean;
 	onLoadMore: (after: string) => void;
 }
 
@@ -36,34 +34,22 @@ const Query = graphql(`
 	}
 `);
 
-export const NodePage: FC<NodePageProps> = ({
-	displayKind,
-	perPage,
-	filter,
-	variables,
-	isFirst,
-	isLast,
-	onLoadMore,
-}) => {
-	const [firstLoad, setFirstLoad] = useState(isFirst);
+export const NodePage: FC<NodePageProps> = ({ displayKind, variables, isFirst, isLast, onLoadMore }) => {
+	const queryContext = useMemo(() => ({ suspense: isFirst }), [isFirst]);
 	const [{ data }] = useQuery({
 		query: Query,
-		context: { suspense: firstLoad },
-		variables: { after: variables.after, first: perPage, filter },
+		context: queryContext,
+		variables: variables,
 	});
-
-	useEffect(() => {
-		if (data) setFirstLoad(false);
-	}, [data]);
 
 	return (
 		<>
 			{!data && <Spinner />}
 			{data?.nodeList.edges.map((edge) =>
 				displayKind === DisplayKind.Episode ? (
-					<EpisodeCard episode={edge.node} key={edge.node.id} />
+					<EpisodePosterDetail key={edge.node.id} episode={edge.node} />
 				) : (
-					<NodePosterDetail node={edge.node} key={edge.node.id} />
+					<NodePosterDetail key={edge.node.id} node={edge.node} />
 				),
 			)}
 			{isLast && data?.nodeList.pageInfo.hasNextPage && data.nodeList.pageInfo.endCursor && (

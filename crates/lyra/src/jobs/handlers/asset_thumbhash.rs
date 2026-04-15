@@ -25,7 +25,11 @@ impl Job for AssetThumbhashJob {
 
     fn query(&self) -> Select<Self::Entity> {
         assets::Entity::find()
-            .filter(assets::Column::Kind.is_in([AssetKind::Poster, AssetKind::Thumbnail]))
+            .filter(assets::Column::Kind.is_in([
+                AssetKind::Poster,
+                AssetKind::Thumbnail,
+                AssetKind::Profile,
+            ]))
             .filter(assets::Column::HashSha256.is_not_null())
             .filter(
                 Condition::any()

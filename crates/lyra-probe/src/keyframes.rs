@@ -217,6 +217,9 @@ mod tests {
     fn keyframe_helpers_build_segment_starts() {
         let keyframes = VideoKeyframes::new(0, 1, 1, vec![0, 3, 6, 9, 12, 15]).unwrap();
 
-        assert_eq!(keyframes.segment_start_pts(Duration::from_secs(6)), vec![0, 6, 12]);
+        assert_eq!(
+            keyframes.segment_start_pts(Duration::from_secs(6)),
+            vec![0, 6, 12]
+        );
     }
 }

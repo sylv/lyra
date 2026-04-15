@@ -92,6 +92,47 @@ pub struct PlaybackOptions {
     pub subtitle_tracks: Vec<SubtitlePlaybackTrack>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum MetadataStatus {
+    Upcoming,
+    Airing,
+    Returning,
+    Finished,
+    Cancelled,
+    InTheaters,
+    Released,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct MetadataGenre {
+    pub provider_id: String,
+    pub external_id: Option<String>,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct ContentRating {
+    pub country_code: String,
+    pub rating: String,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+#[graphql(complex)]
+pub struct Person {
+    pub id: String,
+    pub name: String,
+    pub birthday: Option<String>,
+    #[graphql(skip)]
+    pub profile_asset_id: Option<String>,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct CastMember {
+    pub character_name: Option<String>,
+    pub department: Option<String>,
+    pub person: Person,
+}
+
 #[derive(Clone, Debug, SimpleObject)]
 pub struct VideoRenditionOption {
     pub rendition_id: String,
@@ -172,14 +213,12 @@ pub struct NodeProperties {
     pub file_size_bytes: Option<i64>,
     pub first_aired: Option<i64>,
     pub last_aired: Option<i64>,
+    pub status: Option<MetadataStatus>,
+    pub tagline: Option<String>,
     pub created_at: Option<i64>,
     pub updated_at: Option<i64>,
     #[graphql(skip)]
-    pub background_asset_id: Option<String>,
-    #[graphql(skip)]
-    pub poster_asset_id: Option<String>,
-    #[graphql(skip)]
-    pub thumbnail_asset_id: Option<String>,
+    pub metadata_id: Option<String>,
     #[graphql(skip)]
     pub node_id: String,
     #[graphql(skip)]

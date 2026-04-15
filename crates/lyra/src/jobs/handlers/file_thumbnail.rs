@@ -7,7 +7,8 @@ use crate::{
         file_assets::{self, FileAssetRole},
         files, jobs as jobs_entity,
         metadata_source::MetadataSource,
-        node_files, node_metadata,
+        node_files, node_metadata, node_metadata_images,
+        node_metadata_images::NodeMetadataImageKind,
     },
 };
 use lyra_thumbnail::{ThumbnailOptions, generate_thumbnail};
@@ -52,25 +53,48 @@ impl Job for FileThumbnailJob {
                         .and_where(
                             Expr::col((node_files::Entity, node_files::Column::NodeId))
                                 .in_subquery(
-                                    Query::select()
-                                        .column(node_metadata::Column::NodeId)
-                                        .from(node_metadata::Entity)
-                                        .and_where(
-                                            Expr::col((
-                                                node_metadata::Entity,
-                                                node_metadata::Column::Source,
-                                            ))
-                                            .eq(MetadataSource::Remote),
-                                        )
-                                        .and_where(
-                                            Expr::col((
-                                                node_metadata::Entity,
-                                                node_metadata::Column::ThumbnailAssetId,
-                                            ))
-                                            .is_not_null(),
-                                        )
-                                        .to_owned(),
-                                ),
+                                Query::select()
+                                    .column(node_metadata::Column::NodeId)
+                                    .from(node_metadata::Entity)
+                                    .and_where(
+                                        Expr::col((
+                                            node_metadata::Entity,
+                                            node_metadata::Column::Source,
+                                        ))
+                                        .eq(MetadataSource::Remote),
+                                    )
+                                    .and_where(Expr::exists(
+                                        Query::select()
+                                            .expr(Expr::val(1))
+                                            .from(node_metadata_images::Entity)
+                                            .and_where(
+                                                Expr::col((
+                                                    node_metadata_images::Entity,
+                                                    node_metadata_images::Column::NodeMetadataId,
+                                                ))
+                                                .equals((
+                                                    node_metadata::Entity,
+                                                    node_metadata::Column::Id,
+                                                )),
+                                            )
+                                            .and_where(
+                                                Expr::col((
+                                                    node_metadata_images::Entity,
+                                                    node_metadata_images::Column::Kind,
+                                                ))
+                                                .eq(NodeMetadataImageKind::Thumbnail),
+                                            )
+                                            .and_where(
+                                                Expr::col((
+                                                    node_metadata_images::Entity,
+                                                    node_metadata_images::Column::IsActive,
+                                                ))
+                                                .eq(true),
+                                            )
+                                            .to_owned(),
+                                    ))
+                                    .to_owned(),
+                            ),
                         )
                         .to_owned(),
                 ),

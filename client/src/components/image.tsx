@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import { ImageIcon } from "lucide-react";
 import type { FC } from "react";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
@@ -10,6 +9,7 @@ import { cn } from "../lib/utils";
 export enum ImageType {
 	Poster = "poster",
 	Thumbnail = "thumbnail",
+	Avatar = "avatar",
 }
 
 export const Fragment = graphql(`
@@ -37,6 +37,11 @@ const IMAGE_TYPE_CONFIG: Record<ImageType, ImageTypeConfig> = {
 		baseClasses: "bg-zinc-700/30 shrink-0 aspect-[16/9] object-cover select-none h-38",
 		fallbackTextClasses: "text-sm text-center font-semibold",
 		proxyWidth: 600,
+	},
+	[ImageType.Avatar]: {
+		baseClasses: "rounded-full bg-zinc-700/30 shrink-0 select-none aspect-square object-cover",
+		fallbackTextClasses: "text-sm text-center font-semibold",
+		proxyWidth: 200,
 	},
 };
 

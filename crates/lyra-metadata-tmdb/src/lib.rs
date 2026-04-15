@@ -2,9 +2,11 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use lyra_metadata::{
-    EpisodeMetadata, ImageSet, MetadataProvider, MovieCandidate, MovieMetadata,
-    MovieRootMatchRequest, RootMatchHint, Scored, SeasonMetadata, SeriesCandidate, SeriesItem,
-    SeriesItemsRequest, SeriesItemsResult, SeriesMetadata, SeriesRootMatchRequest,
+    CastCredit, ContentRating, EpisodeMetadata, ImageSet, MetadataGenre, MetadataImage,
+    MetadataImageKind, MetadataProvider, MetadataStatus, MovieCandidate, MovieMetadata,
+    MovieRootMatchRequest, PersonMetadata, Recommendation, RecommendedMediaKind, RootMatchHint,
+    Scored, SeasonMetadata, SeriesCandidate, SeriesItem, SeriesItemsRequest, SeriesItemsResult,
+    SeriesMetadata, SeriesRootMatchRequest,
 };
 use ratelimit::Ratelimiter;
 use reqwest::Client;
@@ -115,20 +117,6 @@ impl TmdbMetadataProvider {
         cache.retain(|_, entry| entry.expires_at > now);
         cache.get(cache_key).map(|entry| entry.value.clone())
     }
-
-    async fn get_imdb_id_for_tv(&self, tmdb_id: u64) -> Result<Option<String>> {
-        let external_ids: ExternalIds = self
-            .get_json(&format!("/tv/{tmdb_id}/external_ids"), &[])
-            .await?;
-        Ok(empty_to_none(external_ids.imdb_id))
-    }
-
-    async fn get_imdb_id_for_movie(&self, tmdb_id: u64) -> Result<Option<String>> {
-        let external_ids: ExternalIds = self
-            .get_json(&format!("/movie/{tmdb_id}/external_ids"), &[])
-            .await?;
-        Ok(empty_to_none(external_ids.imdb_id))
-    }
 }
 
 #[async_trait]
@@ -143,7 +131,7 @@ impl MetadataProvider for TmdbMetadataProvider {
     ) -> Result<Vec<Scored<SeriesCandidate>>> {
         let mut candidates = Vec::new();
         if let Some(tmdb_id) = req.hint.tmdb_id {
-            let details: TvDetails = self.get_json(&format!("/tv/{tmdb_id}"), &[]).await?;
+            let details: TvSearchResult = self.get_json(&format!("/tv/{tmdb_id}"), &[]).await?;
             candidates.push(Scored {
                 value: SeriesCandidate {
                     tmdb_id: details.id,
@@ -186,12 +174,18 @@ impl MetadataProvider for TmdbMetadataProvider {
 
     async fn lookup_series_metadata(&self, candidate: &SeriesCandidate) -> Result<SeriesMetadata> {
         let details: TvDetails = self
-            .get_json(&format!("/tv/{}", candidate.tmdb_id), &[])
+            .get_json(
+                &format!("/tv/{}", candidate.tmdb_id),
+                &[(
+                    "append_to_response",
+                    "external_ids,content_ratings,aggregate_credits,recommendations,images"
+                        .to_string(),
+                )],
+            )
             .await?;
-        let imdb_id = self.get_imdb_id_for_tv(details.id).await?;
 
         Ok(SeriesMetadata {
-            imdb_id,
+            imdb_id: empty_to_none(details.external_ids.and_then(|ids| ids.imdb_id)),
             tmdb_id: Some(details.id),
             name: details.name,
             description: empty_to_none(details.overview),
@@ -199,11 +193,29 @@ impl MetadataProvider for TmdbMetadataProvider {
             score_normalized: score_normalized(details.vote_average),
             first_aired: parse_date(details.first_air_date.as_deref()),
             last_aired: parse_date(details.last_air_date.as_deref()),
-            images: ImageSet {
-                poster_url: image_url(details.poster_path.as_deref(), "w780"),
-                thumbnail_url: image_url(details.poster_path.as_deref(), "w342"),
-                background_url: image_url(details.backdrop_path.as_deref(), "w1280"),
-            },
+            status: map_tv_status(details.status.as_deref()),
+            tagline: empty_to_none(details.tagline),
+            next_aired: details
+                .next_episode_to_air
+                .and_then(|episode| parse_date(episode.air_date.as_deref())),
+            genres: map_genres(self.id(), details.genres),
+            content_ratings: details
+                .content_ratings
+                .map(|ratings| map_tv_content_ratings(ratings.results))
+                .unwrap_or_default(),
+            cast: details
+                .aggregate_credits
+                .map(|credits| map_cast(credits.cast))
+                .unwrap_or_default(),
+            recommendations: details
+                .recommendations
+                .map(|rows| map_tv_recommendations(rows.results))
+                .unwrap_or_default(),
+            images: images_from_details(
+                details.poster_path.as_deref(),
+                details.backdrop_path.as_deref(),
+                details.images,
+            ),
         })
     }
 
@@ -233,10 +245,25 @@ impl MetadataProvider for TmdbMetadataProvider {
                 score_normalized: None,
                 first_aired: parse_date(season_details.air_date.as_deref()),
                 last_aired: parse_date(season_details.air_date.as_deref()),
+                status: None,
+                tagline: None,
+                next_aired: None,
+                genres: Vec::new(),
+                content_ratings: Vec::new(),
+                recommendations: Vec::new(),
                 images: ImageSet {
-                    poster_url: image_url(season_details.poster_path.as_deref(), "w780"),
-                    thumbnail_url: image_url(season_details.poster_path.as_deref(), "w342"),
-                    background_url: None,
+                    posters: collect_single_image(
+                        MetadataImageKind::Poster,
+                        season_details.poster_path.as_deref(),
+                        "w780",
+                    ),
+                    thumbnails: collect_single_image(
+                        MetadataImageKind::Thumbnail,
+                        season_details.poster_path.as_deref(),
+                        "w342",
+                    ),
+                    backdrops: Vec::new(),
+                    logos: Vec::new(),
                 },
             });
 
@@ -273,7 +300,8 @@ impl MetadataProvider for TmdbMetadataProvider {
     ) -> Result<Vec<Scored<MovieCandidate>>> {
         let mut candidates = Vec::new();
         if let Some(tmdb_id) = req.hint.tmdb_id {
-            let details: MovieDetails = self.get_json(&format!("/movie/{tmdb_id}"), &[]).await?;
+            let details: MovieSearchResult =
+                self.get_json(&format!("/movie/{tmdb_id}"), &[]).await?;
             candidates.push(Scored {
                 value: MovieCandidate {
                     tmdb_id: details.id,
@@ -313,12 +341,17 @@ impl MetadataProvider for TmdbMetadataProvider {
 
     async fn lookup_movie_metadata(&self, candidate: &MovieCandidate) -> Result<MovieMetadata> {
         let details: MovieDetails = self
-            .get_json(&format!("/movie/{}", candidate.tmdb_id), &[])
+            .get_json(
+                &format!("/movie/{}", candidate.tmdb_id),
+                &[(
+                    "append_to_response",
+                    "external_ids,release_dates,credits,recommendations,images".to_string(),
+                )],
+            )
             .await?;
-        let imdb_id = self.get_imdb_id_for_movie(details.id).await?;
 
         Ok(MovieMetadata {
-            imdb_id,
+            imdb_id: empty_to_none(details.external_ids.and_then(|ids| ids.imdb_id)),
             tmdb_id: Some(details.id),
             name: details.title,
             description: empty_to_none(details.overview),
@@ -326,12 +359,46 @@ impl MetadataProvider for TmdbMetadataProvider {
             score_normalized: score_normalized(details.vote_average),
             first_aired: parse_date(details.release_date.as_deref()),
             last_aired: parse_date(details.release_date.as_deref()),
-            images: ImageSet {
-                poster_url: image_url(details.poster_path.as_deref(), "w780"),
-                thumbnail_url: image_url(details.poster_path.as_deref(), "w342"),
-                background_url: image_url(details.backdrop_path.as_deref(), "w1280"),
-            },
+            status: map_movie_status(details.status.as_deref()),
+            tagline: empty_to_none(details.tagline),
+            genres: map_genres(self.id(), details.genres),
+            content_ratings: details
+                .release_dates
+                .map(|dates| map_movie_content_ratings(dates.results))
+                .unwrap_or_default(),
+            cast: details
+                .credits
+                .map(|credits| map_cast(credits.cast))
+                .unwrap_or_default(),
+            recommendations: details
+                .recommendations
+                .map(|rows| map_movie_recommendations(rows.results))
+                .unwrap_or_default(),
+            images: images_from_details(
+                details.poster_path.as_deref(),
+                details.backdrop_path.as_deref(),
+                details.images,
+            ),
         })
+    }
+
+    async fn lookup_people_metadata(
+        &self,
+        provider_person_ids: &[String],
+    ) -> Result<Vec<PersonMetadata>> {
+        let mut people = Vec::new();
+
+        for provider_person_id in provider_person_ids {
+            let Ok(tmdb_person_id) = provider_person_id.parse::<u64>() else {
+                continue;
+            };
+            let details: TmdbPersonDetails = self
+                .get_json(&format!("/person/{tmdb_person_id}"), &[])
+                .await?;
+            people.push(map_person_metadata(details));
+        }
+
+        Ok(people)
     }
 }
 
@@ -344,10 +411,21 @@ fn episode_metadata_from_item(item: &SeriesItem, episode: &TvEpisodeDetails) -> 
         score_normalized: score_normalized(episode.vote_average),
         first_aired: parse_date(episode.air_date.as_deref()),
         last_aired: parse_date(episode.air_date.as_deref()),
+        status: None,
+        tagline: None,
+        next_aired: None,
+        genres: Vec::new(),
+        content_ratings: Vec::new(),
+        recommendations: Vec::new(),
         images: ImageSet {
-            poster_url: None,
-            thumbnail_url: image_url(episode.still_path.as_deref(), "w300"),
-            background_url: None,
+            posters: Vec::new(),
+            thumbnails: collect_single_image(
+                MetadataImageKind::Thumbnail,
+                episode.still_path.as_deref(),
+                "w300",
+            ),
+            backdrops: Vec::new(),
+            logos: Vec::new(),
         },
     }
 }
@@ -442,6 +520,230 @@ where
     scored
 }
 
+fn map_tv_status(status: Option<&str>) -> Option<MetadataStatus> {
+    match status? {
+        "Returning Series" => Some(MetadataStatus::Returning),
+        "Ended" => Some(MetadataStatus::Finished),
+        "Canceled" | "Cancelled" => Some(MetadataStatus::Cancelled),
+        "In Production" => Some(MetadataStatus::Returning),
+        "Planned" | "Pilot" => Some(MetadataStatus::Upcoming),
+        _ => None,
+    }
+}
+
+fn map_movie_status(status: Option<&str>) -> Option<MetadataStatus> {
+    match status? {
+        "Released" => Some(MetadataStatus::Released),
+        "Canceled" | "Cancelled" => Some(MetadataStatus::Cancelled),
+        "Rumored" | "Planned" | "In Production" | "Post Production" => {
+            Some(MetadataStatus::Upcoming)
+        }
+        _ => None,
+    }
+}
+
+fn map_genres(provider_id: &str, genres: Vec<TmdbGenre>) -> Vec<MetadataGenre> {
+    genres
+        .into_iter()
+        .map(|genre| MetadataGenre {
+            provider_id: provider_id.to_string(),
+            external_id: Some(genre.id.to_string()),
+            name: genre.name,
+        })
+        .collect()
+}
+
+fn map_tv_content_ratings(rows: Vec<TvContentRating>) -> Vec<ContentRating> {
+    rows.into_iter()
+        .filter_map(|row| {
+            let rating = empty_to_none(row.rating)?;
+            Some(ContentRating {
+                country_code: row.iso_3166_1,
+                rating,
+                release_date: None,
+                release_type: None,
+            })
+        })
+        .collect()
+}
+
+fn map_movie_content_ratings(rows: Vec<MovieReleaseDatesCountry>) -> Vec<ContentRating> {
+    let mut ratings = Vec::new();
+    for row in rows {
+        for release in row.release_dates {
+            let Some(rating) = empty_to_none(release.certification) else {
+                continue;
+            };
+            ratings.push(ContentRating {
+                country_code: row.iso_3166_1.clone(),
+                rating,
+                release_date: parse_date(release.release_date.as_deref()),
+                release_type: release.release_type,
+            });
+        }
+    }
+    ratings
+}
+
+fn map_cast<T: CreditLike>(rows: Vec<T>) -> Vec<CastCredit> {
+    rows.into_iter()
+        .take(20)
+        .map(|row| CastCredit {
+            provider_person_id: row.id().to_string(),
+            name: row.name().to_string(),
+            character_name: empty_to_none(Some(row.character().to_string())),
+            department: None,
+        })
+        .collect()
+}
+
+fn map_person_metadata(person: TmdbPersonDetails) -> PersonMetadata {
+    PersonMetadata {
+        provider_person_id: person.id.to_string(),
+        name: person.name,
+        birthday: parse_date_str(person.birthday.as_deref()),
+        description: empty_to_none(person.biography),
+        profile_image_url: image_url(person.profile_path.as_deref(), "w342"),
+    }
+}
+
+fn map_tv_recommendations(rows: Vec<TvSearchResult>) -> Vec<Recommendation> {
+    rows.into_iter()
+        .map(|row| Recommendation {
+            media_kind: RecommendedMediaKind::Series,
+            tmdb_id: Some(row.id),
+            imdb_id: None,
+            name: row.name,
+            first_aired: parse_date(row.first_air_date.as_deref()),
+        })
+        .collect()
+}
+
+fn map_movie_recommendations(rows: Vec<MovieSearchResult>) -> Vec<Recommendation> {
+    rows.into_iter()
+        .map(|row| Recommendation {
+            media_kind: RecommendedMediaKind::Movie,
+            tmdb_id: Some(row.id),
+            imdb_id: None,
+            name: row.title,
+            first_aired: parse_date(row.release_date.as_deref()),
+        })
+        .collect()
+}
+
+fn images_from_details(
+    primary_poster_path: Option<&str>,
+    primary_backdrop_path: Option<&str>,
+    images: Option<TmdbImages>,
+) -> ImageSet {
+    let mut posters = collect_single_image(MetadataImageKind::Poster, primary_poster_path, "w780");
+    let mut thumbnails =
+        collect_single_image(MetadataImageKind::Thumbnail, primary_poster_path, "w342");
+    let mut backdrops =
+        collect_single_image(MetadataImageKind::Backdrop, primary_backdrop_path, "w1280");
+    let mut logos = Vec::new();
+
+    if let Some(images) = images {
+        extend_unique_images(
+            &mut posters,
+            images.posters.clone(),
+            MetadataImageKind::Poster,
+            "w780",
+        );
+        extend_unique_images(
+            &mut thumbnails,
+            images.posters,
+            MetadataImageKind::Thumbnail,
+            "w342",
+        );
+        extend_unique_images(
+            &mut backdrops,
+            images.backdrops,
+            MetadataImageKind::Backdrop,
+            "w1280",
+        );
+
+        let mut logo_rows = images.logos;
+        logo_rows.sort_by_key(|row| logo_sort_key(row));
+        extend_unique_images(&mut logos, logo_rows, MetadataImageKind::Logo, "original");
+    }
+
+    ImageSet {
+        posters,
+        thumbnails,
+        backdrops,
+        logos,
+    }
+}
+
+fn logo_sort_key(row: &TmdbImage) -> (u8, i64, i64, u8) {
+    let language_rank = match row.iso_639_1.as_deref() {
+        Some("en") => 0,
+        Some(_) => 1,
+        None => 2,
+    };
+    let vote_average_rank = -(row.vote_average * 1000.0).round() as i64;
+    let vote_count_rank = -row.vote_count;
+    let svg_rank = if row.file_type.as_deref() == Some(".svg") {
+        0
+    } else {
+        1
+    };
+
+    (language_rank, vote_average_rank, vote_count_rank, svg_rank)
+}
+
+fn collect_single_image(
+    kind: MetadataImageKind,
+    path: Option<&str>,
+    size: &str,
+) -> Vec<MetadataImage> {
+    image_url(path, size)
+        .map(|url| {
+            vec![MetadataImage {
+                kind,
+                url,
+                language: None,
+                vote_average: None,
+                vote_count: None,
+                width: None,
+                height: None,
+                file_type: None,
+            }]
+        })
+        .unwrap_or_default()
+}
+
+fn extend_unique_images(
+    target: &mut Vec<MetadataImage>,
+    rows: Vec<TmdbImage>,
+    kind: MetadataImageKind,
+    size: &str,
+) {
+    let mut seen = target
+        .iter()
+        .map(|image| image.url.clone())
+        .collect::<HashSet<_>>();
+    for row in rows {
+        let Some(url) = image_url(row.file_path.as_deref(), size) else {
+            continue;
+        };
+        if !seen.insert(url.clone()) {
+            continue;
+        }
+        target.push(MetadataImage {
+            kind,
+            url,
+            language: empty_to_none(row.iso_639_1),
+            vote_average: Some(row.vote_average),
+            vote_count: Some(row.vote_count),
+            width: row.width,
+            height: row.height,
+            file_type: empty_to_none(row.file_type),
+        });
+    }
+}
+
 fn normalize_title(input: &str) -> String {
     input
         .chars()
@@ -464,8 +766,17 @@ fn cache_key(path: &str, query: &[(&str, String)]) -> String {
 
 fn parse_date(value: Option<&str>) -> Option<i64> {
     let value = value?;
-    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
+    let trimmed = value.get(..10).unwrap_or(value);
+    let date = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d").ok()?;
     date.and_hms_opt(0, 0, 0).map(|ts| ts.and_utc().timestamp())
+}
+
+fn parse_date_str(value: Option<&str>) -> Option<String> {
+    let value = value?;
+    let trimmed = value.get(..10).unwrap_or(value);
+    NaiveDate::parse_from_str(trimmed, "%Y-%m-%d")
+        .ok()
+        .map(|d| d.to_string())
 }
 
 fn parse_year(value: Option<&str>) -> Option<i32> {
@@ -490,6 +801,12 @@ fn empty_to_none(value: Option<String>) -> Option<String> {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then_some(trimmed.to_string())
     })
+}
+
+trait CreditLike {
+    fn id(&self) -> u64;
+    fn name(&self) -> &str;
+    fn character(&self) -> &str;
 }
 
 #[derive(Debug, Deserialize)]
@@ -537,6 +854,16 @@ struct TvDetails {
     last_air_date: Option<String>,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
+    status: Option<String>,
+    tagline: Option<String>,
+    #[serde(default)]
+    genres: Vec<TmdbGenre>,
+    external_ids: Option<ExternalIds>,
+    content_ratings: Option<TvContentRatingsResponse>,
+    aggregate_credits: Option<TvAggregateCredits>,
+    recommendations: Option<SearchResponse<TvSearchResult>>,
+    images: Option<TmdbImages>,
+    next_episode_to_air: Option<NextEpisode>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -549,6 +876,15 @@ struct MovieDetails {
     release_date: Option<String>,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
+    status: Option<String>,
+    tagline: Option<String>,
+    #[serde(default)]
+    genres: Vec<TmdbGenre>,
+    external_ids: Option<ExternalIds>,
+    release_dates: Option<MovieReleaseDatesResponse>,
+    credits: Option<MovieCredits>,
+    recommendations: Option<SearchResponse<MovieSearchResult>>,
+    images: Option<TmdbImages>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -570,4 +906,140 @@ struct TvEpisodeDetails {
     vote_average: Option<f64>,
     air_date: Option<String>,
     still_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbGenre {
+    id: u64,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TvContentRatingsResponse {
+    #[serde(default)]
+    results: Vec<TvContentRating>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TvContentRating {
+    iso_3166_1: String,
+    rating: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MovieReleaseDatesResponse {
+    #[serde(default)]
+    results: Vec<MovieReleaseDatesCountry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MovieReleaseDatesCountry {
+    iso_3166_1: String,
+    #[serde(default)]
+    release_dates: Vec<MovieReleaseDate>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MovieReleaseDate {
+    certification: Option<String>,
+    release_date: Option<String>,
+    release_type: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MovieCredits {
+    #[serde(default)]
+    cast: Vec<TmdbCast>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TvAggregateCredits {
+    #[serde(default)]
+    cast: Vec<TmdbAggregateCast>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbCast {
+    id: u64,
+    name: String,
+    character: Option<String>,
+}
+
+impl CreditLike for TmdbCast {
+    fn id(&self) -> u64 {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn character(&self) -> &str {
+        self.character.as_deref().unwrap_or("")
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbAggregateCast {
+    id: u64,
+    name: String,
+    #[serde(default)]
+    roles: Vec<TmdbAggregateRole>,
+}
+
+impl CreditLike for TmdbAggregateCast {
+    fn id(&self) -> u64 {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn character(&self) -> &str {
+        self.roles
+            .first()
+            .and_then(|role| role.character.as_deref())
+            .unwrap_or("")
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbAggregateRole {
+    character: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct TmdbImages {
+    #[serde(default)]
+    backdrops: Vec<TmdbImage>,
+    #[serde(default)]
+    logos: Vec<TmdbImage>,
+    #[serde(default)]
+    posters: Vec<TmdbImage>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct TmdbImage {
+    file_path: Option<String>,
+    iso_639_1: Option<String>,
+    vote_average: f64,
+    vote_count: i64,
+    width: Option<i64>,
+    height: Option<i64>,
+    file_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NextEpisode {
+    air_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbPersonDetails {
+    id: u64,
+    name: String,
+    biography: Option<String>,
+    birthday: Option<String>,
+    profile_path: Option<String>,
 }

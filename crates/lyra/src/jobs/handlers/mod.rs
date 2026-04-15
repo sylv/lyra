@@ -1,3 +1,4 @@
+pub mod asset_cleanup;
 pub mod asset_download;
 pub mod asset_thumbhash;
 pub mod file_probe;

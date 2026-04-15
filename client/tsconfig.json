@@ -11,24 +11,13 @@
 		"noEmit": true,
 		"moduleResolution": "Bundler",
 		"target": "ES2022",
-		"lib": [
-			"DOM",
-			"DOM.Iterable",
-			"ESNext"
-		],
-		"types": [
-			"vite/client"
-		],
+		"lib": ["DOM", "DOM.Iterable", "ESNext"],
+		"types": ["vite/client"],
 		"jsx": "preserve",
 		"jsxImportSource": "react",
 		"paths": {
-			"@/*": [
-				"./src/*"
-			]
+			"@/*": ["./src/*"]
 		}
 	},
-	"exclude": [
-		"dist",
-		"src/@generated"
-	]
+	"exclude": ["dist", "src/@generated"]
 }

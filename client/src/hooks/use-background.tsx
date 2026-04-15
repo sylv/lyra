@@ -19,5 +19,5 @@ export const useDynamicBackground = (assetRaw: FragmentType<typeof Fragment> | n
 				return null;
 			}, true);
 		};
-	}, [asset, use]);
+	}, [asset?.id, use]);
 };

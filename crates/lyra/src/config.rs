@@ -17,6 +17,7 @@ pub struct Config {
     pub library_scan_interval: i64,
     pub watch_progress_minimum_threshold: f32,
     pub watch_progress_completed_threshold: f32,
+    pub metadata_content_rating_country: String,
 }
 
 impl Config {
@@ -75,6 +76,7 @@ fn init() -> Result<(Config, SigningKey), Box<dyn std::error::Error>> {
         .set_default("library_scan_interval", 4 * 60 * 60)? // 4 hours
         .set_default("watch_progress_minimum_threshold", 0.05)?
         .set_default("watch_progress_completed_threshold", 0.8)?
+        .set_default("metadata_content_rating_country", "AU")?
         .build()
         .unwrap();
 

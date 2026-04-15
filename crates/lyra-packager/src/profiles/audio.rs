@@ -46,7 +46,11 @@ impl Profile for AudioAacProfile {
         ffarg!(args, "-ac", "2");
         ffarg!(args, "-b:a", "160k");
 
-        if context.stream.channels().is_some_and(|channels| channels != 2) {
+        if context
+            .stream
+            .channels()
+            .is_some_and(|channels| channels != 2)
+        {
             ffarg!(
                 args,
                 "-af",

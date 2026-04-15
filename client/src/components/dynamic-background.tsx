@@ -34,7 +34,11 @@ export const DynamicBackground: FC = () => {
 
 		setShowCurrent(false);
 		timerRef.current = setTimeout(() => {
-			setCurrent(backgroundUrl);
+			if (backgroundUrl === current) {
+				setShowCurrent(true);
+			} else {
+				setCurrent(backgroundUrl);
+			}
 		}, DURATION);
 	}, [backgroundUrl]);
 

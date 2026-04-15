@@ -5,8 +5,9 @@ use crate::jobs::delete_job_row;
 use crate::metadata::remote::{MatchedRoot, lookup_series_items, match_root};
 use crate::metadata::store::{
     clear_remote_node_metadata_for_root, clear_remote_node_metadata_for_root_except,
-    upsert_remote_episode_metadata_for_batch, upsert_remote_node_metadata_from_movie,
-    upsert_remote_node_metadata_from_series, upsert_remote_season_metadata_for_batch,
+    clear_root_cast, replace_root_cast, upsert_remote_episode_metadata_for_batch,
+    upsert_remote_node_metadata_from_movie, upsert_remote_node_metadata_from_series,
+    upsert_remote_season_metadata_for_batch,
 };
 use lyra_metadata::MetadataProvider;
 use sea_orm::{
@@ -54,6 +55,17 @@ pub async fn sync_root(
                     now,
                 )
                 .await?;
+                let people = provider
+                    .lookup_people_metadata(
+                        &metadata
+                            .cast
+                            .iter()
+                            .map(|credit| credit.provider_person_id.clone())
+                            .collect::<Vec<_>>(),
+                    )
+                    .await?;
+                replace_root_cast(pool, &root.id, provider.id(), &metadata.cast, &people, now)
+                    .await?;
                 clear_remote_node_metadata_for_root_except(pool, &root.id, &[root.id.clone()])
                     .await?;
                 return Ok(());
@@ -73,6 +85,17 @@ pub async fn sync_root(
                     now,
                 )
                 .await?;
+                let people = provider
+                    .lookup_people_metadata(
+                        &metadata
+                            .cast
+                            .iter()
+                            .map(|credit| credit.provider_person_id.clone())
+                            .collect::<Vec<_>>(),
+                    )
+                    .await?;
+                replace_root_cast(pool, &root.id, provider.id(), &metadata.cast, &people, now)
+                    .await?;
 
                 let mut matched_node_ids = vec![root.id.clone()];
                 matched_node_ids.extend(
@@ -113,6 +136,7 @@ pub async fn sync_root(
     }
 
     clear_remote_node_metadata_for_root(pool, &root.id).await?;
+    clear_root_cast(pool, &root.id).await?;
 
     if errors.is_empty() {
         anyhow::bail!("no metadata provider matched root {}", root.id);
@@ -278,12 +302,14 @@ async fn update_remote_air_dates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{libraries, metadata_source::MetadataSource, node_metadata};
+    use crate::entities::{
+        libraries, metadata_source::MetadataSource, node_metadata, people, root_node_cast,
+    };
     use async_trait::async_trait;
     use lyra_metadata::{
-        EpisodeMetadata, ImageSet, MetadataProvider, MovieCandidate, MovieMetadata,
-        MovieRootMatchRequest, Scored, SeasonMetadata, SeriesCandidate, SeriesItemsRequest,
-        SeriesItemsResult, SeriesMetadata, SeriesRootMatchRequest,
+        CastCredit, EpisodeMetadata, ImageSet, MetadataProvider, MovieCandidate, MovieMetadata,
+        MovieRootMatchRequest, PersonMetadata, Scored, SeasonMetadata, SeriesCandidate,
+        SeriesItemsRequest, SeriesItemsResult, SeriesMetadata, SeriesRootMatchRequest,
     };
     use sea_orm::{ActiveValue::Set, Database};
     use std::sync::{
@@ -373,6 +399,8 @@ mod tests {
     struct FakeProvider {
         id: &'static str,
         match_result: MatchResult,
+        cast: Vec<CastCredit>,
+        people_metadata: Vec<PersonMetadata>,
         series_items_calls: AtomicUsize,
     }
 
@@ -417,6 +445,13 @@ mod tests {
                 score_normalized: None,
                 first_aired: None,
                 last_aired: None,
+                status: None,
+                tagline: None,
+                next_aired: None,
+                genres: Vec::new(),
+                content_ratings: Vec::new(),
+                cast: self.cast.clone(),
+                recommendations: Vec::new(),
                 images: ImageSet::default(),
             })
         }
@@ -437,6 +472,12 @@ mod tests {
                     score_normalized: None,
                     first_aired: None,
                     last_aired: None,
+                    status: None,
+                    tagline: None,
+                    next_aired: None,
+                    genres: Vec::new(),
+                    content_ratings: Vec::new(),
+                    recommendations: Vec::new(),
                     images: ImageSet::default(),
                 }],
                 episodes: req
@@ -451,10 +492,32 @@ mod tests {
                         score_normalized: None,
                         first_aired: None,
                         last_aired: None,
+                        status: None,
+                        tagline: None,
+                        next_aired: None,
+                        genres: Vec::new(),
+                        content_ratings: Vec::new(),
+                        recommendations: Vec::new(),
                         images: ImageSet::default(),
                     })
                     .collect(),
             })
+        }
+
+        async fn lookup_people_metadata(
+            &self,
+            provider_person_ids: &[String],
+        ) -> anyhow::Result<Vec<PersonMetadata>> {
+            Ok(self
+                .people_metadata
+                .iter()
+                .filter(|person| {
+                    provider_person_ids
+                        .iter()
+                        .any(|id| id == &person.provider_person_id)
+                })
+                .cloned()
+                .collect())
         }
 
         async fn match_movie_root(
@@ -547,11 +610,15 @@ mod tests {
         let first = Arc::new(FakeProvider {
             id: "first",
             match_result: MatchResult::NoMatch,
+            cast: Vec::new(),
+            people_metadata: Vec::new(),
             series_items_calls: AtomicUsize::new(0),
         });
         let second = Arc::new(FakeProvider {
             id: "second",
             match_result: MatchResult::Series,
+            cast: Vec::new(),
+            people_metadata: Vec::new(),
             series_items_calls: AtomicUsize::new(0),
         });
 
@@ -609,6 +676,8 @@ mod tests {
         let provider = Arc::new(FakeProvider {
             id: "nomatch",
             match_result: MatchResult::NoMatch,
+            cast: Vec::new(),
+            people_metadata: Vec::new(),
             series_items_calls: AtomicUsize::new(0),
         });
 
@@ -620,6 +689,77 @@ mod tests {
             .all(&pool)
             .await?;
         assert!(remote_rows.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sync_root_reuses_people_across_roots_and_replaces_root_cast() -> anyhow::Result<()> {
+        let pool = setup_test_db().await?;
+        insert_library(&pool).await?;
+
+        let root_one = insert_node(
+            &pool,
+            "root-1",
+            "root-1",
+            None,
+            NodeKind::Series,
+            "Show One",
+            None,
+            None,
+            0,
+        )
+        .await?;
+        let root_two = insert_node(
+            &pool,
+            "root-2",
+            "root-2",
+            None,
+            NodeKind::Series,
+            "Show Two",
+            None,
+            None,
+            0,
+        )
+        .await?;
+        insert_local_metadata(&pool, "root-1", "Show One").await?;
+        insert_local_metadata(&pool, "root-2", "Show Two").await?;
+
+        let provider: Arc<dyn MetadataProvider> = Arc::new(FakeProvider {
+            id: "tmdb",
+            match_result: MatchResult::Series,
+            cast: vec![CastCredit {
+                provider_person_id: "7".to_owned(),
+                name: "Shared Actor".to_owned(),
+                character_name: Some("Lead".to_owned()),
+                department: None,
+            }],
+            people_metadata: vec![PersonMetadata {
+                provider_person_id: "7".to_owned(),
+                name: "Shared Actor".to_owned(),
+                birthday: Some("1970-01-01".to_owned()),
+                description: Some("Biography".to_owned()),
+                profile_image_url: Some("https://image.tmdb.org/t/p/w342/profile.jpg".to_owned()),
+            }],
+            series_items_calls: AtomicUsize::new(0),
+        });
+
+        sync_root(&pool, std::slice::from_ref(&provider), &root_one).await?;
+        sync_root(&pool, std::slice::from_ref(&provider), &root_two).await?;
+
+        let people_rows = people::Entity::find().all(&pool).await?;
+        assert_eq!(people_rows.len(), 1);
+        assert_eq!(people_rows[0].provider_id, "tmdb");
+        assert_eq!(people_rows[0].provider_person_id, "7");
+        assert!(people_rows[0].profile_asset_id.is_some());
+
+        let cast_rows = root_node_cast::Entity::find()
+            .order_by_asc(root_node_cast::Column::RootNodeId)
+            .all(&pool)
+            .await?;
+        assert_eq!(cast_rows.len(), 2);
+        assert_eq!(cast_rows[0].person_id, people_rows[0].id);
+        assert_eq!(cast_rows[1].person_id, people_rows[0].id);
 
         Ok(())
     }

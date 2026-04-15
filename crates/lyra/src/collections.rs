@@ -27,55 +27,35 @@ pub fn recently_added_id() -> String {
 
 fn continue_watching_filter() -> NodeFilter {
     NodeFilter {
-        library_id: None,
-        root_id: None,
-        parent_id: None,
-        kinds: None,
-        search_term: None,
-        availability: None,
         order_by: Some(OrderBy::WatchProgressUpdatedAt),
         order_direction: Some(OrderDirection::Desc),
-        watched: None,
         continue_watching: Some(true),
-        released_after: None,
+        ..Default::default()
     }
 }
 
 pub fn recently_released_filter() -> NodeFilter {
     NodeFilter {
-        library_id: None,
-        root_id: None,
-        parent_id: None,
         kinds: Some(vec![
             crate::entities::nodes::NodeKind::Movie,
             crate::entities::nodes::NodeKind::Episode,
         ]),
-        search_term: None,
-        availability: None,
         order_by: Some(OrderBy::ReleasedAt),
         order_direction: Some(OrderDirection::Desc),
-        watched: None,
-        continue_watching: None,
         released_after: Some((Utc::now() - Duration::days(31 * 6)).timestamp().max(0)),
+        ..Default::default()
     }
 }
 
 pub fn recently_added_filter() -> NodeFilter {
     NodeFilter {
-        library_id: None,
-        root_id: None,
-        parent_id: None,
         kinds: Some(vec![
             crate::entities::nodes::NodeKind::Movie,
             crate::entities::nodes::NodeKind::Series,
         ]),
-        search_term: None,
-        availability: None,
         order_by: Some(OrderBy::LastAddedAt),
         order_direction: Some(OrderDirection::Desc),
-        watched: None,
-        continue_watching: None,
-        released_after: None,
+        ..Default::default()
     }
 }
 

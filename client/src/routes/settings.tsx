@@ -1,7 +1,7 @@
 import { type FC } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router";
-import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
+import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useTitle } from "../hooks/use-title";
 import { ADMIN_BIT } from "../lib/user-permissions";
@@ -28,8 +28,8 @@ export const SettingsRoute: FC = () => {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const pathname = location.pathname;
-	const [{ data }] = useQuery({ query: SettingsViewerQuery, context: { suspense: true } });
-	const viewerPermissions = data?.viewer?.permissions ?? 0;
+	const [{ data }] = useSuspenseQuery({ query: SettingsViewerQuery });
+	const viewerPermissions = data.viewer?.permissions ?? 0;
 	const canManageUsers = (viewerPermissions & ADMIN_BIT) !== 0;
 	const canViewSessions = (viewerPermissions & ADMIN_BIT) !== 0;
 	const canManageLibraries = (viewerPermissions & ADMIN_BIT) !== 0;

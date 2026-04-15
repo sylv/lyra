@@ -32,7 +32,8 @@ impl ProfileContext<'_> {
                     .keyframes
                     .expect("keyframe-aligned profiles require keyframes");
                 keyframes.pts_to_seconds(
-                    keyframes.segment_start_pts_at(self.segment_index, self.target_segment_duration),
+                    keyframes
+                        .segment_start_pts_at(self.segment_index, self.target_segment_duration),
                 )
             }
             Compatibility::Fixed => {
@@ -45,8 +46,11 @@ impl ProfileContext<'_> {
 pub trait Profile: Send + Sync {
     fn id(&self) -> &'static str;
     fn compatible_with(&self, stream: &Stream) -> Option<Compatibility>;
-    fn append_args(&self, args: &mut Vec<OsString>, context: &ProfileContext<'_>)
-        -> anyhow::Result<()>;
+    fn append_args(
+        &self,
+        args: &mut Vec<OsString>,
+        context: &ProfileContext<'_>,
+    ) -> anyhow::Result<()>;
 }
 
 pub fn video_profile(id: &str) -> Option<&'static dyn Profile> {

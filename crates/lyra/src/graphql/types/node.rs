@@ -1,4 +1,8 @@
-use crate::entities::{collection_items, node_closure, node_files, nodes, watch_progress};
+use crate::entities::{
+    collection_items, metadata_source::MetadataSource, node_closure, node_files, node_metadata,
+    node_metadata_recommendations, node_metadata_recommendations::RecommendationMediaKind, nodes,
+    watch_progress,
+};
 use crate::graphql::dataloaders::node_counts::{NodeCounts, NodeCountsLoader};
 use crate::graphql::dataloaders::node_metadata::NodeMetadataLoader;
 use crate::graphql::properties::NodeProperties;
@@ -7,6 +11,7 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{ComplexObject, Context};
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait,
 };
 
 async fn previous_or_next_playable(
@@ -188,6 +193,67 @@ impl nodes::Model {
     ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         previous_or_next_playable(pool, self, false).await
+    }
+
+    pub async fn recommended_nodes(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<nodes::Model>, sea_orm::DbErr> {
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        let loader = ctx.data_unchecked::<DataLoader<NodeMetadataLoader>>();
+        let Some(metadata) = loader
+            .load_one(self.id.clone())
+            .await
+            .map_err(sea_orm::DbErr::Custom)?
+            .and_then(|loaded| loaded.metadata)
+        else {
+            return Ok(Vec::new());
+        };
+
+        let rows = node_metadata_recommendations::Entity::find()
+            .filter(node_metadata_recommendations::Column::NodeMetadataId.eq(metadata.id))
+            .order_by_asc(node_metadata_recommendations::Column::Position)
+            .all(pool)
+            .await?;
+
+        let mut result = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for row in rows {
+            let mut query = nodes::Entity::find()
+                .join(
+                    sea_orm::JoinType::InnerJoin,
+                    nodes::Relation::NodeMetadata.def(),
+                )
+                .filter(nodes::Column::ParentId.is_null())
+                .filter(nodes::Column::Id.ne(self.id.clone()))
+                .filter(node_metadata::Column::Source.eq(MetadataSource::Remote))
+                .filter(node_metadata::Column::ProviderId.eq(row.provider_id.clone()));
+
+            if let Some(tmdb_id) = row.tmdb_id {
+                query = query.filter(node_metadata::Column::TmdbId.eq(tmdb_id));
+            } else if let Some(imdb_id) = row.imdb_id.clone() {
+                query = query.filter(node_metadata::Column::ImdbId.eq(imdb_id));
+            } else {
+                continue;
+            }
+
+            match row.media_kind {
+                RecommendationMediaKind::Movie => {
+                    query = query.filter(nodes::Column::Kind.eq(nodes::NodeKind::Movie));
+                }
+                RecommendationMediaKind::Series => {
+                    query = query.filter(nodes::Column::Kind.eq(nodes::NodeKind::Series));
+                }
+            }
+
+            if let Some(node) = query.order_by_asc(nodes::Column::Id).one(pool).await?
+                && seen.insert(node.id.clone())
+            {
+                result.push(node);
+            }
+        }
+
+        Ok(result)
     }
 
     pub async fn unplayed_count(

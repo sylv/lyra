@@ -27,6 +27,7 @@ export type Activity = {
 
 export type Asset = {
   __typename: 'Asset';
+  aspectRatio: Maybe<Scalars['String']['output']>;
   contentEncoding: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['Int']['output'];
   hashSha256: Maybe<Scalars['String']['output']>;
@@ -59,6 +60,13 @@ export type AudioTrackOption = {
   recommended: Scalars['Boolean']['output'];
   renditions: Array<AudioRenditionOption>;
   streamIndex: Scalars['Int']['output'];
+};
+
+export type CastMember = {
+  __typename: 'CastMember';
+  characterName: Maybe<Scalars['String']['output']>;
+  department: Maybe<Scalars['String']['output']>;
+  person: Person;
 };
 
 export type Collection = {
@@ -104,6 +112,12 @@ export enum CollectionVisibility {
   Private = 'PRIVATE',
   Public = 'PUBLIC'
 }
+
+export type ContentRating = {
+  __typename: 'ContentRating';
+  countryCode: Scalars['String']['output'];
+  rating: Scalars['String']['output'];
+};
 
 export enum ContentUpdateEvent {
   ContentUpdate = 'CONTENT_UPDATE'
@@ -219,6 +233,23 @@ export type Library = {
   pinned: Scalars['Boolean']['output'];
   unavailableAt: Maybe<Scalars['Int']['output']>;
 };
+
+export type MetadataGenre = {
+  __typename: 'MetadataGenre';
+  externalId: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  providerId: Scalars['String']['output'];
+};
+
+export enum MetadataStatus {
+  Airing = 'AIRING',
+  Cancelled = 'CANCELLED',
+  Finished = 'FINISHED',
+  InTheaters = 'IN_THEATERS',
+  Released = 'RELEASED',
+  Returning = 'RETURNING',
+  Upcoming = 'UPCOMING'
+}
 
 export type Mutation = {
   __typename: 'Mutation';
@@ -417,6 +448,7 @@ export type Node = {
   parentId: Maybe<Scalars['String']['output']>;
   previousPlayable: Maybe<Node>;
   properties: NodeProperties;
+  recommendedNodes: Array<Node>;
   root: Maybe<Node>;
   rootId: Scalars['String']['output'];
   seasonCount: Scalars['Int']['output'];
@@ -460,9 +492,11 @@ export type NodeFilter = {
   orderBy?: InputMaybe<OrderBy>;
   orderDirection?: InputMaybe<OrderDirection>;
   parentId?: InputMaybe<Scalars['String']['input']>;
+  personId?: InputMaybe<Scalars['String']['input']>;
   releasedAfter?: InputMaybe<Scalars['Int']['input']>;
   rootId?: InputMaybe<Scalars['String']['input']>;
   searchTerm?: InputMaybe<Scalars['String']['input']>;
+  seasonNumbers?: InputMaybe<Array<Scalars['Int']['input']>>;
   watched?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
@@ -478,7 +512,9 @@ export type NodeProperties = {
   audioBitrate: Maybe<Scalars['Int']['output']>;
   audioChannels: Maybe<Scalars['Int']['output']>;
   audioCodec: Maybe<Scalars['String']['output']>;
-  backgroundImage: Maybe<Asset>;
+  backdropImage: Maybe<Asset>;
+  cast: Array<CastMember>;
+  contentRating: Maybe<ContentRating>;
   createdAt: Maybe<Scalars['Int']['output']>;
   description: Maybe<Scalars['String']['output']>;
   displayDetail: Maybe<Scalars['String']['output']>;
@@ -488,13 +524,17 @@ export type NodeProperties = {
   fileSizeBytes: Maybe<Scalars['Int']['output']>;
   firstAired: Maybe<Scalars['Int']['output']>;
   fps: Maybe<Scalars['Float']['output']>;
+  genres: Array<MetadataGenre>;
   hasSubtitles: Maybe<Scalars['Boolean']['output']>;
   height: Maybe<Scalars['Int']['output']>;
   lastAired: Maybe<Scalars['Int']['output']>;
+  logoImage: Maybe<Asset>;
   posterImage: Maybe<Asset>;
   rating: Maybe<Scalars['Float']['output']>;
   runtimeMinutes: Maybe<Scalars['Int']['output']>;
   seasonNumber: Maybe<Scalars['Int']['output']>;
+  status: Maybe<MetadataStatus>;
+  tagline: Maybe<Scalars['String']['output']>;
   thumbnailImage: Maybe<Asset>;
   updatedAt: Maybe<Scalars['Int']['output']>;
   videoBitrate: Maybe<Scalars['Int']['output']>;
@@ -530,6 +570,14 @@ export type PageInfo = {
   hasPreviousPage: Scalars['Boolean']['output'];
   /** When paginating backwards, the cursor to continue. */
   startCursor: Maybe<Scalars['String']['output']>;
+};
+
+export type Person = {
+  __typename: 'Person';
+  birthday: Maybe<Scalars['String']['output']>;
+  id: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  profileImage: Maybe<Asset>;
 };
 
 export type PlaybackOptions = {
@@ -866,14 +914,6 @@ export type GetFilesQueryVariables = Exact<{
 
 export type GetFilesQuery = { listFiles: Array<string> };
 
-export type EpisodeCardFragment = (
-  { __typename: 'Node', id: string, inWatchlist: boolean, unavailableAt: number | null, properties: { __typename: 'NodeProperties', displayName: string, description: string | null, seasonNumber: number | null, episodeNumber: number | null, firstAired: number | null, runtimeMinutes: number | null, thumbnailImage: (
-      { __typename: 'Asset' }
-      & { ' $fragmentRefs'?: { 'ImageAssetFragment': ImageAssetFragment } }
-    ) | null }, watchProgress: { __typename: 'WatchProgress', id: string, progressPercent: number, completed: boolean, updatedAt: number } | null }
-  & { ' $fragmentRefs'?: { 'GetPathForNodeFragment': GetPathForNodeFragment } }
-) & { ' $fragmentName'?: 'EpisodeCardFragment' };
-
 export type ImageAssetFragment = { __typename: 'Asset', id: string, signedUrl: string, thumbhash: string | null } & { ' $fragmentName'?: 'ImageAssetFragment' };
 
 export type RunImportWatchStatesMutationVariables = Exact<{
@@ -882,6 +922,14 @@ export type RunImportWatchStatesMutationVariables = Exact<{
 
 
 export type RunImportWatchStatesMutation = { importWatchStates: { __typename: 'ImportWatchStatesResult', dryRun: boolean, totalRows: number, matchedRows: number, unmatchedRows: number, conflictRows: number, willInsert: number, willOverwrite: number, imported: number, skipped: number, conflicts: Array<{ __typename: 'ImportWatchStateConflict', rowIndex: number, sourceItemId: string | null, title: string | null, itemId: string, existingProgressPercent: number, importedProgressPercent: number, reason: string }>, unmatched: Array<{ __typename: 'ImportWatchStateUnmatched', rowIndex: number, sourceItemId: string | null, title: string | null, reason: string, ambiguous: boolean }> } };
+
+export type EpisodeCardFragment = (
+  { __typename: 'Node', id: string, inWatchlist: boolean, unavailableAt: number | null, properties: { __typename: 'NodeProperties', displayName: string, description: string | null, seasonNumber: number | null, episodeNumber: number | null, firstAired: number | null, runtimeMinutes: number | null, thumbnailImage: (
+      { __typename: 'Asset' }
+      & { ' $fragmentRefs'?: { 'ImageAssetFragment': ImageAssetFragment } }
+    ) | null }, watchProgress: { __typename: 'WatchProgress', id: string, progressPercent: number, completed: boolean, updatedAt: number } | null }
+  & { ' $fragmentRefs'?: { 'GetPathForNodeFragment': GetPathForNodeFragment } }
+) & { ' $fragmentName'?: 'EpisodeCardFragment' };
 
 export type NodePageQueryVariables = Exact<{
   after?: InputMaybe<Scalars['String']['input']>;
@@ -1227,22 +1275,28 @@ export type GetNodeByIdQueryVariables = Exact<{
 
 
 export type GetNodeByIdQuery = { node: (
-    { __typename: 'Node', id: string, libraryId: string, kind: NodeKind, inWatchlist: boolean, unavailableAt: number | null, seasonNumber: number | null, episodeNumber: number | null, unplayedCount: number | null, episodeCount: number, parent: (
-      { __typename: 'Node', id: string, libraryId: string, properties: { __typename: 'NodeProperties', displayName: string } }
+    { __typename: 'Node', id: string, kind: NodeKind, inWatchlist: boolean, unavailableAt: number | null, unplayedCount: number | null, seasonCount: number, seasonNumber: number | null, episodeNumber: number | null, parent: (
+      { __typename: 'Node', id: string }
       & { ' $fragmentRefs'?: { 'GetPathForNodeFragment': GetPathForNodeFragment } }
-    ) | null, root: { __typename: 'Node', id: string, properties: { __typename: 'NodeProperties', displayName: string } } | null, children: Array<(
-      { __typename: 'Node', id: string, kind: NodeKind, order: number, properties: { __typename: 'NodeProperties', seasonNumber: number | null } }
-      & { ' $fragmentRefs'?: { 'SeasonCardFragment': SeasonCardFragment } }
-    )>, properties: { __typename: 'NodeProperties', displayName: string, firstAired: number | null, lastAired: number | null, runtimeMinutes: number | null, description: string | null, posterImage: (
-        { __typename: 'Asset' }
-        & { ' $fragmentRefs'?: { 'ImageAssetFragment': ImageAssetFragment } }
-      ) | null, backgroundImage: (
+    ) | null, root: (
+      { __typename: 'Node', id: string, properties: { __typename: 'NodeProperties', displayName: string } }
+      & { ' $fragmentRefs'?: { 'GetPathForNodeFragment': GetPathForNodeFragment } }
+    ) | null, properties: { __typename: 'NodeProperties', displayName: string, tagline: string | null, runtimeMinutes: number | null, width: number | null, height: number | null, videoCodec: string | null, videoBitrate: number | null, description: string | null, posterImage: (
         { __typename: 'Asset' }
         & { ' $fragmentRefs'?: { 'ImageAssetFragment': ImageAssetFragment } }
       ) | null, thumbnailImage: (
         { __typename: 'Asset' }
         & { ' $fragmentRefs'?: { 'ImageAssetFragment': ImageAssetFragment } }
-      ) | null }, watchProgress: { __typename: 'WatchProgress', id: string, progressPercent: number, completed: boolean, updatedAt: number } | null, nextPlayable: { __typename: 'Node', id: string, watchProgress: { __typename: 'WatchProgress', id: string, progressPercent: number, completed: boolean, updatedAt: number } | null } | null, previousPlayable: { __typename: 'Node', id: string } | null }
+      ) | null, logoImage: { __typename: 'Asset', id: string, signedUrl: string, aspectRatio: string | null } | null, backdropImage: (
+        { __typename: 'Asset', signedUrl: string, aspectRatio: string | null }
+        & { ' $fragmentRefs'?: { 'ImageAssetFragment': ImageAssetFragment } }
+      ) | null, contentRating: { __typename: 'ContentRating', rating: string } | null, genres: Array<{ __typename: 'MetadataGenre', name: string }>, cast: Array<{ __typename: 'CastMember', characterName: string | null, department: string | null, person: { __typename: 'Person', id: string, name: string, profileImage: (
+            { __typename: 'Asset' }
+            & { ' $fragmentRefs'?: { 'ImageAssetFragment': ImageAssetFragment } }
+          ) | null } }> }, watchProgress: { __typename: 'WatchProgress', id: string, progressPercent: number, completed: boolean, updatedAt: number } | null, nextPlayable: { __typename: 'Node', id: string, seasonNumber: number | null, episodeNumber: number | null, watchProgress: { __typename: 'WatchProgress', id: string, progressPercent: number, completed: boolean, updatedAt: number } | null } | null, file: { __typename: 'File', subtitleTracks: Array<{ __typename: 'SubtitleTrack', label: string, language: string | null, kind: SubtitleKind }> } | null, recommendedNodes: Array<(
+      { __typename: 'Node', id: string }
+      & { ' $fragmentRefs'?: { 'NodePosterFragment': NodePosterFragment } }
+    )> }
     & { ' $fragmentRefs'?: { 'GetPathForNodeFragment': GetPathForNodeFragment } }
   ) };
 
@@ -1316,7 +1370,7 @@ export const CollectionPageDocument = {"kind":"Document","definitions":[{"kind":
 export const DeleteCollectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteCollection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"collectionId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteCollection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"collectionId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"collectionId"}}}]}]}}]} as unknown as DocumentNode<DeleteCollectionMutation, DeleteCollectionMutationVariables>;
 export const CollectionsIndexDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"CollectionsIndex"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"collections"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"itemCount"}},{"kind":"Field","name":{"kind":"Name","value":"visibility"}},{"kind":"Field","name":{"kind":"Name","value":"createdBy"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"username"}}]}}]}}]}}]} as unknown as DocumentNode<CollectionsIndexQuery, CollectionsIndexQueryVariables>;
 export const HomeCollectionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"HomeCollections"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"home"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sections"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"CollectionShelf"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"ImageAsset"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Asset"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"signedUrl"}},{"kind":"Field","name":{"kind":"Name","value":"thumbhash"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"GetPathForNode"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"libraryId"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"NodePoster"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"libraryId"}},{"kind":"Field","name":{"kind":"Name","value":"inWatchlist"}},{"kind":"Field","name":{"kind":"Name","value":"unavailableAt"}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"displayDetail"}},{"kind":"Field","name":{"kind":"Name","value":"posterImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"firstAired"}},{"kind":"Field","name":{"kind":"Name","value":"lastAired"}}]}},{"kind":"Field","name":{"kind":"Name","value":"nextPlayable"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"watchProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"progressPercent"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"unplayedCount"}},{"kind":"Field","name":{"kind":"Name","value":"seasonCount"}},{"kind":"Field","name":{"kind":"Name","value":"episodeCount"}},{"kind":"Field","name":{"kind":"Name","value":"seasonNumber"}},{"kind":"Field","name":{"kind":"Name","value":"episodeNumber"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"CollectionShelf"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Collection"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"itemCount"}},{"kind":"Field","name":{"kind":"Name","value":"nodeList"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"IntValue","value":"12"}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"nodes"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"NodePoster"}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}}]}}]}}]}}]} as unknown as DocumentNode<HomeCollectionsQuery, HomeCollectionsQueryVariables>;
-export const GetNodeByIdDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetNodeById"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"nodeId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"nodeId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"nodeId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"libraryId"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"inWatchlist"}},{"kind":"Field","name":{"kind":"Name","value":"unavailableAt"}},{"kind":"Field","name":{"kind":"Name","value":"seasonNumber"}},{"kind":"Field","name":{"kind":"Name","value":"episodeNumber"}},{"kind":"Field","name":{"kind":"Name","value":"unplayedCount"}},{"kind":"Field","name":{"kind":"Name","value":"episodeCount"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}},{"kind":"Field","name":{"kind":"Name","value":"parent"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"libraryId"}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}}]}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"root"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"children"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"order"}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"seasonNumber"}}]}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SeasonCard"}}]}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"posterImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"backgroundImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"thumbnailImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"firstAired"}},{"kind":"Field","name":{"kind":"Name","value":"lastAired"}},{"kind":"Field","name":{"kind":"Name","value":"runtimeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}},{"kind":"Field","name":{"kind":"Name","value":"watchProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"progressPercent"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"nextPlayable"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"watchProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"progressPercent"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"previousPlayable"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"ImageAsset"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Asset"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"signedUrl"}},{"kind":"Field","name":{"kind":"Name","value":"thumbhash"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"GetPathForNode"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"libraryId"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SeasonCard"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"unavailableAt"}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"seasonNumber"}},{"kind":"Field","name":{"kind":"Name","value":"posterImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"thumbnailImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"firstAired"}},{"kind":"Field","name":{"kind":"Name","value":"lastAired"}}]}},{"kind":"Field","name":{"kind":"Name","value":"nextPlayable"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"watchProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"progressPercent"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"unplayedCount"}},{"kind":"Field","name":{"kind":"Name","value":"episodeCount"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}}]}}]} as unknown as DocumentNode<GetNodeByIdQuery, GetNodeByIdQueryVariables>;
+export const GetNodeByIdDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetNodeById"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"nodeId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"nodeId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"nodeId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"inWatchlist"}},{"kind":"Field","name":{"kind":"Name","value":"unavailableAt"}},{"kind":"Field","name":{"kind":"Name","value":"unplayedCount"}},{"kind":"Field","name":{"kind":"Name","value":"seasonCount"}},{"kind":"Field","name":{"kind":"Name","value":"seasonNumber"}},{"kind":"Field","name":{"kind":"Name","value":"episodeNumber"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}},{"kind":"Field","name":{"kind":"Name","value":"parent"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"root"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"tagline"}},{"kind":"Field","name":{"kind":"Name","value":"posterImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"thumbnailImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"logoImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"signedUrl"}},{"kind":"Field","name":{"kind":"Name","value":"aspectRatio"}}]}},{"kind":"Field","name":{"kind":"Name","value":"backdropImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}},{"kind":"Field","name":{"kind":"Name","value":"signedUrl"}},{"kind":"Field","name":{"kind":"Name","value":"aspectRatio"}}]}},{"kind":"Field","name":{"kind":"Name","value":"runtimeMinutes"}},{"kind":"Field","name":{"kind":"Name","value":"width"}},{"kind":"Field","name":{"kind":"Name","value":"height"}},{"kind":"Field","name":{"kind":"Name","value":"videoCodec"}},{"kind":"Field","name":{"kind":"Name","value":"videoBitrate"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"contentRating"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"rating"}}]}},{"kind":"Field","name":{"kind":"Name","value":"genres"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"cast"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"characterName"}},{"kind":"Field","name":{"kind":"Name","value":"department"}},{"kind":"Field","name":{"kind":"Name","value":"person"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"profileImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"watchProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"progressPercent"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"nextPlayable"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"seasonNumber"}},{"kind":"Field","name":{"kind":"Name","value":"episodeNumber"}},{"kind":"Field","name":{"kind":"Name","value":"watchProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"progressPercent"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"file"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subtitleTracks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"language"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"recommendedNodes"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"NodePoster"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"ImageAsset"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Asset"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"signedUrl"}},{"kind":"Field","name":{"kind":"Name","value":"thumbhash"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"GetPathForNode"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"libraryId"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"NodePoster"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"libraryId"}},{"kind":"Field","name":{"kind":"Name","value":"inWatchlist"}},{"kind":"Field","name":{"kind":"Name","value":"unavailableAt"}},{"kind":"Field","name":{"kind":"Name","value":"properties"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"displayDetail"}},{"kind":"Field","name":{"kind":"Name","value":"posterImage"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"ImageAsset"}}]}},{"kind":"Field","name":{"kind":"Name","value":"firstAired"}},{"kind":"Field","name":{"kind":"Name","value":"lastAired"}}]}},{"kind":"Field","name":{"kind":"Name","value":"nextPlayable"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"watchProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"progressPercent"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"unplayedCount"}},{"kind":"Field","name":{"kind":"Name","value":"seasonCount"}},{"kind":"Field","name":{"kind":"Name","value":"episodeCount"}},{"kind":"Field","name":{"kind":"Name","value":"seasonNumber"}},{"kind":"Field","name":{"kind":"Name","value":"episodeNumber"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"GetPathForNode"}}]}}]} as unknown as DocumentNode<GetNodeByIdQuery, GetNodeByIdQueryVariables>;
 export const PlaygroundViewerDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"PlaygroundViewer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"viewer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"permissions"}}]}}]}}]} as unknown as DocumentNode<PlaygroundViewerQuery, PlaygroundViewerQueryVariables>;
 export const SettingsViewerDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"SettingsViewer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"viewer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"permissions"}}]}}]}}]} as unknown as DocumentNode<SettingsViewerQuery, SettingsViewerQueryVariables>;
 export const SignupDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"Signup"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"username"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"inviteCode"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"signup"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"username"},"value":{"kind":"Variable","name":{"kind":"Name","value":"username"}}},{"kind":"Argument","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}},{"kind":"Argument","name":{"kind":"Name","value":"inviteCode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"inviteCode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"username"}}]}}]}}]} as unknown as DocumentNode<SignupMutation, SignupMutationVariables>;

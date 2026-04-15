@@ -15,7 +15,10 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use image::{GenericImageView, codecs::jpeg::JpegEncoder, imageops::FilterType};
+use image::{
+    ColorType, GenericImageView, ImageEncoder, codecs::jpeg::JpegEncoder, codecs::png::PngEncoder,
+    imageops::FilterType,
+};
 use reqwest::header::{CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, VARY};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
@@ -105,8 +108,17 @@ async fn serve_asset(
         return stream_file(&original_path, mime_type).await;
     }
 
-    let transformed_path =
-        storage::get_transformed_cache_path(hash_sha256, params.width, params.height);
+    if mime_type == "image/svg+xml" {
+        return stream_file(&original_path, mime_type).await;
+    }
+
+    let (transformed_extension, transformed_content_type) = transformed_output_format(mime_type);
+    let transformed_path = storage::get_transformed_cache_path(
+        hash_sha256,
+        params.width,
+        params.height,
+        transformed_extension,
+    );
 
     if !tokio::fs::try_exists(&transformed_path).await? {
         let target_width = params.width;
@@ -125,7 +137,17 @@ async fn serve_asset(
             let resized = image.resize(target_width, target_height, FilterType::Lanczos3);
 
             let mut cursor = Cursor::new(Vec::new());
-            JpegEncoder::new_with_quality(&mut cursor, 80).encode_image(&resized)?;
+            if transformed_content_type == "image/png" {
+                let rgba = resized.to_rgba8();
+                PngEncoder::new(&mut cursor).write_image(
+                    rgba.as_raw(),
+                    rgba.width(),
+                    rgba.height(),
+                    ColorType::Rgba8.into(),
+                )?;
+            } else {
+                JpegEncoder::new_with_quality(&mut cursor, 80).encode_image(&resized)?;
+            }
             Ok(cursor.into_inner())
         })
         .await??;
@@ -133,7 +155,7 @@ async fn serve_asset(
         storage::persist_bytes_atomically(&transformed_path, &bytes).await?;
     }
 
-    stream_file(&transformed_path, "image/jpeg").await
+    stream_file(&transformed_path, transformed_content_type).await
 }
 
 async fn stream_file(path: &FsPath, content_type: &str) -> Result<Response, AppError> {
@@ -201,4 +223,11 @@ async fn stream_file_asset(
         ),
     ];
     Ok((headers, decoded).into_response())
+}
+
+fn transformed_output_format(mime_type: &str) -> (&'static str, &'static str) {
+    match mime_type {
+        "image/png" => ("png", "image/png"),
+        _ => ("jpg", "image/jpeg"),
+    }
 }

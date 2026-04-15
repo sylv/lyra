@@ -18,7 +18,11 @@ impl Job for AssetDownloadJob {
 
     fn query(&self) -> Select<Self::Entity> {
         assets::Entity::find()
-            .filter(assets::Column::Kind.is_in(vec![AssetKind::Thumbnail, AssetKind::Poster]))
+            .filter(assets::Column::Kind.is_in(vec![
+                AssetKind::Thumbnail,
+                AssetKind::Poster,
+                AssetKind::Profile,
+            ]))
             .filter(assets::Column::SourceUrl.is_not_null())
             .filter(assets::Column::HashSha256.is_null())
             .order_by_asc(assets::Column::Id)

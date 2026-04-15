@@ -17,8 +17,9 @@ use axum::{
 };
 use lyra_packager::{
     AudioProfileSelection, Compatibility, SessionManager, SessionOptions, SessionSpec,
-    VideoProfileSelection, audio_profile, playlist::create_fmp4_hls_playlist_from_segment_starts_pts,
-    playlist::seconds_to_pts, video_profile,
+    VideoProfileSelection, audio_profile,
+    playlist::create_fmp4_hls_playlist_from_segment_starts_pts, playlist::seconds_to_pts,
+    video_profile,
 };
 use lyra_probe::{ProbeData, VideoKeyframes};
 use sea_orm::EntityTrait;
@@ -193,34 +194,35 @@ async fn get_segment(
 
     let _ = query.start_pts;
 
-    let path = match parse_segment_name(&name) {
-        Some(segment_index) => {
-            if segment_index >= session_context.segment_count {
-                return Err((StatusCode::NOT_FOUND, "segment not found"));
+    let path =
+        match parse_segment_name(&name) {
+            Some(segment_index) => {
+                if segment_index >= session_context.segment_count {
+                    return Err((StatusCode::NOT_FOUND, "segment not found"));
+                }
+                session_context
+                    .session
+                    .get_segment(segment_index)
+                    .await
+                    .map_err(|_| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "segment generation failed",
+                        )
+                    })?
             }
-            session_context
+            None if name == "init.mp4" => session_context
                 .session
-                .get_segment(segment_index)
+                .get_init_segment()
                 .await
                 .map_err(|_| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "segment generation failed",
                     )
-                })?
-        }
-        None if name == "init.mp4" => session_context
-            .session
-            .get_init_segment()
-            .await
-            .map_err(|_| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "segment generation failed",
-                )
-            })?,
-        None => return Err((StatusCode::NOT_FOUND, "segment not found")),
-    };
+                })?,
+            None => return Err((StatusCode::NOT_FOUND, "segment not found")),
+        };
 
     let file = fs::File::open(&path)
         .await
@@ -245,7 +247,12 @@ async fn get_or_create_session_from_payload(
         .get_or_create(&payload.session_id, session_options)
         .await?;
 
-    ensure_player_binding(&state.playback_registry, &payload.session_id, &payload.player_id).await?;
+    ensure_player_binding(
+        &state.playback_registry,
+        &payload.session_id,
+        &payload.player_id,
+    )
+    .await?;
 
     Ok(PlaybackSessionContext {
         session,
@@ -379,7 +386,11 @@ async fn load_session_analysis(
         .with_context(|| format!("video stream {video_stream_index} not found in probe data"))?;
     let compatibility = video_profile
         .compatible_with(video_stream)
-        .with_context(|| format!("video profile {video_profile_id} is incompatible with stream {video_stream_index}"))?;
+        .with_context(|| {
+            format!(
+                "video profile {video_profile_id} is incompatible with stream {video_stream_index}"
+            )
+        })?;
     let mut keyframes = file_analysis::load_cached_keyframes(pool, file_id).await?;
 
     if compatibility == Compatibility::KeyframeAligned && keyframes.is_none() {
@@ -475,7 +486,10 @@ async fn build_session_options(
                 stream_index: resumable.video_stream_index,
                 profile_id: resumable.video_profile_id.clone(),
             },
-            audio: match (resumable.audio_stream_index, resumable.audio_profile_id.as_ref()) {
+            audio: match (
+                resumable.audio_stream_index,
+                resumable.audio_profile_id.as_ref(),
+            ) {
                 (Some(stream_index), Some(profile_id)) => Some(AudioProfileSelection {
                     stream_index,
                     profile_id: profile_id.clone(),
@@ -506,13 +520,22 @@ fn build_playlist(options: &SessionOptions) -> anyhow::Result<PlaylistData> {
         .duration_secs
         .context("file duration is required for HLS playlist generation")?;
     let total_duration_pts = seconds_to_pts(duration_secs, time_base_num, time_base_den);
-    anyhow::ensure!(total_duration_pts > 0, "file duration is required for HLS playback");
+    anyhow::ensure!(
+        total_duration_pts > 0,
+        "file duration is required for HLS playback"
+    );
 
     let video_profile = video_profile(&options.spec.video.profile_id)
         .with_context(|| format!("unknown video profile {}", options.spec.video.profile_id))?;
     let compatibility = video_profile
         .compatible_with(video_stream)
-        .with_context(|| format!("video profile {} is incompatible with stream {}", video_profile.id(), video_stream.index))?;
+        .with_context(|| {
+            format!(
+                "video profile {} is incompatible with stream {}",
+                video_profile.id(),
+                video_stream.index
+            )
+        })?;
 
     let segment_start_pts = match compatibility {
         Compatibility::KeyframeAligned => options
@@ -573,7 +596,10 @@ pub(crate) fn rewrite_playlist(token: &str, playlist: &str) -> String {
         .lines()
         .map(|line| {
             if line.contains("URI=\"init.mp4\"") {
-                line.replace("URI=\"init.mp4\"", &format!("URI=\"/api/hls/v/{token}/init.mp4\""))
+                line.replace(
+                    "URI=\"init.mp4\"",
+                    &format!("URI=\"/api/hls/v/{token}/init.mp4\""),
+                )
             } else if line.contains(".m4s") {
                 format!("/api/hls/v/{token}/{line}")
             } else {

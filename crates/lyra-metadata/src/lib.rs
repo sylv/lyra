@@ -41,11 +41,90 @@ pub struct MovieCandidate {
     pub release_year: Option<i32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MetadataStatus {
+    Upcoming,
+    Airing,
+    Returning,
+    Finished,
+    Cancelled,
+    InTheaters,
+    Released,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MetadataImageKind {
+    Poster,
+    Thumbnail,
+    Backdrop,
+    Logo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RecommendedMediaKind {
+    Movie,
+    Series,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataImage {
+    pub kind: MetadataImageKind,
+    pub url: String,
+    pub language: Option<String>,
+    pub vote_average: Option<f64>,
+    pub vote_count: Option<i64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub file_type: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ImageSet {
-    pub poster_url: Option<String>,
-    pub thumbnail_url: Option<String>,
-    pub background_url: Option<String>,
+    pub posters: Vec<MetadataImage>,
+    pub thumbnails: Vec<MetadataImage>,
+    pub backdrops: Vec<MetadataImage>,
+    pub logos: Vec<MetadataImage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataGenre {
+    pub provider_id: String,
+    pub external_id: Option<String>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentRating {
+    pub country_code: String,
+    pub rating: String,
+    pub release_date: Option<i64>,
+    pub release_type: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CastCredit {
+    pub provider_person_id: String,
+    pub name: String,
+    pub character_name: Option<String>,
+    pub department: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonMetadata {
+    pub provider_person_id: String,
+    pub name: String,
+    pub birthday: Option<String>,
+    pub description: Option<String>,
+    pub profile_image_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Recommendation {
+    pub media_kind: RecommendedMediaKind,
+    pub tmdb_id: Option<u64>,
+    pub imdb_id: Option<String>,
+    pub name: String,
+    pub first_aired: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +137,13 @@ pub struct SeriesMetadata {
     pub score_normalized: Option<i64>,
     pub first_aired: Option<i64>,
     pub last_aired: Option<i64>,
+    pub status: Option<MetadataStatus>,
+    pub tagline: Option<String>,
+    pub next_aired: Option<i64>,
+    pub genres: Vec<MetadataGenre>,
+    pub content_ratings: Vec<ContentRating>,
+    pub cast: Vec<CastCredit>,
+    pub recommendations: Vec<Recommendation>,
     pub images: ImageSet,
 }
 
@@ -71,6 +157,12 @@ pub struct MovieMetadata {
     pub score_normalized: Option<i64>,
     pub first_aired: Option<i64>,
     pub last_aired: Option<i64>,
+    pub status: Option<MetadataStatus>,
+    pub tagline: Option<String>,
+    pub genres: Vec<MetadataGenre>,
+    pub content_ratings: Vec<ContentRating>,
+    pub cast: Vec<CastCredit>,
+    pub recommendations: Vec<Recommendation>,
     pub images: ImageSet,
 }
 
@@ -99,6 +191,12 @@ pub struct SeasonMetadata {
     pub score_normalized: Option<i64>,
     pub first_aired: Option<i64>,
     pub last_aired: Option<i64>,
+    pub status: Option<MetadataStatus>,
+    pub tagline: Option<String>,
+    pub next_aired: Option<i64>,
+    pub genres: Vec<MetadataGenre>,
+    pub content_ratings: Vec<ContentRating>,
+    pub recommendations: Vec<Recommendation>,
     pub images: ImageSet,
 }
 
@@ -111,6 +209,12 @@ pub struct EpisodeMetadata {
     pub score_normalized: Option<i64>,
     pub first_aired: Option<i64>,
     pub last_aired: Option<i64>,
+    pub status: Option<MetadataStatus>,
+    pub tagline: Option<String>,
+    pub next_aired: Option<i64>,
+    pub genres: Vec<MetadataGenre>,
+    pub content_ratings: Vec<ContentRating>,
+    pub recommendations: Vec<Recommendation>,
     pub images: ImageSet,
 }
 
@@ -132,6 +236,11 @@ pub trait MetadataProvider: Send + Sync {
     async fn lookup_series_metadata(&self, candidate: &SeriesCandidate) -> Result<SeriesMetadata>;
 
     async fn lookup_series_items(&self, req: SeriesItemsRequest) -> Result<SeriesItemsResult>;
+
+    async fn lookup_people_metadata(
+        &self,
+        provider_person_ids: &[String],
+    ) -> Result<Vec<PersonMetadata>>;
 
     async fn match_movie_root(
         &self,

@@ -1,29 +1,14 @@
-import { CalendarClockIcon, CalendarPlusIcon, ListOrderedIcon, SortAscIcon, StarIcon } from "lucide-react";
-import { useMemo, useState, type FC } from "react";
-import z from "zod";
-import { NodeAvailability, NodeKind, OrderBy, OrderDirection, type NodeFilter } from "../../@generated/gql/graphql";
-import { useQueryState } from "../../hooks/use-query-state";
-import { FilterButton, FilterSelect } from "../filter-button";
+import { startTransition, Suspense, useEffect, useState, type FC } from "react";
+import type { NodeFilter, NodePageQueryVariables } from "../../@generated/gql/graphql";
 import { NodePage } from "./node-page";
+import stringify from "fast-json-stable-stringify";
 
 const PER_PAGE = 30;
 
-type FilterVariants =
-	| {
-			type: "seasons";
-			totalSeasons: number;
-	  }
-	| { type: "movies_series" }
-	| { type: "episodes" };
-
-type NodeListProps = FilterVariants & {
+interface NodeListProps {
+	displayKind: DisplayKind;
+	filter: NodeFilter;
 	perPage?: number;
-	filterOverride?: NodeFilter;
-	defaultOrderBy: OrderBy;
-};
-
-export interface PageVariables {
-	after: string | null;
 }
 
 export enum DisplayKind {
@@ -31,154 +16,31 @@ export enum DisplayKind {
 	Episode,
 }
 
-const FILTER_NODE_MAP: Record<FilterVariants["type"], NodeKind[]> = {
-	movies_series: [NodeKind.Movie, NodeKind.Series],
-	seasons: [NodeKind.Season],
-	episodes: [NodeKind.Episode],
-};
-
-const FILTER_DISPLAY_MAP: Record<FilterVariants["type"], DisplayKind> = {
-	movies_series: DisplayKind.Poster,
-	seasons: DisplayKind.Poster,
-	episodes: DisplayKind.Episode,
-};
-
-const KIND_NAME_MAP: Record<NodeKind, string> = {
-	[NodeKind.Movie]: "Movies",
-	[NodeKind.Series]: "Series",
-	[NodeKind.Season]: "Seasons",
-	[NodeKind.Episode]: "Episodes",
-};
-
-export const NodeList: FC<NodeListProps> = ({ perPage, filterOverride, defaultOrderBy, ...variant }) => {
-	const displayKind = FILTER_DISPLAY_MAP[variant.type];
-	const possibleKinds = FILTER_NODE_MAP[variant.type];
-	const schema = useMemo(() => {
-		const FilterSchema = z.object({
-			kinds: z.array(z.enum(NodeKind)).default(possibleKinds),
-			availability: z.enum(NodeAvailability).default(NodeAvailability.Available),
-			watched: z.boolean().nullable(),
-			orderBy: z.enum(OrderBy).default(defaultOrderBy),
-			orderDirection: z.enum(OrderDirection).nullable(),
-		});
-
-		return FilterSchema;
-	}, [defaultOrderBy, possibleKinds]);
-	const [queryFilter, setFilter] = useQueryState({ schema });
-	const [selectedKinds, setSelectedKinds] = useState<NodeKind[]>([]);
-	const [pageVariables, setPageVariables] = useState<PageVariables[]>([
-		{
-			after: null,
-		},
+export const NodeList: FC<NodeListProps> = ({ displayKind, filter, perPage = PER_PAGE }) => {
+	const [pageVariables, setPageVariables] = useState<NodePageQueryVariables[]>([
+		{ after: null, filter, first: perPage },
 	]);
 
-	const filter: NodeFilter = { ...queryFilter, ...filterOverride };
-	const updateFilter = (change: Omit<Partial<NodeFilter>, "kinds"> & { kinds?: NodeKind[] }) => {
-		setFilter((prev) => ({ ...prev, ...change }));
-		setPageVariables([
-			{
-				after: null,
-			},
-		]);
-	};
-
-	const toggleKind = (kind: NodeKind) => {
-		let nextSelectedKinds: NodeKind[];
-		if (selectedKinds.includes(kind)) nextSelectedKinds = selectedKinds.filter((k) => k !== kind);
-		else nextSelectedKinds = [...selectedKinds, kind];
-
-		setSelectedKinds(nextSelectedKinds);
-		updateFilter({ kinds: nextSelectedKinds.length > 0 ? nextSelectedKinds : possibleKinds });
-	};
+	useEffect(() => {
+		startTransition(() => {
+			setPageVariables([{ after: null, filter, first: perPage }]);
+		});
+	}, [stringify(filter), perPage]);
 
 	return (
 		<>
-			<div className="my-2 flex flex-col gap-2">
-				<div className="flex flex-wrap gap-2">
-					{(!filterOverride || filterOverride.watched == null) && (
-						<>
-							<FilterButton
-								active={filter.watched === true}
-								onClick={() => updateFilter({ watched: filter.watched === true ? null : true })}
-							>
-								Watched
-							</FilterButton>
-							<FilterButton
-								active={filter.watched === false}
-								onClick={() => updateFilter({ watched: filter.watched === false ? null : false })}
-							>
-								Unwatched
-							</FilterButton>
-						</>
-					)}
-					{possibleKinds.length > 1 && (
-						<>
-							{possibleKinds.map((kind) => (
-								<FilterButton key={kind} active={selectedKinds.includes(kind)} onClick={() => toggleKind(kind)}>
-									{KIND_NAME_MAP[kind]}
-								</FilterButton>
-							))}
-						</>
-					)}
-					{(!filterOverride || filterOverride.orderBy == null) && (
-						<FilterSelect
-							label="Order By"
-							value={queryFilter.orderBy || defaultOrderBy}
-							options={[
-								{ value: OrderBy.Alphabetical, label: "Alphabetical", icon: SortAscIcon },
-								{ value: OrderBy.Rating, label: "Rating", icon: StarIcon },
-								{ value: OrderBy.FirstAired, label: "First Aired", icon: CalendarClockIcon },
-								{ value: OrderBy.LastAired, label: "Last Aired", icon: CalendarClockIcon },
-								{ value: OrderBy.AddedAt, label: "Added Date", icon: CalendarPlusIcon },
-								{ value: OrderBy.Order, label: "Canonical Order", icon: ListOrderedIcon },
-							]}
-							onValueChange={(nextValue) => updateFilter({ orderBy: nextValue })}
-						/>
-					)}
-					{(!filterOverride || filterOverride.availability == null) && (
-						<FilterSelect
-							label="Availability"
-							value={queryFilter.availability || NodeAvailability.Available}
-							options={[
-								{ value: NodeAvailability.Available, label: "Available" },
-								{ value: NodeAvailability.Unavailable, label: "Unavailable" },
-								{ value: NodeAvailability.Both, label: "Both" },
-							]}
-							onValueChange={(nextValue) => updateFilter({ availability: nextValue })}
-						/>
-					)}
-				</div>
-			</div>
-			<div className="flex flex-wrap gap-4">
-				<div className="w-full relative mb-24">
-					<div
-						className={displayKind === DisplayKind.Poster ? "grid gap-4" : "space-y-6 gap-4"}
-						style={
-							displayKind === DisplayKind.Poster
-								? { gridTemplateColumns: `repeat(auto-fill, minmax(clamp(145px, 40vw, 174px), 1fr))` }
-								: undefined
-						}
-					>
-						{pageVariables.map((variables, index) => (
-							<NodePage
-								key={index}
-								displayKind={displayKind}
-								filter={filter}
-								variables={variables}
-								isFirst={index === 0}
-								isLast={index === pageVariables.length - 1}
-								perPage={perPage || PER_PAGE}
-								onLoadMore={(after) => {
-									console.log({ after });
-									setPageVariables((prev) => {
-										return [...prev, { after }];
-									});
-								}}
-							/>
-						))}
-					</div>
-				</div>
-			</div>
+			{pageVariables.map((variables, index) => (
+				<NodePage
+					key={index}
+					displayKind={displayKind}
+					variables={variables}
+					isFirst={index === 0}
+					isLast={index === pageVariables.length - 1}
+					onLoadMore={(after) => {
+						setPageVariables((prev) => [...prev, { after, filter, first: perPage }]);
+					}}
+				/>
+			))}
 		</>
 	);
 };

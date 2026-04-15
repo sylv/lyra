@@ -13,9 +13,17 @@ pub async fn create_local_asset_from_bytes<C: ConnectionTrait>(
 ) -> anyhow::Result<assets::Model> {
     let prepared = storage::prepare_image(image_bytes)?;
     storage::persist_image_bytes(image_bytes, &prepared).await?;
+    let now = chrono::Utc::now().timestamp();
+    let asset_id = ids::generate_prefixed_hashid("a", [prepared.hash_sha256.as_str()]);
+
+    if let Some(existing) = assets::Entity::find_by_id(asset_id.clone()).one(db).await? {
+        let mut updated: assets::ActiveModel = existing.into();
+        updated.updated_at = Set(Some(now));
+        return Ok(updated.update(db).await?);
+    }
 
     let inserted = assets::Entity::insert(assets::ActiveModel {
-        id: Set(ids::generate_ulid()),
+        id: Set(asset_id),
         kind: Set(kind),
         asset_type: Set(AssetType::Image),
         source_url: Set(None),
@@ -27,6 +35,8 @@ pub async fn create_local_asset_from_bytes<C: ConnectionTrait>(
         height: Set(Some(prepared.height)),
         width: Set(Some(prepared.width)),
         thumbhash: Set(None),
+        created_at: Set(now),
+        updated_at: Set(Some(now)),
         ..Default::default()
     })
     .exec_with_returning(db)
@@ -56,6 +66,7 @@ pub async fn download_asset_to_local<C: ConnectionTrait>(
 
     let prepared = storage::prepare_image(&bytes)?;
     storage::persist_image_bytes(&bytes, &prepared).await?;
+    let now = chrono::Utc::now().timestamp();
 
     let mut updated: assets::ActiveModel = asset.clone().into();
     updated.hash_sha256 = Set(Some(prepared.hash_sha256));
@@ -65,6 +76,7 @@ pub async fn download_asset_to_local<C: ConnectionTrait>(
     updated.content_encoding = Set(None);
     updated.width = Set(Some(prepared.width));
     updated.height = Set(Some(prepared.height));
+    updated.updated_at = Set(Some(now));
 
     Ok(updated.update(db).await?)
 }
@@ -83,9 +95,17 @@ pub async fn create_local_file_asset_from_bytes<C: ConnectionTrait>(
         &compressed_bytes,
     )
     .await?;
+    let now = chrono::Utc::now().timestamp();
+    let asset_id = ids::generate_prefixed_hashid("a", [prepared.hash_sha256.as_str()]);
+
+    if let Some(existing) = assets::Entity::find_by_id(asset_id.clone()).one(db).await? {
+        let mut updated: assets::ActiveModel = existing.into();
+        updated.updated_at = Set(Some(now));
+        return Ok(updated.update(db).await?);
+    }
 
     let inserted = assets::Entity::insert(assets::ActiveModel {
-        id: Set(ids::generate_ulid()),
+        id: Set(asset_id),
         kind: Set(kind),
         asset_type: Set(AssetType::File),
         source_url: Set(None),
@@ -99,6 +119,8 @@ pub async fn create_local_file_asset_from_bytes<C: ConnectionTrait>(
         height: Set(None),
         width: Set(None),
         thumbhash: Set(None),
+        created_at: Set(now),
+        updated_at: Set(Some(now)),
         ..Default::default()
     })
     .exec_with_returning(db)

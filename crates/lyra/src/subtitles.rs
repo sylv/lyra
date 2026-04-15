@@ -61,7 +61,9 @@ pub fn extension_for_asset_file(mime_type: &str) -> Result<&'static str> {
     let mime = mime_type.split(';').next().unwrap_or(mime_type).trim();
     match mime {
         "image/jpeg" => Ok("jpg"),
+        "image/png" => Ok("png"),
         "image/webp" => Ok("webp"),
+        "image/svg+xml" => Ok("svg"),
         "application/x-subrip" => Ok("srt"),
         "text/vtt" => Ok("vtt"),
         "text/x-ssa" => Ok("ass"),

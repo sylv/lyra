@@ -1,6 +1,6 @@
-import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import { CollectionShelf } from "../components/collection-shelf";
+import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { useTitle } from "../hooks/use-title";
 
 const HomeQuery = graphql(`
@@ -16,11 +16,11 @@ const HomeQuery = graphql(`
 
 export function HomeRoute() {
 	useTitle("Home");
-	const [{ data }] = useQuery({ query: HomeQuery, context: { suspense: true } });
+	const [{ data }] = useSuspenseQuery({ query: HomeQuery });
 
 	return (
 		<div className="space-y-8 py-6">
-			{data?.home.sections.map((section) => (
+			{data.home.sections.map((section) => (
 				<CollectionShelf key={section.id} collection={section} />
 			))}
 		</div>

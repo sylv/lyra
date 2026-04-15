@@ -19,6 +19,7 @@ type Asset {
 	thumbhash: String
 	createdAt: Int!
 	signedUrl: String!
+	aspectRatio: String
 }
 
 type AudioRenditionOption {
@@ -37,6 +38,12 @@ type AudioTrackOption {
 	language: String
 	recommended: Boolean!
 	renditions: [AudioRenditionOption!]!
+}
+
+type CastMember {
+	characterName: String
+	department: String
+	person: Person!
 }
 
 type Collection {
@@ -74,6 +81,11 @@ enum CollectionResolverKind {
 enum CollectionVisibility {
 	PUBLIC
 	PRIVATE
+}
+
+type ContentRating {
+	countryCode: String!
+	rating: String!
 }
 
 enum ContentUpdateEvent {
@@ -184,6 +196,22 @@ type Library {
 	createdAt: Int!
 }
 
+type MetadataGenre {
+	providerId: String!
+	externalId: String
+	name: String!
+}
+
+enum MetadataStatus {
+	UPCOMING
+	AIRING
+	RETURNING
+	FINISHED
+	CANCELLED
+	IN_THEATERS
+	RELEASED
+}
+
 type Mutation {
 	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
 	createUserInvite(username: String!, permissions: Int!, libraryIds: [String!]!): User!
@@ -233,6 +261,7 @@ type Node {
 	inWatchlist: Boolean!
 	nextPlayable: Node
 	previousPlayable: Node
+	recommendedNodes: [Node!]!
 	unplayedCount: Int
 	seasonCount: Int!
 	episodeCount: Int!
@@ -277,11 +306,13 @@ input NodeFilter {
 	libraryId: String
 	rootId: String
 	parentId: String
+	personId: String
 	kinds: [NodeKind!]
 	searchTerm: String
 	availability: NodeAvailability
 	orderBy: OrderBy
 	orderDirection: OrderDirection
+	seasonNumbers: [Int!]
 	watched: Boolean
 	continueWatching: Boolean
 	releasedAfter: Int
@@ -314,11 +345,17 @@ type NodeProperties {
 	fileSizeBytes: Int
 	firstAired: Int
 	lastAired: Int
+	status: MetadataStatus
+	tagline: String
 	createdAt: Int
 	updatedAt: Int
-	backgroundImage: Asset
+	backdropImage: Asset
+	logoImage: Asset
 	posterImage: Asset
 	thumbnailImage: Asset
+	genres: [MetadataGenre!]!
+	cast: [CastMember!]!
+	contentRating: ContentRating
 	displayDetail: String
 }
 
@@ -359,6 +396,13 @@ type PageInfo {
 	When paginating forwards, the cursor to continue.
 	"""
 	endCursor: String
+}
+
+type Person {
+	id: String!
+	name: String!
+	birthday: String
+	profileImage: Asset
 }
 
 type PlaybackOptions {

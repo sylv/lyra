@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Navigate } from "react-router";
-import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import { DirectoryPicker } from "@/components/directory-picker";
+import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { useTitle } from "../hooks/use-title";
 import { ADMIN_BIT } from "../lib/user-permissions";
 
@@ -17,11 +17,11 @@ const PlaygroundViewerQuery = graphql(`
 
 export function PlaygroundRoute() {
 	const [, setPath] = useState<string | null>("/");
-	const [{ data }] = useQuery({ query: PlaygroundViewerQuery, context: { suspense: true } });
+	const [{ data }] = useSuspenseQuery({ query: PlaygroundViewerQuery });
 
 	useTitle("Playground");
 
-	if ((data?.viewer?.permissions ?? 0) & ADMIN_BIT) {
+	if ((data.viewer?.permissions ?? 0) & ADMIN_BIT) {
 		return (
 			<div className="p-6">
 				<DirectoryPicker onPathChange={setPath} />

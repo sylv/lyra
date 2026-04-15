@@ -1,8 +1,8 @@
-import { useQuery } from "urql";
+import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { UserManager, UsersManagementQuery } from "../components/settings/users";
 
 export function SettingsUsersRoute() {
-	const [{ data, error }] = useQuery({ query: UsersManagementQuery, context: { suspense: true } });
+	const [{ data }] = useSuspenseQuery({ query: UsersManagementQuery });
 
 	return (
 		<section className="space-y-4">
@@ -13,10 +13,10 @@ export function SettingsUsersRoute() {
 				</p>
 			</div>
 			<UserManager
-				users={data?.users ?? []}
-				libraries={data?.libraries ?? []}
-				viewerId={data?.viewer?.id ?? null}
-				error={error?.message ?? null}
+				users={data.users}
+				libraries={data.libraries}
+				viewerId={data.viewer?.id ?? null}
+				error={null}
 			/>
 		</section>
 	);

@@ -24,8 +24,8 @@ use axum::{
     response::{Html, IntoResponse},
     routing::{get, post},
 };
-use reqwest::header::USER_AGENT;
 use lyra_packager::SessionManager;
+use reqwest::header::USER_AGENT;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde::Serialize;
 use serde_json::json;
@@ -323,8 +323,10 @@ async fn main() {
         graphql::mutation::Mutation,
         graphql::subscription::SubscriptionRoot,
     )
-    .limit_depth(10)
-    .limit_complexity(200)
+    // these are mostly high for the graphiql introspection query
+    // idk why its so complex
+    .limit_depth(15)
+    .limit_complexity(500)
     .limit_directives(5)
     .data(pool.clone())
     .data(DataLoader::new(

@@ -54,7 +54,7 @@ export const Button: FC<ButtonProps> = ({
 				!loading && !disabled && `transition-all ${iconTranslate}`,
 			)}
 		>
-			<AnimatePresence>
+			<AnimatePresence initial={false} mode="wait">
 				<motion.div
 					key={iconKey}
 					initial={{ y: 20, opacity: 0 }}

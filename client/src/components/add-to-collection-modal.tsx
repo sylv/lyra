@@ -48,17 +48,19 @@ export const AddToCollectionModal: FC<{
 	const [{ data, fetching }] = useQuery({
 		query: EditableCollectionsQuery,
 		pause: !open,
-		context: { suspense: false },
 	});
 	const [{ fetching: creating }, createCollection] = useMutation(CreateCollectionMutation);
 	const [{ fetching: adding }, addNodeToCollection] = useMutation(AddNodeToCollectionMutation);
 	const [newCollectionName, setNewCollectionName] = useState("");
 	const [error, setError] = useState<string | null>(null);
 
-	const manualCollections = useMemo(
-		() => (data?.collections ?? []).filter((collection) => collection.canEdit && collection.resolverKind === "MANUAL"),
-		[data?.collections],
-	);
+	const manualCollections = useMemo(() => {
+		if (!open) return [];
+		if (!data?.collections) return [];
+		return data.collections.filter(
+			(collection) => collection.canEdit && collection.resolverKind === CollectionResolverKind.Manual,
+		);
+	}, [open, data?.collections]);
 
 	const handleAdd = async (collectionId: string) => {
 		setError(null);

@@ -16,12 +16,6 @@ impl PreferredNodeMetadata {
             .map(|metadata| metadata.name.as_str())
             .unwrap_or(self.node_name.as_str())
     }
-
-    pub fn poster_asset_id(&self) -> Option<&str> {
-        self.metadata
-            .as_ref()
-            .and_then(|metadata| metadata.poster_asset_id.as_deref())
-    }
 }
 
 #[derive(Clone)]

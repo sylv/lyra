@@ -1,6 +1,6 @@
 import { Link } from "react-router";
-import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
+import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { useTitle } from "../hooks/use-title";
 import { getPathForCollection } from "../lib/getPathForMedia";
 
@@ -21,7 +21,7 @@ const CollectionsQuery = graphql(`
 
 export function CollectionsRoute() {
 	useTitle("Collections");
-	const [{ data }] = useQuery({ query: CollectionsQuery, context: { suspense: true } });
+	const [{ data }] = useSuspenseQuery({ query: CollectionsQuery });
 
 	return (
 		<div className="space-y-4 py-6">
@@ -29,7 +29,7 @@ export function CollectionsRoute() {
 				<h1 className="text-2xl font-semibold">Collections</h1>
 			</div>
 			<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-				{data?.collections.map((collection) => (
+				{data.collections.map((collection) => (
 					<Link
 						key={collection.id}
 						to={getPathForCollection(collection.id)}

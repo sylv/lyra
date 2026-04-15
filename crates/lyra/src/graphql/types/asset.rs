@@ -8,6 +8,13 @@ impl Asset {
     pub async fn signed_url(&self) -> async_graphql::Result<String> {
         Ok(sign_asset_url(&self.id))
     }
+
+    pub async fn aspect_ratio(&self) -> Option<String> {
+        match (self.width, self.height) {
+            (Some(w), Some(h)) if h != 0 => Some(format!("{w} / {h}")),
+            _ => None,
+        }
+    }
 }
 
 impl From<assets::Model> for Asset {

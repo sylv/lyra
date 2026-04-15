@@ -4,10 +4,10 @@ Lyra is an experimental local-media server in the "Plex alternative" space, with
 
 There are no real deployments yet. Breaking changes are acceptable, resetting the database is acceptable, and compatibility layers are usually not worth keeping. When refactoring, prefer removing old code over carrying dead paths forward.
 
-## Core Principles
+## General Principles
 
-- Use GraphQL for app data and HLS for playback.
-- When writing SQL, either use `sea_query` or use sqlx macros for validation. Do not use sea_querys raw SQL support, as it opts us out of compile-time validation.
+- When writing SQL, either use sea_orm/sea_querys query builder or use sqlx macros. Do not use sea_querys raw SQL support as it opts us out of compile-time validation.
+- When adding migrations, use `sqlx migrate add <name>` to generate a timestamped template
 - Use bun over npm, "bunx" vs "npx" etc
 - Keep clients thin. If complexity has to exist, prefer putting it on the server.
   - Some exceptions to this exist, mainly for features that will only ever exist in the web client (settings, plex imports, etc).

@@ -5,6 +5,7 @@ use crate::{
         recently_added_collection, recently_added_id, recently_released_collection,
         recently_released_id,
     },
+    entities::root_node_cast,
     entities::{collections, libraries, node_metadata, nodes, users, watch_progress},
     graphql::types::collection::collection_item_count,
     metadata::read,
@@ -69,11 +70,13 @@ pub struct NodeFilter {
     pub library_id: Option<String>,
     pub root_id: Option<String>,
     pub parent_id: Option<String>,
+    pub person_id: Option<String>,
     pub kinds: Option<Vec<nodes::NodeKind>>,
     pub search_term: Option<String>,
     pub availability: Option<NodeAvailability>,
     pub order_by: Option<OrderBy>,
     pub order_direction: Option<OrderDirection>,
+    pub season_numbers: Option<Vec<i32>>,
     pub watched: Option<bool>,
     pub continue_watching: Option<bool>,
     pub released_after: Option<i64>,
@@ -245,11 +248,37 @@ pub async fn build_node_query_for_viewer(
     if let Some(parent_id) = &filter.parent_id {
         qb = qb.filter(nodes::Column::ParentId.eq(parent_id.clone()));
     }
+    if let Some(season_numbers) = &filter.season_numbers {
+        if season_numbers.is_empty() {
+            return Err(async_graphql::Error::new(
+                "seasonNumbers should not be empty",
+            ));
+        }
+
+        qb = qb.filter(nodes::Column::SeasonNumber.is_in(season_numbers.clone()));
+    }
+    if let Some(person_id) = &filter.person_id {
+        qb = qb
+            .join(JoinType::InnerJoin, nodes::Relation::RootNodeCast.def())
+            .filter(root_node_cast::Column::PersonId.eq(person_id.clone()))
+            .filter(
+                Expr::col((nodes::Entity, nodes::Column::Id))
+                    .equals((nodes::Entity, nodes::Column::RootId)),
+            )
+            .filter(nodes::Column::Kind.is_in([nodes::NodeKind::Movie, nodes::NodeKind::Series]));
+    }
     if let Some(kinds) = &filter.kinds {
+        if kinds.is_empty() {
+            return Err(async_graphql::Error::new("kinds should not be empty"));
+        }
+
         qb = qb.filter(nodes::Column::Kind.is_in(kinds.clone()));
     }
+
     if search_term.is_some() && fts_query.is_none() {
-        qb = qb.filter(nodes::Column::Id.eq("__never__"));
+        return Err(async_graphql::Error::new(
+            "searchTerm must contain at least one searchable term",
+        ));
     } else if let Some(fts_query) = fts_query.as_deref() {
         qb = join_node_search(qb, fts_query);
     }

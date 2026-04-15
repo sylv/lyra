@@ -228,11 +228,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 													Off
 												</DropdownMenuRadioItem>
 												{subtitleTrackOptions.map((track) => (
-													<DropdownMenuRadioItem
-														className="py-2.5 focus:bg-zinc-800"
-														key={track.id}
-														value={track.id}
-													>
+													<DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" key={track.id} value={track.id}>
 														<div className="flex min-w-0 items-start gap-2">
 															<span className="mt-0.5 text-zinc-400">{subtitleSourceIcon(track.source)}</span>
 															<span className="min-w-0">

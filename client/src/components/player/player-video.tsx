@@ -281,7 +281,13 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 			setSubtitleTrack,
 			switchItem,
 		});
-	}, [controllerRef, currentMedia?.file?.recommendedSubtitleTrackId, currentMedia?.file?.subtitleTracks, videoRef, watchSessionAction]);
+	}, [
+		controllerRef,
+		currentMedia?.file?.recommendedSubtitleTrackId,
+		currentMedia?.file?.subtitleTracks,
+		videoRef,
+		watchSessionAction,
+	]);
 
 	useEffect(() => {
 		if (!videoRef.current) return;

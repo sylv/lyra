@@ -58,6 +58,8 @@ pub enum Relation {
     SelfRef1,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
+    #[sea_orm(has_many = "super::root_node_cast::Entity")]
+    RootNodeCast,
 }
 
 impl Related<super::libraries::Entity> for Entity {
@@ -87,6 +89,12 @@ impl Related<super::collection_items::Entity> for Entity {
 impl Related<super::watch_progress::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::WatchProgress.def()
+    }
+}
+
+impl Related<super::root_node_cast::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::RootNodeCast.def()
     }
 }
 

@@ -48,81 +48,87 @@ export const SetupWrapper: FC<{ children: ReactNode }> = ({ children }) => {
 	hashRef.current = hash;
 	dataRef.current = data;
 
-	const syncRoute = useCallback((nextState: InitState) => {
-		const currentPathname = pathnameRef.current;
-		const currentSearchStr = searchStrRef.current;
-		const currentHash = hashRef.current;
+	const syncRoute = useCallback(
+		(nextState: InitState) => {
+			const currentPathname = pathnameRef.current;
+			const currentSearchStr = searchStrRef.current;
+			const currentHash = hashRef.current;
 
-		if (isSetupReady(nextState)) {
-			if (!isSetupPath(currentPathname)) {
+			if (isSetupReady(nextState)) {
+				if (!isSetupPath(currentPathname)) {
+					return;
+				}
+
+				navigate(getPreviousSetupRoute(currentSearchStr), { replace: true });
 				return;
 			}
 
-			navigate(getPreviousSetupRoute(currentSearchStr), { replace: true });
-			return;
-		}
-
-		const previous = isSetupPath(currentPathname)
-			? getPreviousSetupRoute(currentSearchStr)
-			: getRelativeLocationUri({
-					pathname: currentPathname,
-					searchStr: currentSearchStr,
-					hash: currentHash,
-				});
-		const target = getSetupRedirectUri(nextState, previous);
-		const currentUri = getRelativeLocationUri({
-			pathname: currentPathname,
-			searchStr: currentSearchStr,
-			hash: currentHash,
-		});
-
-		if (currentUri === target) {
-			return;
-		}
-
-		navigate(target, { replace: true });
-	}, [navigate]);
-
-	const syncSetupState = useCallback(async ({ recheck = false }: { recheck?: boolean } = {}) => {
-		if (request.current) {
-			return request.current;
-		}
-
-		if (recheck) {
-			setIsRechecking(true);
-		}
-
-		request.current = fetchInitState(searchStrRef.current)
-			.then(async (nextState) => {
-				setError(null);
-
-				const previousState = dataRef.current;
-				const becameReady =
-					recheck &&
-					previousState != null &&
-					!isSetupReady(previousState) &&
-					isSetupReady(nextState) &&
-					isSetupPath(pathnameRef.current);
-
-				if (becameReady) {
-					await refreshActiveQueries();
-				}
-
-				syncRoute(nextState);
-				setData(nextState);
-			})
-			.catch((nextError) => {
-				const error = nextError instanceof Error ? nextError : new Error("Failed to load setup state");
-				setError(error);
-				throw error;
-			})
-			.finally(() => {
-				request.current = null;
-				setIsRechecking(false);
+			const previous = isSetupPath(currentPathname)
+				? getPreviousSetupRoute(currentSearchStr)
+				: getRelativeLocationUri({
+						pathname: currentPathname,
+						searchStr: currentSearchStr,
+						hash: currentHash,
+					});
+			const target = getSetupRedirectUri(nextState, previous);
+			const currentUri = getRelativeLocationUri({
+				pathname: currentPathname,
+				searchStr: currentSearchStr,
+				hash: currentHash,
 			});
 
-		return request.current;
-	}, [syncRoute]);
+			if (currentUri === target) {
+				return;
+			}
+
+			navigate(target, { replace: true });
+		},
+		[navigate],
+	);
+
+	const syncSetupState = useCallback(
+		async ({ recheck = false }: { recheck?: boolean } = {}) => {
+			if (request.current) {
+				return request.current;
+			}
+
+			if (recheck) {
+				setIsRechecking(true);
+			}
+
+			request.current = fetchInitState(searchStrRef.current)
+				.then(async (nextState) => {
+					setError(null);
+
+					const previousState = dataRef.current;
+					const becameReady =
+						recheck &&
+						previousState != null &&
+						!isSetupReady(previousState) &&
+						isSetupReady(nextState) &&
+						isSetupPath(pathnameRef.current);
+
+					if (becameReady) {
+						await refreshActiveQueries();
+					}
+
+					syncRoute(nextState);
+					setData(nextState);
+				})
+				.catch((nextError) => {
+					const error = nextError instanceof Error ? nextError : new Error("Failed to load setup state");
+					setError(error);
+					throw error;
+				})
+				.finally(() => {
+					request.current = null;
+					setIsRechecking(false);
+				});
+
+			return request.current;
+		},
+		[syncRoute],
+	);
 
 	const recheckSetup = useCallback(() => syncSetupState({ recheck: true }), [syncSetupState]);
 
