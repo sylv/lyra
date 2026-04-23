@@ -35,6 +35,7 @@ impl files::Model {
     pub async fn playback_options(
         &self,
         ctx: &Context<'_>,
+        language_hints: Option<Vec<String>>,
     ) -> Result<PlaybackOptions, async_graphql::Error> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         let auth = ctx.data::<RequestAuth>()?;
@@ -76,9 +77,20 @@ impl files::Model {
             })
             .collect::<Vec<_>>();
 
+        let subtitle_tracks = load_subtitle_tracks(
+            pool,
+            self,
+            user,
+            &probe_data,
+            language_hints.as_deref().unwrap_or(&[]),
+            &audio_streams,
+        )
+        .await?;
+
         Ok(PlaybackOptions {
             video_renditions,
             audio_tracks,
+            subtitle_tracks,
         })
     }
 
@@ -164,70 +176,21 @@ impl files::Model {
             .get_probe()
             .map_err(|error| async_graphql::Error::new(error.to_string()))?;
 
-        let subtitle_rows = load_current_subtitle_rows(pool, self).await?;
-        let mut rows_by_stream_index: HashMap<i64, Vec<file_subtitles::Model>> = HashMap::new();
-        for row in subtitle_rows {
-            rows_by_stream_index.entry(row.stream_index).or_default().push(row);
-        }
-
         let mut audio_streams: Vec<_> = probe_data
             .streams
             .iter()
             .filter(|stream| stream.kind() == StreamKind::Audio)
             .collect();
         audio_streams.sort_by_key(|stream| stream.index);
-        let recommended_audio_index = user
-            .and_then(|user| compute_recommended_audio_track_index(&audio_streams, user))
-            .unwrap_or(0);
-        let active_audio_language = audio_streams
-            .get(recommended_audio_index)
-            .and_then(|stream| stream.language_bcp47.as_deref());
-
-        let mut built_tracks = Vec::new();
-        for stream in probe_data
-            .streams
-            .iter()
-            .filter(|stream| stream.kind() == StreamKind::Subtitle)
-        {
-            let Some(track) = build_logical_subtitle_track(
-                &self.id,
-                stream,
-                rows_by_stream_index.get(&i64::from(stream.index)),
-            ) else {
-                continue;
-            };
-            built_tracks.push(track);
-        }
-
-        built_tracks.sort_by_key(|track| track.track.stream_index);
-
-        let preferred_subtitle_languages: Vec<String> = user
-            .map(|user| {
-                serde_json::from_str::<Vec<String>>(&user.preferred_subtitle_languages)
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
-        let selected_track_id = user.and_then(|user| {
-            select_subtitle_track(
-                &built_tracks
-                    .iter()
-                    .map(|track| track.candidate.clone())
-                    .collect::<Vec<_>>(),
-                user.subtitle_mode,
-                &preferred_subtitle_languages,
-                &language_hints.unwrap_or_default(),
-                user.subtitle_variant_preference,
-                active_audio_language,
-            )
-        });
-
-        Ok(built_tracks
-            .into_iter()
-            .map(|mut built| {
-                built.track.autoselect = selected_track_id.as_deref() == Some(built.track.id.as_str());
-                built.track
-            })
-            .collect())
+        load_subtitle_tracks(
+            pool,
+            self,
+            user,
+            &probe_data,
+            language_hints.as_deref().unwrap_or(&[]),
+            &audio_streams,
+        )
+        .await
     }
 
     pub async fn segments(&self, _ctx: &Context<'_>) -> Result<Vec<FileSegment>, sea_orm::DbErr> {
@@ -270,6 +233,72 @@ struct BuiltSubtitleTrack {
     candidate: SubtitleSelectionCandidate,
 }
 
+async fn load_subtitle_tracks(
+    pool: &DatabaseConnection,
+    file: &files::Model,
+    user: Option<&users::Model>,
+    probe_data: &lyra_probe::ProbeData,
+    language_hints: &[String],
+    audio_streams: &[&Stream],
+) -> Result<Vec<SubtitleTrack>, async_graphql::Error> {
+    let subtitle_rows = load_current_subtitle_rows(pool, file).await?;
+    let mut rows_by_stream_index: HashMap<i64, Vec<file_subtitles::Model>> = HashMap::new();
+    for row in subtitle_rows {
+        rows_by_stream_index.entry(row.stream_index).or_default().push(row);
+    }
+
+    let recommended_audio_index = user
+        .and_then(|user| compute_recommended_audio_track_index(audio_streams, user))
+        .unwrap_or(0);
+    let active_audio_language = audio_streams
+        .get(recommended_audio_index)
+        .and_then(|stream| stream.language_bcp47.as_deref());
+
+    let mut built_tracks = Vec::new();
+    for stream in probe_data
+        .streams
+        .iter()
+        .filter(|stream| stream.kind() == StreamKind::Subtitle)
+    {
+        let Some(track) =
+            build_logical_subtitle_track(&file.id, stream, rows_by_stream_index.get(&i64::from(stream.index)))
+        else {
+            continue;
+        };
+        built_tracks.push(track);
+    }
+
+    built_tracks.sort_by_key(|track| track.track.stream_index);
+
+    let preferred_subtitle_languages: Vec<String> = user
+        .map(|user| {
+            serde_json::from_str::<Vec<String>>(&user.preferred_subtitle_languages)
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    let selected_track_id = user.and_then(|user| {
+        select_subtitle_track(
+            &built_tracks
+                .iter()
+                .map(|track| track.candidate.clone())
+                .collect::<Vec<_>>(),
+            user.subtitle_mode,
+            &preferred_subtitle_languages,
+            language_hints,
+            user.subtitle_variant_preference,
+            active_audio_language,
+        )
+    });
+
+    Ok(built_tracks
+        .into_iter()
+        .map(|mut built| {
+            built.track.autoselect = selected_track_id.as_deref() == Some(built.track.id.as_str());
+            built.track
+        })
+        .collect())
+}
+
 async fn load_current_subtitle_rows(
     pool: &DatabaseConnection,
     file: &files::Model,
@@ -308,7 +337,7 @@ fn build_logical_subtitle_track(
             id: "direct".to_string(),
             codec_name: "WebVTT".to_string(),
             r#type: SubtitleRenditionType::Direct,
-            display_info: "WebVTT".to_string(),
+            display_info: "Direct Play".to_string(),
             on_demand: rows.is_none_or(|rows| {
                 !rows.iter().any(|row| {
                     row.derived_from_subtitle_id.is_none()
@@ -359,7 +388,7 @@ fn build_logical_subtitle_track(
             id: "generated".to_string(),
             codec_name: "WebVTT".to_string(),
             r#type: SubtitleRenditionType::Generated,
-            display_info: "Generated WebVTT".to_string(),
+            display_info: "Generated".to_string(),
             on_demand: false,
         });
     }

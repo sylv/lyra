@@ -1,9 +1,10 @@
-import { useMemo, useState, type FC } from "react";
+import { useEffect, useMemo, useState, type FC } from "react";
 import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import { formatPlayerTime } from "../../../lib/format-player-time";
 import { getTimelinePreviewFrameAtMs, sortTimelinePreviewSheets } from "../../../lib/timeline-preview";
 import { cn } from "../../../lib/utils";
 import { usePlayerContext } from "../player-context";
+import { usePlayerVideoElement } from "../player-refs-context";
 
 const TIMELINE_PREVIEW_THUMBNAIL_WIDTH_PX = 380;
 const TIMELINE_TIME_TOOLTIP_WIDTH_PX = 56;
@@ -41,12 +42,46 @@ interface HoverPreviewFrame {
 export const PlayerProgressBar: FC<PlayerProgressBarProps> = ({ timelinePreviewSheets, compact = false }) => {
   const currentTime = usePlayerContext((ctx) => ctx.state.currentTime);
   const duration = usePlayerContext((ctx) => ctx.state.duration);
-  const bufferedRanges = usePlayerContext((ctx) => ctx.state.bufferedRanges);
   const onSeek = usePlayerContext((ctx) => ctx.actions.seekTo);
   const showControlsTemporarily = usePlayerContext((ctx) => ctx.actions.showControlsTemporarily);
   const beginControlsInteraction = usePlayerContext((ctx) => ctx.actions.beginControlsInteraction);
   const endControlsInteraction = usePlayerContext((ctx) => ctx.actions.endControlsInteraction);
+  const videoElement = usePlayerVideoElement();
+  const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
   const [hoverState, setHoverState] = useState<{ time: number; xPx: number; barWidthPx: number } | null>(null);
+
+  useEffect(() => {
+    if (!videoElement) {
+      setBufferedRanges([]);
+      return;
+    }
+
+    const syncBufferedRanges = () => {
+      const ranges: Array<{ start: number; end: number }> = [];
+      for (let index = 0; index < videoElement.buffered.length; index++) {
+        ranges.push({
+          start: videoElement.buffered.start(index),
+          end: videoElement.buffered.end(index),
+        });
+      }
+      setBufferedRanges(ranges);
+    };
+
+    syncBufferedRanges();
+    videoElement.addEventListener("progress", syncBufferedRanges);
+    videoElement.addEventListener("loadedmetadata", syncBufferedRanges);
+    videoElement.addEventListener("durationchange", syncBufferedRanges);
+    videoElement.addEventListener("seeked", syncBufferedRanges);
+    videoElement.addEventListener("emptied", syncBufferedRanges);
+
+    return () => {
+      videoElement.removeEventListener("progress", syncBufferedRanges);
+      videoElement.removeEventListener("loadedmetadata", syncBufferedRanges);
+      videoElement.removeEventListener("durationchange", syncBufferedRanges);
+      videoElement.removeEventListener("seeked", syncBufferedRanges);
+      videoElement.removeEventListener("emptied", syncBufferedRanges);
+    };
+  }, [videoElement]);
 
   const sortedTimelinePreviewSheets = useMemo(() => {
     return sortTimelinePreviewSheets(

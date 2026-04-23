@@ -2,8 +2,14 @@ import { create } from "zustand";
 import { useStore } from "zustand/react";
 import { createJSONStorage, persist, type PersistOptions } from "zustand/middleware";
 
-type AudioTrackOption = { id: number; label: string };
-export type SubtitleTrackOption = {
+type HoveredCard = "previous" | "next" | null;
+export interface PlayerAudioTrackOption {
+  id: number;
+  label: string;
+  language: string | null;
+}
+
+export interface PlayerSubtitleTrackOption {
   id: string;
   label: string;
   language: string | null;
@@ -13,8 +19,8 @@ export type SubtitleTrackOption = {
   renditionType: "DIRECT" | "CONVERTED" | "OCR" | "GENERATED";
   displayInfo: string;
   onDemand: boolean;
-};
-type HoveredCard = "previous" | "next" | null;
+}
+
 export type PlayerWatchSessionMode = "ADVISORY" | "SYNCED" | null;
 export type PlayerWatchSessionEffectiveState = "PLAYING" | "PAUSED" | "BUFFERING" | "INACTIVE_PLAYERS" | null;
 export type PlayerWatchSessionIntent = "PLAYING" | "PAUSED" | null;
@@ -66,12 +72,10 @@ export interface PlayerState {
   playing: boolean;
   currentTime: number;
   duration: number;
-  bufferedRanges: Array<{ start: number; end: number }>;
-  videoAspectRatio: number;
   errorMessage: string | null;
-  audioTrackOptions: AudioTrackOption[];
+  audioTrackOptions: PlayerAudioTrackOption[];
   selectedAudioTrackId: number | null;
-  subtitleTrackOptions: SubtitleTrackOption[];
+  subtitleTrackOptions: PlayerSubtitleTrackOption[];
   selectedSubtitleTrackId: string | null;
   activeSubtitleTrackId: string | null;
   activeSubtitleRenditionId: string | null;
@@ -79,7 +83,6 @@ export interface PlayerState {
   ended: boolean;
   upNextDismissed: boolean;
   upNextCountdownCancelled: boolean;
-  isUpNextActive: boolean;
 }
 
 export interface PlayerControlsState {
@@ -100,7 +103,7 @@ export interface PlayerActions {
   seekTo: (time: number) => void;
   toggleMute: () => void;
   setVolume: (volume: number) => void;
-  setAudioTrack: (trackId: number) => void;
+  setAudioTrack: (trackId: number | null) => void;
   setSubtitleTrack: (trackId: string | null, options?: { manual?: boolean }) => void;
   showControlsTemporarily: () => void;
   beginControlsInteraction: () => void;
@@ -137,8 +140,6 @@ const initialState: PlayerState = {
   playing: false,
   currentTime: 0,
   duration: 0,
-  bufferedRanges: [],
-  videoAspectRatio: 16 / 9,
   errorMessage: null,
   audioTrackOptions: [],
   selectedAudioTrackId: null,
@@ -150,7 +151,6 @@ const initialState: PlayerState = {
   ended: false,
   upNextDismissed: false,
   upNextCountdownCancelled: false,
-  isUpNextActive: false,
 };
 
 const initialControls: PlayerControlsState = {

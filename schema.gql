@@ -118,7 +118,7 @@ type File {
 	scannedAt: Int
 	discoveredAt: Int!
 	probe: FileProbe
-	playbackOptions: PlaybackOptions!
+	playbackOptions(languageHints: [String!]): PlaybackOptions!
 	timelinePreview: [TimelinePreviewSheet!]!
 	subtitles(languageHints: [String!]): [SubtitleTrack!]!
 	segments: [FileSegment!]!
@@ -416,6 +416,7 @@ type Person {
 type PlaybackOptions {
 	videoRenditions: [VideoRenditionOption!]!
 	audioTracks: [AudioTrackOption!]!
+	subtitleTracks: [SubtitleTrack!]!
 }
 
 input PlaybackUrlInput {

@@ -31,10 +31,6 @@ export const useUpNextState = ({ hasNextItem, onNextItem }: { hasNextItem: boole
     wasActiveRef.current = isUpNextActive;
   }, [isUpNextActive]);
 
-  useEffect(() => {
-    setPlayerState({ isUpNextActive });
-  }, [isUpNextActive]);
-
   const totalCountdownSeconds = previewWindowSeconds + POST_END_COUNTDOWN_SECONDS;
   const previewStartTime = duration - previewWindowSeconds;
   const [elapsedSinceEnd, setElapsedSinceEnd] = useState(0);

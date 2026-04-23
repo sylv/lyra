@@ -1,6 +1,6 @@
 /* oxlint-disable jsx_a11y/prefer-tag-over-role */
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, type FC } from "react";
+import { useEffect, useRef, useState, type FC } from "react";
 import { useQuery } from "urql";
 import { client } from "../../client";
 import { cn } from "../../lib/utils";
@@ -8,6 +8,7 @@ import { PlayerControls } from "./components/player-controls";
 import { PlayerErrorOverlay } from "./components/player-error-overlay";
 import { PlayerIntroOverlay } from "./components/player-intro-overlay";
 import { PlayerLoadingIndicator } from "./components/player-loading-indicator";
+import { PlayerSubtitleOverlay } from "./components/player-subtitle-overlay";
 import { PlayerTopChrome } from "./components/player-top-chrome";
 import { ResumePromptDialog } from "./components/resume-prompt-dialog";
 import { UpNextCard } from "./components/up-next-card";
@@ -17,25 +18,31 @@ import { useFullscreen } from "./hooks/use-fullscreen";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { usePlayerActions } from "./hooks/use-player-actions";
 import { useSurfaceInteraction } from "./hooks/use-surface-interaction";
-import { useTrackSelection } from "./hooks/use-track-selection";
 import { useUpNextState } from "./hooks/use-up-next-state";
 import { setPlayerControls, setPlayerState, usePlayerContext } from "./player-context";
 import { PlayerLayout } from "./player-layout";
 import { ItemPlaybackQuery, LeaveWatchSession } from "./player-queries";
-import { PlayerRefsContext, usePlayerRefsContext } from "./player-refs-context";
-import { PlayerVideo, getTimelinePreviewSheets } from "./player-video";
+import {
+  PlayerRefsContext,
+  PlayerVideoElementContext,
+  usePlayerRefsContext,
+  usePlayerVideoElement,
+} from "./player-refs-context";
+import { PlayerVideo } from "./player-video";
 
-const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume: boolean }> = ({
-  itemId,
-  autoplay,
-  shouldPromptResume,
-}) => {
+const PlayerContent: FC<{
+  itemId: string;
+  autoplay: boolean;
+  shouldPromptResume: boolean;
+}> = ({ itemId, autoplay, shouldPromptResume }) => {
   const { containerRef, surfaceRef } = usePlayerRefsContext();
+  const videoElement = usePlayerVideoElement();
   const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
   const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
   const hoveredCard = usePlayerContext((ctx) => ctx.controls.hoveredCard);
-  const miniPlayerAspectRatio = usePlayerContext((ctx) => Math.max(ctx.state.videoAspectRatio, 16 / 9));
-  const languageHints = typeof navigator === "undefined" ? [] : navigator.languages;
+  const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
+  const miniPlayerAspectRatio = Math.max(videoAspectRatio, 16 / 9);
+  const languageHints = typeof navigator === "undefined" ? [] : [...navigator.languages];
 
   const [{ data, fetching: isItemLoading, error: itemLoadError }] = useQuery({
     query: ItemPlaybackQuery,
@@ -43,6 +50,27 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
   });
   const currentMedia = data?.node ?? null;
   const isResolvingRequestedMedia = isItemLoading && currentMedia?.id !== itemId;
+
+  useEffect(() => {
+    if (!videoElement) {
+      setVideoAspectRatio(16 / 9);
+      return;
+    }
+
+    const syncAspectRatio = () => {
+      if (videoElement.videoWidth <= 0 || videoElement.videoHeight <= 0) return;
+      setVideoAspectRatio(videoElement.videoWidth / videoElement.videoHeight);
+    };
+
+    syncAspectRatio();
+    videoElement.addEventListener("loadedmetadata", syncAspectRatio);
+    videoElement.addEventListener("resize", syncAspectRatio);
+
+    return () => {
+      videoElement.removeEventListener("loadedmetadata", syncAspectRatio);
+      videoElement.removeEventListener("resize", syncAspectRatio);
+    };
+  }, [videoElement]);
 
   useEffect(() => {
     if (!isResolvingRequestedMedia) return;
@@ -62,7 +90,6 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
     showControlsTemporarily,
   });
   const { handlePlayerKeyDown } = useKeyboardShortcuts({ actions, handleContainerClick });
-  const { onAudioTrackChange, onSubtitleTrackChange } = useTrackSelection(currentMedia, itemId, languageHints);
   const { switchItem } = actions;
 
   const onPreviousItem = () => {
@@ -81,7 +108,9 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
   const showUpNextCard = isFullscreen && upNextState.isUpNextActive && !!currentMedia?.nextPlayable;
   const cardNode = showPreviousCard ? currentMedia?.previousPlayable : currentMedia?.nextPlayable;
   const cardVisible = showPreviousCard || showNextPreview || showUpNextCard;
-  const timelinePreviewSheets = getTimelinePreviewSheets(currentMedia);
+  const timelinePreviewSheets = Array.isArray(currentMedia?.defaultFile?.timelinePreview)
+    ? currentMedia.defaultFile.timelinePreview
+    : [];
 
   const cardElement =
     cardVisible && cardNode ? (
@@ -122,8 +151,6 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
       nextPlayable={currentMedia.nextPlayable}
       onPreviousItem={onPreviousItem}
       onNextItem={onNextItem}
-      onAudioTrackChange={onAudioTrackChange}
-      onSubtitleTrackChange={onSubtitleTrackChange}
       dropdownPortalContainer={containerRef.current}
     />
   ) : null;
@@ -149,7 +176,7 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
     >
       <PlayerVideo currentMedia={currentMedia} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
 
-      {currentMedia && (
+      {currentMedia ? (
         <div
           ref={surfaceRef}
           className={cn(
@@ -169,7 +196,7 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
         >
           <div
             className={cn(
-              "pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/60 transition-opacity duration-300",
+              "pointer-events-none absolute inset-0 transition-opacity duration-300",
               isFullscreen ? (showControls ? "opacity-100" : "opacity-0") : "opacity-0 group-hover/player:opacity-100",
               !isFullscreen && "rounded",
             )}
@@ -177,7 +204,12 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
 
           <PlayerLayout
             top={<PlayerTopChrome media={currentMedia} />}
-            middle={<PlayerIntroOverlay media={currentMedia} />}
+            middle={
+              <>
+                <PlayerSubtitleOverlay />
+                <PlayerIntroOverlay media={currentMedia} />
+              </>
+            }
             bottom={
               isFullscreen ? (
                 <div className="relative z-10">
@@ -191,6 +223,10 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
               )
             }
           />
+        </div>
+      ) : (
+        <div className="absolute inset-0">
+          <PlayerLayout top={<PlayerTopChrome media={null} />} middle={null} bottom={null} />
         </div>
       )}
 
@@ -208,10 +244,10 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
   autoplay = false,
   shouldPromptResume = false,
 }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const controllerRef = useRef<PlayerController | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const watchSession = usePlayerContext((ctx) => ctx.watchSession);
 
   useEffect(() => {
@@ -233,8 +269,10 @@ export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume
   }, [watchSession.playerId, watchSession.sessionId]);
 
   return (
-    <PlayerRefsContext.Provider value={{ videoRef, controllerRef, containerRef, surfaceRef }}>
-      <PlayerContent itemId={itemId} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
+    <PlayerRefsContext.Provider value={{ controllerRef, containerRef, surfaceRef }}>
+      <PlayerVideoElementContext.Provider value={{ videoElement, setVideoElement }}>
+        <PlayerContent itemId={itemId} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
+      </PlayerVideoElementContext.Provider>
     </PlayerRefsContext.Provider>
   );
 };

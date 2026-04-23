@@ -4,18 +4,28 @@ import { playerContext, setPlayerActions, setPlayerControls, usePlayerContext } 
 export const useControlsVisibility = () => {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
+  const pendingSubtitleTrackId = usePlayerContext((ctx) => ctx.state.pendingSubtitleTrackId);
+  const errorMessage = usePlayerContext((ctx) => ctx.state.errorMessage);
   const isControlsPinned = usePlayerContext(
     (ctx) =>
       ctx.controls.isSettingsMenuOpen ||
       ctx.controls.isWatchSessionMenuOpen ||
       ctx.controls.isControlsInteracting ||
-      ctx.controls.isItemCardOpen,
+      ctx.controls.isItemCardOpen ||
+      ctx.state.pendingSubtitleTrackId != null ||
+      ctx.state.errorMessage != null,
   );
 
   const areControlsPinned = () => {
-    const { isSettingsMenuOpen, isWatchSessionMenuOpen, isControlsInteracting, isItemCardOpen } =
-      playerContext.getState().controls;
-    return isSettingsMenuOpen || isWatchSessionMenuOpen || isControlsInteracting || isItemCardOpen;
+    const { controls, state } = playerContext.getState();
+    return (
+      controls.isSettingsMenuOpen ||
+      controls.isWatchSessionMenuOpen ||
+      controls.isControlsInteracting ||
+      controls.isItemCardOpen ||
+      state.pendingSubtitleTrackId != null ||
+      state.errorMessage != null
+    );
   };
 
   const showControlsTemporarily = () => {
@@ -55,7 +65,7 @@ export const useControlsVisibility = () => {
       beginControlsInteraction,
       endControlsInteraction,
     });
-  }, [isFullscreen]);
+  }, [isFullscreen, pendingSubtitleTrackId, errorMessage]);
 
   useEffect(() => {
     if (!isControlsPinned) return;

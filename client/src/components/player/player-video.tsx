@@ -1,7 +1,7 @@
 /* oxlint-disable jsx_a11y/media-has-caption */
 import { useEffect, useRef, useState, type FC } from "react";
 import { useMutation, useSubscription } from "urql";
-import { type FragmentType, unmask } from "../../@generated/gql";
+import { unmask } from "../../@generated/gql";
 import { type ItemPlaybackQuery, WatchSessionActionKind, WatchSessionIntent } from "../../@generated/gql/graphql";
 import { createHlsPlayer } from "./hls";
 import {
@@ -25,8 +25,7 @@ import {
   WatchSessionBeacons,
   WatchSessionHeartbeat,
 } from "./player-queries";
-import { PlayerTimelinePreviewSheetFragment } from "./components/player-progress-bar";
-import { usePlayerRefsContext } from "./player-refs-context";
+import { usePlayerRefsContext, usePlayerVideoElementRegistration } from "./player-refs-context";
 import { applyWatchSessionBeacon, createLocalWatchSessionId, getWatchSessionState } from "./watch-session";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
@@ -67,7 +66,9 @@ const pickPlayableVideoRendition = (
 };
 
 export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shouldPromptResume }) => {
-  const { videoRef, controllerRef } = usePlayerRefsContext();
+  const { controllerRef } = usePlayerRefsContext();
+  const setVideoElement = usePlayerVideoElementRegistration();
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [, mintPlaybackUrl] = useMutation(MintPlaybackUrl);
   const [, mintSubtitleUrl] = useMutation(MintSubtitleUrl);
   const [, updateWatchProgress] = useMutation(UpdateWatchState);
@@ -104,6 +105,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
   const heartbeatRef = useRef<(() => void) | null>(null);
   const [isWatchSessionRegistered, setIsWatchSessionRegistered] = useState(false);
   const selectedAudioTrackId = usePlayerContext((ctx) => ctx.state.selectedAudioTrackId);
+  const selectedSubtitleTrackId = usePlayerContext((ctx) => ctx.state.selectedSubtitleTrackId);
   const playbackOptions = currentMedia?.defaultFile?.playbackOptions ?? null;
   const recommendedAudioTrack =
     playbackOptions?.audioTracks.find((track) => track.recommended) ?? playbackOptions?.audioTracks[0] ?? null;
@@ -111,8 +113,15 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
     playbackOptions?.audioTracks.find((track) => track.streamIndex === selectedAudioTrackId) ?? recommendedAudioTrack;
   const activeAudioRendition = activeAudioTrack?.renditions[0] ?? null;
   const activeVideoRendition = pickPlayableVideoRendition(playbackOptions?.videoRenditions);
-  const subtitleTracks = currentMedia?.defaultFile?.subtitles ?? [];
+  const subtitleTracks = playbackOptions?.subtitleTracks ?? [];
   const autoselectSubtitleTrack = subtitleTracks.find((track) => track.autoselect) ?? null;
+
+  useEffect(() => {
+    setVideoElement(videoRef.current);
+    return () => {
+      setVideoElement(null);
+    };
+  }, [setVideoElement]);
 
   useEffect(() => {
     if (!playbackOptions?.audioTracks?.length) return;
@@ -257,21 +266,31 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       }
     };
 
-    const setAudioTrack = (trackId: number) => {
+    const setAudioTrack = (trackId: number | null) => {
       setPlayerState({ selectedAudioTrackId: trackId });
     };
 
     const setSubtitleTrack = async (trackId: string | null, options?: { manual?: boolean }) => {
       const fileId = currentMedia?.defaultFile?.id;
-      if (!fileId) return;
-
       setPlayerState({ selectedSubtitleTrackId: trackId });
+
+      if (!fileId) {
+        subtitleRequestIdRef.current += 1;
+        setActiveSubtitle(null);
+        setPlayerState({
+          activeSubtitleTrackId: null,
+          activeSubtitleRenditionId: null,
+          pendingSubtitleTrackId: null,
+        });
+        return;
+      }
+
       const resolvedTrack =
         trackId === ""
           ? null
           : trackId === null
             ? autoselectSubtitleTrack
-            : subtitleTracks.find((track) => track.id === trackId) ?? null;
+            : (subtitleTracks.find((track) => track.id === trackId) ?? null);
       if (!resolvedTrack) {
         subtitleRequestIdRef.current += 1;
         setActiveSubtitle(null);
@@ -285,6 +304,12 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
 
       const rendition = resolvedTrack.renditions[0] ?? null;
       if (!rendition) {
+        setActiveSubtitle(null);
+        setPlayerState({
+          activeSubtitleTrackId: null,
+          activeSubtitleRenditionId: null,
+          pendingSubtitleTrackId: null,
+        });
         return;
       }
 
@@ -467,8 +492,8 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
         playbackOptions?.audioTracks.map((track) => ({
           id: track.streamIndex,
           label: track.displayName,
+          language: track.language ?? null,
         })) ?? [],
-      selectedAudioTrackId: activeAudioTrack?.streamIndex ?? null,
       subtitleTrackOptions:
         subtitleTracks
           .map((track) => {
@@ -487,18 +512,45 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
             };
           })
           .filter((track): track is NonNullable<typeof track> => track != null) ?? [],
+    });
+  }, [playbackOptions?.audioTracks, subtitleTracks]);
+
+  useEffect(() => {
+    subtitleRequestIdRef.current += 1;
+    setActiveSubtitle(null);
+    setPlayerState({
+      selectedAudioTrackId: null,
       selectedSubtitleTrackId: null,
       activeSubtitleTrackId: null,
       activeSubtitleRenditionId: null,
       pendingSubtitleTrackId: null,
     });
-    setActiveSubtitle(null);
-  }, [activeAudioTrack?.streamIndex, playbackOptions?.audioTracks, subtitleTracks]);
+  }, [currentFileId]);
 
   useEffect(() => {
-    const selectedSubtitleTrackId = playerContext.getState().state.selectedSubtitleTrackId;
-    void playerContext.getState().actions.setSubtitleTrack(selectedSubtitleTrackId, { manual: false });
-  }, [subtitleTracks]);
+    if (selectedAudioTrackId == null) return;
+    const hasSelectedAudioTrack = playbackOptions?.audioTracks.some(
+      (track) => track.streamIndex === selectedAudioTrackId,
+    );
+    if (!hasSelectedAudioTrack) {
+      setPlayerState({ selectedAudioTrackId: null });
+    }
+  }, [playbackOptions?.audioTracks, selectedAudioTrackId]);
+
+  useEffect(() => {
+    if (selectedSubtitleTrackId == null || selectedSubtitleTrackId === "") return;
+    const hasSelectedSubtitleTrack = playbackOptions?.subtitleTracks.some(
+      (track) => track.id === selectedSubtitleTrackId,
+    );
+    if (!hasSelectedSubtitleTrack) {
+      setPlayerState({ selectedSubtitleTrackId: null });
+    }
+  }, [playbackOptions?.subtitleTracks, selectedSubtitleTrackId]);
+
+  useEffect(() => {
+    const currentSelectedSubtitleTrackId = playerContext.getState().state.selectedSubtitleTrackId;
+    void playerContext.getState().actions.setSubtitleTrack(currentSelectedSubtitleTrackId, { manual: false });
+  }, [currentFileId, subtitleTracks]);
 
   useEffect(() => {
     if (!currentMedia?.defaultFile) return;
@@ -786,14 +838,6 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
         });
     };
 
-    const updateBufferedRanges = () => {
-      const ranges: Array<{ start: number; end: number }> = [];
-      for (let i = 0; i < video.buffered.length; i++) {
-        ranges.push({ start: video.buffered.start(i), end: video.buffered.end(i) });
-      }
-      setPlayerState({ bufferedRanges: ranges });
-    };
-
     const updatePlaybackState = () => {
       setPlayerState({
         playing: !video.paused,
@@ -803,13 +847,10 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       });
       setPlayerVolume(video.volume);
       setPlayerMuted(video.muted);
-      updateBufferedRanges();
       syncPlayerSnapshot();
     };
 
     const handleLoadedMetadata = () => {
-      if (video.videoWidth <= 0 || video.videoHeight <= 0) return;
-      setPlayerState({ videoAspectRatio: video.videoWidth / video.videoHeight });
       updatePlaybackState();
     };
 
@@ -822,11 +863,9 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       setPlayerState({
         currentTime: 0,
         duration: 0,
-        bufferedRanges: [],
         ended: false,
         upNextDismissed: false,
         upNextCountdownCancelled: false,
-        isUpNextActive: false,
       });
       heartbeatRef.current?.();
     };
@@ -919,15 +958,8 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
           label={activeSubtitle.label}
           srcLang={activeSubtitle.language ?? undefined}
           kind="subtitles"
-          default
         />
       ) : null}
     </video>
   );
-};
-
-export const getTimelinePreviewSheets = (
-  currentMedia: CurrentMedia | null,
-): FragmentType<typeof PlayerTimelinePreviewSheetFragment>[] => {
-  return Array.isArray(currentMedia?.defaultFile?.timelinePreview) ? currentMedia.defaultFile.timelinePreview : [];
 };

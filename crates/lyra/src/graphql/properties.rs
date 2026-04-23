@@ -96,6 +96,7 @@ pub struct TimelinePreviewSheet {
 pub struct PlaybackOptions {
     pub video_renditions: Vec<VideoRenditionOption>,
     pub audio_tracks: Vec<AudioTrackOption>,
+    pub subtitle_tracks: Vec<SubtitleTrack>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]

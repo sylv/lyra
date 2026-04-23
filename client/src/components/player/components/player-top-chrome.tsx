@@ -1,22 +1,22 @@
-import { ChevronDown, LoaderCircle, UserX2, Users, XIcon } from "lucide-react";
-import type { FC } from "react";
+import { LoaderCircle, UserX2, Users, XIcon } from "lucide-react";
+import { useMemo, type FC } from "react";
 import { useNavigate } from "react-router";
 import { useMutation } from "urql";
 import { unmask } from "../../../@generated/gql";
 import { type ItemPlaybackQuery, WatchSessionActionKind } from "../../../@generated/gql/graphql";
-import { cn } from "../../../lib/utils";
-import { clearPlayerMedia, setPlayerControls, togglePlayerFullscreen, usePlayerContext } from "../player-context";
-import { usePlayerRefsContext } from "../player-refs-context";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../../ui/dropdown-menu";
-import { PlayerButton } from "./player-button";
 import { formatReleaseYear } from "../../../lib/format-release-year";
-import { WatchSessionAction, WatchSessionBeaconFragment } from "../player-queries";
-import { applyWatchSessionBeacon } from "../watch-session";
 import { getPathForNode } from "../../../lib/getPathForMedia";
+import { cn } from "../../../lib/utils";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../../ui/dropdown-menu";
+import { clearPlayerMedia, setPlayerControls, togglePlayerFullscreen, usePlayerContext } from "../player-context";
+import { WatchSessionAction, WatchSessionBeaconFragment } from "../player-queries";
+import { usePlayerRefsContext } from "../player-refs-context";
+import { applyWatchSessionBeacon } from "../watch-session";
+import { PlayerButton } from "./player-button";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 
-export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
+export const PlayerTopChrome: FC<{ media: CurrentMedia | null }> = ({ media }) => {
   const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
   const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
   const isWatchSessionMenuOpen = usePlayerContext((ctx) => ctx.controls.isWatchSessionMenuOpen);
@@ -24,38 +24,69 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
   const { containerRef } = usePlayerRefsContext();
   const navigate = useNavigate();
   const [{ fetching: removingPlayer }, watchSessionAction] = useMutation(WatchSessionAction);
+  const shareUrl = watchSession.sessionId
+    ? `${window.location.origin}/?watchSession=${encodeURIComponent(watchSession.sessionId)}`
+    : null;
+
+  if (!media) {
+    return (
+      <div
+        className={cn(
+          "pointer-events-none flex items-center justify-end transition-opacity duration-300",
+          showControls ? "opacity-100" : "opacity-0",
+          isFullscreen ? "p-6" : "p-3",
+        )}
+      >
+        <div className="pointer-events-auto flex items-center gap-3 text-white">
+          <PlayerButton
+            aria-label="Close player"
+            onClick={(event) => {
+              event.stopPropagation();
+              clearPlayerMedia();
+            }}
+          >
+            <XIcon className={isFullscreen ? "size-6" : "size-5"} />
+          </PlayerButton>
+        </div>
+      </div>
+    );
+  }
+
   const detailsPath = media.libraryId ? getPathForNode(media) : null;
   const hasEpisodeMetadata =
     !!media.root?.properties.displayName &&
     media.properties.seasonNumber != null &&
     media.properties.episodeNumber != null;
-  const shareUrl = watchSession.sessionId
-    ? `${window.location.origin}/?watchSession=${encodeURIComponent(watchSession.sessionId)}`
-    : null;
+
+  const { title, description } = useMemo(() => {
+    if (hasEpisodeMetadata) {
+      return {
+        title: media.properties.displayName,
+        description: `S${media.properties.seasonNumber}E${media.properties.episodeNumber} ${media.properties.displayName}`,
+      };
+    }
+
+    return {
+      title: media.properties.displayName,
+      description: formatReleaseYear(media.properties.firstAired, media.properties.lastAired),
+    };
+  }, [media, hasEpisodeMetadata]);
 
   return (
     <div
       className={cn(
         "pointer-events-none flex items-center justify-between transition-opacity duration-300",
         showControls ? "opacity-100" : "opacity-0",
-        isFullscreen ? "p-6" : "p-3",
+        isFullscreen ? "p-4" : "p-3",
       )}
     >
-      <div className="pointer-events-auto flex items-center gap-3 text-white">
-        {isFullscreen && (
-          <PlayerButton
-            aria-label="Go back"
-            onClick={(event) => {
-              event.stopPropagation();
-              togglePlayerFullscreen(false);
-            }}
-          >
-            <ChevronDown className="size-6" />
-          </PlayerButton>
-        )}
+      <div className="pointer-events-auto flex items-center gap-3 text-white transition">
         <button
           type="button"
-          className={cn("rounded-sm text-left transition-colors", detailsPath ? "cursor-pointer" : "cursor-default")}
+          className={cn(
+            "rounded-sm text-left transition-colors group px-3 py-2",
+            detailsPath ? "cursor-pointer" : "cursor-default",
+          )}
           onClick={(event) => {
             event.stopPropagation();
             if (!detailsPath) return;
@@ -63,25 +94,8 @@ export const PlayerTopChrome: FC<{ media: CurrentMedia }> = ({ media }) => {
             navigate(detailsPath);
           }}
         >
-          {hasEpisodeMetadata ? (
-            <>
-              <h2 className={cn("font-semibold", isFullscreen ? "text-xl" : "text-sm")}>
-                {media.root?.properties.displayName}
-              </h2>
-              <p className={cn("text-gray-300", isFullscreen ? "text-sm" : "text-xs")}>
-                S{media.properties.seasonNumber}E{media.properties.episodeNumber} {media.properties.displayName}
-              </p>
-            </>
-          ) : (
-            <>
-              <h2 className={cn("font-semibold", isFullscreen ? "text-xl" : "text-sm")}>
-                {media.properties.displayName}
-              </h2>
-              <p className={cn("text-gray-300", isFullscreen ? "text-sm" : "text-xs")}>
-                {formatReleaseYear(media.properties.firstAired, media.properties.lastAired)}
-              </p>
-            </>
-          )}
+          <h2 className={cn("font-semibold group-hover:underline", isFullscreen ? "text-xl" : "text-sm")}>{title}</h2>
+          <p className={cn("text-gray-300", isFullscreen ? "text-sm" : "text-xs")}>{description}</p>
         </button>
       </div>
       <div className="pointer-events-auto flex items-center gap-3 text-white">

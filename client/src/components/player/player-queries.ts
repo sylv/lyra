@@ -31,7 +31,7 @@ export const ItemPlaybackQuery = graphql(`
         probe {
           runtimeMinutes
         }
-        playbackOptions {
+        playbackOptions(languageHints: $languageHints) {
           videoRenditions {
             renditionId
             displayName
@@ -54,20 +54,20 @@ export const ItemPlaybackQuery = graphql(`
               onDemand
             }
           }
-        }
-        subtitles(languageHints: $languageHints) {
-          id
-          streamIndex
-          displayName
-          languageBcp47
-          flags
-          autoselect
-          renditions {
+          subtitleTracks {
             id
-            codecName
-            type
-            displayInfo
-            onDemand
+            streamIndex
+            displayName
+            languageBcp47
+            flags
+            autoselect
+            renditions {
+              id
+              codecName
+              type
+              displayInfo
+              onDemand
+            }
           }
         }
         segments {
