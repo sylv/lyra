@@ -1,7 +1,7 @@
 import { graphql } from "../../@generated/gql";
 
 export const ItemPlaybackQuery = graphql(`
-  query ItemPlayback($itemId: String!) {
+  query ItemPlayback($itemId: String!, $languageHints: [String!]) {
     node(nodeId: $itemId) {
       id
       libraryId
@@ -54,34 +54,22 @@ export const ItemPlaybackQuery = graphql(`
               onDemand
             }
           }
-          subtitleTracks {
-            subtitleId
-            streamIndex
-            displayName
-            language
-            recommended
-            renditions {
-              renditionId
-              codecName
-              onDemand
-            }
-          }
         }
-        subtitleTracks {
+        subtitles(languageHints: $languageHints) {
           id
           streamIndex
-          kind
-          source
-          label
-          language
-          dispositions
-          derivedFromSubtitleId
-          asset {
+          displayName
+          languageBcp47
+          flags
+          autoselect
+          renditions {
             id
-            signedUrl
+            codecName
+            type
+            displayInfo
+            onDemand
           }
         }
-        recommendedSubtitleTrackId
         segments {
           kind
           startMs
@@ -148,13 +136,17 @@ export const SetPreferredAudio = graphql(`
   }
 `);
 
-export const SetPreferredSubtitle = graphql(`
-  mutation SetPreferredSubtitle($language: String, $disposition: TrackDispositionPreference) {
-    setPreferredSubtitle(language: $language, disposition: $disposition) {
-      id
-      preferredSubtitleLanguage
-      preferredSubtitleDisposition
+export const MintSubtitleUrl = graphql(`
+  mutation MintSubtitleUrl($input: SubtitleUrlInput!) {
+    mintSubtitleUrl(input: $input) {
+      url
     }
+  }
+`);
+
+export const DisabledSubtitlesHint = graphql(`
+  mutation DisabledSubtitlesHint($input: DisabledSubtitlesHintInput!) {
+    disabledSubtitlesHint(input: $input)
   }
 `);
 

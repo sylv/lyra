@@ -35,10 +35,11 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
   const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
   const hoveredCard = usePlayerContext((ctx) => ctx.controls.hoveredCard);
   const miniPlayerAspectRatio = usePlayerContext((ctx) => Math.max(ctx.state.videoAspectRatio, 16 / 9));
+  const languageHints = typeof navigator === "undefined" ? [] : navigator.languages;
 
   const [{ data, fetching: isItemLoading, error: itemLoadError }] = useQuery({
     query: ItemPlaybackQuery,
-    variables: { itemId },
+    variables: { itemId, languageHints },
   });
   const currentMedia = data?.node ?? null;
   const isResolvingRequestedMedia = isItemLoading && currentMedia?.id !== itemId;
@@ -61,7 +62,7 @@ const PlayerContent: FC<{ itemId: string; autoplay: boolean; shouldPromptResume:
     showControlsTemporarily,
   });
   const { handlePlayerKeyDown } = useKeyboardShortcuts({ actions, handleContainerClick });
-  const { onAudioTrackChange, onSubtitleTrackChange } = useTrackSelection(currentMedia, itemId);
+  const { onAudioTrackChange, onSubtitleTrackChange } = useTrackSelection(currentMedia, itemId, languageHints);
   const { switchItem } = actions;
 
   const onPreviousItem = () => {

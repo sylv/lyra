@@ -68,6 +68,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   const selectedAudioTrackId = usePlayerContext((ctx) => ctx.state.selectedAudioTrackId);
   const subtitleTrackOptions = usePlayerContext((ctx) => ctx.state.subtitleTrackOptions);
   const selectedSubtitleTrackId = usePlayerContext((ctx) => ctx.state.selectedSubtitleTrackId);
+  const activeSubtitleTrackId = usePlayerContext((ctx) => ctx.state.activeSubtitleTrackId);
+  const pendingSubtitleTrackId = usePlayerContext((ctx) => ctx.state.pendingSubtitleTrackId);
   const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
   const isSettingsMenuOpen = usePlayerContext((ctx) => ctx.controls.isSettingsMenuOpen);
   const autoplayNext = usePlayerContext((ctx) => ctx.preferences.autoplayNext);
@@ -230,11 +232,17 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
                         {subtitleTrackOptions.map((track) => (
                           <DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" key={track.id} value={track.id}>
                             <div className="flex min-w-0 items-start gap-2">
-                              <span className="mt-0.5 text-zinc-400">{subtitleSourceIcon(track.source)}</span>
+                              <span className="mt-0.5 text-zinc-400">
+                                {pendingSubtitleTrackId === track.id ? (
+                                  <span className="inline-block size-4 animate-spin rounded-full border border-zinc-500 border-t-zinc-100" />
+                                ) : (
+                                  subtitleSourceIcon(track.renditionType)
+                                )}
+                              </span>
                               <span className="min-w-0">
                                 <span className="block truncate">{track.label}</span>
-                                {track.tags.length > 0 ? (
-                                  <span className="block text-xs text-zinc-400">{track.tags.join(", ")}</span>
+                                {activeSubtitleTrackId === track.id ? (
+                                  <span className="block text-xs text-zinc-400">{track.displayInfo}</span>
                                 ) : null}
                               </span>
                             </div>
@@ -271,9 +279,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   );
 };
 
-const subtitleSourceIcon = (source: "EXTRACTED" | "CONVERTED" | "OCR" | "GENERATED") => {
+const subtitleSourceIcon = (source: "DIRECT" | "CONVERTED" | "OCR" | "GENERATED") => {
   switch (source) {
-    case "EXTRACTED":
+    case "DIRECT":
       return <CaptionsIcon className="size-4" />;
     case "CONVERTED":
       return <FileTextIcon className="size-4" />;

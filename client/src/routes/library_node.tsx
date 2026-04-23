@@ -105,10 +105,9 @@ const Query = graphql(`
           videoCodec
           videoBitrate
         }
-        subtitleTracks {
-          label
-          language
-          kind
+        subtitles {
+          displayName
+          languageBcp47
         }
       }
       recommendedNodes {
@@ -149,7 +148,7 @@ function formatBitrate(bitsPerSecond?: number | null): string | null {
   return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbps`;
 }
 
-type SubtitleEntry = { label: string; language?: string | null; kind: string };
+type SubtitleEntry = { displayName: string; languageBcp47?: string | null };
 
 function formatSubtitles(tracks: SubtitleEntry[]): string | null {
   if (tracks.length === 0) return null;
@@ -157,10 +156,10 @@ function formatSubtitles(tracks: SubtitleEntry[]): string | null {
   const seen = new Set<string>();
   const labels: string[] = [];
   for (const t of tracks) {
-    const key = t.label;
+    const key = t.displayName;
     if (!seen.has(key)) {
       seen.add(key);
-      labels.push(t.label);
+      labels.push(t.displayName);
     }
   }
   return labels.join(", ");
@@ -175,7 +174,7 @@ type NodeDetailsSectionProps = {
         videoCodec?: string | null;
         videoBitrate?: number | null;
       } | null;
-      subtitleTracks: SubtitleEntry[];
+      subtitles: SubtitleEntry[];
     } | null;
   };
 };
@@ -185,7 +184,7 @@ const NodeDetailsSection = ({ node }: NodeDetailsSectionProps) => {
   const resolution = formatResolution(probe?.width, probe?.height);
   const codec = formatVideoCodec(probe?.videoCodec);
   const bitrate = formatBitrate(probe?.videoBitrate);
-  const subtitleStr = node.defaultFile ? formatSubtitles(node.defaultFile.subtitleTracks) : null;
+  const subtitleStr = node.defaultFile ? formatSubtitles(node.defaultFile.subtitles) : null;
 
   if (!resolution && !codec && !bitrate && !subtitleStr) return null;
 
@@ -279,10 +278,12 @@ export function LibraryNodeRoute() {
 
   const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
   const [selectedSeasonNumbers, setSelectedSeasonNumbers] = useState<number[]>([1]);
-  const node = data.node;
+  const node = data?.node;
 
-  useDynamicBackground(node.kind === NodeKind.Episode ? node.properties.thumbnailImage : node.properties.posterImage);
-  useTitle(node.root?.properties.displayName ?? node.properties.displayName);
+  useTitle(node?.root?.properties.displayName ?? node?.properties.displayName);
+  useDynamicBackground(
+    (node?.kind === NodeKind.Episode ? node.properties.thumbnailImage : node?.properties.posterImage) || null,
+  );
 
   const playText = useMemo(() => {
     if (!node?.nextPlayable) return "Play";
@@ -296,7 +297,9 @@ export function LibraryNodeRoute() {
     else parts.unshift("Play");
 
     return parts.join(" ");
-  }, [node.nextPlayable]);
+  }, [node?.nextPlayable]);
+
+  if (!node) return null;
 
   const allSeasonNumbers = Array.from({ length: node.seasonCount }, (_, i) => i + 1);
   const showAllSeasonsButton = node.seasonCount > 1;

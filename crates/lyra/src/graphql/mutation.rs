@@ -4,17 +4,23 @@ use crate::auth::{
     ensure_library_access, find_pending_invite_user, get_set_cookie_headers_for_session,
 };
 use crate::content_update::CONTENT_UPDATE;
+use crate::entities::users::{SubtitleMode, SubtitleVariantPreference};
 use crate::entities::collections::{CollectionResolverKind, CollectionVisibility};
 use crate::entities::users::UserPerms;
 use crate::entities::{
     collection_items, collections, file_subtitles, files, libraries, library_users, node_files,
     nodes, user_sessions, users, watch_progress,
 };
+use crate::graphql::types::file::parse_logical_subtitle_track_id;
 use crate::graphql::properties::TrackDispositionPreference;
 use crate::graphql::query::{NodeFilter, collection_editable_by_user, is_watchlist_collection};
 use crate::hls::{self, MintPlaybackUrlInput, PlaybackRegistry};
 use crate::ids::{self, new_invite_code};
 use crate::import::watch_state_import;
+use crate::jobs;
+use crate::subtitles::job_extract::FileSubtitleExtractJob;
+use crate::subtitles::job_process::FileSubtitleProcessJob;
+use crate::subtitles::language::{SubtitleTrackVariant, move_language_to_front};
 use crate::watch_session::{
     WatchSessionActionInput, WatchSessionBeacon, WatchSessionHeartbeatInput, WatchSessionRegistry,
 };
@@ -32,6 +38,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     PaginatorTrait, QueryFilter, QuerySelect, TransactionTrait,
 };
+use std::time::Duration;
 
 pub struct Mutation;
 
@@ -205,6 +212,75 @@ where
     Ok(())
 }
 
+const ON_DEMAND_SUBTITLE_JOB_TIMEOUT: Duration = Duration::from_secs(120);
+
+fn subtitle_track_variant_for_stream(stream: &lyra_probe::Stream) -> SubtitleTrackVariant {
+    if stream.is_commentary() {
+        SubtitleTrackVariant::Commentary
+    } else if stream.is_forced() {
+        SubtitleTrackVariant::Forced
+    } else if stream.is_hearing_impaired() {
+        SubtitleTrackVariant::Sdh
+    } else {
+        SubtitleTrackVariant::Normal
+    }
+}
+
+fn subtitle_variant_preference_for_track_variant(
+    variant: SubtitleTrackVariant,
+) -> SubtitleVariantPreference {
+    match variant {
+        SubtitleTrackVariant::Forced => SubtitleVariantPreference::Forced,
+        SubtitleTrackVariant::Normal => SubtitleVariantPreference::Normal,
+        SubtitleTrackVariant::Sdh => SubtitleVariantPreference::Sdh,
+        SubtitleTrackVariant::Commentary => SubtitleVariantPreference::Commentary,
+    }
+}
+
+async fn update_subtitle_preferences_for_selection(
+    pool: &DatabaseConnection,
+    user_id: &str,
+    language: Option<&str>,
+    variant: SubtitleTrackVariant,
+) -> Result<(), async_graphql::Error> {
+    let user = users::Entity::find_by_id(user_id.to_string())
+        .one(pool)
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+    let preferred_subtitle_languages = user.preferred_subtitle_languages.clone();
+    let mut active: users::ActiveModel = user.into();
+    active.subtitle_mode = Set(match variant {
+        SubtitleTrackVariant::Forced => SubtitleMode::ForcedOnly,
+        _ => SubtitleMode::On,
+    });
+    active.subtitle_variant_preference = Set(subtitle_variant_preference_for_track_variant(variant));
+    active.preferred_subtitle_languages =
+        Set(move_language_to_front(&preferred_subtitle_languages, language));
+    active.update(pool).await?;
+    Ok(())
+}
+
+async fn update_subtitle_preferences_for_disable(
+    pool: &DatabaseConnection,
+    user_id: &str,
+    variant: SubtitleTrackVariant,
+) -> Result<(), async_graphql::Error> {
+    let user = users::Entity::find_by_id(user_id.to_string())
+        .one(pool)
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+    let current_mode = user.subtitle_mode;
+    let mut active: users::ActiveModel = user.into();
+    active.subtitle_mode = Set(match (current_mode, variant) {
+        (SubtitleMode::ForcedOnly, _) => SubtitleMode::Off,
+        (SubtitleMode::On, SubtitleTrackVariant::Forced) => SubtitleMode::Off,
+        (SubtitleMode::On, _) => SubtitleMode::ForcedOnly,
+        (SubtitleMode::Off, _) => SubtitleMode::Off,
+    });
+    active.update(pool).await?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, InputObject)]
 pub struct ImportWatchStatesInput {
     pub dry_run: bool,
@@ -282,13 +358,21 @@ pub struct PlaybackUrlPayload {
 #[derive(Debug, Clone, InputObject)]
 pub struct SubtitleUrlInput {
     pub file_id: String,
-    pub subtitle_id: String,
+    pub track_id: String,
     pub rendition_id: String,
+    pub manual: Option<bool>,
 }
 
 #[derive(Debug, Clone, SimpleObject)]
 pub struct SubtitleUrlPayload {
     pub url: String,
+}
+
+#[derive(Debug, Clone, InputObject)]
+pub struct DisabledSubtitlesHintInput {
+    pub file_id: String,
+    pub track_id: String,
+    pub rendition_id: String,
 }
 
 impl From<watch_state_import::ImportWatchStateConflictData> for ImportWatchStateConflict {
@@ -1097,34 +1181,6 @@ impl Mutation {
         Ok(updated)
     }
 
-    pub async fn set_preferred_subtitle(
-        &self,
-        ctx: &Context<'_>,
-        language: Option<String>,
-        disposition: Option<TrackDispositionPreference>,
-    ) -> Result<users::Model, async_graphql::Error> {
-        let pool = ctx.data::<DatabaseConnection>()?;
-        let auth = ctx.data::<RequestAuth>()?;
-        let user = auth.get_user_or_err()?;
-
-        let existing = users::Entity::find_by_id(user.id.clone())
-            .one(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
-
-        let mut active = existing.into_active_model();
-        active.preferred_subtitle_language = Set(language);
-        active.preferred_subtitle_disposition = Set(disposition.map(|d| d.as_str().to_string()));
-
-        let updated = active
-            .update(pool)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
-
-        Ok(updated)
-    }
-
     pub async fn delete_library(
         &self,
         ctx: &Context<'_>,
@@ -1225,29 +1281,177 @@ impl Mutation {
     ) -> Result<SubtitleUrlPayload, async_graphql::Error> {
         let pool = ctx.data::<DatabaseConnection>()?;
         let auth = ctx.data::<RequestAuth>()?;
-
-        if input.rendition_id != "webvtt" {
-            return Err(async_graphql::Error::new("Unsupported subtitle rendition"));
-        }
-
         let file = hls::ensure_file_access(pool, auth, &input.file_id).await?;
-        let subtitle = file_subtitles::Entity::find_by_id(input.subtitle_id)
-            .one(pool)
-            .await
-            .map_err(|error| async_graphql::Error::new(error.to_string()))?
-            .ok_or_else(|| async_graphql::Error::new("Subtitle not found"))?;
-
-        if subtitle.file_id != file.id {
+        let (track_file_id, stream_index) = parse_logical_subtitle_track_id(&input.track_id)
+            .ok_or_else(|| async_graphql::Error::new("Invalid subtitle track"))?;
+        if track_file_id != file.id {
             return Err(async_graphql::Error::new("Subtitle not found"));
         }
-        if subtitle.kind != file_subtitles::SubtitleKind::Vtt {
-            return Err(async_graphql::Error::new(
-                "Subtitle rendition not available",
-            ));
+
+        let (probe, _) = hls::load_probe_data_for_playback_options(pool, &file.id)
+            .await
+            .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+        let stream = probe
+            .stream(stream_index)
+            .ok_or_else(|| async_graphql::Error::new("Subtitle not found"))?;
+        if stream.kind() != lyra_probe::StreamKind::Subtitle {
+            return Err(async_graphql::Error::new("Subtitle not found"));
+        }
+
+        let mut file = file;
+        let mut source_row = file_subtitles::Entity::find()
+            .filter(file_subtitles::Column::FileId.eq(file.id.clone()))
+            .filter(file_subtitles::Column::StreamIndex.eq(i64::from(stream_index)))
+            .filter(file_subtitles::Column::DerivedFromSubtitleId.is_null())
+            .one(pool)
+            .await
+            .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+        if source_row.is_none() {
+            file = files::Entity::find_by_id(file.id.clone())
+                .one(pool)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("File not found"))?;
+            jobs::try_run_job(
+                pool,
+                &FileSubtitleExtractJob,
+                file.clone(),
+                ON_DEMAND_SUBTITLE_JOB_TIMEOUT,
+            )
+            .await
+            .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+            source_row = file_subtitles::Entity::find()
+                .filter(file_subtitles::Column::FileId.eq(file.id.clone()))
+                .filter(file_subtitles::Column::StreamIndex.eq(i64::from(stream_index)))
+                .filter(file_subtitles::Column::DerivedFromSubtitleId.is_null())
+                .one(pool)
+                .await
+                .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+        }
+        let source_row = source_row.ok_or_else(|| async_graphql::Error::new("Subtitle not found"))?;
+
+        let subtitle = match input.rendition_id.as_str() {
+            "direct" => {
+                if source_row.kind != file_subtitles::SubtitleKind::Vtt {
+                    return Err(async_graphql::Error::new("Subtitle rendition not available"));
+                }
+                source_row
+            }
+            "converted" => {
+                let mut derived = file_subtitles::Entity::find()
+                    .filter(file_subtitles::Column::DerivedFromSubtitleId.eq(source_row.id.clone()))
+                    .filter(file_subtitles::Column::Source.eq(file_subtitles::SubtitleSource::Converted))
+                    .filter(file_subtitles::Column::Kind.eq(file_subtitles::SubtitleKind::Vtt))
+                    .one(pool)
+                    .await
+                    .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+                if derived.is_none() {
+                    jobs::try_run_job(
+                        pool,
+                        &FileSubtitleProcessJob,
+                        source_row.clone(),
+                        ON_DEMAND_SUBTITLE_JOB_TIMEOUT,
+                    )
+                    .await
+                    .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+                    derived = file_subtitles::Entity::find()
+                        .filter(file_subtitles::Column::DerivedFromSubtitleId.eq(source_row.id.clone()))
+                        .filter(file_subtitles::Column::Source.eq(file_subtitles::SubtitleSource::Converted))
+                        .filter(file_subtitles::Column::Kind.eq(file_subtitles::SubtitleKind::Vtt))
+                        .one(pool)
+                        .await
+                        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+                }
+                derived.ok_or_else(|| async_graphql::Error::new("Subtitle rendition not available"))?
+            }
+            "ocr" => {
+                let mut derived = file_subtitles::Entity::find()
+                    .filter(file_subtitles::Column::DerivedFromSubtitleId.eq(source_row.id.clone()))
+                    .filter(file_subtitles::Column::Source.eq(file_subtitles::SubtitleSource::Ocr))
+                    .filter(file_subtitles::Column::Kind.eq(file_subtitles::SubtitleKind::Vtt))
+                    .one(pool)
+                    .await
+                    .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+                if derived.is_none() {
+                    jobs::try_run_job(
+                        pool,
+                        &FileSubtitleProcessJob,
+                        source_row.clone(),
+                        ON_DEMAND_SUBTITLE_JOB_TIMEOUT,
+                    )
+                    .await
+                    .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+                    derived = file_subtitles::Entity::find()
+                        .filter(file_subtitles::Column::DerivedFromSubtitleId.eq(source_row.id.clone()))
+                        .filter(file_subtitles::Column::Source.eq(file_subtitles::SubtitleSource::Ocr))
+                        .filter(file_subtitles::Column::Kind.eq(file_subtitles::SubtitleKind::Vtt))
+                        .one(pool)
+                        .await
+                        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+                }
+                derived.ok_or_else(|| async_graphql::Error::new("Subtitle rendition not available"))?
+            }
+            "generated" => file_subtitles::Entity::find()
+                .filter(file_subtitles::Column::FileId.eq(file.id.clone()))
+                .filter(file_subtitles::Column::StreamIndex.eq(i64::from(stream_index)))
+                .filter(file_subtitles::Column::Source.eq(file_subtitles::SubtitleSource::Generated))
+                .filter(file_subtitles::Column::Kind.eq(file_subtitles::SubtitleKind::Vtt))
+                .one(pool)
+                .await
+                .map_err(|error| async_graphql::Error::new(error.to_string()))?
+                .ok_or_else(|| async_graphql::Error::new("Subtitle rendition not available"))?,
+            _ => return Err(async_graphql::Error::new("Unsupported subtitle rendition")),
+        };
+
+        if input.manual.unwrap_or(false) {
+            if let Some(user) = auth.get_user() {
+                update_subtitle_preferences_for_selection(
+                    pool,
+                    &user.id,
+                    stream.language_bcp47.as_deref(),
+                    subtitle_track_variant_for_stream(stream),
+                )
+                .await?;
+            }
         }
 
         Ok(SubtitleUrlPayload {
             url: sign_asset_url(&subtitle.asset_id),
         })
+    }
+
+    #[graphql(guard = AuthenticatedGuard::new())]
+    pub async fn disabled_subtitles_hint(
+        &self,
+        ctx: &Context<'_>,
+        input: DisabledSubtitlesHintInput,
+    ) -> Result<bool, async_graphql::Error> {
+        let pool = ctx.data::<DatabaseConnection>()?;
+        let auth = ctx.data::<RequestAuth>()?;
+        let user = auth.get_user_or_err()?;
+        let file = hls::ensure_file_access(pool, auth, &input.file_id).await?;
+        let (track_file_id, stream_index) = parse_logical_subtitle_track_id(&input.track_id)
+            .ok_or_else(|| async_graphql::Error::new("Invalid subtitle track"))?;
+        if track_file_id != file.id {
+            return Err(async_graphql::Error::new("Subtitle not found"));
+        }
+
+        let (probe, _) = hls::load_probe_data_for_playback_options(pool, &file.id)
+            .await
+            .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+        let stream = probe
+            .stream(stream_index)
+            .ok_or_else(|| async_graphql::Error::new("Subtitle not found"))?;
+        if stream.kind() != lyra_probe::StreamKind::Subtitle {
+            return Err(async_graphql::Error::new("Subtitle not found"));
+        }
+
+        let _ = input.rendition_id;
+        update_subtitle_preferences_for_disable(
+            pool,
+            &user.id,
+            subtitle_track_variant_for_stream(stream),
+        )
+        .await?;
+        Ok(true)
     }
 }

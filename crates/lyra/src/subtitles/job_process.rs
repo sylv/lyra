@@ -9,7 +9,7 @@ use crate::{
     },
     ids,
     subtitles::{
-        files::{convert_bitmap_subtitle_to_vtt, convert_text_subtitle_to_vtt},
+        files::{convert_bitmap_subtitle_to_vtt, convert_text_subtitle_to_vtt_with_cancellation},
         mime_type_for_subtitle_kind,
     },
 };
@@ -54,7 +54,7 @@ impl Job for FileSubtitleProcessJob {
         &self,
         db: &DatabaseConnection,
         row: Self::Model,
-        _lease: &JobLease,
+        lease: &JobLease,
     ) -> anyhow::Result<JobOutcome> {
         let asset = assets_entity::Entity::find_by_id(row.asset_id.clone())
             .one(db)
@@ -83,6 +83,9 @@ impl Job for FileSubtitleProcessJob {
 
         let derived_bytes = match row.kind {
             SubtitleKind::Pgs | SubtitleKind::VobSub => {
+                if lease.is_cancelled() {
+                    return Ok(JobOutcome::Cancelled);
+                }
                 let probe = file_probe::Entity::find_by_id(row.file_id.clone())
                     .one(db)
                     .await?
@@ -93,20 +96,35 @@ impl Job for FileSubtitleProcessJob {
                     &row,
                     &source_bytes,
                     &probe,
-                    &get_config().data_dir.join("subtitle-ocr-models"),
+                    &get_config().get_model_dir(),
+                    lease.get_cancellation_token(),
                 )
                 .await?
             }
             _ => {
+                if lease.is_cancelled() {
+                    return Ok(JobOutcome::Cancelled);
+                }
                 let temp_dir = tempfile::tempdir().context("failed to create subtitle temp dir")?;
                 let input_path = temp_dir
                     .path()
                     .join(format!("source.{}", extension_for_kind(row.kind)));
                 let output_path = temp_dir.path().join("converted.vtt");
                 tokio::fs::write(&input_path, &source_bytes).await?;
-                convert_text_subtitle_to_vtt(&input_path, &output_path).await?
+                convert_text_subtitle_to_vtt_with_cancellation(
+                    &input_path,
+                    &output_path,
+                    lease.get_cancellation_token(),
+                )
+                .await?
             }
         };
+        let Some(derived_bytes) = derived_bytes else {
+            return Ok(JobOutcome::Cancelled);
+        };
+        if lease.is_cancelled() {
+            return Ok(JobOutcome::Cancelled);
+        }
 
         let derived_source = match row.kind {
             SubtitleKind::Pgs | SubtitleKind::VobSub => SubtitleSource::Ocr,

@@ -6,10 +6,13 @@ type AudioTrackOption = { id: number; label: string };
 export type SubtitleTrackOption = {
   id: string;
   label: string;
-  source: "EXTRACTED" | "CONVERTED" | "OCR" | "GENERATED";
-  tags: string[];
   language: string | null;
-  signedUrl: string;
+  flags: string[];
+  autoselect: boolean;
+  renditionId: string;
+  renditionType: "DIRECT" | "CONVERTED" | "OCR" | "GENERATED";
+  displayInfo: string;
+  onDemand: boolean;
 };
 type HoveredCard = "previous" | "next" | null;
 export type PlayerWatchSessionMode = "ADVISORY" | "SYNCED" | null;
@@ -70,6 +73,9 @@ export interface PlayerState {
   selectedAudioTrackId: number | null;
   subtitleTrackOptions: SubtitleTrackOption[];
   selectedSubtitleTrackId: string | null;
+  activeSubtitleTrackId: string | null;
+  activeSubtitleRenditionId: string | null;
+  pendingSubtitleTrackId: string | null;
   ended: boolean;
   upNextDismissed: boolean;
   upNextCountdownCancelled: boolean;
@@ -95,7 +101,7 @@ export interface PlayerActions {
   toggleMute: () => void;
   setVolume: (volume: number) => void;
   setAudioTrack: (trackId: number) => void;
-  setSubtitleTrack: (trackId: string | null) => void;
+  setSubtitleTrack: (trackId: string | null, options?: { manual?: boolean }) => void;
   showControlsTemporarily: () => void;
   beginControlsInteraction: () => void;
   endControlsInteraction: () => void;
@@ -138,6 +144,9 @@ const initialState: PlayerState = {
   selectedAudioTrackId: null,
   subtitleTrackOptions: [],
   selectedSubtitleTrackId: null,
+  activeSubtitleTrackId: null,
+  activeSubtitleRenditionId: null,
+  pendingSubtitleTrackId: null,
   ended: false,
   upNextDismissed: false,
   upNextCountdownCancelled: false,

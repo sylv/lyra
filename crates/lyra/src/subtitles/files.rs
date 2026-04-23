@@ -23,9 +23,16 @@ use std::{
     collections::HashMap,
     io::Cursor,
     path::{Path, PathBuf},
+    process::{Output, Stdio},
 };
 use tar::Builder;
-use tokio::{fs, process::Command};
+use tokio::{
+    fs,
+    io::{AsyncRead, AsyncReadExt},
+    process::Command,
+    task::JoinHandle,
+};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
 pub struct SubtitleDescriptor {
@@ -52,14 +59,23 @@ pub fn subtitle_descriptor_from_stream(stream: &Stream) -> Option<SubtitleDescri
 pub async fn extract_subtitle_bytes_batch<'a, I>(
     input_video_path: &Path,
     subtitles: I,
-) -> Result<HashMap<i64, Vec<u8>>>
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<Option<HashMap<i64, Vec<u8>>>>
 where
     I: IntoIterator<Item = (&'a Stream, &'a SubtitleDescriptor)>,
 {
     let subtitles: Vec<_> = subtitles.into_iter().collect();
     if subtitles.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(Some(HashMap::new()));
     }
+    let owned_cancellation_token;
+    let cancellation_token = match cancellation_token {
+        Some(token) => token,
+        None => {
+            owned_cancellation_token = CancellationToken::new();
+            &owned_cancellation_token
+        }
+    };
 
     let temp_dir = tempfile::tempdir().context("failed to create temporary subtitle directory")?;
     let planned_outputs = subtitles
@@ -91,10 +107,12 @@ where
             .arg(output_path);
     }
 
-    let ffmpeg_output = command
-        .output()
+    let Some(ffmpeg_output) = run_command_output(&mut command, cancellation_token)
         .await
-        .context("failed to run ffmpeg for subtitle extraction")?;
+        .context("failed to run ffmpeg for subtitle extraction")?
+    else {
+        return Ok(None);
+    };
 
     if !ffmpeg_output.status.success() {
         let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
@@ -115,7 +133,7 @@ where
         extracted.insert(stream_index, bytes);
     }
 
-    Ok(extracted)
+    Ok(Some(extracted))
 }
 
 fn archive_vobsub_pair(idx_path: &Path) -> Result<Vec<u8>> {
@@ -221,30 +239,43 @@ pub async fn refresh_derived_subtitles_last_seen<C: ConnectionTrait>(
     Ok(())
 }
 
-pub async fn convert_text_subtitle_to_vtt(
+pub async fn convert_text_subtitle_to_vtt_with_cancellation(
     input_path: &Path,
     output_path: &Path,
-) -> Result<Vec<u8>> {
-    let ffmpeg_output = Command::new(get_ffmpeg_path())
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<Option<Vec<u8>>> {
+    let owned_cancellation_token;
+    let cancellation_token = match cancellation_token {
+        Some(token) => token,
+        None => {
+            owned_cancellation_token = CancellationToken::new();
+            &owned_cancellation_token
+        }
+    };
+    let mut command = Command::new(get_ffmpeg_path());
+    command
         .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(input_path)
         .args(["-f", "webvtt"])
-        .arg(output_path)
-        .output()
+        .arg(output_path);
+    let Some(ffmpeg_output) = run_command_output(&mut command, cancellation_token)
         .await
-        .context("failed to run ffmpeg for subtitle conversion")?;
+        .context("failed to run ffmpeg for subtitle conversion")?
+    else {
+        return Ok(None);
+    };
 
     if !ffmpeg_output.status.success() {
         let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
         bail!("ffmpeg subtitle conversion failed: {stderr}");
     }
 
-    fs::read(output_path).await.with_context(|| {
+    Ok(Some(fs::read(output_path).await.with_context(|| {
         format!(
             "failed to read converted subtitle {}",
             output_path.display()
         )
-    })
+    })?))
 }
 
 pub async fn convert_bitmap_subtitle_to_vtt(
@@ -252,7 +283,8 @@ pub async fn convert_bitmap_subtitle_to_vtt(
     asset_bytes: &[u8],
     probe_data: &ProbeData,
     model_dir: &Path,
-) -> Result<Vec<u8>> {
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<Option<Vec<u8>>> {
     let video_stream = probe_data
         .get_video_stream()
         .context("probe data missing video stream for subtitle OCR")?;
@@ -262,6 +294,9 @@ pub async fn convert_bitmap_subtitle_to_vtt(
     let height = video_stream
         .height()
         .context("probe data missing video height")?;
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return Ok(None);
+    }
     let temp_dir = tempfile::tempdir().context("failed to create OCR temp dir")?;
     let input = write_bitmap_input(temp_dir.path(), row.kind, asset_bytes)?;
     let converted = convert_extracted_bitmap_subtitles_to_webvtt(
@@ -273,7 +308,10 @@ pub async fn convert_bitmap_subtitle_to_vtt(
         BitmapToWebVttOptions::default(),
     )
     .await?;
-    Ok(converted.webvtt.into_bytes())
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return Ok(None);
+    }
+    Ok(Some(converted.webvtt.into_bytes()))
 }
 
 fn write_bitmap_input(
@@ -333,4 +371,49 @@ pub fn bitmap_kind_for_subtitle_kind(kind: SubtitleKind) -> Result<BitmapSubtitl
         SubtitleKind::VobSub => Ok(BitmapSubtitleKind::VobSub),
         other => bail!("subtitle kind {other:?} is not bitmap"),
     }
+}
+
+async fn run_command_output(
+    command: &mut Command,
+    cancellation_token: &CancellationToken,
+) -> Result<Option<Output>> {
+    command.kill_on_drop(true);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    let stdout_task = spawn_pipe_reader(child.stdout.take());
+    let stderr_task = spawn_pipe_reader(child.stderr.take());
+
+    let status = tokio::select! {
+        status = child.wait() => status?,
+        _ = cancellation_token.cancelled() => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Ok(None);
+        }
+    };
+
+    let stdout = stdout_task.await??;
+    let stderr = stderr_task.await??;
+    Ok(Some(Output {
+        status,
+        stdout,
+        stderr,
+    }))
+}
+
+fn spawn_pipe_reader<R>(pipe: Option<R>) -> JoinHandle<anyhow::Result<Vec<u8>>>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let Some(mut pipe) = pipe else {
+            return Ok(Vec::new());
+        };
+
+        let mut output = Vec::new();
+        pipe.read_to_end(&mut output).await?;
+        Ok(output)
+    })
 }

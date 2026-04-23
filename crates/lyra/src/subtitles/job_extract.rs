@@ -52,7 +52,7 @@ impl Job for FileSubtitleExtractJob {
         &self,
         db: &DatabaseConnection,
         file: Self::Model,
-        _ctx: &JobLease,
+        ctx: &JobLease,
     ) -> anyhow::Result<JobOutcome> {
         let Some(file_path) = get_job_file_path(db, &file, Self::JOB_KIND).await? else {
             return Ok(JobOutcome::Complete);
@@ -95,11 +95,21 @@ impl Job for FileSubtitleExtractJob {
             pending_extractions
                 .iter()
                 .map(|(stream, descriptor)| (*stream, descriptor)),
+            ctx.get_cancellation_token(),
         )
         .await?;
+        let Some(extracted_bytes) = extracted_bytes else {
+            return Ok(JobOutcome::Cancelled);
+        };
+        if ctx.is_cancelled() {
+            return Ok(JobOutcome::Cancelled);
+        }
 
         let tx = db.begin().await?;
         for (descriptor, existing_row) in descriptors {
+            if ctx.is_cancelled() {
+                return Ok(JobOutcome::Cancelled);
+            }
             let source_row = if let Some(row) = existing_row {
                 refresh_extracted_subtitle_metadata(&tx, &row, &descriptor, now).await?
             } else {

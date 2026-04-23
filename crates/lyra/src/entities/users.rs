@@ -16,8 +16,12 @@ pub struct Model {
     pub created_at: i64,
     pub preferred_audio_language: Option<String>,
     pub preferred_audio_disposition: Option<String>,
-    pub preferred_subtitle_language: Option<String>,
-    pub preferred_subtitle_disposition: Option<String>,
+    #[graphql(skip)]
+    pub subtitle_mode: SubtitleMode,
+    #[graphql(skip)]
+    pub preferred_subtitle_languages: String,
+    #[graphql(skip)]
+    pub subtitle_variant_preference: SubtitleVariantPreference,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -66,6 +70,24 @@ impl Related<super::libraries::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "i64", db_type = "Integer")]
+pub enum SubtitleMode {
+    Off = 0,
+    ForcedOnly = 1,
+    On = 2,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "i64", db_type = "Integer")]
+pub enum SubtitleVariantPreference {
+    Auto = 0,
+    Forced = 1,
+    Normal = 2,
+    Sdh = 3,
+    Commentary = 4,
+}
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

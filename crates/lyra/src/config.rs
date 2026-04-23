@@ -70,6 +70,10 @@ impl Config {
     pub fn get_signing_key_path(&self) -> PathBuf {
         self.data_dir.join(SIGNING_KEY_FILENAME)
     }
+
+    pub fn get_model_dir(&self) -> PathBuf {
+        self.data_dir.join("models")
+    }
 }
 
 static CONFIG: once_cell::sync::Lazy<(Config, SigningKey)> =

@@ -18,6 +18,7 @@ import {
 } from "./player-context";
 import {
   MintPlaybackUrl,
+  MintSubtitleUrl,
   UpdateWatchState,
   WatchSessionAction,
   WatchSessionBeaconFragment,
@@ -67,11 +68,20 @@ const pickPlayableVideoRendition = (
 
 export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shouldPromptResume }) => {
   const { videoRef, controllerRef } = usePlayerRefsContext();
-  const subtitleTrackElementsRef = useRef(new Map<string, HTMLTrackElement>());
   const [, mintPlaybackUrl] = useMutation(MintPlaybackUrl);
+  const [, mintSubtitleUrl] = useMutation(MintSubtitleUrl);
   const [, updateWatchProgress] = useMutation(UpdateWatchState);
   const [, watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
   const [, watchSessionAction] = useMutation(WatchSessionAction);
+  const subtitleUrlCacheRef = useRef(new Map<string, string>());
+  const subtitleRequestIdRef = useRef(0);
+  const [activeSubtitle, setActiveSubtitle] = useState<{
+    trackId: string;
+    renditionId: string;
+    url: string;
+    label: string;
+    language: string | null;
+  } | null>(null);
   const currentMediaId = currentMedia?.id ?? null;
   const currentFileId = currentMedia?.defaultFile?.id ?? null;
   const watchSession = usePlayerContext((ctx) => ctx.watchSession);
@@ -101,6 +111,8 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
     playbackOptions?.audioTracks.find((track) => track.streamIndex === selectedAudioTrackId) ?? recommendedAudioTrack;
   const activeAudioRendition = activeAudioTrack?.renditions[0] ?? null;
   const activeVideoRendition = pickPlayableVideoRendition(playbackOptions?.videoRenditions);
+  const subtitleTracks = currentMedia?.defaultFile?.subtitles ?? [];
+  const autoselectSubtitleTrack = subtitleTracks.find((track) => track.autoselect) ?? null;
 
   useEffect(() => {
     if (!playbackOptions?.audioTracks?.length) return;
@@ -249,18 +261,68 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       setPlayerState({ selectedAudioTrackId: trackId });
     };
 
-    const setSubtitleTrack = (trackId: string | null) => {
-      const video = videoRef.current;
-      if (!video || !currentMedia?.defaultFile?.subtitleTracks) return;
-
-      const selectedTrackId = trackId === null ? currentMedia.defaultFile.recommendedSubtitleTrackId : trackId;
-      for (const track of currentMedia.defaultFile.subtitleTracks) {
-        const element = subtitleTrackElementsRef.current.get(track.id);
-        if (!element?.track) continue;
-        element.track.mode = selectedTrackId === track.id ? "showing" : "disabled";
-      }
+    const setSubtitleTrack = async (trackId: string | null, options?: { manual?: boolean }) => {
+      const fileId = currentMedia?.defaultFile?.id;
+      if (!fileId) return;
 
       setPlayerState({ selectedSubtitleTrackId: trackId });
+      const resolvedTrack =
+        trackId === ""
+          ? null
+          : trackId === null
+            ? autoselectSubtitleTrack
+            : subtitleTracks.find((track) => track.id === trackId) ?? null;
+      if (!resolvedTrack) {
+        subtitleRequestIdRef.current += 1;
+        setActiveSubtitle(null);
+        setPlayerState({
+          activeSubtitleTrackId: null,
+          activeSubtitleRenditionId: null,
+          pendingSubtitleTrackId: null,
+        });
+        return;
+      }
+
+      const rendition = resolvedTrack.renditions[0] ?? null;
+      if (!rendition) {
+        return;
+      }
+
+      const requestId = subtitleRequestIdRef.current + 1;
+      subtitleRequestIdRef.current = requestId;
+      setPlayerState({ pendingSubtitleTrackId: resolvedTrack.id });
+      const cacheKey = `${resolvedTrack.id}:${rendition.id}`;
+      let url = subtitleUrlCacheRef.current.get(cacheKey) ?? null;
+      if (!url) {
+        const result = await mintSubtitleUrl({
+          input: {
+            fileId,
+            trackId: resolvedTrack.id,
+            renditionId: rendition.id,
+            manual: options?.manual ?? false,
+          },
+        });
+        if (result.error || !result.data?.mintSubtitleUrl.url) {
+          setPlayerState({ pendingSubtitleTrackId: null });
+          throw result.error ?? new Error("Failed to mint subtitle URL");
+        }
+        url = result.data.mintSubtitleUrl.url;
+        subtitleUrlCacheRef.current.set(cacheKey, url);
+      }
+
+      if (subtitleRequestIdRef.current !== requestId || !url) return;
+      setActiveSubtitle({
+        trackId: resolvedTrack.id,
+        renditionId: rendition.id,
+        url,
+        label: resolvedTrack.displayName,
+        language: resolvedTrack.languageBcp47 ?? null,
+      });
+      setPlayerState({
+        activeSubtitleTrackId: resolvedTrack.id,
+        activeSubtitleRenditionId: rendition.id,
+        pendingSubtitleTrackId: null,
+      });
     };
 
     const switchItem = (itemId: string) => {
@@ -285,9 +347,11 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       switchItem,
     });
   }, [
+    autoselectSubtitleTrack,
     controllerRef,
-    currentMedia?.defaultFile?.recommendedSubtitleTrackId,
-    currentMedia?.defaultFile?.subtitleTracks,
+    currentMedia?.defaultFile?.id,
+    mintSubtitleUrl,
+    subtitleTracks,
     videoRef,
     watchSessionAction,
   ]);
@@ -406,22 +470,35 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
         })) ?? [],
       selectedAudioTrackId: activeAudioTrack?.streamIndex ?? null,
       subtitleTrackOptions:
-        currentMedia?.defaultFile?.subtitleTracks?.map((track) => ({
-          id: track.id,
-          label: track.label,
-          source: track.source,
-          tags: track.dispositions.concat(track.source === "EXTRACTED" ? [] : [track.source]),
-          language: track.language ?? null,
-          signedUrl: track.asset.signedUrl,
-        })) ?? [],
+        subtitleTracks
+          .map((track) => {
+            const rendition = track.renditions[0];
+            if (!rendition) return null;
+            return {
+              id: track.id,
+              label: track.displayName,
+              language: track.languageBcp47 ?? null,
+              flags: track.flags,
+              autoselect: track.autoselect,
+              renditionId: rendition.id,
+              renditionType: rendition.type,
+              displayInfo: rendition.displayInfo,
+              onDemand: rendition.onDemand,
+            };
+          })
+          .filter((track): track is NonNullable<typeof track> => track != null) ?? [],
       selectedSubtitleTrackId: null,
+      activeSubtitleTrackId: null,
+      activeSubtitleRenditionId: null,
+      pendingSubtitleTrackId: null,
     });
-  }, [activeAudioTrack?.streamIndex, currentMedia?.defaultFile?.subtitleTracks, playbackOptions?.audioTracks]);
+    setActiveSubtitle(null);
+  }, [activeAudioTrack?.streamIndex, playbackOptions?.audioTracks, subtitleTracks]);
 
   useEffect(() => {
     const selectedSubtitleTrackId = playerContext.getState().state.selectedSubtitleTrackId;
-    playerContext.getState().actions.setSubtitleTrack(selectedSubtitleTrackId);
-  }, [currentMedia?.defaultFile?.recommendedSubtitleTrackId, currentMedia?.defaultFile?.subtitleTracks]);
+    void playerContext.getState().actions.setSubtitleTrack(selectedSubtitleTrackId, { manual: false });
+  }, [subtitleTracks]);
 
   useEffect(() => {
     if (!currentMedia?.defaultFile) return;
@@ -835,20 +912,16 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       controls={false}
       disablePictureInPicture
     >
-      {currentMedia?.defaultFile?.subtitleTracks?.map((track) => (
+      {activeSubtitle ? (
         <track
-          key={track.id}
-          ref={(element) => {
-            if (element) subtitleTrackElementsRef.current.set(track.id, element);
-            else subtitleTrackElementsRef.current.delete(track.id);
-          }}
-          src={track.asset.signedUrl}
-          label={track.label}
-          srcLang={track.language ?? undefined}
+          key={`${activeSubtitle.trackId}:${activeSubtitle.url}`}
+          src={activeSubtitle.url}
+          label={activeSubtitle.label}
+          srcLang={activeSubtitle.language ?? undefined}
           kind="subtitles"
-          default={currentMedia.defaultFile?.recommendedSubtitleTrackId === track.id}
+          default
         />
-      ))}
+      ) : null}
     </video>
   );
 };

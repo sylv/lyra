@@ -92,6 +92,12 @@ enum ContentUpdateEvent {
 	CONTENT_UPDATE
 }
 
+input DisabledSubtitlesHintInput {
+	fileId: String!
+	trackId: String!
+	renditionId: String!
+}
+
 enum EffectiveWatchSessionState {
 	PLAYING
 	PAUSED
@@ -114,8 +120,7 @@ type File {
 	probe: FileProbe
 	playbackOptions: PlaybackOptions!
 	timelinePreview: [TimelinePreviewSheet!]!
-	subtitleTracks: [SubtitleTrack!]!
-	recommendedSubtitleTrackId: String
+	subtitles(languageHints: [String!]): [SubtitleTrack!]!
 	segments: [FileSegment!]!
 }
 
@@ -244,13 +249,13 @@ type Mutation {
 	addNodeToWatchlist(nodeId: String!): Boolean!
 	removeNodeFromWatchlist(nodeId: String!): Boolean!
 	setPreferredAudio(language: String, disposition: TrackDispositionPreference): User!
-	setPreferredSubtitle(language: String, disposition: TrackDispositionPreference): User!
 	deleteLibrary(libraryId: String!): Boolean!
 	leaveWatchSession(sessionId: String!, playerId: String!): Boolean!
 	watchSessionHeartbeat(input: WatchSessionHeartbeatInput!): WatchSessionBeacon!
 	watchSessionAction(input: WatchSessionActionInput!): WatchSessionBeacon!
 	mintPlaybackUrl(input: PlaybackUrlInput!): PlaybackUrlPayload!
 	mintSubtitleUrl(input: SubtitleUrlInput!): SubtitleUrlPayload!
+	disabledSubtitlesHint(input: DisabledSubtitlesHintInput!): Boolean!
 }
 
 type Node {
@@ -411,7 +416,6 @@ type Person {
 type PlaybackOptions {
 	videoRenditions: [VideoRenditionOption!]!
 	audioTracks: [AudioTrackOption!]!
-	subtitleTracks: [SubtitlePlaybackTrack!]!
 }
 
 input PlaybackUrlInput {
@@ -448,34 +452,16 @@ type SubscriptionRoot {
 	watchSessionBeacons(sessionId: String!, playerId: String!): WatchSessionBeacon!
 }
 
-enum SubtitleKind {
-	SRT
-	VTT
-	ASS
-	MOV_TEXT
-	TEXT
-	TTML
-	PGS
-	VOB_SUB
-}
-
-type SubtitlePlaybackTrack {
-	subtitleId: String!
-	streamIndex: Int!
-	displayName: String!
-	language: String
-	recommended: Boolean!
-	renditions: [SubtitleRenditionOption!]!
-}
-
-type SubtitleRenditionOption {
-	renditionId: String!
+type SubtitleRendition {
+	id: String!
 	codecName: String!
+	type: SubtitleRenditionType!
+	displayInfo: String!
 	onDemand: Boolean!
 }
 
-enum SubtitleSource {
-	EXTRACTED
+enum SubtitleRenditionType {
+	DIRECT
 	CONVERTED
 	OCR
 	GENERATED
@@ -484,19 +470,18 @@ enum SubtitleSource {
 type SubtitleTrack {
 	id: String!
 	streamIndex: Int!
-	kind: SubtitleKind!
-	source: SubtitleSource!
-	label: String!
-	language: String
-	dispositions: [String!]!
-	asset: Asset!
-	derivedFromSubtitleId: String
+	displayName: String!
+	languageBcp47: String
+	flags: [String!]!
+	autoselect: Boolean!
+	renditions: [SubtitleRendition!]!
 }
 
 input SubtitleUrlInput {
 	fileId: String!
-	subtitleId: String!
+	trackId: String!
 	renditionId: String!
+	manual: Boolean
 }
 
 type SubtitleUrlPayload {
@@ -525,8 +510,6 @@ type User {
 	createdAt: Int!
 	preferredAudioLanguage: String
 	preferredAudioDisposition: String
-	preferredSubtitleLanguage: String
-	preferredSubtitleDisposition: String
 	lastSeenAt: Int
 	libraries: [Library!]!
 }
