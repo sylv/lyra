@@ -1,11 +1,10 @@
-use crate::jobs::handlers::shared::get_job_file_path;
 use crate::jobs::{Job, JobLease, JobOutcome, JobScheduling};
+use crate::media::{get_job_file_path, load_cached_probe};
 use crate::{
     entities::{
         file_probe, file_subtitles, file_subtitles::SubtitleSource, files, jobs as jobs_entity,
     },
-    file_analysis,
-    subtitle_files::{
+    subtitles::files::{
         extract_subtitle_bytes_batch, refresh_derived_subtitles_last_seen,
         refresh_extracted_subtitle_metadata, subtitle_descriptor_from_stream,
         upsert_extracted_subtitle,
@@ -59,7 +58,7 @@ impl Job for FileSubtitleExtractJob {
             return Ok(JobOutcome::Complete);
         };
 
-        let probe_data = file_analysis::load_cached_probe(db, &file.id)
+        let probe_data = load_cached_probe(db, &file.id)
             .await?
             .context("subtitle extraction requires cached probe data")?;
         let now = chrono::Utc::now().timestamp();

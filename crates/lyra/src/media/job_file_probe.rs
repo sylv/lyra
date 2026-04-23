@@ -1,8 +1,8 @@
-use crate::jobs::handlers::shared::get_job_file_path;
 use crate::jobs::{Job, JobLease, JobOutcome, JobScheduling};
+use crate::media::get_job_file_path;
 use crate::{
     entities::{file_probe, files, jobs as jobs_entity},
-    file_analysis, json_encoding,
+    json_encoding, media,
 };
 use anyhow::Context;
 use lyra_probe::{encode_probe_data_json_zstd, extract_keyframes, probe_with_cancellation};
@@ -55,12 +55,8 @@ impl Job for FileProbeJob {
             return Ok(JobOutcome::Complete);
         };
 
-        let needs_probe = file_analysis::load_cached_probe(db, &file.id)
-            .await?
-            .is_none();
-        let needs_keyframes = file_analysis::load_cached_keyframes(db, &file.id)
-            .await?
-            .is_none();
+        let needs_probe = media::load_cached_probe(db, &file.id).await?.is_none();
+        let needs_keyframes = media::load_cached_keyframes(db, &file.id).await?.is_none();
 
         if !needs_probe && !needs_keyframes {
             return Ok(JobOutcome::Complete);
@@ -100,7 +96,7 @@ impl Job for FileProbeJob {
         }
 
         if needs_keyframes {
-            let probe = file_analysis::load_cached_probe(db, &file.id)
+            let probe = media::load_cached_probe(db, &file.id)
                 .await?
                 .context("probe data must exist before extracting keyframes")?;
             let video_stream_index = probe

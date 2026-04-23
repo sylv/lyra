@@ -1,5 +1,5 @@
-use crate::jobs::handlers::shared::get_job_file_path;
 use crate::jobs::{Job, JobLease, JobOutcome, JobScheduling};
+use crate::media::get_job_file_path;
 use crate::{
     assets as assets_api,
     entities::{

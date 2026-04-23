@@ -8,7 +8,7 @@ use crate::entities::{
     nodes, people, root_node_cast,
 };
 use crate::ids;
-use crate::metadata::local::{LOCAL_METADATA_PROVIDER_ID, NodeLocalMetadataInput};
+use crate::metadata::{NodeLocalMetadataInput, local::LOCAL_METADATA_PROVIDER_ID};
 use lyra_metadata::{
     CastCredit, ContentRating, EpisodeMetadata, ImageSet, MetadataGenre, MetadataStatus,
     MovieMetadata, PersonMetadata, Recommendation, RecommendedMediaKind, SeasonMetadata,

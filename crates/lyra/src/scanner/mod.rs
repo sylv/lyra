@@ -1,5 +1,5 @@
-pub mod derive_nodes;
-pub mod reconcile;
+mod derive_nodes;
+mod reconcile;
 
 use crate::activity::{ActivityHandle, ActivityKind};
 use crate::config::get_config;

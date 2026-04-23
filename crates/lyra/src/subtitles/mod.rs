@@ -1,3 +1,12 @@
+mod files;
+mod job_extract;
+mod job_process;
+
+use sea_orm::DatabaseConnection;
+use std::sync::Arc;
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
+
 use crate::entities::file_subtitles::SubtitleKind;
 use anyhow::{Result, bail};
 use lyra_probe::{Codec, Stream, StreamDisposition, StreamKind, SubtitleFormat};
@@ -121,4 +130,29 @@ impl StreamDetailsExt for lyra_probe::StreamDetails {
             _ => None,
         }
     }
+}
+
+pub(crate) fn register_jobs(
+    jobs: &mut Vec<crate::jobs::RegisteredJob>,
+    heavy_jobs: &mut Vec<Arc<dyn crate::jobs::HeavyJobRunner>>,
+    pool: &DatabaseConnection,
+    wake_signal: Arc<Notify>,
+    startup_scans_complete: CancellationToken,
+) {
+    crate::jobs::register_job(
+        Arc::new(job_extract::FileSubtitleExtractJob),
+        jobs,
+        heavy_jobs,
+        pool,
+        wake_signal.clone(),
+        startup_scans_complete.clone(),
+    );
+    crate::jobs::register_job(
+        Arc::new(job_process::FileSubtitleProcessJob),
+        jobs,
+        heavy_jobs,
+        pool,
+        wake_signal,
+        startup_scans_complete,
+    );
 }

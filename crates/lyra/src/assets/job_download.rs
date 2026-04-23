@@ -1,9 +1,6 @@
 use crate::entities::assets::AssetKind;
+use crate::entities::{assets, jobs as jobs_entity};
 use crate::jobs::{Job, JobLease, JobOutcome};
-use crate::{
-    assets::download_asset_to_local,
-    entities::{assets, jobs as jobs_entity},
-};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select};
 
 #[derive(Debug, Default)]
@@ -42,7 +39,7 @@ impl Job for AssetDownloadJob {
             return Ok(JobOutcome::Complete);
         }
 
-        download_asset_to_local(db, &asset).await?;
+        super::download_asset_to_local(db, &asset).await?;
         Ok(JobOutcome::Complete)
     }
 }

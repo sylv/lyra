@@ -8,7 +8,7 @@ use crate::{
     entities::root_node_cast,
     entities::{collections, libraries, node_metadata, nodes, users, watch_progress},
     graphql::types::collection::collection_item_count,
-    metadata::read,
+    metadata,
     watch_session::WatchSessionRegistry,
 };
 use async_graphql::{
@@ -216,7 +216,7 @@ pub async fn build_node_query_for_viewer(
     viewer_id: &str,
     filter: &NodeFilter,
 ) -> Result<sea_orm::Select<nodes::Entity>, async_graphql::Error> {
-    let mut qb = read::join_preferred_node_metadata(nodes::Entity::find());
+    let mut qb = metadata::join_preferred_node_metadata(nodes::Entity::find());
     let search_term = filter.search_term.as_deref().map(str::trim);
     let fts_query = search_term
         .filter(|term| !term.is_empty())

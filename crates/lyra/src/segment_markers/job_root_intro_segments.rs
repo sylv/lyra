@@ -1,9 +1,7 @@
 use crate::{
     entities::{files, jobs as jobs_entity, libraries, node_files, nodes, nodes::NodeKind},
-    file_analysis,
     jobs::{Job, JobLease, JobOutcome, JobScheduling},
-    json_encoding,
-    segment_markers::intro_segment_from_range,
+    json_encoding, media,
 };
 use anyhow::Context;
 use lyra_marker::{Fingerprint, detect_intros, fingerprint};
@@ -79,7 +77,7 @@ impl Job for RootIntroSegmentsJob {
             let fingerprint = match file.fingerprint.clone() {
                 Some(fingerprint) => fingerprint,
                 None => {
-                    let probe_data = file_analysis::load_cached_probe(db, &file.file_id)
+                    let probe_data = media::load_cached_probe(db, &file.file_id)
                         .await?
                         .with_context(|| {
                             format!("missing cached probe data for file {}", file.file_id)
@@ -121,7 +119,7 @@ impl Job for RootIntroSegmentsJob {
             })?;
             let segments = detection
                 .intro
-                .and_then(intro_segment_from_range)
+                .and_then(super::intro_segment_from_range)
                 .into_iter()
                 .collect::<Vec<_>>();
 

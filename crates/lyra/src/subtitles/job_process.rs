@@ -8,8 +8,10 @@ use crate::{
         jobs as jobs_entity,
     },
     ids,
-    subtitle_files::{convert_bitmap_subtitle_to_vtt, convert_text_subtitle_to_vtt},
-    subtitles::mime_type_for_subtitle_kind,
+    subtitles::{
+        files::{convert_bitmap_subtitle_to_vtt, convert_text_subtitle_to_vtt},
+        mime_type_for_subtitle_kind,
+    },
 };
 use anyhow::Context;
 use sea_orm::{
@@ -66,7 +68,7 @@ impl Job for FileSubtitleProcessJob {
             .mime_type
             .as_deref()
             .context("subtitle asset missing mime type")?;
-        let asset_path = crate::assets::storage::get_asset_output_path_from_mime_and_encoding(
+        let asset_path = assets::get_asset_output_path_from_mime_and_encoding(
             hash_sha256,
             mime_type,
             asset.content_encoding.as_deref(),

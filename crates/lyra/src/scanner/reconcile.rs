@@ -1,8 +1,5 @@
 use crate::entities::{files, node_closure, node_files, nodes};
-use crate::metadata::{
-    local::{self, LocalMetadataPlan},
-    sync,
-};
+use crate::metadata::{LocalMetadataPlan, mark_root_dirty, replace_local_metadata_for_root};
 use crate::scanner::derive_nodes::{
     RootMaterializationPlan, build_closure_rows, build_root_derivation_plans,
     sort_nodes_topologically, verify_root_nodes,
@@ -281,8 +278,8 @@ pub(crate) async fn materialize_touched_root(
             .await?;
     }
 
-    local::replace_local_metadata_for_root(&txn, local_plan, now).await?;
-    sync::mark_root_dirty(&txn, &plan.root_id).await?;
+    replace_local_metadata_for_root(&txn, local_plan, now).await?;
+    mark_root_dirty(&txn, &plan.root_id).await?;
 
     let obsolete_node_ids = existing_node_ids
         .difference(&desired_node_ids)
@@ -486,7 +483,7 @@ mod tests {
     use super::*;
     use crate::{
         entities::{jobs, libraries, metadata_source::MetadataSource, node_metadata},
-        metadata::local::NodeLocalMetadataInput,
+        metadata::NodeLocalMetadataInput,
         scanner::derive_nodes::WantedNode,
     };
     use sea_orm::{ActiveEnum, Database, QueryOrder};

@@ -2,8 +2,8 @@ use crate::{
     AppState,
     auth::{RequestAuth, ensure_library_access},
     entities::{files, libraries},
-    file_analysis,
-    jobs::{self, FileProbeJob},
+    jobs,
+    media::{self, FileProbeJob},
     signer::{sign, verify},
 };
 use anyhow::{Context, bail};
@@ -345,8 +345,8 @@ pub(crate) async fn load_probe_data_for_playback_options(
     pool: &sea_orm::DatabaseConnection,
     file_id: &str,
 ) -> anyhow::Result<(ProbeData, Option<VideoKeyframes>)> {
-    let mut probe = file_analysis::load_cached_probe(pool, file_id).await?;
-    let keyframes = file_analysis::load_cached_keyframes(pool, file_id).await?;
+    let mut probe = media::load_cached_probe(pool, file_id).await?;
+    let keyframes = media::load_cached_keyframes(pool, file_id).await?;
 
     if probe.is_none() {
         let file = files::Entity::find_by_id(file_id)
@@ -354,7 +354,7 @@ pub(crate) async fn load_probe_data_for_playback_options(
             .await?
             .context("file disappeared before playback analysis job")?;
         jobs::try_run_job(pool, &FileProbeJob, file, ON_DEMAND_JOB_TIMEOUT).await?;
-        probe = file_analysis::load_cached_probe(pool, file_id).await?;
+        probe = media::load_cached_probe(pool, file_id).await?;
     }
 
     Ok((
@@ -371,14 +371,14 @@ async fn load_session_analysis(
 ) -> anyhow::Result<(ProbeData, Option<VideoKeyframes>)> {
     let video_profile = video_profile(video_profile_id)
         .with_context(|| format!("unknown video profile {video_profile_id}"))?;
-    let mut probe = file_analysis::load_cached_probe(pool, file_id).await?;
+    let mut probe = media::load_cached_probe(pool, file_id).await?;
     if probe.is_none() {
         let file = files::Entity::find_by_id(file_id)
             .one(pool)
             .await?
             .context("file disappeared before playback analysis job")?;
         jobs::try_run_job(pool, &FileProbeJob, file, ON_DEMAND_JOB_TIMEOUT).await?;
-        probe = file_analysis::load_cached_probe(pool, file_id).await?;
+        probe = media::load_cached_probe(pool, file_id).await?;
     }
     let probe = probe.context("playback analysis finished without storing probe data")?;
     let video_stream = probe
@@ -391,7 +391,7 @@ async fn load_session_analysis(
                 "video profile {video_profile_id} is incompatible with stream {video_stream_index}"
             )
         })?;
-    let mut keyframes = file_analysis::load_cached_keyframes(pool, file_id).await?;
+    let mut keyframes = media::load_cached_keyframes(pool, file_id).await?;
 
     if compatibility == Compatibility::KeyframeAligned && keyframes.is_none() {
         let file = files::Entity::find_by_id(file_id)
@@ -399,7 +399,7 @@ async fn load_session_analysis(
             .await?
             .context("file disappeared before playback analysis job")?;
         jobs::try_run_job(pool, &FileProbeJob, file, ON_DEMAND_JOB_TIMEOUT).await?;
-        keyframes = file_analysis::load_cached_keyframes(pool, file_id).await?;
+        keyframes = media::load_cached_keyframes(pool, file_id).await?;
     }
 
     if compatibility == Compatibility::KeyframeAligned {

@@ -1,5 +1,4 @@
 use crate::{
-    assets::storage,
     entities::assets::{self, AssetKind, AssetType},
     ids,
 };
@@ -11,8 +10,8 @@ pub async fn create_local_asset_from_bytes<C: ConnectionTrait>(
     image_bytes: &[u8],
     kind: AssetKind,
 ) -> anyhow::Result<assets::Model> {
-    let prepared = storage::prepare_image(image_bytes)?;
-    storage::persist_image_bytes(image_bytes, &prepared).await?;
+    let prepared = super::storage::prepare_image(image_bytes)?;
+    super::storage::persist_image_bytes(image_bytes, &prepared).await?;
     let now = chrono::Utc::now().timestamp();
     let asset_id = ids::generate_prefixed_hashid("a", [prepared.hash_sha256.as_str()]);
 
@@ -64,8 +63,8 @@ pub async fn download_asset_to_local<C: ConnectionTrait>(
         .await
         .context("failed reading image response body")?;
 
-    let prepared = storage::prepare_image(&bytes)?;
-    storage::persist_image_bytes(&bytes, &prepared).await?;
+    let prepared = super::storage::prepare_image(&bytes)?;
+    super::storage::persist_image_bytes(&bytes, &prepared).await?;
     let now = chrono::Utc::now().timestamp();
 
     let mut updated: assets::ActiveModel = asset.clone().into();
@@ -89,9 +88,9 @@ pub async fn create_local_file_asset_from_bytes<C: ConnectionTrait>(
 ) -> anyhow::Result<assets::Model> {
     let compressed_bytes = zstd::encode_all(std::io::Cursor::new(file_bytes), 12)
         .context("failed to zstd-compress file asset")?;
-    let prepared = storage::prepare_file_bytes(&compressed_bytes, mime_type, Some("zstd"))?;
-    storage::persist_bytes_atomically(
-        &storage::get_asset_output_path(&prepared.hash_sha256, &prepared.extension)?,
+    let prepared = super::storage::prepare_file_bytes(&compressed_bytes, mime_type, Some("zstd"))?;
+    super::storage::persist_bytes_atomically(
+        &super::storage::get_asset_output_path(&prepared.hash_sha256, &prepared.extension)?,
         &compressed_bytes,
     )
     .await?;

@@ -1,6 +1,6 @@
 use crate::entities::{files, node_closure, nodes};
 use crate::ids;
-use crate::metadata::local::{
+use crate::metadata::{
     LocalMetadataPlan, NodeLocalMetadataInput, upsert_node_local_metadata_input,
 };
 use lyra_parser::ParsedFile;

@@ -1,3 +1,10 @@
+mod job_root_intro_segments;
+
+use sea_orm::DatabaseConnection;
+use std::sync::Arc;
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
+
 use lyra_marker::IntroRange;
 use serde::{Deserialize, Serialize};
 
@@ -37,4 +44,21 @@ pub fn intro_segment_from_range(range: IntroRange) -> Option<StoredFileSegment> 
     }
 
     Some(StoredFileSegment::intro(start_ms, end_ms))
+}
+
+pub(crate) fn register_jobs(
+    jobs: &mut Vec<crate::jobs::RegisteredJob>,
+    heavy_jobs: &mut Vec<Arc<dyn crate::jobs::HeavyJobRunner>>,
+    pool: &DatabaseConnection,
+    wake_signal: Arc<Notify>,
+    startup_scans_complete: CancellationToken,
+) {
+    crate::jobs::register_job(
+        Arc::new(job_root_intro_segments::RootIntroSegmentsJob),
+        jobs,
+        heavy_jobs,
+        pool,
+        wake_signal,
+        startup_scans_complete,
+    );
 }

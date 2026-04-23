@@ -1,4 +1,3 @@
-use crate::assets::storage;
 use crate::config::get_config;
 use crate::entities::{assets, jobs as jobs_entity};
 use crate::jobs::{Job, JobLease, JobOutcome};
@@ -64,7 +63,7 @@ impl Job for AssetCleanupJob {
             (asset.hash_sha256.as_deref(), asset.mime_type.as_deref())
             && !shared_hash_exists
         {
-            let path = storage::get_asset_output_path_from_mime_and_encoding(
+            let path = super::storage::get_asset_output_path_from_mime_and_encoding(
                 hash,
                 mime_type,
                 asset.content_encoding.as_deref(),

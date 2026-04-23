@@ -1,10 +1,10 @@
 use crate::{
     AppState,
-    assets::{AssetPayload, storage},
+    assets::{AssetDownloadJob, AssetPayload},
     auth::LazyRequestAuth,
     entities::assets::{self as assets_entity, AssetType},
     error::AppError,
-    jobs::{self, AssetDownloadJob},
+    jobs,
     signer::verify,
 };
 use axum::{
@@ -86,7 +86,7 @@ async fn serve_asset(
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("asset has no mime_type"))?;
 
-    let original_path = storage::get_asset_output_path_from_mime_and_encoding(
+    let original_path = super::storage::get_asset_output_path_from_mime_and_encoding(
         hash_sha256,
         mime_type,
         asset.content_encoding.as_deref(),
@@ -113,7 +113,7 @@ async fn serve_asset(
     }
 
     let (transformed_extension, transformed_content_type) = transformed_output_format(mime_type);
-    let transformed_path = storage::get_transformed_cache_path(
+    let transformed_path = super::storage::get_transformed_cache_path(
         hash_sha256,
         params.width,
         params.height,
@@ -152,7 +152,7 @@ async fn serve_asset(
         })
         .await??;
 
-        storage::persist_bytes_atomically(&transformed_path, &bytes).await?;
+        super::storage::persist_bytes_atomically(&transformed_path, &bytes).await?;
     }
 
     stream_file(&transformed_path, transformed_content_type).await

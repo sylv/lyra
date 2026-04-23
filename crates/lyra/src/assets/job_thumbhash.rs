@@ -1,11 +1,8 @@
-use crate::jobs::{Job, JobLease, JobOutcome};
-use crate::{
-    assets::storage,
-    entities::{
-        assets::{self, AssetKind},
-        jobs as jobs_entity,
-    },
+use crate::entities::{
+    assets::{self, AssetKind},
+    jobs as jobs_entity,
 };
+use crate::jobs::{Job, JobLease, JobOutcome};
 use anyhow::{Context, Result};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
@@ -66,7 +63,7 @@ impl Job for AssetThumbhashJob {
             .mime_type
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("asset {asset_id} is missing mime_type"))?;
-        let image_path = storage::get_asset_output_path_from_mime(hash_sha256, mime_type)?;
+        let image_path = super::storage::get_asset_output_path_from_mime(hash_sha256, mime_type)?;
         let bytes = tokio::fs::read(&image_path)
             .await
             .with_context(|| format!("failed to read image at {}", image_path.display()))?;

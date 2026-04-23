@@ -1,9 +1,9 @@
+use super::sync;
 use crate::entities::{
     jobs as jobs_entity, metadata_source::MetadataSource, node_metadata, nodes, nodes::NodeKind,
 };
 use crate::jobs::{Job, JobExecutionPolicy, JobLease, JobOutcome};
 use crate::metadata::METADATA_RETRY_BACKOFF_SECONDS;
-use crate::metadata::sync;
 use lyra_metadata::MetadataProvider;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
