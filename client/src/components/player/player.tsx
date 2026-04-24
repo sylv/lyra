@@ -1,278 +1,203 @@
-/* oxlint-disable jsx_a11y/prefer-tag-over-role */
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, type FC } from "react";
+import { useEffect, useRef, type FC, type RefObject } from "react";
 import { useQuery } from "urql";
-import { client } from "../../client";
+import { graphql } from "../../@generated/gql";
 import { cn } from "../../lib/utils";
-import { PlayerControls } from "./components/player-controls";
+import { PlayerBottomBar } from "./components/player-bottom-bar";
 import { PlayerErrorOverlay } from "./components/player-error-overlay";
-import { PlayerIntroOverlay } from "./components/player-intro-overlay";
 import { PlayerLoadingIndicator } from "./components/player-loading-indicator";
+import { PlayerMiddle } from "./components/player-middle";
+import { PlayerOverlayLayout } from "./components/player-overlay-layout";
+import { PlayerResumePrompt } from "./components/player-resume-prompt";
+import { PlayerSkipIntroOverlay } from "./components/player-skip-intro-overlay";
 import { PlayerSubtitleOverlay } from "./components/player-subtitle-overlay";
-import { PlayerTopChrome } from "./components/player-top-chrome";
-import { ResumePromptDialog } from "./components/resume-prompt-dialog";
-import { UpNextCard } from "./components/up-next-card";
-import type { PlayerController } from "./hls";
-import { useControlsVisibility } from "./hooks/use-controls-visibility";
-import { useFullscreen } from "./hooks/use-fullscreen";
-import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
-import { usePlayerActions } from "./hooks/use-player-actions";
-import { useSurfaceInteraction } from "./hooks/use-surface-interaction";
-import { useUpNextState } from "./hooks/use-up-next-state";
-import { setPlayerControls, setPlayerState, usePlayerContext } from "./player-context";
-import { PlayerLayout } from "./player-layout";
-import { ItemPlaybackQuery, LeaveWatchSession } from "./player-queries";
-import {
-  PlayerRefsContext,
-  PlayerVideoElementContext,
-  usePlayerRefsContext,
-  usePlayerVideoElement,
-} from "./player-refs-context";
+import { PlayerSurface } from "./components/player-surface";
+import { PlayerTopBar } from "./components/player-top-bar";
+import { PlayerUpNextOverlay } from "./components/player-up-next-overlay";
+import { usePlayerDisplayState } from "./hooks/use-player-display-state";
+import { PlayerResumePromptProvider } from "./player-resume-prompt-state";
+import { setPlayerRuntimeState, togglePlayerFullscreen, usePlayerRuntimeStore } from "./player-runtime-store";
+import { PlayerSession } from "./player-session";
+import { PlayerVideoProvider } from "./player-video-context";
+import { PlayerVisibilityProvider } from "./player-visibility";
 import { PlayerVideo } from "./player-video";
 
-const PlayerContent: FC<{
-  itemId: string;
-  autoplay: boolean;
-  shouldPromptResume: boolean;
-}> = ({ itemId, autoplay, shouldPromptResume }) => {
-  const { containerRef, surfaceRef } = usePlayerRefsContext();
-  const videoElement = usePlayerVideoElement();
-  const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
-  const showControls = usePlayerContext((ctx) => ctx.controls.showControls);
-  const hoveredCard = usePlayerContext((ctx) => ctx.controls.hoveredCard);
-  const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
-  const miniPlayerAspectRatio = Math.max(videoAspectRatio, 16 / 9);
-  const languageHints = typeof navigator === "undefined" ? [] : [...navigator.languages];
+const ItemPlaybackQuery = graphql(`
+  query ItemPlayback($itemId: String!, $languageHints: [String!]) {
+    node(nodeId: $itemId) {
+      id
+      ...PlayerMetadata
+      ...PlayerSkipIntro
+      ...PlayerUpNext
+      defaultFile {
+        id
+        probe {
+          runtimeMinutes
+        }
+        playbackOptions(languageHints: $languageHints) {
+          videoRenditions {
+            renditionId
+            displayName
+            displayInfo
+            codecTag
+            onDemand
+          }
+          audioTracks {
+            streamIndex
+            displayName
+            language
+            recommended
+            renditions {
+              renditionId
+              codecName
+              bitrate
+              channels
+              sampleRate
+              codecTag
+              onDemand
+            }
+          }
+          subtitleTracks {
+            id
+            streamIndex
+            displayName
+            languageBcp47
+            flags
+            autoselect
+            renditions {
+              id
+              codecName
+              type
+              displayInfo
+              onDemand
+            }
+          }
+        }
+        timelinePreview {
+          ...PlayerTimelinePreviewSheet
+        }
+      }
+      previousPlayable {
+        id
+        ...PlayerNavigation
+      }
+      nextPlayable {
+        id
+        ...PlayerNavigation
+      }
+      watchProgress {
+        id
+        progressPercent
+        completed
+        updatedAt
+      }
+    }
+  }
+`);
 
-  const [{ data, fetching: isItemLoading, error: itemLoadError }] = useQuery({
+const useFullscreen = (containerRef: RefObject<HTMLDivElement | null>, isFullscreen: boolean) => {
+  useEffect(() => {
+    if (!containerRef.current) return;
+    if (isFullscreen) {
+      containerRef.current.requestFullscreen({ navigationUI: "hide" }).catch(() => false);
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => false);
+    }
+  }, [containerRef, isFullscreen]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        togglePlayerFullscreen(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+};
+
+export const Player: FC<{ itemId: string }> = ({ itemId }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isFullscreen = usePlayerRuntimeStore((state) => state.isFullscreen);
+  const aspectRatio = usePlayerRuntimeStore((state) => state.aspectRatio);
+  const languageHints = typeof navigator === "undefined" ? [] : [...navigator.languages];
+  const [{ data, fetching, error }] = useQuery({
     query: ItemPlaybackQuery,
     variables: { itemId, languageHints },
   });
-  const currentMedia = data?.node ?? null;
-  const isResolvingRequestedMedia = isItemLoading && currentMedia?.id !== itemId;
+  const media = data?.node ?? null;
+  const { currentTime, duration } = usePlayerDisplayState(media);
+  const miniPlayerAspectRatio = Math.max(aspectRatio, 16 / 9);
+
+  useFullscreen(containerRef, isFullscreen);
 
   useEffect(() => {
-    if (!videoElement) {
-      setVideoAspectRatio(16 / 9);
-      return;
+    if (fetching && media?.id !== itemId) {
+      setPlayerRuntimeState({ buffering: true, errorMessage: null });
     }
-
-    const syncAspectRatio = () => {
-      if (videoElement.videoWidth <= 0 || videoElement.videoHeight <= 0) return;
-      setVideoAspectRatio(videoElement.videoWidth / videoElement.videoHeight);
-    };
-
-    syncAspectRatio();
-    videoElement.addEventListener("loadedmetadata", syncAspectRatio);
-    videoElement.addEventListener("resize", syncAspectRatio);
-
-    return () => {
-      videoElement.removeEventListener("loadedmetadata", syncAspectRatio);
-      videoElement.removeEventListener("resize", syncAspectRatio);
-    };
-  }, [videoElement]);
+  }, [fetching, itemId, media?.id]);
 
   useEffect(() => {
-    if (!isResolvingRequestedMedia) return;
-    setPlayerState({ errorMessage: null, isLoading: true });
-  }, [isResolvingRequestedMedia]);
-
-  useEffect(() => {
-    if (!itemLoadError) return;
-    setPlayerState({ errorMessage: "Sorry, this item is unavailable", isLoading: false });
-  }, [itemLoadError]);
-
-  useFullscreen();
-  const actions = usePlayerActions();
-  const { showControlsTemporarily, handleMouseLeave } = useControlsVisibility();
-  const { handleContainerClick, handleMouseMove } = useSurfaceInteraction({
-    togglePlaying: actions.togglePlaying,
-    showControlsTemporarily,
-  });
-  const { handlePlayerKeyDown } = useKeyboardShortcuts({ actions, handleContainerClick });
-  const { switchItem } = actions;
-
-  const onPreviousItem = () => {
-    const previousItemId = currentMedia?.previousPlayable?.id;
-    if (previousItemId) switchItem(previousItemId);
-  };
-
-  const onNextItem = () => {
-    const nextItemId = currentMedia?.nextPlayable?.id;
-    if (nextItemId) switchItem(nextItemId);
-  };
-
-  const upNextState = useUpNextState({ hasNextItem: !!currentMedia?.nextPlayable, onNextItem });
-  const showPreviousCard = hoveredCard === "previous" && !!currentMedia?.previousPlayable;
-  const showNextPreview = hoveredCard === "next" && !!currentMedia?.nextPlayable;
-  const showUpNextCard = isFullscreen && upNextState.isUpNextActive && !!currentMedia?.nextPlayable;
-  const cardNode = showPreviousCard ? currentMedia?.previousPlayable : currentMedia?.nextPlayable;
-  const cardVisible = showPreviousCard || showNextPreview || showUpNextCard;
-  const timelinePreviewSheets = Array.isArray(currentMedia?.defaultFile?.timelinePreview)
-    ? currentMedia.defaultFile.timelinePreview
-    : [];
-
-  const cardElement =
-    cardVisible && cardNode ? (
-      <motion.div
-        key={showPreviousCard ? "prev-card" : showNextPreview ? "next-card" : "up-next-card"}
-        initial={{ opacity: 0, translateX: -12 }}
-        animate={{ opacity: 1, translateX: 0 }}
-        exit={{ opacity: 0, translateX: -12 }}
-        transition={{ duration: 0.1 }}
-      >
-        <UpNextCard
-          displayName={cardNode.properties.displayName}
-          description={cardNode.properties.description}
-          thumbnailImage={cardNode.properties.thumbnailImage}
-          seasonNumber={cardNode.properties.seasonNumber}
-          episodeNumber={cardNode.properties.episodeNumber}
-          onPlay={showUpNextCard ? onNextItem : undefined}
-          onCancel={
-            showUpNextCard
-              ? () =>
-                  setPlayerState({
-                    upNextDismissed: true,
-                    upNextCountdownCancelled: true,
-                  })
-              : undefined
-          }
-          progressPercent={showUpNextCard ? upNextState.upNextProgress : undefined}
-          countdownSeconds={showUpNextCard ? upNextState.countdownSeconds : undefined}
-        />
-      </motion.div>
-    ) : null;
-
-  const controls = currentMedia ? (
-    <PlayerControls
-      mode={isFullscreen ? "fullscreen" : "mini"}
-      timelinePreviewSheets={timelinePreviewSheets}
-      previousPlayable={currentMedia.previousPlayable}
-      nextPlayable={currentMedia.nextPlayable}
-      onPreviousItem={onPreviousItem}
-      onNextItem={onNextItem}
-      dropdownPortalContainer={containerRef.current}
-    />
-  ) : null;
-
-  const playerDiv = (
-    <div
-      ref={containerRef}
-      className={cn(
-        isFullscreen
-          ? "fixed inset-0 z-50 bg-black outline-none"
-          : "group/player relative rounded bg-black shadow-2xl outline-none",
-      )}
-      style={
-        isFullscreen
-          ? undefined
-          : {
-              aspectRatio: miniPlayerAspectRatio,
-              width: `min(80dvw, max(32rem, calc(18rem * ${miniPlayerAspectRatio})))`,
-            }
-      }
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-    >
-      <PlayerVideo currentMedia={currentMedia} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
-
-      {currentMedia ? (
-        <div
-          ref={surfaceRef}
-          className={cn(
-            "absolute inset-0 cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
-            !isFullscreen && "rounded",
-          )}
-          role="button"
-          tabIndex={0}
-          onKeyDown={handlePlayerKeyDown}
-          onMouseDownCapture={(event) => {
-            const target = event.target as HTMLElement | null;
-            if (target?.closest("button, [role='slider']")) return;
-            surfaceRef.current?.focus();
-          }}
-          onClick={handleContainerClick}
-          aria-label="Toggle play/pause"
-        >
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-0 transition-opacity duration-300",
-              isFullscreen ? (showControls ? "opacity-100" : "opacity-0") : "opacity-0 group-hover/player:opacity-100",
-              !isFullscreen && "rounded",
-            )}
-          />
-
-          <PlayerLayout
-            top={<PlayerTopChrome media={currentMedia} />}
-            middle={
-              <>
-                <PlayerSubtitleOverlay />
-                <PlayerIntroOverlay media={currentMedia} />
-              </>
-            }
-            bottom={
-              isFullscreen ? (
-                <div className="relative z-10">
-                  <div className="pointer-events-auto absolute bottom-36 left-4">
-                    <AnimatePresence mode="wait">{cardElement}</AnimatePresence>
-                  </div>
-                  {controls}
-                </div>
-              ) : (
-                controls
-              )
-            }
-          />
-        </div>
-      ) : (
-        <div className="absolute inset-0">
-          <PlayerLayout top={<PlayerTopChrome media={null} />} middle={null} bottom={null} />
-        </div>
-      )}
-
-      <ResumePromptDialog />
-      <PlayerLoadingIndicator />
-      <PlayerErrorOverlay />
-    </div>
-  );
-
-  return <div className={cn(!isFullscreen && "fixed bottom-4 right-4 z-50")}>{playerDiv}</div>;
-};
-
-export const Player: FC<{ itemId: string; autoplay?: boolean; shouldPromptResume?: boolean }> = ({
-  itemId,
-  autoplay = false,
-  shouldPromptResume = false,
-}) => {
-  const controllerRef = useRef<PlayerController | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
-  const watchSession = usePlayerContext((ctx) => ctx.watchSession);
-
-  useEffect(() => {
-    setPlayerControls({ showControls: true });
-  }, [itemId]);
-
-  useEffect(() => {
-    return () => {
-      const sessionId = watchSession.sessionId;
-      const playerId = watchSession.playerId;
-      if (!sessionId || !playerId) return;
-      void client
-        .mutation(LeaveWatchSession, {
-          sessionId,
-          playerId,
-        })
-        .toPromise();
-    };
-  }, [watchSession.playerId, watchSession.sessionId]);
+    if (!error) return;
+    setPlayerRuntimeState({
+      errorMessage: "Sorry, this item is unavailable",
+      buffering: false,
+    });
+  }, [error]);
 
   return (
-    <PlayerRefsContext.Provider value={{ controllerRef, containerRef, surfaceRef }}>
-      <PlayerVideoElementContext.Provider value={{ videoElement, setVideoElement }}>
-        <PlayerContent itemId={itemId} autoplay={autoplay} shouldPromptResume={shouldPromptResume} />
-      </PlayerVideoElementContext.Provider>
-    </PlayerRefsContext.Provider>
+    <PlayerVideoProvider>
+      <PlayerResumePromptProvider>
+        <PlayerVisibilityProvider>
+          <PlayerSession media={media}>
+            <div className={cn(!isFullscreen && "fixed bottom-4 right-4 z-50")}>
+              <div
+                ref={containerRef}
+                className={cn(
+                  isFullscreen ? "fixed inset-0 z-50 bg-black outline-none" : "relative rounded bg-black shadow-2xl outline-none",
+                )}
+                style={
+                  isFullscreen
+                    ? undefined
+                    : {
+                        aspectRatio: miniPlayerAspectRatio,
+                        width: `min(80dvw, max(32rem, calc(18rem * ${miniPlayerAspectRatio})))`,
+                      }
+                }
+              >
+                <PlayerVideo media={media} />
+                <PlayerSurface fullscreen={isFullscreen}>
+                  <PlayerOverlayLayout
+                    top={<PlayerTopBar media={media} portalContainer={containerRef.current} />}
+                    middle={
+                      <PlayerMiddle>
+                        <PlayerSubtitleOverlay media={media} />
+                        {media ? <PlayerSkipIntroOverlay media={media} /> : null}
+                        {media ? <PlayerUpNextOverlay media={media} /> : null}
+                      </PlayerMiddle>
+                    }
+                    bottom={
+                      media ? (
+                        <PlayerBottomBar
+                          compact={!isFullscreen}
+                          currentTime={currentTime}
+                          duration={duration}
+                          previousPlayable={media.previousPlayable}
+                          nextPlayable={media.nextPlayable}
+                          timelinePreviewSheets={Array.isArray(media.defaultFile?.timelinePreview) ? media.defaultFile.timelinePreview : []}
+                          portalContainer={containerRef.current}
+                        />
+                      ) : null
+                    }
+                  />
+                </PlayerSurface>
+                <PlayerResumePrompt portalContainer={containerRef.current} />
+                <PlayerLoadingIndicator />
+                <PlayerErrorOverlay />
+              </div>
+            </div>
+          </PlayerSession>
+        </PlayerVisibilityProvider>
+      </PlayerResumePromptProvider>
+    </PlayerVideoProvider>
   );
 };

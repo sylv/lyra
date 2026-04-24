@@ -6,7 +6,7 @@ export const PlayerButton: FC<ButtonHTMLAttributes<HTMLButtonElement>> = ({ chil
     <button
       type="button"
       className={cn(
-        "p-3 rounded transition-colors text-white hover:bg-zinc-600/30 hover:backdrop-blur-md disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:backdrop-blur-none",
+        "inline-flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-white/12 focus-visible:bg-white/12 disabled:cursor-not-allowed disabled:text-white/40 disabled:hover:bg-transparent",
         className,
       )}
       {...props}

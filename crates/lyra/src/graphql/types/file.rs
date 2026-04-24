@@ -1,6 +1,8 @@
 use crate::auth::RequestAuth;
 use crate::entities::{
-    assets, file_assets::{self, FileAssetRole}, file_probe, file_subtitles, files, users,
+    assets,
+    file_assets::{self, FileAssetRole},
+    file_probe, file_subtitles, files, users,
 };
 use crate::graphql::properties::{
     AudioRenditionOption, AudioTrackOption, FileProbe, FileSegment, FileSegmentKind,
@@ -9,12 +11,11 @@ use crate::graphql::properties::{
 };
 use crate::hls;
 use crate::segment_markers::StoredFileSegmentKind;
-use crate::subtitles::{
-    disposition_names, subtitle_kind_from_stream,
-};
 use crate::subtitles::language::{
-    SubtitleSelectionCandidate, SubtitleTrackVariant, language_match_strength, select_subtitle_track,
+    SubtitleSelectionCandidate, SubtitleTrackVariant, language_match_strength,
+    select_subtitle_track,
 };
+use crate::subtitles::{disposition_names, subtitle_kind_from_stream};
 use async_graphql::{ComplexObject, Context};
 use lyra_packager::{Compatibility, audio_profile, video_profile};
 use lyra_probe::{Stream, StreamKind};
@@ -25,7 +26,9 @@ use std::collections::HashMap;
 impl files::Model {
     pub async fn probe(&self, ctx: &Context<'_>) -> Result<Option<FileProbe>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let probe = file_probe::Entity::find_by_id(self.id.clone()).one(pool).await?;
+        let probe = file_probe::Entity::find_by_id(self.id.clone())
+            .one(pool)
+            .await?;
         Ok(probe
             .as_ref()
             .and_then(|probe| probe.get_probe().ok())
@@ -112,7 +115,10 @@ impl files::Model {
             return Ok(Vec::new());
         }
 
-        let asset_ids = rows.iter().map(|row| row.asset_id.clone()).collect::<Vec<_>>();
+        let asset_ids = rows
+            .iter()
+            .map(|row| row.asset_id.clone())
+            .collect::<Vec<_>>();
         let asset_models = assets::Entity::find()
             .filter(assets::Column::Id.is_in(asset_ids))
             .all(pool)
@@ -244,7 +250,10 @@ async fn load_subtitle_tracks(
     let subtitle_rows = load_current_subtitle_rows(pool, file).await?;
     let mut rows_by_stream_index: HashMap<i64, Vec<file_subtitles::Model>> = HashMap::new();
     for row in subtitle_rows {
-        rows_by_stream_index.entry(row.stream_index).or_default().push(row);
+        rows_by_stream_index
+            .entry(row.stream_index)
+            .or_default()
+            .push(row);
     }
 
     let recommended_audio_index = user
@@ -260,9 +269,11 @@ async fn load_subtitle_tracks(
         .iter()
         .filter(|stream| stream.kind() == StreamKind::Subtitle)
     {
-        let Some(track) =
-            build_logical_subtitle_track(&file.id, stream, rows_by_stream_index.get(&i64::from(stream.index)))
-        else {
+        let Some(track) = build_logical_subtitle_track(
+            &file.id,
+            stream,
+            rows_by_stream_index.get(&i64::from(stream.index)),
+        ) else {
             continue;
         };
         built_tracks.push(track);
@@ -333,35 +344,18 @@ fn build_logical_subtitle_track(
     let mut renditions = Vec::new();
 
     match kind {
-        file_subtitles::SubtitleKind::Vtt => renditions.push(SubtitleRendition {
-            id: "direct".to_string(),
-            codec_name: "WebVTT".to_string(),
-            r#type: SubtitleRenditionType::Direct,
-            display_info: "Direct Play".to_string(),
-            on_demand: rows.is_none_or(|rows| {
-                !rows.iter().any(|row| {
-                    row.derived_from_subtitle_id.is_none()
-                        && row.source == file_subtitles::SubtitleSource::Extracted
-                        && row.kind == file_subtitles::SubtitleKind::Vtt
-                })
-            }),
-        }),
-        file_subtitles::SubtitleKind::Srt
-        | file_subtitles::SubtitleKind::Ass
-        | file_subtitles::SubtitleKind::MovText
+        file_subtitles::SubtitleKind::Vtt => {
+            renditions.push(build_direct_subtitle_rendition(kind, rows));
+        }
+        file_subtitles::SubtitleKind::Srt | file_subtitles::SubtitleKind::Ass => {
+            renditions.push(build_direct_subtitle_rendition(kind, rows));
+            renditions.push(build_converted_subtitle_rendition(kind, rows));
+        }
+        file_subtitles::SubtitleKind::MovText
         | file_subtitles::SubtitleKind::Text
-        | file_subtitles::SubtitleKind::Ttml => renditions.push(SubtitleRendition {
-            id: "converted".to_string(),
-            codec_name: "WebVTT".to_string(),
-            r#type: SubtitleRenditionType::Converted,
-            display_info: format!("Converted from {}", subtitle_kind_label(kind)),
-            on_demand: rows.is_none_or(|rows| {
-                !rows.iter().any(|row| {
-                    row.source == file_subtitles::SubtitleSource::Converted
-                        && row.kind == file_subtitles::SubtitleKind::Vtt
-                })
-            }),
-        }),
+        | file_subtitles::SubtitleKind::Ttml => {
+            renditions.push(build_converted_subtitle_rendition(kind, rows));
+        }
         file_subtitles::SubtitleKind::Pgs | file_subtitles::SubtitleKind::VobSub => {
             renditions.push(SubtitleRendition {
                 id: "ocr".to_string(),
@@ -411,6 +405,43 @@ fn build_logical_subtitle_track(
     })
 }
 
+fn build_direct_subtitle_rendition(
+    kind: file_subtitles::SubtitleKind,
+    rows: Option<&Vec<file_subtitles::Model>>,
+) -> SubtitleRendition {
+    SubtitleRendition {
+        id: direct_subtitle_rendition_id(kind).to_string(),
+        codec_name: subtitle_kind_label(kind).to_string(),
+        r#type: SubtitleRenditionType::Direct,
+        display_info: format!("Original {}", subtitle_kind_label(kind)),
+        on_demand: rows.is_none_or(|rows| {
+            !rows.iter().any(|row| {
+                row.derived_from_subtitle_id.is_none()
+                    && row.source == file_subtitles::SubtitleSource::Extracted
+                    && row.kind == kind
+            })
+        }),
+    }
+}
+
+fn build_converted_subtitle_rendition(
+    kind: file_subtitles::SubtitleKind,
+    rows: Option<&Vec<file_subtitles::Model>>,
+) -> SubtitleRendition {
+    SubtitleRendition {
+        id: "converted".to_string(),
+        codec_name: "WebVTT".to_string(),
+        r#type: SubtitleRenditionType::Converted,
+        display_info: format!("Converted from {}", subtitle_kind_label(kind)),
+        on_demand: rows.is_none_or(|rows| {
+            !rows.iter().any(|row| {
+                row.source == file_subtitles::SubtitleSource::Converted
+                    && row.kind == file_subtitles::SubtitleKind::Vtt
+            })
+        }),
+    }
+}
+
 pub(crate) fn logical_subtitle_track_id(file_id: &str, stream_index: u32) -> String {
     format!("{file_id}:{stream_index}")
 }
@@ -443,6 +474,15 @@ fn subtitle_kind_label(kind: file_subtitles::SubtitleKind) -> &'static str {
         file_subtitles::SubtitleKind::Ttml => "TTML",
         file_subtitles::SubtitleKind::Pgs => "PGS",
         file_subtitles::SubtitleKind::VobSub => "VobSub",
+    }
+}
+
+fn direct_subtitle_rendition_id(kind: file_subtitles::SubtitleKind) -> &'static str {
+    match kind {
+        file_subtitles::SubtitleKind::Vtt => "direct",
+        file_subtitles::SubtitleKind::Srt => "direct-srt",
+        file_subtitles::SubtitleKind::Ass => "direct-ass",
+        _ => "direct",
     }
 }
 
@@ -592,9 +632,15 @@ fn compute_recommended_audio_track_index(
         let disposition_rank = match pref_disp {
             Some(TrackDispositionPreference::Commentary) if stream.is_commentary() => 3,
             Some(TrackDispositionPreference::Sdh)
-                if stream.is_hearing_impaired() && !stream.is_commentary() => 3,
+                if stream.is_hearing_impaired() && !stream.is_commentary() =>
+            {
+                3
+            }
             Some(TrackDispositionPreference::Normal)
-                if !stream.is_hearing_impaired() && !stream.is_commentary() => 3,
+                if !stream.is_hearing_impaired() && !stream.is_commentary() =>
+            {
+                3
+            }
             Some(_) => 0,
             None if !stream.is_hearing_impaired() && !stream.is_commentary() => 3,
             None if stream.is_hearing_impaired() && !stream.is_commentary() => 2,
@@ -602,7 +648,10 @@ fn compute_recommended_audio_track_index(
             None => 0,
         };
         let score = (strength as i32, disposition_rank);
-        if best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+        if best
+            .as_ref()
+            .is_none_or(|(best_score, _)| score > *best_score)
+        {
             best = Some((score, index));
         }
     }

@@ -9,9 +9,9 @@ export const SessionCardFragment = graphql(`
     players {
       id
       userId
+      displayUsername
       user {
         id
-        username
         createdAt
       }
     }

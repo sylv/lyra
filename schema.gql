@@ -605,6 +605,7 @@ type WatchSessionPlayer {
 	id: String!
 	sessionId: String!
 	userId: String!
+	displayUsername: String!
 	basePositionMs: Int!
 	joinedAt: Int!
 	updatedAt: Int!

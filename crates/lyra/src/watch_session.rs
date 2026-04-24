@@ -85,6 +85,7 @@ pub struct WatchSessionPlayer {
     pub id: String,
     pub session_id: String,
     pub user_id: String,
+    pub display_username: String,
     #[graphql(skip)]
     pub is_buffering: bool,
     pub base_position_ms: i32,
@@ -319,6 +320,7 @@ impl WatchSessionRegistry {
                         return Err(async_graphql::Error::new("Watch session player not found"));
                     }
 
+                    player.display_username = user.username.clone();
                     let was_inactive = is_player_inactive(player, now_ms);
                     let buffering_changed = player.is_buffering != input.is_buffering;
                     player.is_buffering = input.is_buffering;
@@ -338,6 +340,7 @@ impl WatchSessionRegistry {
                         id: input.player_id.clone(),
                         session_id: input.session_id.clone(),
                         user_id: user.id.clone(),
+                        display_username: user.username.clone(),
                         is_buffering: input.is_buffering,
                         base_position_ms: input.base_position_ms.max(0),
                         base_time_ms: input.base_time_ms as i64,

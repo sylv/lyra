@@ -73,7 +73,6 @@ export const SessionCard: FC<{ session: FragmentType<typeof SessionCardFragment>
         </div>
         <div className="space-y-2">
           {session.players.map((player) => {
-            const username = player.user?.username ?? "Unknown user";
             return (
               <div key={player.id} className="flex items-center gap-3 rounded-lg py-2">
                 {player.user ? (
@@ -82,7 +81,7 @@ export const SessionCard: FC<{ session: FragmentType<typeof SessionCardFragment>
                   <div className="size-7 rounded-full bg-zinc-800" />
                 )}
                 <div className="min-w-0">
-                  <p className={cn("truncate text-sm text-zinc-100")}>{username}</p>
+                  <p className={cn("truncate text-sm text-zinc-100")}>{player.displayUsername}</p>
                 </div>
               </div>
             );

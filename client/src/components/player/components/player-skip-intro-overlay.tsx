@@ -1,16 +1,37 @@
 import { AnimatePresence } from "motion/react";
 import { useMemo, type FC } from "react";
-import type { ItemPlaybackQuery } from "../../../@generated/gql/graphql";
-import { usePlayerContext } from "../player-context";
-import { usePlayerActions } from "../hooks/use-player-actions";
+import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
+import { usePlayerCommands } from "../hooks/use-player-commands";
+import { usePlayerDisplayState } from "../hooks/use-player-display-state";
+import { usePlayerRuntimeStore } from "../player-runtime-store";
 import { SkipIntroButton } from "./skip-intro-button";
 
-type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
+export const PlayerSkipIntroFragment = graphql(`
+  fragment PlayerSkipIntro on Node {
+    id
+    defaultFile {
+      segments {
+        kind
+        startMs
+        endMs
+      }
+      probe {
+        runtimeMinutes
+      }
+    }
+    watchProgress {
+      id
+      progressPercent
+      completed
+    }
+  }
+`);
 
-export const PlayerIntroOverlay: FC<{ media: CurrentMedia }> = ({ media }) => {
-  const currentTime = usePlayerContext((ctx) => ctx.state.currentTime);
-  const isFullscreen = usePlayerContext((ctx) => ctx.state.isFullscreen);
-  const { seekTo } = usePlayerActions();
+export const PlayerSkipIntroOverlay: FC<{ media: FragmentType<typeof PlayerSkipIntroFragment> }> = ({ media: mediaRaw }) => {
+  const media = unmask(PlayerSkipIntroFragment, mediaRaw);
+  const isFullscreen = usePlayerRuntimeStore((state) => state.isFullscreen);
+  const { currentTime } = usePlayerDisplayState(media);
+  const { seekTo } = usePlayerCommands();
 
   const introSegment = useMemo(() => {
     const segments = media.defaultFile?.segments;
@@ -41,15 +62,11 @@ export const PlayerIntroOverlay: FC<{ media: CurrentMedia }> = ({ media }) => {
   }, [currentTime, introSegment]);
 
   return (
-    <div className="pointer-events-none absolute bottom-36 right-0 flex justify-end px-4">
+    <div className="pointer-events-none absolute bottom-30 right-0 flex justify-end px-3">
       <div className="pointer-events-auto">
         <AnimatePresence>
           {introSegment && isInsideIntroSegment && isFullscreen ? (
-            <SkipIntroButton
-              key="skip-intro"
-              progressPercent={introProgressPercent}
-              onSkip={() => seekTo(introSegment.endMs / 1000)}
-            />
+            <SkipIntroButton key="skip-intro" progressPercent={introProgressPercent} onSkip={() => void seekTo(introSegment.endMs / 1000)} />
           ) : null}
         </AnimatePresence>
       </div>

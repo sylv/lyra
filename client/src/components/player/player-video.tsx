@@ -1,493 +1,136 @@
 /* oxlint-disable jsx_a11y/media-has-caption */
-import { useEffect, useRef, useState, type FC } from "react";
-import { useMutation, useSubscription } from "urql";
-import { unmask } from "../../@generated/gql";
-import { type ItemPlaybackQuery, WatchSessionActionKind, WatchSessionIntent } from "../../@generated/gql/graphql";
-import { createHlsPlayer } from "./hls";
-import {
-  playerContext,
-  setPlayerActions,
-  setPlayerLoading,
-  setPlayerMedia,
-  setPlayerMuted,
-  setPlayerSnapshot,
-  setPlayerState,
-  setPlayerVolume,
-  setPlayerWatchSession,
-  usePlayerContext,
-} from "./player-context";
-import {
-  MintPlaybackUrl,
-  MintSubtitleUrl,
-  UpdateWatchState,
-  WatchSessionAction,
-  WatchSessionBeaconFragment,
-  WatchSessionBeacons,
-  WatchSessionHeartbeat,
-} from "./player-queries";
-import { usePlayerRefsContext, usePlayerVideoElementRegistration } from "./player-refs-context";
-import { applyWatchSessionBeacon, createLocalWatchSessionId, getWatchSessionState } from "./watch-session";
+import { useEffect, useMemo, useRef, type FC } from "react";
+import { useMutation } from "urql";
+import { graphql } from "../../@generated/gql";
+import { type ItemPlaybackQuery } from "../../@generated/gql/graphql";
+import { createHlsPlayer, type PlayerController } from "./hls";
+import { playerOptionsStore } from "./player-options-store";
+import { playerRuntimeStore, setPlayerRuntimeState, usePlayerRuntimeStore } from "./player-runtime-store";
+import { usePlayerResumePrompt } from "./player-resume-prompt-state";
+import { usePlayerSession } from "./player-session";
+import { usePlayerVideoRegistration } from "./player-video-context";
+import { pickPreferredSubtitleRendition } from "./subtitles";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
+type PlaybackVideoRendition = NonNullable<
+  NonNullable<NonNullable<CurrentMedia["defaultFile"]>["playbackOptions"]>["videoRenditions"][number]
+>;
 
-interface PlayerVideoProps {
-  currentMedia: CurrentMedia | null;
-  autoplay: boolean;
-  shouldPromptResume: boolean;
-}
+const MintPlaybackUrl = graphql(`
+  mutation MintPlaybackUrl($input: PlaybackUrlInput!) {
+    mintPlaybackUrl(input: $input) {
+      url
+      packagerId
+    }
+  }
+`);
 
-const pickPlayableVideoRendition = (
-  renditions:
-    | NonNullable<NonNullable<CurrentMedia["defaultFile"]>["playbackOptions"]>["videoRenditions"]
-    | null
-    | undefined,
+const UpdateWatchState = graphql(`
+  mutation UpdateWatchState($fileId: String!, $progressPercent: Float!) {
+    updateWatchProgress(fileId: $fileId, progressPercent: $progressPercent) {
+      progressPercent
+      updatedAt
+    }
+  }
+`);
+
+const isVideoRenditionPlayable = (rendition: PlaybackVideoRendition, probe: HTMLVideoElement) => {
+  const mimeType = `video/mp4; codecs="${rendition.codecTag}"`;
+  const support = probe.canPlayType(mimeType);
+  return support === "probably" || support === "maybe";
+};
+
+const listPreferredVideoRenditions = (
+  renditions: NonNullable<NonNullable<NonNullable<CurrentMedia["defaultFile"]>["playbackOptions"]>["videoRenditions"]> | null | undefined,
 ) => {
   if (!renditions || renditions.length === 0) return null;
   const probe = document.createElement("video");
-  const playable =
-    renditions.find((rendition) => {
-      const mimeType = `video/mp4; codecs="${rendition.codecTag}"`;
-      const support = probe.canPlayType(mimeType);
-      console.info("[player] probed video rendition", {
-        renditionId: rendition.renditionId,
-        displayName: rendition.displayName,
-        codecTag: rendition.codecTag,
-        mimeType,
-        canPlayType: support,
-      });
-      return support === "probably" || support === "maybe";
-    }) ?? renditions[0];
-  console.info("[player] selected video rendition", {
-    renditionId: playable.renditionId,
-    displayName: playable.displayName,
-    codecTag: playable.codecTag,
-  });
-  return playable;
+  const playable = renditions.filter((rendition) => isVideoRenditionPlayable(rendition, probe));
+  return playable.length > 0 ? playable : renditions;
 };
 
-export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shouldPromptResume }) => {
-  const { controllerRef } = usePlayerRefsContext();
-  const setVideoElement = usePlayerVideoElementRegistration();
+const pickPlayableVideoRendition = (
+  renditions: PlaybackVideoRendition[] | null,
+  selectedRenditionId: string | null,
+) => {
+  if (!renditions || renditions.length === 0) return null;
+  if (selectedRenditionId != null) {
+    const selected = renditions.find((rendition) => rendition.renditionId === selectedRenditionId);
+    if (selected) return selected;
+  }
+  return renditions[0];
+};
+
+export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
+  const setVideoElement = usePlayerVideoRegistration();
+  const { session } = usePlayerSession();
+  const { openPrompt } = usePlayerResumePrompt();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const controllerRef = useRef<PlayerController | null>(null);
   const [, mintPlaybackUrl] = useMutation(MintPlaybackUrl);
-  const [, mintSubtitleUrl] = useMutation(MintSubtitleUrl);
   const [, updateWatchProgress] = useMutation(UpdateWatchState);
-  const [, watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
-  const [, watchSessionAction] = useMutation(WatchSessionAction);
-  const subtitleUrlCacheRef = useRef(new Map<string, string>());
-  const subtitleRequestIdRef = useRef(0);
-  const [activeSubtitle, setActiveSubtitle] = useState<{
-    trackId: string;
-    renditionId: string;
-    url: string;
-    label: string;
-    language: string | null;
-  } | null>(null);
-  const currentMediaId = currentMedia?.id ?? null;
-  const currentFileId = currentMedia?.defaultFile?.id ?? null;
-  const watchSession = usePlayerContext((ctx) => ctx.watchSession);
   const snapshotUpdateRef = useRef<{ mediaId: string | null; lastPosition: number | null; lastUpdatedAt: number }>({
     mediaId: null,
     lastPosition: null,
     lastUpdatedAt: 0,
   });
-  const watchProgressRef = useRef<{
-    mediaId: string | null;
-    fileId: string | null;
-    lastProgressPercent: number | null;
-  }>({
+  const watchProgressRef = useRef<{ mediaId: string | null; fileId: string | null; lastProgressPercent: number | null }>({
     mediaId: null,
     fileId: null,
     lastProgressPercent: null,
   });
-  const sessionControlledSwitchRef = useRef<string | null>(null);
-  const pendingActionRef = useRef<Promise<unknown> | null>(null);
-  const heartbeatRef = useRef<(() => void) | null>(null);
-  const [isWatchSessionRegistered, setIsWatchSessionRegistered] = useState(false);
-  const selectedAudioTrackId = usePlayerContext((ctx) => ctx.state.selectedAudioTrackId);
-  const selectedSubtitleTrackId = usePlayerContext((ctx) => ctx.state.selectedSubtitleTrackId);
-  const playbackOptions = currentMedia?.defaultFile?.playbackOptions ?? null;
+  const autoplay = usePlayerRuntimeStore((state) => state.autoplay);
+  const shouldPromptResume = usePlayerRuntimeStore((state) => state.shouldPromptResume);
+  const targetTime = usePlayerRuntimeStore((state) => state.targetTime);
+  const hasMediaLoaded = usePlayerRuntimeStore((state) => state.hasMediaLoaded);
+  const selectedVideoRenditionId = usePlayerRuntimeStore((state) => state.selectedVideoRenditionId);
+  const selectedAudioTrackId = usePlayerRuntimeStore((state) => state.selectedAudioTrackId);
+  const selectedSubtitleTrackId = usePlayerRuntimeStore((state) => state.selectedSubtitleTrackId);
+  const isFullscreen = usePlayerRuntimeStore((state) => state.isFullscreen);
+  const playbackOptions = media?.defaultFile?.playbackOptions ?? null;
+  const subtitleTracks = playbackOptions?.subtitleTracks ?? [];
+  const preferredVideoRenditions = listPreferredVideoRenditions(playbackOptions?.videoRenditions);
   const recommendedAudioTrack =
     playbackOptions?.audioTracks.find((track) => track.recommended) ?? playbackOptions?.audioTracks[0] ?? null;
   const activeAudioTrack =
     playbackOptions?.audioTracks.find((track) => track.streamIndex === selectedAudioTrackId) ?? recommendedAudioTrack;
   const activeAudioRendition = activeAudioTrack?.renditions[0] ?? null;
-  const activeVideoRendition = pickPlayableVideoRendition(playbackOptions?.videoRenditions);
-  const subtitleTracks = playbackOptions?.subtitleTracks ?? [];
-  const autoselectSubtitleTrack = subtitleTracks.find((track) => track.autoselect) ?? null;
+  const activeVideoRendition = pickPlayableVideoRendition(preferredVideoRenditions, selectedVideoRenditionId);
+  const defaultFileId = media?.defaultFile?.id ?? null;
+  const runtimeMinutes = media?.defaultFile?.probe?.runtimeMinutes ?? null;
+  const watchProgressCompleted = media?.watchProgress?.completed ?? null;
+  const watchProgressPercent = media?.watchProgress?.progressPercent ?? null;
+  const initialTargetTime = hasMediaLoaded ? null : targetTime;
+  const shouldPromptResumeRef = useRef(false);
+
+  useEffect(() => {
+    if (shouldPromptResume) {
+      shouldPromptResumeRef.current = true;
+    }
+  }, [shouldPromptResume, media?.id]);
 
   useEffect(() => {
     setVideoElement(videoRef.current);
-    return () => {
-      setVideoElement(null);
-    };
+    return () => setVideoElement(null);
   }, [setVideoElement]);
-
-  useEffect(() => {
-    if (!playbackOptions?.audioTracks?.length) return;
-    for (const track of playbackOptions.audioTracks) {
-      for (const rendition of track.renditions) {
-        console.info("[player] available audio rendition", {
-          streamIndex: track.streamIndex,
-          displayName: track.displayName,
-          renditionId: rendition.renditionId,
-          codecName: rendition.codecName,
-          codecTag: rendition.codecTag,
-        });
-      }
-    }
-    if (!activeAudioTrack || !activeAudioRendition) return;
-    console.info("[player] selected audio rendition", {
-      streamIndex: activeAudioTrack.streamIndex,
-      displayName: activeAudioTrack.displayName,
-      renditionId: activeAudioRendition.renditionId,
-      codecName: activeAudioRendition.codecName,
-      codecTag: activeAudioRendition.codecTag,
-    });
-  }, [activeAudioRendition, activeAudioTrack, playbackOptions?.audioTracks]);
-
-  const [watchSessionBeaconsResult] = useSubscription({
-    query: WatchSessionBeacons,
-    variables: {
-      sessionId: watchSession.sessionId ?? "",
-      playerId: watchSession.playerId ?? "",
-    },
-    pause: !watchSession.sessionId || !watchSession.playerId || !isWatchSessionRegistered,
-  });
-
-  useEffect(() => {
-    const beacon = watchSessionBeaconsResult.data?.watchSessionBeacons;
-    if (!beacon) return;
-    applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
-  }, [watchSessionBeaconsResult.data?.watchSessionBeacons]);
-
-  useEffect(() => {
-    setIsWatchSessionRegistered(false);
-  }, [watchSession.playerId, watchSession.sessionId]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    const sendAction = async (
-      kind: WatchSessionActionKind,
-      fields: Partial<{ positionMs: number; nodeId: string; targetPlayerId: string }> = {},
-    ) => {
-      const sessionState = getWatchSessionState();
-      if (!sessionState.sessionId || !sessionState.playerId) return null;
-
-      const request = watchSessionAction({
-        input: {
-          sessionId: sessionState.sessionId,
-          playerId: sessionState.playerId,
-          kind,
-          positionMs: fields.positionMs ?? null,
-          nodeId: fields.nodeId ?? null,
-          targetPlayerId: fields.targetPlayerId ?? null,
-        },
-      })
-        .then((result) => {
-          if (result.error) {
-            throw result.error;
-          }
-          const beacon = result.data?.watchSessionAction;
-          if (beacon) {
-            applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
-          }
-          return beacon ?? null;
-        })
-        .catch((error: unknown) => {
-          const sessionMode = getWatchSessionState().mode;
-          if (sessionMode === "SYNCED") {
-            setPlayerWatchSession({ connectionWarning: "Watch session connection lost" });
-          }
-          throw error;
-        });
-      pendingActionRef.current = request;
-      return request;
-    };
-
-    const togglePlaying = () => {
-      const sessionState = getWatchSessionState();
-      const positionMs = Math.max(0, Math.round(video.currentTime * 1000));
-      if (sessionState.mode === "SYNCED") {
-        void sendAction(video.paused ? WatchSessionActionKind.Play : WatchSessionActionKind.Pause, { positionMs });
-        return;
-      }
-
-      if (video.paused) {
-        video.play().catch(() => undefined);
-        void sendAction(WatchSessionActionKind.Play, { positionMs });
-      } else {
-        video.pause();
-        void sendAction(WatchSessionActionKind.Pause, { positionMs });
-      }
-    };
-
-    const seekTo = (time: number) => {
-      const target = Math.max(0, time);
-      const targetMs = Math.round(target * 1000);
-      if (getWatchSessionState().mode === "SYNCED") {
-        void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
-        return;
-      }
-
-      video.currentTime = target;
-      void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
-    };
-
-    const seekBy = (deltaSeconds: number) => {
-      const cachedDuration = playerContext.getState().state.duration;
-      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : cachedDuration;
-      const nextTime = video.currentTime + deltaSeconds;
-      const target = Math.max(0, duration > 0 ? Math.min(duration, nextTime) : nextTime);
-      const targetMs = Math.round(target * 1000);
-      if (getWatchSessionState().mode === "SYNCED") {
-        void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
-        return;
-      }
-
-      video.currentTime = target;
-      void sendAction(WatchSessionActionKind.Seek, { positionMs: targetMs });
-    };
-
-    const toggleMute = () => {
-      const nextMuted = !playerContext.getState().preferences.isMuted;
-      setPlayerMuted(nextMuted);
-      video.muted = nextMuted;
-    };
-
-    const setVolume = (volume: number) => {
-      setPlayerVolume(volume);
-      video.volume = volume;
-      if (volume > 0 && playerContext.getState().preferences.isMuted) {
-        setPlayerMuted(false);
-        video.muted = false;
-      }
-    };
-
-    const setAudioTrack = (trackId: number | null) => {
-      setPlayerState({ selectedAudioTrackId: trackId });
-    };
-
-    const setSubtitleTrack = async (trackId: string | null, options?: { manual?: boolean }) => {
-      const fileId = currentMedia?.defaultFile?.id;
-      setPlayerState({ selectedSubtitleTrackId: trackId });
-
-      if (!fileId) {
-        subtitleRequestIdRef.current += 1;
-        setActiveSubtitle(null);
-        setPlayerState({
-          activeSubtitleTrackId: null,
-          activeSubtitleRenditionId: null,
-          pendingSubtitleTrackId: null,
-        });
-        return;
-      }
-
-      const resolvedTrack =
-        trackId === ""
-          ? null
-          : trackId === null
-            ? autoselectSubtitleTrack
-            : (subtitleTracks.find((track) => track.id === trackId) ?? null);
-      if (!resolvedTrack) {
-        subtitleRequestIdRef.current += 1;
-        setActiveSubtitle(null);
-        setPlayerState({
-          activeSubtitleTrackId: null,
-          activeSubtitleRenditionId: null,
-          pendingSubtitleTrackId: null,
-        });
-        return;
-      }
-
-      const rendition = resolvedTrack.renditions[0] ?? null;
-      if (!rendition) {
-        setActiveSubtitle(null);
-        setPlayerState({
-          activeSubtitleTrackId: null,
-          activeSubtitleRenditionId: null,
-          pendingSubtitleTrackId: null,
-        });
-        return;
-      }
-
-      const requestId = subtitleRequestIdRef.current + 1;
-      subtitleRequestIdRef.current = requestId;
-      setPlayerState({ pendingSubtitleTrackId: resolvedTrack.id });
-      const cacheKey = `${resolvedTrack.id}:${rendition.id}`;
-      let url = subtitleUrlCacheRef.current.get(cacheKey) ?? null;
-      if (!url) {
-        const result = await mintSubtitleUrl({
-          input: {
-            fileId,
-            trackId: resolvedTrack.id,
-            renditionId: rendition.id,
-            manual: options?.manual ?? false,
-          },
-        });
-        if (result.error || !result.data?.mintSubtitleUrl.url) {
-          setPlayerState({ pendingSubtitleTrackId: null });
-          throw result.error ?? new Error("Failed to mint subtitle URL");
-        }
-        url = result.data.mintSubtitleUrl.url;
-        subtitleUrlCacheRef.current.set(cacheKey, url);
-      }
-
-      if (subtitleRequestIdRef.current !== requestId || !url) return;
-      setActiveSubtitle({
-        trackId: resolvedTrack.id,
-        renditionId: rendition.id,
-        url,
-        label: resolvedTrack.displayName,
-        language: resolvedTrack.languageBcp47 ?? null,
-      });
-      setPlayerState({
-        activeSubtitleTrackId: resolvedTrack.id,
-        activeSubtitleRenditionId: rendition.id,
-        pendingSubtitleTrackId: null,
-      });
-    };
-
-    const switchItem = (itemId: string) => {
-      if (getWatchSessionState().mode === "SYNCED") {
-        void sendAction(WatchSessionActionKind.SwitchItem, { nodeId: itemId });
-        return;
-      }
-
-      sessionControlledSwitchRef.current = itemId;
-      setPlayerMedia(itemId, true);
-      void sendAction(WatchSessionActionKind.SwitchItem, { nodeId: itemId });
-    };
-
-    setPlayerActions({
-      togglePlaying,
-      seekBy,
-      seekTo,
-      toggleMute,
-      setVolume,
-      setAudioTrack,
-      setSubtitleTrack,
-      switchItem,
-    });
-  }, [
-    autoselectSubtitleTrack,
-    controllerRef,
-    currentMedia?.defaultFile?.id,
-    mintSubtitleUrl,
-    subtitleTracks,
-    videoRef,
-    watchSessionAction,
-  ]);
+    const options = playerOptionsStore.getState();
+    video.volume = options.volume;
+    video.muted = options.isMuted;
+  }, []);
 
   useEffect(() => {
-    if (!videoRef.current) return;
-    videoRef.current.volume = playerContext.getState().preferences.volume;
-    videoRef.current.muted = playerContext.getState().preferences.isMuted;
-  }, [videoRef]);
-
-  useEffect(() => {
-    if (!videoRef.current || !currentMedia) return;
-    if (!watchSession.playerId) return;
-    const video = videoRef.current;
-
-    if (!autoplay) {
-      video.pause();
-      setPlayerState({ playing: false });
-    }
-
-    if (!currentMedia.defaultFile) {
-      video.pause();
-      setPlayerState({ errorMessage: "Sorry, this item is unavailable" });
-      setPlayerLoading(false);
-      return;
-    }
-
-    setPlayerState({ errorMessage: null });
-    setPlayerLoading(true);
-    const initialPositionSeconds = playerContext.getState().state.pendingInitialPosition;
-    const watchProgressPercent = currentMedia.watchProgress?.completed
-      ? null
-      : currentMedia.watchProgress?.progressPercent;
-    const runtimeMinutes = currentMedia.defaultFile.probe?.runtimeMinutes;
-    const runtimeDurationSeconds =
-      typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
-        ? runtimeMinutes * 60
-        : null;
-
-    let active = true;
-    if (!activeAudioTrack || !activeAudioRendition || !activeVideoRendition) {
-      setPlayerState({ errorMessage: "Sorry, this item has no playable stream" });
-      setPlayerLoading(false);
-      return;
-    }
-
-    controllerRef.current?.destroy();
-    controllerRef.current = null;
-
-    void mintPlaybackUrl({
-      input: {
-        fileId: currentMedia.defaultFile.id,
-        playerId: watchSession.playerId,
-        videoRenditionId: activeVideoRendition.renditionId,
-        audioStreamIndex: activeAudioTrack.streamIndex,
-        audioRenditionId: activeAudioRendition.renditionId,
-      },
-    })
-      .then((result) => {
-        if (!active) return;
-        if (result.error || !result.data?.mintPlaybackUrl.url) {
-          throw result.error ?? new Error("Failed to mint playback URL");
-        }
-        return createHlsPlayer(video, result.data.mintPlaybackUrl.url, {
-          initialPositionSeconds,
-          watchProgressPercent,
-          runtimeDurationSeconds,
-          shouldPromptResume,
-          shouldAutoplay: autoplay,
-          pauseAfterInitialSeek: initialPositionSeconds != null,
-          videoRef,
-        });
-      })
-      .then((controller) => {
-        if (!active) {
-          controller?.destroy();
-          return;
-        }
-        controllerRef.current = controller ?? null;
-        if (initialPositionSeconds != null) {
-          setPlayerState({ pendingInitialPosition: null, playing: false });
-        }
-      })
-      .catch((error: unknown) => {
-        console.error("failed to start playback", error);
-        if (!active) return;
-        setPlayerState({ errorMessage: "Sorry, this item is unavailable" });
-        setPlayerLoading(false);
-      });
-
-    return () => {
-      active = false;
-      controllerRef.current?.destroy();
-      controllerRef.current = null;
-    };
-  }, [
-    autoplay,
-    controllerRef,
-    currentFileId,
-    currentMediaId,
-    activeAudioRendition?.renditionId,
-    activeAudioTrack?.streamIndex,
-    activeVideoRendition?.renditionId,
-    mintPlaybackUrl,
-    shouldPromptResume,
-    videoRef,
-    watchSession.playerId,
-  ]);
-
-  useEffect(() => {
-    setPlayerState({
+    setPlayerRuntimeState({
+      videoRenditionOptions:
+        preferredVideoRenditions?.map((rendition) => ({
+          id: rendition.renditionId,
+          label: rendition.displayName,
+          displayInfo: rendition.displayInfo,
+          onDemand: rendition.onDemand,
+        })) ?? [],
       audioTrackOptions:
         playbackOptions?.audioTracks.map((track) => ({
           id: track.streamIndex,
@@ -497,7 +140,7 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
       subtitleTrackOptions:
         subtitleTracks
           .map((track) => {
-            const rendition = track.renditions[0];
+            const rendition = pickPreferredSubtitleRendition(track);
             if (!rendition) return null;
             return {
               id: track.id,
@@ -513,453 +156,319 @@ export const PlayerVideo: FC<PlayerVideoProps> = ({ currentMedia, autoplay, shou
           })
           .filter((track): track is NonNullable<typeof track> => track != null) ?? [],
     });
-  }, [playbackOptions?.audioTracks, subtitleTracks]);
+  }, [playbackOptions?.audioTracks, preferredVideoRenditions, subtitleTracks]);
 
   useEffect(() => {
-    subtitleRequestIdRef.current += 1;
-    setActiveSubtitle(null);
-    setPlayerState({
+    setPlayerRuntimeState({
+      selectedVideoRenditionId: null,
       selectedAudioTrackId: null,
       selectedSubtitleTrackId: null,
       activeSubtitleTrackId: null,
       activeSubtitleRenditionId: null,
       pendingSubtitleTrackId: null,
     });
-  }, [currentFileId]);
+  }, [defaultFileId]);
 
   useEffect(() => {
-    if (selectedAudioTrackId == null) return;
-    const hasSelectedAudioTrack = playbackOptions?.audioTracks.some(
-      (track) => track.streamIndex === selectedAudioTrackId,
-    );
+    const hasSelectedAudioTrack =
+      selectedAudioTrackId == null || playbackOptions?.audioTracks.some((track) => track.streamIndex === selectedAudioTrackId);
     if (!hasSelectedAudioTrack) {
-      setPlayerState({ selectedAudioTrackId: null });
+      setPlayerRuntimeState({ selectedAudioTrackId: null });
     }
   }, [playbackOptions?.audioTracks, selectedAudioTrackId]);
 
   useEffect(() => {
-    if (selectedSubtitleTrackId == null || selectedSubtitleTrackId === "") return;
-    const hasSelectedSubtitleTrack = playbackOptions?.subtitleTracks.some(
-      (track) => track.id === selectedSubtitleTrackId,
+    if (selectedVideoRenditionId == null) return;
+    const hasSelectedVideoRendition = preferredVideoRenditions?.some(
+      (rendition) => rendition.renditionId === selectedVideoRenditionId,
     );
+    if (!hasSelectedVideoRendition) {
+      setPlayerRuntimeState({ selectedVideoRenditionId: null });
+    }
+  }, [preferredVideoRenditions, selectedVideoRenditionId]);
+
+  useEffect(() => {
+    if (selectedSubtitleTrackId == null || selectedSubtitleTrackId === "") return;
+    const hasSelectedSubtitleTrack = playbackOptions?.subtitleTracks.some((track) => track.id === selectedSubtitleTrackId);
     if (!hasSelectedSubtitleTrack) {
-      setPlayerState({ selectedSubtitleTrackId: null });
+      setPlayerRuntimeState({ selectedSubtitleTrackId: null });
     }
   }, [playbackOptions?.subtitleTracks, selectedSubtitleTrackId]);
 
   useEffect(() => {
-    const currentSelectedSubtitleTrackId = playerContext.getState().state.selectedSubtitleTrackId;
-    void playerContext.getState().actions.setSubtitleTrack(currentSelectedSubtitleTrackId, { manual: false });
-  }, [currentFileId, subtitleTracks]);
+    const video = videoRef.current;
+    if (!video) return;
 
-  useEffect(() => {
-    if (!currentMedia?.defaultFile) return;
-    if (watchSession.sessionId && watchSession.playerId) return;
+    controllerRef.current?.destroy();
+    controllerRef.current = null;
 
-    const pendingSessionId = watchSession.pendingSessionId;
-    const pendingNodeId = watchSession.pendingNodeId;
-    const shouldJoin = pendingSessionId != null && pendingNodeId === currentMedia.id;
-    if (pendingSessionId && !shouldJoin) return;
-
-    setPlayerWatchSession({
-      sessionId: shouldJoin ? pendingSessionId : createLocalWatchSessionId(),
-      playerId: createLocalWatchSessionId(),
-      nodeId: currentMedia.id,
-      fileId: currentMedia.defaultFile.id,
-      mode: "ADVISORY",
-      intent: playerContext.getState().state.playing ? "PLAYING" : "PAUSED",
-      effectiveState: playerContext.getState().state.playing ? "PLAYING" : "PAUSED",
-      basePositionMs: Math.max(0, Math.round((videoRef.current?.currentTime ?? 0) * 1000)),
-      baseTimeMs: Date.now(),
-      players: [],
-      lastContactAt: null,
-      connectionWarning: null,
-      pendingSessionId: null,
-      pendingNodeId: null,
-    });
-  }, [
-    currentMedia?.defaultFile,
-    currentMedia?.id,
-    currentMedia?.defaultFile?.id,
-    videoRef,
-    watchSession.pendingNodeId,
-    watchSession.pendingSessionId,
-    watchSession.playerId,
-    watchSession.sessionId,
-  ]);
-
-  useEffect(() => {
-    if (watchSession.mode === "SYNCED") return;
-    if (!currentMediaId || !watchSession.sessionId || !watchSession.playerId) return;
-    if (watchSession.pendingSessionId) return;
-    if (sessionControlledSwitchRef.current === currentMediaId) {
-      sessionControlledSwitchRef.current = null;
+    if (!media?.defaultFile) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      if (media) {
+        setPlayerRuntimeState({
+          errorMessage: "Sorry, this item is unavailable",
+          buffering: false,
+        });
+      }
       return;
     }
-    if (!watchSession.nodeId || watchSession.nodeId === currentMediaId) return;
 
-    void watchSessionAction({
+    if (!session.playerId) return;
+    if (!activeAudioTrack || !activeAudioRendition || !activeVideoRendition) {
+      setPlayerRuntimeState({
+        errorMessage: "Sorry, this item has no playable stream",
+        buffering: false,
+      });
+      return;
+    }
+
+    const promptOnThisLoad = shouldPromptResumeRef.current;
+    shouldPromptResumeRef.current = false;
+
+    setPlayerRuntimeState({
+      errorMessage: null,
+      buffering: true,
+      hasMediaLoaded: false,
+      ended: false,
+      shouldPromptResume: false,
+    });
+
+    const runtimeDurationSeconds =
+      typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0 ? runtimeMinutes * 60 : null;
+    const effectiveWatchProgressPercent = watchProgressCompleted ? null : watchProgressPercent;
+    let active = true;
+
+    void mintPlaybackUrl({
       input: {
-        sessionId: watchSession.sessionId,
-        playerId: watchSession.playerId,
-        kind: WatchSessionActionKind.SwitchItem,
-        positionMs: null,
-        nodeId: currentMediaId,
-        targetPlayerId: null,
+        fileId: media.defaultFile.id,
+        playerId: session.playerId,
+        videoRenditionId: activeVideoRendition.renditionId,
+        audioStreamIndex: activeAudioTrack.streamIndex,
+        audioRenditionId: activeAudioRendition.renditionId,
       },
     })
       .then((result) => {
-        if (result.error) {
-          throw result.error;
+        if (!active) return null;
+        if (result.error || !result.data?.mintPlaybackUrl.url) {
+          throw result.error ?? new Error("Failed to mint playback URL");
         }
-        const beacon = result.data?.watchSessionAction;
-        if (beacon) {
-          applyWatchSessionBeacon(unmask(WatchSessionBeaconFragment, beacon));
+        return createHlsPlayer(video, result.data.mintPlaybackUrl.url, {
+          initialPositionSeconds: initialTargetTime,
+          watchProgressPercent: effectiveWatchProgressPercent,
+          runtimeDurationSeconds,
+          shouldPromptResume: promptOnThisLoad,
+          shouldAutoplay: autoplay && session.mode !== "SYNCED",
+          pauseAfterInitialSeek: initialTargetTime != null,
+          videoRef,
+          onError: (message) => {
+            setPlayerRuntimeState({ errorMessage: message });
+          },
+          onLoadingChange: (loading) => {
+            setPlayerRuntimeState({ buffering: loading });
+          },
+          onResumePrompt: (positionSeconds, handlers) => {
+            setPlayerRuntimeState({ playing: false });
+            openPrompt(positionSeconds, handlers);
+          },
+        });
+      })
+      .then((controller) => {
+        if (!active) {
+          controller?.destroy();
+          return;
         }
+        controllerRef.current = controller ?? null;
       })
       .catch((error) => {
-        console.error("failed to switch watch session item", error);
-      });
-  }, [
-    currentMediaId,
-    watchSession.nodeId,
-    watchSession.pendingSessionId,
-    watchSession.playerId,
-    watchSession.sessionId,
-    watchSession.mode,
-    watchSessionAction,
-  ]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || watchSession.mode !== "SYNCED") {
-      if (video) {
-        video.playbackRate = 1;
-      }
-      return;
-    }
-    if (watchSession.basePositionMs == null || watchSession.baseTimeMs == null || !watchSession.nodeId) return;
-
-    if (watchSession.nodeId !== currentMediaId) {
-      sessionControlledSwitchRef.current = watchSession.nodeId;
-      setPlayerState({
-        pendingInitialPosition: watchSession.basePositionMs / 1000,
-        autoplay: false,
-        shouldPromptResume: false,
-      });
-      setPlayerMedia(watchSession.nodeId, false);
-      return;
-    }
-
-    const targetSeconds =
-      watchSession.effectiveState === "PLAYING"
-        ? Math.max(0, (watchSession.basePositionMs + Math.max(0, Date.now() - watchSession.baseTimeMs)) / 1000)
-        : Math.max(0, watchSession.basePositionMs / 1000);
-    const driftSeconds = targetSeconds - video.currentTime;
-
-    if (Math.abs(driftSeconds) > 15) {
-      video.currentTime = targetSeconds;
-      video.playbackRate = 1;
-    } else if (driftSeconds > 0.75) {
-      video.playbackRate = driftSeconds > 5 ? 1.1 : 1.05;
-    } else if (driftSeconds < -0.75) {
-      video.playbackRate = driftSeconds < -5 ? 0.9 : 0.95;
-    } else {
-      video.playbackRate = 1;
-    }
-
-    if (watchSession.effectiveState === "PLAYING") {
-      video.play().catch(() => undefined);
-    } else {
-      video.pause();
-    }
-  }, [
-    currentMediaId,
-    videoRef,
-    watchSession.basePositionMs,
-    watchSession.baseTimeMs,
-    watchSession.effectiveState,
-    watchSession.mode,
-    watchSession.nodeId,
-  ]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !currentMediaId || !currentFileId || !watchSession.sessionId || !watchSession.playerId) return;
-
-    const sendHeartbeat = () => {
-      const sessionState = getWatchSessionState();
-      if (!sessionState.sessionId || !sessionState.playerId) return;
-      const basePositionMs = Math.max(0, Math.round(video.currentTime * 1000));
-      const baseTimeMs = Date.now();
-      const isBuffering = playerContext.getState().state.isLoading && !video.paused;
-      const recoveryIntent =
-        sessionState.intent === "PLAYING"
-          ? WatchSessionIntent.Playing
-          : sessionState.intent === "PAUSED"
-            ? WatchSessionIntent.Paused
-            : video.paused
-              ? WatchSessionIntent.Paused
-              : WatchSessionIntent.Playing;
-
-      void watchSessionHeartbeat({
-        input: {
-          sessionId: sessionState.sessionId,
-          playerId: sessionState.playerId,
-          isBuffering,
-          basePositionMs,
-          baseTimeMs,
-          recovery: {
-            nodeId: sessionState.nodeId ?? currentMediaId,
-            fileId: sessionState.fileId ?? currentFileId,
-            intent: recoveryIntent,
-            basePositionMs: sessionState.basePositionMs ?? basePositionMs,
-            baseTimeMs: sessionState.baseTimeMs ?? baseTimeMs,
-          },
-        },
-      })
-        .then((result) => {
-          if (result.error) {
-            throw result.error;
-          }
-          const beacon = result.data?.watchSessionHeartbeat;
-          if (beacon) {
-            const resolvedBeacon = unmask(WatchSessionBeaconFragment, beacon);
-            if (resolvedBeacon.players.some((player) => player.id === sessionState.playerId)) {
-              setIsWatchSessionRegistered(true);
-            }
-            applyWatchSessionBeacon(resolvedBeacon);
-          }
-        })
-        .catch((error) => {
-          console.error("failed to send watch session heartbeat", error);
-          if (sessionState.mode === "SYNCED") {
-            setPlayerWatchSession({ connectionWarning: "Watch session connection lost" });
-          }
+        console.error("failed to start playback", error);
+        if (!active) return;
+        setPlayerRuntimeState({
+          errorMessage: "Sorry, this item is unavailable",
+          buffering: false,
         });
-    };
-    heartbeatRef.current = sendHeartbeat;
+      });
 
-    sendHeartbeat();
-    const interval = window.setInterval(sendHeartbeat, 3_000);
     return () => {
-      heartbeatRef.current = null;
-      window.clearInterval(interval);
+      active = false;
+      controllerRef.current?.destroy();
+      controllerRef.current = null;
     };
-  }, [currentFileId, currentMediaId, videoRef, watchSession.playerId, watchSession.sessionId, watchSessionHeartbeat]);
+  }, [
+    activeAudioRendition?.renditionId,
+    activeAudioTrack?.streamIndex,
+    activeVideoRendition?.renditionId,
+    autoplay,
+    initialTargetTime,
+    defaultFileId,
+    media?.id,
+    runtimeMinutes,
+    watchProgressCompleted,
+    watchProgressPercent,
+    mintPlaybackUrl,
+    openPrompt,
+    session.mode,
+    session.playerId,
+  ]);
 
   useEffect(() => {
-    if (watchSession.mode !== "SYNCED" || watchSession.lastContactAt == null) return;
     const video = videoRef.current;
     if (!video) return;
 
-    const interval = window.setInterval(() => {
-      const stale = Date.now() - (playerContext.getState().watchSession.lastContactAt ?? 0) >= 12_000;
-      if (!stale) return;
-      video.pause();
-      setPlayerWatchSession({ connectionWarning: "Watch session connection lost" });
-    }, 1_000);
-
-    return () => window.clearInterval(interval);
-  }, [videoRef, watchSession.lastContactAt, watchSession.mode]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // keep a persisted local snapshot of the active item so reloads can restore the exact position.
-    const syncPlayerSnapshot = (force = false) => {
-      if (!currentMedia) return;
-      if (playerContext.getState().currentItemId !== currentMedia.id) return;
+    const syncSnapshot = (force = false) => {
+      if (!media) return;
+      if (playerRuntimeStore.getState().currentItemId !== media.id) return;
 
       const position = Number.isFinite(video.currentTime) && video.currentTime > 0 ? video.currentTime : 0;
       const now = Date.now();
-      const snapshotState = snapshotUpdateRef.current;
-
-      if (snapshotState.mediaId !== currentMedia.id) {
-        snapshotUpdateRef.current = {
-          mediaId: currentMedia.id,
-          lastPosition: null,
-          lastUpdatedAt: 0,
-        };
-      }
-
-      const nextSnapshotState = snapshotUpdateRef.current;
+      const previous = snapshotUpdateRef.current;
       if (!force) {
-        const positionDelta =
-          nextSnapshotState.lastPosition == null
-            ? Number.POSITIVE_INFINITY
-            : Math.abs(position - nextSnapshotState.lastPosition);
-        if (positionDelta < 1 && now - nextSnapshotState.lastUpdatedAt < 1_000) return;
+        const positionDelta = previous.lastPosition == null ? Number.POSITIVE_INFINITY : Math.abs(position - previous.lastPosition);
+        if (positionDelta < 1 && now - previous.lastUpdatedAt < 1_000) return;
       }
 
-      setPlayerSnapshot({
-        currentItemId: currentMedia.id,
+      playerOptionsStore.getState().setSnapshot({
+        currentItemId: media.id,
         position,
       });
       snapshotUpdateRef.current = {
-        mediaId: currentMedia.id,
+        mediaId: media.id,
         lastPosition: position,
         lastUpdatedAt: now,
       };
     };
 
     const syncWatchProgress = () => {
-      if (!currentMedia?.defaultFile || video.duration <= 0) return;
-
+      if (!media?.defaultFile || video.duration <= 0) return;
       const progressPercent = video.currentTime / video.duration;
       if (!Number.isFinite(progressPercent)) return;
 
-      if (
-        watchProgressRef.current.mediaId !== currentMedia.id ||
-        watchProgressRef.current.fileId !== currentMedia.defaultFile.id
-      ) {
+      const previous = watchProgressRef.current;
+      if (previous.mediaId !== media.id || previous.fileId !== media.defaultFile.id) {
         watchProgressRef.current = {
-          mediaId: currentMedia.id,
-          fileId: currentMedia.defaultFile.id,
+          mediaId: media.id,
+          fileId: media.defaultFile.id,
           lastProgressPercent: null,
         };
       }
-
       if (watchProgressRef.current.lastProgressPercent === progressPercent) return;
       watchProgressRef.current.lastProgressPercent = progressPercent;
 
-      updateWatchProgress({
-        fileId: currentMedia.defaultFile.id,
+      void updateWatchProgress({
+        fileId: media.defaultFile.id,
         progressPercent,
-      })
-        .then((result) => {
-          if (result.error) {
-            throw result.error;
-          }
-        })
-        .catch((err: unknown) => {
-          console.error("failed to update watch state", err);
-        });
+      }).catch((error) => console.error("failed to update watch state", error));
+    };
+
+    const syncAspectRatio = () => {
+      if (video.videoWidth <= 0 || video.videoHeight <= 0) return;
+      setPlayerRuntimeState({ aspectRatio: video.videoWidth / video.videoHeight });
     };
 
     const updatePlaybackState = () => {
-      setPlayerState({
+      setPlayerRuntimeState({
         playing: !video.paused,
-        currentTime: video.currentTime,
-        duration: video.duration,
-        ...(!video.paused ? { ended: false } : {}),
+        currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+        duration: Number.isFinite(video.duration) ? video.duration : 0,
+        buffering: false,
+        ended: video.ended,
       });
-      setPlayerVolume(video.volume);
-      setPlayerMuted(video.muted);
-      syncPlayerSnapshot();
-    };
-
-    const handleLoadedMetadata = () => {
-      updatePlaybackState();
-    };
-
-    const handleEnded = () => {
-      setPlayerState({ ended: true, playing: false });
+      playerOptionsStore.getState().setVolume(video.volume);
+      playerOptionsStore.getState().setMuted(video.muted);
+      syncSnapshot();
+      syncAspectRatio();
     };
 
     const handleLoadStart = () => {
-      setPlayerLoading(true);
-      setPlayerState({
+      setPlayerRuntimeState({
         currentTime: 0,
         duration: 0,
         ended: false,
-        upNextDismissed: false,
-        upNextCountdownCancelled: false,
+        buffering: true,
+        hasMediaLoaded: false,
+        errorMessage: null,
       });
-      heartbeatRef.current?.();
+    };
+
+    const handleLoadedMetadata = () => {
+      syncAspectRatio();
+      setPlayerRuntimeState({
+        hasMediaLoaded: true,
+        targetTime: null,
+      });
+      updatePlaybackState();
+    };
+
+    const handleWaiting = () => {
+      setPlayerRuntimeState({ buffering: true });
     };
 
     const handleCanPlay = () => {
-      setPlayerLoading(false);
-      heartbeatRef.current?.();
+      setPlayerRuntimeState({ buffering: false, hasMediaLoaded: true });
     };
-    const handleWaiting = () => {
-      setPlayerLoading(true);
-      heartbeatRef.current?.();
-    };
-    const handlePlaying = () => {
-      setPlayerLoading(false);
-      heartbeatRef.current?.();
-    };
-    const handleLoadedData = () => {
-      setPlayerLoading(false);
-      heartbeatRef.current?.();
+
+    const handleEnded = () => {
+      setPlayerRuntimeState({ ended: true, playing: false, buffering: false });
+      syncSnapshot(true);
+      syncWatchProgress();
     };
 
     let lastUpdated = 0;
     const handleTimeUpdate = () => {
       const now = Date.now();
-      if (now - lastUpdated >= 300) {
-        lastUpdated = now;
-        updatePlaybackState();
-      }
+      if (now - lastUpdated < 300) return;
+      lastUpdated = now;
+      updatePlaybackState();
     };
 
     const handleSeeked = () => {
       updatePlaybackState();
-      syncPlayerSnapshot(true);
+      syncSnapshot(true);
       syncWatchProgress();
-      heartbeatRef.current?.();
+      setPlayerRuntimeState({ targetTime: null, ended: false });
     };
 
     const watchProgressInterval = window.setInterval(syncWatchProgress, 5_000);
-
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("play", updatePlaybackState);
     video.addEventListener("pause", updatePlaybackState);
-    video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("volumechange", updatePlaybackState);
     video.addEventListener("loadstart", handleLoadStart);
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("canplay", handleCanPlay);
+    video.addEventListener("loadeddata", handleCanPlay);
+    video.addEventListener("playing", handleCanPlay);
     video.addEventListener("waiting", handleWaiting);
-    video.addEventListener("playing", handlePlaying);
-    video.addEventListener("loadeddata", handleLoadedData);
     video.addEventListener("ended", handleEnded);
     video.addEventListener("seeked", handleSeeked);
+    video.addEventListener("resize", syncAspectRatio);
 
     return () => {
-      syncPlayerSnapshot(true);
+      syncSnapshot(true);
       window.clearInterval(watchProgressInterval);
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("play", updatePlaybackState);
       video.removeEventListener("pause", updatePlaybackState);
-      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("volumechange", updatePlaybackState);
       video.removeEventListener("loadstart", handleLoadStart);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("canplay", handleCanPlay);
+      video.removeEventListener("loadeddata", handleCanPlay);
+      video.removeEventListener("playing", handleCanPlay);
       video.removeEventListener("waiting", handleWaiting);
-      video.removeEventListener("playing", handlePlaying);
-      video.removeEventListener("loadeddata", handleLoadedData);
       video.removeEventListener("ended", handleEnded);
       video.removeEventListener("seeked", handleSeeked);
+      video.removeEventListener("resize", syncAspectRatio);
     };
-  }, [currentMediaId, currentFileId, updateWatchProgress, videoRef]);
+  }, [media?.defaultFile, media?.defaultFile?.id, media?.id, updateWatchProgress]);
 
-  const autoplayEnabled = playerContext.getState().state.autoplay && watchSession.mode !== "SYNCED";
-  const isFullscreen = playerContext.getState().state.isFullscreen;
+  const className = useMemo(
+    () => (isFullscreen ? "block h-full w-full bg-black object-contain outline-none" : "block h-full w-full rounded bg-black object-contain outline-none"),
+    [isFullscreen],
+  );
 
   return (
-    <video
-      ref={videoRef}
-      className={
-        isFullscreen
-          ? "block h-full w-full bg-black object-contain outline-none"
-          : "block h-full w-full rounded bg-black object-contain outline-none"
-      }
-      autoPlay={autoplayEnabled}
-      controls={false}
-      disablePictureInPicture
-    >
-      {activeSubtitle ? (
-        <track
-          key={`${activeSubtitle.trackId}:${activeSubtitle.url}`}
-          src={activeSubtitle.url}
-          label={activeSubtitle.label}
-          srcLang={activeSubtitle.language ?? undefined}
-          kind="subtitles"
-        />
-      ) : null}
-    </video>
+    <video ref={videoRef} className={className} autoPlay={autoplay && session.mode !== "SYNCED"} controls={false} disablePictureInPicture />
   );
 };

@@ -1,0 +1,29 @@
+@import "media-captions/styles/captions.css";
+@import "media-captions/styles/regions.css";
+
+.player-subtitle-overlay[data-part="captions"] {
+  --overlay-padding: 1.2%;
+  --cue-bg-color: rgb(0 0 0 / 70%);
+  --cue-color: rgb(255 255 255 / 100%);
+  --cue-padding-x: calc(var(--cue-font-size) * 0.45);
+  --cue-padding-y: calc(var(--cue-font-size) * 0.18);
+  --cue-line-height: calc(var(--cue-font-size) * 1.15);
+  --cue-outline: none;
+  --cue-text-shadow: 0 1px 2px rgb(0 0 0 / 70%);
+}
+
+.player-subtitle-overlay[data-part="captions"][data-fullscreen="true"] {
+  --cue-font-size: clamp(1.1rem, 1rem + 0.9vw, 1.7rem);
+}
+
+.player-subtitle-overlay[data-part="captions"][data-fullscreen="false"] {
+  --cue-font-size: clamp(0.95rem, 0.9rem + 0.35vw, 1.15rem);
+}
+
+.player-subtitle-overlay[data-part="captions"] [data-part="cue"] {
+  border-radius: 0.375rem;
+}
+
+.player-subtitle-overlay[data-part="captions"] [data-part="region"] [data-part="cue"] {
+  border-radius: 0.375rem;
+}

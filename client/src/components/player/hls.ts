@@ -1,4 +1,4 @@
-import { setPlayerControls, setPlayerLoading, setPlayerState } from "./player-context";
+import type { RefObject } from "react";
 
 export interface ResumeConfig {
   initialPositionSeconds: number | null;
@@ -7,7 +7,10 @@ export interface ResumeConfig {
   shouldPromptResume: boolean;
   shouldAutoplay: boolean;
   pauseAfterInitialSeek: boolean;
-  videoRef: React.RefObject<HTMLVideoElement | null>;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  onError: (message: string) => void;
+  onLoadingChange: (loading: boolean) => void;
+  onResumePrompt: (positionSeconds: number, handlers: { resume: () => void; startOver: () => void }) => void;
 }
 
 export interface PlayerController {
@@ -43,8 +46,8 @@ export const createHlsPlayer = async (
   const { default: Hls } = await import("hls.js");
 
   if (!Hls.isSupported()) {
-    setPlayerState({ errorMessage: "Sorry, your browser does not support this video." });
-    setPlayerLoading(false);
+    resumeConfig.onError("Sorry, your browser does not support this video.");
+    resumeConfig.onLoadingChange(false);
     return null;
   }
 
@@ -56,6 +59,9 @@ export const createHlsPlayer = async (
     shouldAutoplay,
     pauseAfterInitialSeek,
     videoRef,
+    onError,
+    onLoadingChange,
+    onResumePrompt,
   } = resumeConfig;
 
   const hasResumableWatchProgress =
@@ -81,7 +87,7 @@ export const createHlsPlayer = async (
     }
     hls.startLoad(Number.isFinite(startPosition) ? startPosition : -1);
     if (shouldAutoplay && videoRef.current) {
-      void videoRef.current.play().catch(() => {});
+      void videoRef.current.play().catch(() => undefined);
     }
   };
 
@@ -95,8 +101,8 @@ export const createHlsPlayer = async (
   hls.on(Hls.Events.ERROR, (event, data) => {
     console.error("HLS error:", event, data);
     if (data.fatal) {
-      setPlayerState({ errorMessage: `${data.type}: ${data.reason}` });
-      setPlayerLoading(false);
+      onError(`${data.type}: ${data.reason}`);
+      onLoadingChange(false);
     }
   });
 
@@ -132,23 +138,23 @@ export const createHlsPlayer = async (
         videoRef.current.autoplay = false;
         videoRef.current.pause();
       }
-      setPlayerState({ playing: false });
-      setPlayerControls({
-        resumePromptPosition: resumePosition,
-        confirmResumePrompt: () => {
-          setPlayerControls({ resumePromptPosition: null, confirmResumePrompt: null, cancelResumePrompt: null });
-          if (videoRef.current) videoRef.current.currentTime = resumePosition;
+      onResumePrompt(resumePosition, {
+        resume: () => {
+          if (videoRef.current) {
+            videoRef.current.currentTime = resumePosition;
+          }
           startLoadAt(resumePosition);
         },
-        cancelResumePrompt: () => {
-          setPlayerControls({ resumePromptPosition: null, confirmResumePrompt: null, cancelResumePrompt: null });
+        startOver: () => {
           startLoadAt(-1);
         },
       });
       return;
     }
 
-    if (videoRef.current) videoRef.current.currentTime = resumePosition;
+    if (videoRef.current) {
+      videoRef.current.currentTime = resumePosition;
+    }
     startLoadAt(resumePosition);
   });
 
