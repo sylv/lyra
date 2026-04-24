@@ -1,0 +1,1 @@
+- [ ] When HLS loads, we load segment 0 for init.mp4, but then we might request segment 76 to resume from instead of 0, which means we start ffmpeg almost solely for init.mp4. We should have a "segmentHint" param that lets clients tell the segment they are likely to request next so we can optimize that.
