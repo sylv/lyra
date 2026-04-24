@@ -165,6 +165,7 @@ export const openPlayerMedia = (itemId: string, autoplay: boolean | null) => {
 };
 
 export const clearPlayerMedia = () => {
+  playerOptionsStore.getState().setSnapshot(null);
   playerRuntimeStore.setState((state) => ({
     ...state,
     currentItemId: null,
