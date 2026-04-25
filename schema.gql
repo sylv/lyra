@@ -279,6 +279,7 @@ type Node {
 	defaultFile: File
 	watchProgress: WatchProgress
 	inWatchlist: Boolean!
+	currentPlayable: Node
 	nextPlayable: Node
 	previousPlayable: Node
 	recommendedNodes: [Node!]!

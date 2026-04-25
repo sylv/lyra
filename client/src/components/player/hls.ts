@@ -2,15 +2,11 @@ import type { RefObject } from "react";
 
 export interface ResumeConfig {
   initialPositionSeconds: number | null;
-  watchProgressPercent: number | null | undefined;
-  runtimeDurationSeconds: number | null;
-  shouldPromptResume: boolean;
-  shouldAutoplay: boolean;
+  shouldAutoplay: () => boolean;
   pauseAfterInitialSeek: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
   onError: (message: string) => void;
   onLoadingChange: (loading: boolean) => void;
-  onResumePrompt: (positionSeconds: number, handlers: { resume: () => void; startOver: () => void }) => void;
 }
 
 export interface PlayerController {
@@ -51,42 +47,19 @@ export const createHlsPlayer = async (
     return null;
   }
 
-  const {
-    initialPositionSeconds,
-    watchProgressPercent,
-    runtimeDurationSeconds,
-    shouldPromptResume,
-    shouldAutoplay,
-    pauseAfterInitialSeek,
-    videoRef,
-    onError,
-    onLoadingChange,
-    onResumePrompt,
-  } = resumeConfig;
-
-  const hasResumableWatchProgress =
-    typeof watchProgressPercent === "number" &&
-    Number.isFinite(watchProgressPercent) &&
-    watchProgressPercent > 0 &&
-    watchProgressPercent < 1;
-  const safeWatchProgressPercent = hasResumableWatchProgress ? watchProgressPercent : 0;
-
-  const clampResumePosition = (durationSeconds: number) => {
-    if (!hasResumableWatchProgress) return null;
-    const progress = Math.max(0, Math.min(0.999, safeWatchProgressPercent));
-    const maxStart = Math.max(0, durationSeconds - 0.5);
-    return Math.max(0, Math.min(progress * durationSeconds, maxStart));
-  };
+  const { initialPositionSeconds, shouldAutoplay, pauseAfterInitialSeek, videoRef, onError, onLoadingChange } =
+    resumeConfig;
 
   let hasStartedLoading = false;
   const startLoadAt = (startPosition: number) => {
     if (hasStartedLoading) return;
     hasStartedLoading = true;
+    const autoplayRequested = shouldAutoplay();
     if (videoRef.current) {
-      videoRef.current.autoplay = shouldAutoplay;
+      videoRef.current.autoplay = autoplayRequested;
     }
-    hls.startLoad(Number.isFinite(startPosition) ? startPosition : -1);
-    if (shouldAutoplay && videoRef.current) {
+    hls.startLoad(Number.isFinite(startPosition) ? startPosition : -1, true);
+    if (autoplayRequested && videoRef.current) {
       void videoRef.current.play().catch(() => undefined);
     }
   };
@@ -112,50 +85,14 @@ export const createHlsPlayer = async (
       Number.isFinite(initialPositionSeconds) &&
       initialPositionSeconds >= 0
     ) {
-      if (videoRef.current) {
-        videoRef.current.currentTime = initialPositionSeconds;
-        if (pauseAfterInitialSeek) videoRef.current.pause();
+      if (videoRef.current && pauseAfterInitialSeek && !shouldAutoplay()) {
+        videoRef.current.pause();
       }
       startLoadAt(initialPositionSeconds);
       return;
     }
 
-    if (!hasResumableWatchProgress) {
-      startLoadAt(-1);
-      return;
-    }
-
-    const durationSeconds = hls.levels[0]?.details?.totalduration ?? runtimeDurationSeconds;
-    const resumePosition = durationSeconds == null ? null : clampResumePosition(durationSeconds);
-
-    if (resumePosition == null) {
-      startLoadAt(-1);
-      return;
-    }
-
-    if (shouldPromptResume) {
-      if (videoRef.current) {
-        videoRef.current.autoplay = false;
-        videoRef.current.pause();
-      }
-      onResumePrompt(resumePosition, {
-        resume: () => {
-          if (videoRef.current) {
-            videoRef.current.currentTime = resumePosition;
-          }
-          startLoadAt(resumePosition);
-        },
-        startOver: () => {
-          startLoadAt(-1);
-        },
-      });
-      return;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.currentTime = resumePosition;
-    }
-    startLoadAt(resumePosition);
+    startLoadAt(-1);
   });
 
   hls.loadSource(hlsUrl);

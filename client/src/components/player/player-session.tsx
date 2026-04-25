@@ -1,10 +1,20 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type FC, type PropsWithChildren } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FC,
+  type PropsWithChildren,
+} from "react";
 import { useMutation, useSubscription } from "urql";
 import { graphql, unmask } from "../../@generated/gql";
 import {
   EffectiveWatchSessionState,
   type ItemPlaybackQuery,
   type WatchSessionBeaconFragmentFragment,
+  type WatchSessionBeaconsSubscription,
   WatchSessionActionKind,
   WatchSessionIntent,
   WatchSessionMode,
@@ -19,6 +29,7 @@ import { usePlayerVideoElement } from "./player-video-context";
 
 type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
 type PlayerSessionPlayer = WatchSessionBeaconFragmentFragment["players"][number];
+type SessionBeaconPayload = NonNullable<WatchSessionBeaconsSubscription["watchSessionBeacons"]>;
 
 export interface PlayerSessionState {
   sessionId: string | null;
@@ -65,8 +76,7 @@ const initialSessionState: PlayerSessionState = {
 
 const PlayerSessionContext = createContext<PlayerSessionContextValue | null>(null);
 
-const createLocalWatchSessionId = () =>
-  `ws_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+const createLocalWatchSessionId = () => `ws_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
 
 const WatchSessionBeaconFragment = graphql(`
   fragment WatchSessionBeaconFragment on WatchSessionBeacon {
@@ -130,6 +140,17 @@ const resolveEffectiveState = (video: HTMLVideoElement | null): EffectiveWatchSe
   return video.paused ? EffectiveWatchSessionState.Paused : EffectiveWatchSessionState.Playing;
 };
 
+const resolveBasePositionMs = (video: HTMLVideoElement | null) => {
+  const runtime = playerRuntimeStore.getState();
+  const videoPositionSeconds =
+    video && Number.isFinite(video.currentTime) && video.currentTime > 0 ? video.currentTime : null;
+  const fallbackPositionSeconds =
+    typeof runtime.targetTime === "number" && Number.isFinite(runtime.targetTime) && runtime.targetTime >= 0
+      ? runtime.targetTime
+      : runtime.currentTime;
+  return Math.max(0, Math.round((videoPositionSeconds ?? fallbackPositionSeconds ?? 0) * 1000));
+};
+
 export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>> = ({ media, children }) => {
   const videoElement = usePlayerVideoElement();
   const [, watchSessionHeartbeat] = useMutation(WatchSessionHeartbeat);
@@ -148,7 +169,7 @@ export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>
     pause: !session.sessionId || !session.playerId || !session.isRegistered,
   });
 
-  const applyBeacon = (beaconRaw: NonNullable<(typeof beaconResult.data)["watchSessionBeacons"]>) => {
+  const applyBeacon = (beaconRaw: SessionBeaconPayload) => {
     const beacon = unmask(WatchSessionBeaconFragment, beaconRaw);
     setSession((current) => ({
       ...current,
@@ -180,12 +201,16 @@ export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>
       return;
     }
 
+    const defaultFile = media.defaultFile;
+
     setSession((current) => {
       if (current.sessionId && current.playerId) return current;
 
       const runtime = playerRuntimeStore.getState();
       const shouldJoin =
-        runtime.pendingWatchSessionId != null && runtime.pendingWatchSessionNodeId != null && runtime.pendingWatchSessionNodeId === media.id;
+        runtime.pendingWatchSessionId != null &&
+        runtime.pendingWatchSessionNodeId != null &&
+        runtime.pendingWatchSessionNodeId === media.id;
       const nextSessionId = shouldJoin ? runtime.pendingWatchSessionId : createLocalWatchSessionId();
       const nextPlayerId = createLocalWatchSessionId();
 
@@ -198,11 +223,11 @@ export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>
         sessionId: nextSessionId,
         playerId: nextPlayerId,
         nodeId: media.id,
-        fileId: media.defaultFile.id,
+        fileId: defaultFile.id,
         mode: WatchSessionMode.Advisory,
         intent: resolveIntent(videoElement),
         effectiveState: resolveEffectiveState(videoElement),
-        basePositionMs: Math.max(0, Math.round((videoElement?.currentTime ?? 0) * 1000)),
+        basePositionMs: resolveBasePositionMs(videoElement),
         baseTimeMs: Date.now(),
       };
     });
@@ -251,13 +276,14 @@ export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>
   useEffect(() => {
     const video = videoElement;
     if (!video || !media?.defaultFile || !session.sessionId || !session.playerId) return;
+    const defaultFile = media.defaultFile;
 
     const sendHeartbeat = () => {
       const currentRuntime = playerRuntimeStore.getState();
       const currentSession = sessionRef.current;
       if (!currentSession.sessionId || !currentSession.playerId) return;
 
-      const basePositionMs = Math.max(0, Math.round(video.currentTime * 1000));
+      const basePositionMs = resolveBasePositionMs(video);
       const baseTimeMs = Date.now();
       const recoveryIntent =
         currentSession.intent === WatchSessionIntent.Playing
@@ -277,7 +303,7 @@ export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>
           baseTimeMs,
           recovery: {
             nodeId: currentSession.nodeId ?? media.id,
-            fileId: currentSession.fileId ?? media.defaultFile.id,
+            fileId: currentSession.fileId ?? defaultFile.id,
             intent: recoveryIntent,
             basePositionMs: currentSession.basePositionMs ?? basePositionMs,
             baseTimeMs: currentSession.baseTimeMs ?? baseTimeMs,
@@ -307,7 +333,15 @@ export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>
     sendHeartbeat();
     const interval = window.setInterval(sendHeartbeat, 3_000);
     return () => window.clearInterval(interval);
-  }, [media?.defaultFile, media?.defaultFile?.id, media?.id, session.playerId, session.sessionId, videoElement, watchSessionHeartbeat]);
+  }, [
+    media?.defaultFile,
+    media?.defaultFile?.id,
+    media?.id,
+    session.playerId,
+    session.sessionId,
+    videoElement,
+    watchSessionHeartbeat,
+  ]);
 
   useEffect(() => {
     const video = videoElement;
@@ -375,14 +409,7 @@ export const PlayerSession: FC<PropsWithChildren<{ media: CurrentMedia | null }>
     } else {
       video.pause();
     }
-  }, [
-    session.basePositionMs,
-    session.baseTimeMs,
-    session.effectiveState,
-    session.mode,
-    session.nodeId,
-    videoElement,
-  ]);
+  }, [session.basePositionMs, session.baseTimeMs, session.effectiveState, session.mode, session.nodeId, videoElement]);
 
   useEffect(() => {
     return () => {

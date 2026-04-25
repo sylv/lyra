@@ -19,7 +19,7 @@ async fn previous_or_next_playable(
     current: &nodes::Model,
     forward: bool,
 ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
-    let mut query = nodes::Entity::find()
+    let query = nodes::Entity::find()
         .filter(nodes::Column::RootId.eq(current.root_id.clone()))
         .filter(
             Condition::any()
@@ -43,15 +43,17 @@ async fn previous_or_next_playable(
                         .add(nodes::Column::Order.eq(current.order))
                         .add(nodes::Column::Id.lt(current.id.clone())),
                 )
-        })
-        .order_by_asc(nodes::Column::Order)
-        .order_by_asc(nodes::Column::Id);
+        });
 
-    if !forward {
-        query = query
+    let query = if forward {
+        query
+            .order_by_asc(nodes::Column::Order)
+            .order_by_asc(nodes::Column::Id)
+    } else {
+        query
             .order_by_desc(nodes::Column::Order)
-            .order_by_desc(nodes::Column::Id);
-    }
+            .order_by_desc(nodes::Column::Id)
+    };
 
     let candidates = query.all(pool).await?;
     let current_file_ids = node_files::Entity::find()
@@ -177,16 +179,24 @@ impl nodes::Model {
         )
     }
 
-    pub async fn next_playable(
+    pub async fn current_playable(
         &self,
         ctx: &Context<'_>,
     ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
-        // Playable nodes should resolve to themselves so UI callers can use one field
-        // consistently for "play this node" and "continue watching" affordances.
+        // This is the playable target for a node, distinct from next_playable which is
+        // relative navigation from an already-playing item.
         if is_playable_node(self) {
             return Ok(Some(self.clone()));
         }
 
+        let pool = ctx.data_unchecked::<DatabaseConnection>();
+        previous_or_next_playable(pool, self, true).await
+    }
+
+    pub async fn next_playable(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Option<nodes::Model>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         previous_or_next_playable(pool, self, true).await
     }

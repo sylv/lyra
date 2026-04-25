@@ -247,27 +247,15 @@ export const PlayerSubtitleOverlay: FC<{ media: CurrentMedia | null }> = ({ medi
   }, [activeSubtitle?.key, videoElement]);
 
   return (
-    <div
-      className={cn(
-        "pointer-events-none absolute inset-x-0 z-20 transition-[top,bottom] duration-300",
-        isFullscreen
-          ? showControls
-            ? "bottom-28 top-20"
-            : "bottom-5 top-5"
-          : showControls
-            ? "bottom-28 top-12"
-            : "bottom-5 top-5",
-      )}
-      aria-live="polite"
-    >
+    <div className={cn("pointer-events-none absolute inset-x-0 bottom-2 top-2 z-20")} aria-live="polite">
       <div
         ref={overlayRef}
         data-part="captions"
         lang={activeSubtitle?.language ?? undefined}
         data-fullscreen={isFullscreen}
         className={cn(
-          "player-subtitle-overlay absolute inset-0 transition-transform duration-300 ease-out",
-          showControls ? "translate-y-0" : "translate-y-3",
+          "player-subtitle-overlay absolute inset-0 transition-transform duration-300 ease-out will-change-transform",
+          showControls ? "-translate-y-20" : "translate-y-0",
         )}
       />
     </div>

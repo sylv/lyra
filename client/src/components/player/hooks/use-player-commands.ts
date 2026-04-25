@@ -11,6 +11,17 @@ const clampTargetTime = (time: number, duration: number) => {
   return Math.min(duration, safeTime);
 };
 
+const resolveToggleAction = (video: HTMLVideoElement | null) => {
+  const runtime = playerRuntimeStore.getState();
+  if (runtime.ended) return "play" as const;
+
+  const startupPending = runtime.autoplay && !runtime.hasMediaLoaded;
+  if (!video) return startupPending ? ("pause" as const) : ("play" as const);
+  if (!video.paused) return "pause" as const;
+  if (startupPending) return "pause" as const;
+  return "play" as const;
+};
+
 export const usePlayerCommands = () => {
   const videoElement = usePlayerVideoElement();
   const { session, sendAction } = usePlayerSession();
@@ -46,22 +57,28 @@ export const usePlayerCommands = () => {
     () => ({
       async togglePlaying() {
         const video = videoElement;
-        if (!video && session.mode !== "SYNCED") return;
-
-        const positionMs = Math.max(0, Math.round((video?.currentTime ?? playerRuntimeStore.getState().targetTime ?? 0) * 1000));
+        const runtime = playerRuntimeStore.getState();
+        const nextAction = resolveToggleAction(video);
+        const positionMs = Math.max(
+          0,
+          Math.round((video?.currentTime ?? runtime.targetTime ?? runtime.currentTime ?? 0) * 1000),
+        );
         if (session.mode === "SYNCED") {
-          await sendAction(video?.paused ? WatchSessionActionKind.Play : WatchSessionActionKind.Pause, { positionMs });
+          await sendAction(nextAction === "play" ? WatchSessionActionKind.Play : WatchSessionActionKind.Pause, {
+            positionMs,
+          });
           return;
         }
 
-        if (!video) return;
-        if (video.paused) {
-          await video.play().catch(() => undefined);
+        if (nextAction === "play") {
+          setPlayerRuntimeState({ autoplay: true, ended: false, errorMessage: null });
+          await video?.play().catch(() => undefined);
           void sendAction(WatchSessionActionKind.Play, { positionMs }).catch((error) =>
             console.error("failed to send play action", error),
           );
         } else {
-          video.pause();
+          setPlayerRuntimeState({ autoplay: false, playing: false, buffering: false });
+          video?.pause();
           void sendAction(WatchSessionActionKind.Pause, { positionMs }).catch((error) =>
             console.error("failed to send pause action", error),
           );

@@ -25,6 +25,7 @@ const Fragment = graphql(`
       firstAired
     }
     defaultFile {
+      id
       probe {
         runtimeMinutes
       }

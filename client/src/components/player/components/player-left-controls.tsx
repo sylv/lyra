@@ -19,14 +19,17 @@ export const PlayerLeftControls: FC<{
   onHoverPreviewChange: (value: "previous" | "next" | null) => void;
 }> = ({ previousPlayable, nextPlayable, onHoverPreviewChange }) => {
   const playing = usePlayerRuntimeStore((state) => state.playing);
+  const autoplay = usePlayerRuntimeStore((state) => state.autoplay);
+  const hasMediaLoaded = usePlayerRuntimeStore((state) => state.hasMediaLoaded);
   const { switchItem, togglePlaying } = usePlayerCommands();
   const previous = previousPlayable ? unmask(PlayerNavigationFragment, previousPlayable) : null;
   const next = nextPlayable ? unmask(PlayerNavigationFragment, nextPlayable) : null;
+  const showPauseState = playing || (autoplay && !hasMediaLoaded);
 
   return (
     <div className="flex items-center gap-1 rounded-full bg-black/30 p-1">
-      <PlayerButton aria-label={playing ? "Pause" : "Play"} onClick={() => void togglePlaying()}>
-        {playing ? <PauseIcon className="size-6 text-white" /> : <PlayIcon className="size-6 text-white" />}
+      <PlayerButton aria-label={showPauseState ? "Pause" : "Play"} onClick={() => void togglePlaying()}>
+        {showPauseState ? <PauseIcon className="size-6 text-white" /> : <PlayIcon className="size-6 text-white" />}
       </PlayerButton>
       <div onMouseEnter={() => onHoverPreviewChange("previous")} onMouseLeave={() => onHoverPreviewChange(null)}>
         <PlayerButton

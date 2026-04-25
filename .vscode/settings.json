@@ -20,4 +20,7 @@
 	"files.readonlyInclude": {
 		"**/@generated/**": true
 	},
+	"chat.tools.terminal.autoApprove": {
+		"sqlite3": true
+	},
 }

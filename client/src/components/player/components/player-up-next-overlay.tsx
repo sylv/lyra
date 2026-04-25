@@ -17,6 +17,7 @@ export const PlayerUpNextFragment = graphql(`
   fragment PlayerUpNext on Node {
     id
     defaultFile {
+      id
       probe {
         runtimeMinutes
       }
@@ -52,7 +53,8 @@ export const PlayerUpNextOverlay: FC<{ media: FragmentType<typeof PlayerUpNextFr
   }, [media.id]);
 
   const autoplayAllowed = autoplayNext && session.mode !== "SYNCED";
-  const previewWindowSeconds = duration > 0 ? Math.min(PREVIEW_WINDOW_SECONDS, duration * PREVIEW_WINDOW_FRACTION) : PREVIEW_WINDOW_SECONDS;
+  const previewWindowSeconds =
+    duration > 0 ? Math.min(PREVIEW_WINDOW_SECONDS, duration * PREVIEW_WINDOW_FRACTION) : PREVIEW_WINDOW_SECONDS;
   const isNearEnd = duration > 0 && duration - currentTime <= previewWindowSeconds;
   const isUpNextActive = isFullscreen && !!media.nextPlayable && !dismissed && (isNearEnd || ended);
   const shouldCountdown = ended && autoplayAllowed && isUpNextActive && !countdownCancelled;
@@ -84,7 +86,17 @@ export const PlayerUpNextOverlay: FC<{ media: FragmentType<typeof PlayerUpNextFr
       return Math.min(1, playbackPortion + postEndPortion);
     }
     return Math.min(1, Math.max(0, (currentTime - previewStartTime) / totalCountdownSeconds));
-  }, [autoplayAllowed, countdownCancelled, currentTime, elapsedSinceEnd, ended, isUpNextActive, previewStartTime, previewWindowSeconds, totalCountdownSeconds]);
+  }, [
+    autoplayAllowed,
+    countdownCancelled,
+    currentTime,
+    elapsedSinceEnd,
+    ended,
+    isUpNextActive,
+    previewStartTime,
+    previewWindowSeconds,
+    totalCountdownSeconds,
+  ]);
 
   const countdownSeconds = useMemo(() => {
     if (!isUpNextActive || !autoplayAllowed || countdownCancelled) return 0;

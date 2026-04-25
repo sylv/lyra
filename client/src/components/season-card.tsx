@@ -27,7 +27,7 @@ const Fragment = graphql(`
       firstAired
       lastAired
     }
-    nextPlayable {
+    currentPlayable {
       id
       watchProgress {
         id
@@ -54,10 +54,10 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw }) => {
   return (
     <div className="flex flex-col gap-2 overflow-hidden w-38">
       <PlayWrapper
-        itemId={season.nextPlayable?.id}
+        itemId={season.currentPlayable?.id}
         path={path}
         unavailable={season.unavailableAt != null}
-        watchProgress={season.nextPlayable?.watchProgress}
+        watchProgress={season.currentPlayable?.watchProgress}
       >
         <Image type={ImageType.Poster} asset={imageAsset} alt={season.properties.displayName} className="w-full" />
         <UnplayedItemsTab>{season.unplayedCount}</UnplayedItemsTab>

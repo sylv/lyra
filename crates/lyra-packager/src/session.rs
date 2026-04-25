@@ -327,7 +327,7 @@ impl Session {
         }
 
         ffarg!(args, "-copyts");
-        ffarg!(args, "-avoid_negative_ts", "make_non_negative");
+        ffarg!(args, "-avoid_negative_ts", "disabled");
         ffarg!(args, "-f", "hls");
         ffarg!(
             args,

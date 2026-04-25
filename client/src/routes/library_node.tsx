@@ -86,7 +86,7 @@ const Query = graphql(`
         completed
         updatedAt
       }
-      nextPlayable {
+      currentPlayable {
         id
         seasonNumber
         episodeNumber
@@ -98,6 +98,7 @@ const Query = graphql(`
         }
       }
       defaultFile {
+        id
         probe {
           runtimeMinutes
           width
@@ -286,18 +287,18 @@ export function LibraryNodeRoute() {
   );
 
   const playText = useMemo(() => {
-    if (!node?.nextPlayable) return "Play";
+    if (!node?.currentPlayable) return "Play";
 
     const parts = [];
-    if (node.nextPlayable.seasonNumber && node.nextPlayable.episodeNumber) {
-      parts.push(`S${node.nextPlayable.seasonNumber}E${node.nextPlayable.episodeNumber}`);
+    if (node.currentPlayable.seasonNumber && node.currentPlayable.episodeNumber) {
+      parts.push(`S${node.currentPlayable.seasonNumber}E${node.currentPlayable.episodeNumber}`);
     }
 
-    if (node.nextPlayable.watchProgress?.progressPercent) parts.unshift("Resume");
+    if (node.currentPlayable.watchProgress?.progressPercent) parts.unshift("Resume");
     else parts.unshift("Play");
 
     return parts.join(" ");
-  }, [node?.nextPlayable]);
+  }, [node?.currentPlayable]);
 
   if (!node) return null;
 
@@ -433,9 +434,9 @@ export function LibraryNodeRoute() {
     );
   }
 
-  const playableItemId = node.nextPlayable?.id;
+  const playableItemId = node.currentPlayable?.id;
   const playableWatchProgress =
-    node.nextPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
+    node.currentPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
   const runtimeMinutes = node.defaultFile?.probe?.runtimeMinutes;
 
   return (
@@ -473,14 +474,14 @@ export function LibraryNodeRoute() {
                 />
               )}
               <div className="flex flex-wrap items-center gap-2">
-                {node.nextPlayable && (
+                {node.currentPlayable && (
                   <Button
                     style={ButtonStyle.Primary}
                     size={ButtonSize.Smol}
                     className="w-fit"
                     icon={["play", PlayIcon]}
                     iconSide="left"
-                    onClick={() => openPlayerMedia(node.nextPlayable!.id, true)}
+                    onClick={() => openPlayerMedia(node.currentPlayable!.id, true)}
                   >
                     {playText}
                   </Button>

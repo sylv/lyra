@@ -42,6 +42,7 @@ const SearchNodeResultFragment = graphql(`
       lastAired
     }
     defaultFile {
+      id
       probe {
         runtimeMinutes
       }

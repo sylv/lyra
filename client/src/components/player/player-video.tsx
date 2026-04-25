@@ -1,5 +1,5 @@
 /* oxlint-disable jsx_a11y/media-has-caption */
-import { useEffect, useMemo, useRef, type FC } from "react";
+import { useEffect, useMemo, useRef, useState, type FC } from "react";
 import { useMutation } from "urql";
 import { graphql } from "../../@generated/gql";
 import { type ItemPlaybackQuery } from "../../@generated/gql/graphql";
@@ -41,7 +41,10 @@ const isVideoRenditionPlayable = (rendition: PlaybackVideoRendition, probe: HTML
 };
 
 const listPreferredVideoRenditions = (
-  renditions: NonNullable<NonNullable<NonNullable<CurrentMedia["defaultFile"]>["playbackOptions"]>["videoRenditions"]> | null | undefined,
+  renditions:
+    | NonNullable<NonNullable<NonNullable<CurrentMedia["defaultFile"]>["playbackOptions"]>["videoRenditions"]>
+    | null
+    | undefined,
 ) => {
   if (!renditions || renditions.length === 0) return null;
   const probe = document.createElement("video");
@@ -61,6 +64,27 @@ const pickPlayableVideoRendition = (
   return renditions[0];
 };
 
+const resolveResumePositionSeconds = (
+  watchProgressPercent: number | null | undefined,
+  runtimeDurationSeconds: number | null,
+) => {
+  if (
+    typeof watchProgressPercent !== "number" ||
+    !Number.isFinite(watchProgressPercent) ||
+    watchProgressPercent <= 0 ||
+    watchProgressPercent >= 1 ||
+    typeof runtimeDurationSeconds !== "number" ||
+    !Number.isFinite(runtimeDurationSeconds) ||
+    runtimeDurationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  const progress = Math.max(0, Math.min(0.999, watchProgressPercent));
+  const maxStart = Math.max(0, runtimeDurationSeconds - 0.5);
+  return Math.max(0, Math.min(progress * runtimeDurationSeconds, maxStart));
+};
+
 export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
   const setVideoElement = usePlayerVideoRegistration();
   const { session } = usePlayerSession();
@@ -74,15 +98,22 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
     lastPosition: null,
     lastUpdatedAt: 0,
   });
-  const watchProgressRef = useRef<{ mediaId: string | null; fileId: string | null; lastProgressPercent: number | null }>({
+  const watchProgressRef = useRef<{
+    mediaId: string | null;
+    fileId: string | null;
+    lastProgressPercent: number | null;
+  }>({
     mediaId: null,
     fileId: null,
     lastProgressPercent: null,
   });
+  const initialWatchProgressRef = useRef<{
+    loadKey: string;
+    completed: boolean | null;
+    progressPercent: number | null;
+  } | null>(null);
   const autoplay = usePlayerRuntimeStore((state) => state.autoplay);
   const shouldPromptResume = usePlayerRuntimeStore((state) => state.shouldPromptResume);
-  const targetTime = usePlayerRuntimeStore((state) => state.targetTime);
-  const hasMediaLoaded = usePlayerRuntimeStore((state) => state.hasMediaLoaded);
   const selectedVideoRenditionId = usePlayerRuntimeStore((state) => state.selectedVideoRenditionId);
   const selectedAudioTrackId = usePlayerRuntimeStore((state) => state.selectedAudioTrackId);
   const selectedSubtitleTrackId = usePlayerRuntimeStore((state) => state.selectedSubtitleTrackId);
@@ -100,14 +131,27 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
   const runtimeMinutes = media?.defaultFile?.probe?.runtimeMinutes ?? null;
   const watchProgressCompleted = media?.watchProgress?.completed ?? null;
   const watchProgressPercent = media?.watchProgress?.progressPercent ?? null;
-  const initialTargetTime = hasMediaLoaded ? null : targetTime;
   const shouldPromptResumeRef = useRef(false);
+  const [resumeSelection, setResumeSelection] = useState<{ loadKey: string; startTime: number | null } | null>(null);
+  const loadKey = `${media?.id ?? ""}:${defaultFileId ?? ""}:${activeVideoRendition?.renditionId ?? ""}:${activeAudioTrack?.streamIndex ?? ""}:${activeAudioRendition?.renditionId ?? ""}`;
+
+  useEffect(() => {
+    initialWatchProgressRef.current = {
+      loadKey,
+      completed: watchProgressCompleted,
+      progressPercent: watchProgressPercent,
+    };
+  }, [loadKey]);
 
   useEffect(() => {
     if (shouldPromptResume) {
       shouldPromptResumeRef.current = true;
     }
   }, [shouldPromptResume, media?.id]);
+
+  useEffect(() => {
+    setResumeSelection(null);
+  }, [loadKey]);
 
   useEffect(() => {
     setVideoElement(videoRef.current);
@@ -171,7 +215,8 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
 
   useEffect(() => {
     const hasSelectedAudioTrack =
-      selectedAudioTrackId == null || playbackOptions?.audioTracks.some((track) => track.streamIndex === selectedAudioTrackId);
+      selectedAudioTrackId == null ||
+      playbackOptions?.audioTracks.some((track) => track.streamIndex === selectedAudioTrackId);
     if (!hasSelectedAudioTrack) {
       setPlayerRuntimeState({ selectedAudioTrackId: null });
     }
@@ -189,7 +234,9 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
 
   useEffect(() => {
     if (selectedSubtitleTrackId == null || selectedSubtitleTrackId === "") return;
-    const hasSelectedSubtitleTrack = playbackOptions?.subtitleTracks.some((track) => track.id === selectedSubtitleTrackId);
+    const hasSelectedSubtitleTrack = playbackOptions?.subtitleTracks.some(
+      (track) => track.id === selectedSubtitleTrackId,
+    );
     if (!hasSelectedSubtitleTrack) {
       setPlayerRuntimeState({ selectedSubtitleTrackId: null });
     }
@@ -224,10 +271,74 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
       return;
     }
 
+    const runtime = playerRuntimeStore.getState();
+    const startupTargetTime =
+      !runtime.hasMediaLoaded &&
+      typeof runtime.targetTime === "number" &&
+      Number.isFinite(runtime.targetTime) &&
+      runtime.targetTime >= 0
+        ? runtime.targetTime
+        : null;
+    const livePlaybackPositionSeconds =
+      runtime.currentItemId === media.id && (runtime.hasMediaLoaded || controllerRef.current != null)
+        ? Number.isFinite(video.currentTime) && video.currentTime > 0
+          ? video.currentTime
+          : Number.isFinite(runtime.currentTime) && runtime.currentTime > 0
+            ? runtime.currentTime
+            : null
+        : null;
+
+    const runtimeDurationSeconds =
+      typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
+        ? runtimeMinutes * 60
+        : null;
+    const initialWatchProgress =
+      initialWatchProgressRef.current?.loadKey === loadKey
+        ? initialWatchProgressRef.current
+        : {
+            completed: watchProgressCompleted,
+            progressPercent: watchProgressPercent,
+          };
+    const effectiveWatchProgressPercent = initialWatchProgress.completed ? null : initialWatchProgress.progressPercent;
+    const watchProgressStartTime = resolveResumePositionSeconds(effectiveWatchProgressPercent, runtimeDurationSeconds);
     const promptOnThisLoad = shouldPromptResumeRef.current;
+    const activeResumeSelection = resumeSelection?.loadKey === loadKey ? resumeSelection : null;
+
+    if (
+      promptOnThisLoad &&
+      startupTargetTime == null &&
+      livePlaybackPositionSeconds == null &&
+      watchProgressStartTime != null &&
+      activeResumeSelection == null
+    ) {
+      shouldPromptResumeRef.current = false;
+      setPlayerRuntimeState({
+        targetTime: null,
+        errorMessage: null,
+        buffering: false,
+        hasMediaLoaded: false,
+        ended: false,
+        shouldPromptResume: false,
+      });
+      openPrompt(watchProgressStartTime, {
+        resume: () => {
+          setResumeSelection({ loadKey, startTime: watchProgressStartTime });
+        },
+        startOver: () => {
+          setResumeSelection({ loadKey, startTime: null });
+        },
+      });
+      return;
+    }
+
     shouldPromptResumeRef.current = false;
 
+    const controllerStartTime =
+      startupTargetTime ?? livePlaybackPositionSeconds ?? activeResumeSelection?.startTime ?? null;
+    const shouldAutoplayOnLoad = runtime.autoplay && session.mode !== "SYNCED";
+
     setPlayerRuntimeState({
+      targetTime: controllerStartTime,
       errorMessage: null,
       buffering: true,
       hasMediaLoaded: false,
@@ -235,9 +346,6 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
       shouldPromptResume: false,
     });
 
-    const runtimeDurationSeconds =
-      typeof runtimeMinutes === "number" && Number.isFinite(runtimeMinutes) && runtimeMinutes > 0 ? runtimeMinutes * 60 : null;
-    const effectiveWatchProgressPercent = watchProgressCompleted ? null : watchProgressPercent;
     let active = true;
 
     void mintPlaybackUrl({
@@ -255,22 +363,15 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
           throw result.error ?? new Error("Failed to mint playback URL");
         }
         return createHlsPlayer(video, result.data.mintPlaybackUrl.url, {
-          initialPositionSeconds: initialTargetTime,
-          watchProgressPercent: effectiveWatchProgressPercent,
-          runtimeDurationSeconds,
-          shouldPromptResume: promptOnThisLoad,
-          shouldAutoplay: autoplay && session.mode !== "SYNCED",
-          pauseAfterInitialSeek: initialTargetTime != null,
+          initialPositionSeconds: controllerStartTime,
+          shouldAutoplay: () => playerRuntimeStore.getState().autoplay && session.mode !== "SYNCED",
+          pauseAfterInitialSeek: controllerStartTime != null && !shouldAutoplayOnLoad,
           videoRef,
           onError: (message) => {
             setPlayerRuntimeState({ errorMessage: message });
           },
           onLoadingChange: (loading) => {
             setPlayerRuntimeState({ buffering: loading });
-          },
-          onResumePrompt: (positionSeconds, handlers) => {
-            setPlayerRuntimeState({ playing: false });
-            openPrompt(positionSeconds, handlers);
           },
         });
       })
@@ -299,15 +400,13 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
     activeAudioRendition?.renditionId,
     activeAudioTrack?.streamIndex,
     activeVideoRendition?.renditionId,
-    autoplay,
-    initialTargetTime,
     defaultFileId,
     media?.id,
     runtimeMinutes,
-    watchProgressCompleted,
-    watchProgressPercent,
+    loadKey,
     mintPlaybackUrl,
     openPrompt,
+    resumeSelection,
     session.mode,
     session.playerId,
   ]);
@@ -316,15 +415,45 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
     const video = videoRef.current;
     if (!video) return;
 
+    const resolvePendingTargetTime = () => {
+      const pendingTargetTime = playerRuntimeStore.getState().targetTime;
+      if (typeof pendingTargetTime !== "number" || !Number.isFinite(pendingTargetTime) || pendingTargetTime < 0) {
+        return null;
+      }
+      return pendingTargetTime;
+    };
+
+    const isPendingTargetAhead = (positionSeconds: number) => {
+      const pendingTargetTime = resolvePendingTargetTime();
+      return pendingTargetTime != null && positionSeconds + 1 < pendingTargetTime;
+    };
+
+    const applyPendingTargetTime = () => {
+      const pendingTargetTime = resolvePendingTargetTime();
+      if (pendingTargetTime == null) return;
+      if (Math.abs(video.currentTime - pendingTargetTime) <= 1) return;
+      video.currentTime = pendingTargetTime;
+    };
+
+    const clearResolvedTargetTime = () => {
+      const pendingTargetTime = resolvePendingTargetTime();
+      if (pendingTargetTime == null) return;
+      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      if (currentTime + 1 < pendingTargetTime) return;
+      setPlayerRuntimeState({ targetTime: null });
+    };
+
     const syncSnapshot = (force = false) => {
       if (!media) return;
       if (playerRuntimeStore.getState().currentItemId !== media.id) return;
 
       const position = Number.isFinite(video.currentTime) && video.currentTime > 0 ? video.currentTime : 0;
+      if (isPendingTargetAhead(position)) return;
       const now = Date.now();
       const previous = snapshotUpdateRef.current;
       if (!force) {
-        const positionDelta = previous.lastPosition == null ? Number.POSITIVE_INFINITY : Math.abs(position - previous.lastPosition);
+        const positionDelta =
+          previous.lastPosition == null ? Number.POSITIVE_INFINITY : Math.abs(position - previous.lastPosition);
         if (positionDelta < 1 && now - previous.lastUpdatedAt < 1_000) return;
       }
 
@@ -341,7 +470,9 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
 
     const syncWatchProgress = () => {
       if (!media?.defaultFile || video.duration <= 0) return;
-      const progressPercent = video.currentTime / video.duration;
+      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      if (isPendingTargetAhead(currentTime)) return;
+      const progressPercent = currentTime / video.duration;
       if (!Number.isFinite(progressPercent)) return;
 
       const previous = watchProgressRef.current;
@@ -376,13 +507,15 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
       });
       playerOptionsStore.getState().setVolume(video.volume);
       playerOptionsStore.getState().setMuted(video.muted);
+      clearResolvedTargetTime();
       syncSnapshot();
       syncAspectRatio();
     };
 
     const handleLoadStart = () => {
+      const pendingTargetTime = resolvePendingTargetTime();
       setPlayerRuntimeState({
-        currentTime: 0,
+        currentTime: pendingTargetTime ?? 0,
         duration: 0,
         ended: false,
         buffering: true,
@@ -392,10 +525,10 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
     };
 
     const handleLoadedMetadata = () => {
+      applyPendingTargetTime();
       syncAspectRatio();
       setPlayerRuntimeState({
         hasMediaLoaded: true,
-        targetTime: null,
       });
       updatePlaybackState();
     };
@@ -405,11 +538,13 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
     };
 
     const handleCanPlay = () => {
+      applyPendingTargetTime();
       setPlayerRuntimeState({ buffering: false, hasMediaLoaded: true });
+      updatePlaybackState();
     };
 
     const handleEnded = () => {
-      setPlayerRuntimeState({ ended: true, playing: false, buffering: false });
+      setPlayerRuntimeState({ autoplay: false, ended: true, playing: false, buffering: false });
       syncSnapshot(true);
       syncWatchProgress();
     };
@@ -464,11 +599,20 @@ export const PlayerVideo: FC<{ media: CurrentMedia | null }> = ({ media }) => {
   }, [media?.defaultFile, media?.defaultFile?.id, media?.id, updateWatchProgress]);
 
   const className = useMemo(
-    () => (isFullscreen ? "block h-full w-full bg-black object-contain outline-none" : "block h-full w-full rounded bg-black object-contain outline-none"),
+    () =>
+      isFullscreen
+        ? "block h-full w-full bg-black object-contain outline-none"
+        : "block h-full w-full rounded bg-black object-contain outline-none",
     [isFullscreen],
   );
 
   return (
-    <video ref={videoRef} className={className} autoPlay={autoplay && session.mode !== "SYNCED"} controls={false} disablePictureInPicture />
+    <video
+      ref={videoRef}
+      className={className}
+      autoPlay={autoplay && session.mode !== "SYNCED"}
+      controls={false}
+      disablePictureInPicture
+    />
   );
 };

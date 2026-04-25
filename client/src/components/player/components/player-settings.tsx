@@ -90,7 +90,7 @@ export const PlayerSettings: FC<{ portalContainer: HTMLElement | null }> = ({ po
         >
           <SettingsIcon className="size-5" />
           {pendingSubtitleTrackId ? (
-            <LoaderCircle className="absolute -right-0.5 -top-0.5 size-3.5 animate-spin rounded-full bg-black" />
+            <LoaderCircle className="absolute right-0.5 top-0.5 size-3.5 p-0.5 animate-spin rounded-full bg-black" />
           ) : null}
         </PlayerButton>
       </DropdownMenuTrigger>
@@ -102,7 +102,9 @@ export const PlayerSettings: FC<{ portalContainer: HTMLElement | null }> = ({ po
       >
         {showVideoSettings ? (
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">Video</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
+              Video
+            </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="z-70 w-64 border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
               {videoRenditionOptions.length === 0 ? (
                 <DropdownMenuItem className="py-2.5" disabled>
@@ -137,7 +139,9 @@ export const PlayerSettings: FC<{ portalContainer: HTMLElement | null }> = ({ po
           </DropdownMenuSub>
         ) : null}
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">Audio</DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
+            Audio
+          </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="z-70 border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
             {audioTrackOptions.length === 0 ? (
               <DropdownMenuItem className="py-2.5" disabled>
@@ -163,7 +167,11 @@ export const PlayerSettings: FC<{ portalContainer: HTMLElement | null }> = ({ po
                   Auto
                 </DropdownMenuRadioItem>
                 {audioTrackOptions.map((track) => (
-                  <DropdownMenuRadioItem className="py-2.5 focus:bg-zinc-800" key={track.id} value={track.id.toString()}>
+                  <DropdownMenuRadioItem
+                    className="py-2.5 focus:bg-zinc-800"
+                    key={track.id}
+                    value={track.id.toString()}
+                  >
                     {track.label}
                   </DropdownMenuRadioItem>
                 ))}
@@ -172,7 +180,9 @@ export const PlayerSettings: FC<{ portalContainer: HTMLElement | null }> = ({ po
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">Subtitles</DropdownMenuSubTrigger>
+          <DropdownMenuSubTrigger className="py-2.5 data-[state=open]:bg-zinc-800 focus:bg-zinc-800">
+            Subtitles
+          </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="z-70 w-64 border-zinc-700 bg-black text-zinc-100 shadow-lg shadow-black/40">
             {subtitleTrackOptions.length === 0 ? (
               <DropdownMenuItem className="py-2.5" disabled>

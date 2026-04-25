@@ -32,6 +32,7 @@ export const SessionCardFragment = graphql(`
         }
       }
       defaultFile {
+        id
         probe {
           runtimeMinutes
         }

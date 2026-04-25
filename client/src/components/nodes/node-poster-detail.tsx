@@ -34,7 +34,7 @@ const Fragment = graphql(`
       firstAired
       lastAired
     }
-    nextPlayable {
+    currentPlayable {
       id
       watchProgress {
         id
@@ -62,10 +62,10 @@ export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, cla
     <>
       <div className={cn("flex flex-col gap-2 overflow-hidden select-none", className)} style={style}>
         <PlayWrapper
-          itemId={node.nextPlayable?.id ?? node.id}
+          itemId={node.currentPlayable?.id ?? node.id}
           path={path}
           unavailable={node.unavailableAt != null}
-          watchProgress={node.nextPlayable?.watchProgress ?? null}
+          watchProgress={node.currentPlayable?.watchProgress ?? null}
         >
           <Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.properties.displayName} />
           <UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>
