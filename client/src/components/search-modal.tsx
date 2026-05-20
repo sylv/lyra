@@ -6,7 +6,7 @@ import { graphql, unmask } from "../@generated/gql";
 import { NodeKind, type SearchNodeResultFragment as SearchNodeResultData } from "../@generated/gql/graphql";
 import { useDebounce } from "../hooks/use-debounce";
 import { formatReleaseYear } from "../lib/format-release-year";
-import { getPathForNode } from "../lib/getPathForMedia";
+import { getPathForNode } from "../lib/get-path-for-node";
 import { cn } from "../lib/utils";
 import { Image, ImageType } from "./image";
 import { LoadingText } from "./loading-text";

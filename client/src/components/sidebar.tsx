@@ -14,7 +14,7 @@ import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import BrandLogo from "../assets/logo.svg";
 import { useSuspenseQuery } from "../hooks/use-suspense-query";
-import { getPathForCollection } from "../lib/getPathForMedia";
+import { getPathForCollection } from "../lib/get-path-for-node";
 import { ADMIN_BIT } from "../lib/user-permissions";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";

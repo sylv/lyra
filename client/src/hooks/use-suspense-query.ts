@@ -14,10 +14,17 @@ type UseSuspenseQueryArgs<Variables extends AnyVariables = AnyVariables, Data = 
   context?: Partial<OperationContext>;
 };
 
+type UseSuspenseQueryResponse<Data, Variables extends AnyVariables> = UseQueryResponse<Data, Variables> extends [
+  infer State,
+  infer ExecuteQuery,
+]
+  ? [Omit<State, "data"> & { data: Data }, ExecuteQuery]
+  : never;
+
 export const useSuspenseQuery = <Data = unknown, Variables extends AnyVariables = AnyVariables>({
   context,
   ...args
-}: UseSuspenseQueryArgs<Variables, Data>): UseQueryResponse<Data, Variables> => {
+}: UseSuspenseQueryArgs<Variables, Data>): UseSuspenseQueryResponse<Data, Variables> => {
   const queryContext = useMemo(
     () => ({
       ...context,
@@ -31,5 +38,5 @@ export const useSuspenseQuery = <Data = unknown, Variables extends AnyVariables 
     context: queryContext,
   } as UseQueryArgs<Variables, Data>;
 
-  return useQuery<Data, Variables>(queryArgs);
+  return useQuery<Data, Variables>(queryArgs) as UseSuspenseQueryResponse<Data, Variables>;
 };

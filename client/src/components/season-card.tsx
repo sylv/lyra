@@ -2,7 +2,7 @@ import type { FC } from "react";
 import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
 import { formatReleaseYear } from "../lib/format-release-year";
-import { getPathForNode } from "../lib/getPathForMedia";
+import { getPathForNode } from "../lib/get-path-for-node";
 import { Image, ImageType } from "./image";
 import { PlayWrapper } from "./play-wrapper";
 import { UnplayedItemsTab } from "./unplayed-items-tab";
@@ -29,12 +29,7 @@ const Fragment = graphql(`
     }
     currentPlayable {
       id
-      watchProgress {
-        id
-        progressPercent
-        completed
-        updatedAt
-      }
+      watchProgressHint
     }
     unplayedCount
     episodeCount
@@ -57,7 +52,7 @@ export const SeasonCard: FC<SeasonCardProps> = ({ season: seasonRaw }) => {
         itemId={season.currentPlayable?.id}
         path={path}
         unavailable={season.unavailableAt != null}
-        watchProgress={season.currentPlayable?.watchProgress}
+        watchProgressHint={season.currentPlayable?.watchProgressHint}
       >
         <Image type={ImageType.Poster} asset={imageAsset} alt={season.properties.displayName} className="w-full" />
         <UnplayedItemsTab>{season.unplayedCount}</UnplayedItemsTab>

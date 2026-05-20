@@ -3,7 +3,7 @@ import type React from "react";
 import { useState, type FC } from "react";
 import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../../@generated/gql";
-import { getPathForNode } from "../../lib/getPathForMedia";
+import { getPathForNode } from "../../lib/get-path-for-node";
 import { cn } from "../../lib/utils";
 import { AddToCollectionModal } from "../add-to-collection-modal";
 import { Image, ImageType } from "../image";
@@ -36,12 +36,7 @@ const Fragment = graphql(`
     }
     currentPlayable {
       id
-      watchProgress {
-        id
-        progressPercent
-        completed
-        updatedAt
-      }
+      watchProgressHint
     }
     unplayedCount
     seasonCount
@@ -65,7 +60,7 @@ export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, cla
           itemId={node.currentPlayable?.id ?? node.id}
           path={path}
           unavailable={node.unavailableAt != null}
-          watchProgress={node.currentPlayable?.watchProgress ?? null}
+          watchProgressHint={node.currentPlayable?.watchProgressHint ?? null}
         >
           <Image type={ImageType.Poster} asset={node.properties.posterImage} alt={node.properties.displayName} />
           <UnplayedItemsTab>{node.unplayedCount}</UnplayedItemsTab>

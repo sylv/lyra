@@ -1,7 +1,7 @@
 import { type FC } from "react";
 import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../../@generated/gql";
-import { getPathForNode } from "../../lib/getPathForMedia";
+import { getPathForNode } from "../../lib/get-path-for-node";
 import { Image, ImageType } from "../image";
 import { PlayWrapper } from "../play-wrapper";
 
@@ -30,12 +30,7 @@ const Fragment = graphql(`
         runtimeMinutes
       }
     }
-    watchProgress {
-      id
-      progressPercent
-      completed
-      updatedAt
-    }
+    watchProgressHint
     ...GetPathForNode
   }
 `);
@@ -50,7 +45,7 @@ export const EpisodePosterDetail: FC<EpisodePosterDetailProps> = ({ episode: epi
         itemId={episode.id}
         path={path}
         unavailable={episode.unavailableAt != null}
-        watchProgress={episode.watchProgress}
+        watchProgressHint={episode.watchProgressHint}
       >
         <Image
           type={ImageType.Thumbnail}

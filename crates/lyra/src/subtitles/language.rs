@@ -87,20 +87,6 @@ pub fn dedupe_language_hints(preferred: &[String], hints: &[String]) -> Vec<Stri
     merged
 }
 
-pub fn move_language_to_front(existing_json: &str, selected: Option<&str>) -> String {
-    let mut languages: Vec<String> = serde_json::from_str(existing_json).unwrap_or_default();
-    let Some(selected) = selected.and_then(canonicalize_language_tag) else {
-        return serde_json::to_string(&languages).unwrap_or_else(|_| "[]".to_string());
-    };
-
-    languages.retain(|lang| {
-        canonicalize_language_tag(lang)
-            .is_none_or(|lang| lang.canonical != selected.canonical)
-    });
-    languages.insert(0, selected.canonical);
-    serde_json::to_string(&languages).unwrap_or_else(|_| "[]".to_string())
-}
-
 pub fn select_subtitle_track(
     tracks: &[SubtitleSelectionCandidate],
     subtitle_mode: SubtitleMode,
@@ -120,7 +106,9 @@ pub fn select_subtitle_track(
 
     let mut best: Option<((bool, bool, i32, i32, i32), &SubtitleSelectionCandidate)> = None;
     for track in tracks {
-        if subtitle_mode == SubtitleMode::ForcedOnly && track.variant != SubtitleTrackVariant::Forced {
+        if subtitle_mode == SubtitleMode::ForcedOnly
+            && track.variant != SubtitleTrackVariant::Forced
+        {
             continue;
         }
 
@@ -153,8 +141,7 @@ pub fn select_subtitle_track(
         match subtitle_mode {
             SubtitleMode::ForcedOnly => {
                 if track.variant != SubtitleTrackVariant::Forced
-                    || audio_match.is_none()
-                        && ordered_match.is_none()
+                    || audio_match.is_none() && ordered_match.is_none()
                 {
                     continue;
                 }
@@ -174,7 +161,8 @@ pub fn select_subtitle_track(
             .unwrap_or_default();
         let forced_audio_bonus = (track.variant == SubtitleTrackVariant::Forced
             && audio_match.is_some()
-            && subtitle_variant_preference == SubtitleVariantPreference::Auto) as i32;
+            && subtitle_variant_preference == SubtitleVariantPreference::Auto)
+            as i32;
         let variant_rank = variant_rank(track.variant, subtitle_variant_preference);
         let score = (
             forced_audio_bonus > 0,
@@ -184,7 +172,10 @@ pub fn select_subtitle_track(
             language_order,
         );
 
-        if best.as_ref().is_none_or(|(best_score, _)| score > *best_score) {
+        if best
+            .as_ref()
+            .is_none_or(|(best_score, _)| score > *best_score)
+        {
             best = Some((score, track));
         }
     }
@@ -198,10 +189,17 @@ fn variant_matches_preference(
 ) -> bool {
     matches!(
         (variant, preference),
-        (SubtitleTrackVariant::Forced, SubtitleVariantPreference::Forced)
-            | (SubtitleTrackVariant::Normal, SubtitleVariantPreference::Normal)
-            | (SubtitleTrackVariant::Sdh, SubtitleVariantPreference::Sdh)
-            | (SubtitleTrackVariant::Commentary, SubtitleVariantPreference::Commentary)
+        (
+            SubtitleTrackVariant::Forced,
+            SubtitleVariantPreference::Forced
+        ) | (
+            SubtitleTrackVariant::Normal,
+            SubtitleVariantPreference::Normal
+        ) | (SubtitleTrackVariant::Sdh, SubtitleVariantPreference::Sdh)
+            | (
+                SubtitleTrackVariant::Commentary,
+                SubtitleVariantPreference::Commentary
+            )
     )
 }
 
@@ -225,7 +223,11 @@ fn variant_rank(variant: SubtitleTrackVariant, preference: SubtitleVariantPrefer
 mod tests {
     use super::*;
 
-    fn candidate(id: &str, language: &str, variant: SubtitleTrackVariant) -> SubtitleSelectionCandidate {
+    fn candidate(
+        id: &str,
+        language: &str,
+        variant: SubtitleTrackVariant,
+    ) -> SubtitleSelectionCandidate {
         SubtitleSelectionCandidate {
             id: id.to_string(),
             language_bcp47: Some(language.to_string()),
@@ -267,7 +269,10 @@ mod tests {
 
     #[test]
     fn browser_hints_only_affect_ordering() {
-        let merged = dedupe_language_hints(&["fr".to_string()], &["en-AU".to_string(), "fr".to_string()]);
+        let merged = dedupe_language_hints(
+            &["fr".to_string()],
+            &["en-AU".to_string(), "fr".to_string()],
+        );
         assert_eq!(merged, vec!["fr".to_string(), "en-AU".to_string()]);
     }
 

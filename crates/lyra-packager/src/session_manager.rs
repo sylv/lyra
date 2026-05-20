@@ -1,5 +1,4 @@
 use crate::{session::Session, types::SessionOptions};
-use lyra_ids::generate_prefixed_ulid;
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, watch},
@@ -39,17 +38,6 @@ impl SessionManager {
         })
     }
 
-    pub async fn create(&self, options: SessionOptions) -> anyhow::Result<Arc<Session>> {
-        loop {
-            let session_id = generate_prefixed_ulid("ps");
-            if self.session(&session_id).await.is_none() {
-                return self
-                    .insert_session(session_id, options.clone(), false)
-                    .await;
-            }
-        }
-    }
-
     pub async fn get_or_create(
         &self,
         session_id: &str,
@@ -65,8 +53,7 @@ impl SessionManager {
             return Ok(existing);
         }
 
-        self.insert_session(session_id.to_string(), options, true)
-            .await
+        self.insert_session(session_id.to_string(), options).await
     }
 
     pub async fn session(&self, session_id: &str) -> Option<Arc<Session>> {
@@ -79,32 +66,6 @@ impl SessionManager {
 
     pub async fn session_count(&self) -> usize {
         self.inner.sessions.lock().await.len()
-    }
-
-    pub async fn attach_player(
-        &self,
-        session_id: &str,
-        player_id: String,
-    ) -> anyhow::Result<Arc<Session>> {
-        let session = self
-            .session(session_id)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("unknown session {}", session_id))?;
-        session.add_player(player_id).await;
-        Ok(session)
-    }
-
-    pub async fn detach_player(&self, session_id: &str, player_id: &str) -> anyhow::Result<()> {
-        let session = self.session(session_id).await;
-        let Some(session) = session else {
-            return Ok(());
-        };
-
-        if session.remove_player(player_id).await {
-            self.remove_session(session_id).await?;
-        }
-
-        Ok(())
     }
 
     pub async fn prune_idle_sessions(&self) -> anyhow::Result<()> {
@@ -152,22 +113,19 @@ impl SessionManager {
         &self,
         session_id: String,
         options: SessionOptions,
-        overwrite_existing: bool,
     ) -> anyhow::Result<Arc<Session>> {
         let work_dir = self.inner.root_work_dir.join(&session_id);
         tokio::fs::create_dir_all(&work_dir).await?;
 
         let session = Arc::new(Session::new(session_id.clone(), work_dir, options)?);
         let mut sessions = self.inner.sessions.lock().await;
-        if overwrite_existing {
-            if let Some(existing) = sessions.get(&session_id) {
-                anyhow::ensure!(
-                    existing.spec() == session.spec(),
-                    "session {} already exists with different options",
-                    session_id
-                );
-                return Ok(existing.clone());
-            }
+        if let Some(existing) = sessions.get(&session_id) {
+            anyhow::ensure!(
+                existing.spec() == session.spec(),
+                "session {} already exists with different options",
+                session_id
+            );
+            return Ok(existing.clone());
         }
         sessions.insert(session_id, session.clone());
         let _ = self.inner.session_count_tx.send(sessions.len());
@@ -295,7 +253,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn detaching_last_player_removes_the_session() {
+    async fn session_persists_until_swept() {
         let root = tempfile::tempdir().unwrap();
         let manager = SessionManager::new(root.path().to_path_buf(), Duration::from_secs(900))
             .await
@@ -305,12 +263,7 @@ mod tests {
             .get_or_create("ps_test", test_options())
             .await
             .unwrap();
-        manager
-            .attach_player("ps_test", "player-1".to_string())
-            .await
-            .unwrap();
-        manager.detach_player("ps_test", "player-1").await.unwrap();
 
-        assert!(manager.session("ps_test").await.is_none());
+        assert!(manager.session("ps_test").await.is_some());
     }
 }

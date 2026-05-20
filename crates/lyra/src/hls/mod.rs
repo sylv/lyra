@@ -6,7 +6,7 @@ use crate::{
     media::{self, FileProbeJob},
     signer::{sign, verify},
 };
-use anyhow::{Context, bail};
+use anyhow::Context;
 use axum::{
     Router,
     body::Body,
@@ -16,58 +16,26 @@ use axum::{
     routing::get,
 };
 use lyra_packager::{
-    AudioProfileSelection, Compatibility, SessionManager, SessionOptions, SessionSpec,
-    VideoProfileSelection, audio_profile,
-    playlist::create_fmp4_hls_playlist_from_segment_starts_pts, playlist::seconds_to_pts,
-    video_profile,
+    AudioProfileSelection, Compatibility, SessionOptions, SessionSpec, VideoProfileSelection,
+    audio_profile, playlist::create_fmp4_hls_playlist_from_segment_starts_pts,
+    playlist::seconds_to_pts, video_profile,
 };
 use lyra_probe::{ProbeData, VideoKeyframes};
 use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
-use tokio::{fs, sync::Mutex};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+use tokio::fs;
 use tokio_util::io::ReaderStream;
 #[cfg(debug_assertions)]
 use tower_http::cors::CorsLayer;
 
 const ON_DEMAND_JOB_TIMEOUT: Duration = Duration::from_secs(120);
 const TARGET_SEGMENT_SECONDS: u64 = 6;
-
-#[derive(Clone)]
-pub struct PlaybackRegistry {
-    pub sessions: Arc<SessionManager>,
-    pub player_sessions: Arc<Mutex<HashMap<String, String>>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SessionResumable {
-    pub file_id: String,
-    pub video_stream_index: u32,
-    pub video_profile_id: String,
-    pub audio_stream_index: Option<u32>,
-    pub audio_profile_id: Option<String>,
-}
+pub(crate) const AUDIO_NONE_PAIR_ID: &str = "none";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackTokenPayload {
-    pub session_id: String,
-    pub player_id: String,
-    pub resumable: SessionResumable,
-}
-
-#[derive(Debug, Clone)]
-pub struct MintPlaybackUrlInput {
     pub file_id: String,
-    pub player_id: String,
-    pub video_rendition_id: String,
-    pub audio_stream_index: i32,
-    pub audio_rendition_id: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct MintPlaybackUrlResult {
-    pub url: String,
-    pub packager_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,8 +52,14 @@ struct PlaybackSessionContext {
 
 pub fn get_hls_router() -> Router<AppState> {
     let mut router = Router::new()
-        .route("/v/{token}/index.m3u8", get(get_stream_playlist))
-        .route("/v/{token}/{name}", get(get_segment));
+        .route(
+            "/{file_id}/{token}/{video_pair_id}/{audio_pair_id}/index.m3u8",
+            get(get_stream_playlist),
+        )
+        .route(
+            "/{file_id}/{token}/{video_pair_id}/{audio_pair_id}/{name}",
+            get(get_segment),
+        );
 
     #[cfg(debug_assertions)]
     {
@@ -95,80 +69,37 @@ pub fn get_hls_router() -> Router<AppState> {
     router
 }
 
-pub(crate) async fn mint_playback_url(
-    pool: &sea_orm::DatabaseConnection,
-    playback_registry: &PlaybackRegistry,
-    auth: &RequestAuth,
-    input: MintPlaybackUrlInput,
-) -> Result<MintPlaybackUrlResult, async_graphql::Error> {
-    let file = ensure_file_access(pool, auth, &input.file_id).await?;
-    let (probe, keyframes) = load_probe_data_for_playback_options(pool, &input.file_id)
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-    let video_stream_index = probe
-        .get_video_stream()
-        .map(|stream| stream.index)
-        .ok_or_else(|| async_graphql::Error::new("File has no playable video stream"))?;
-    let resumable = normalize_selection(
-        &probe,
-        keyframes.as_ref(),
-        &file.id,
-        &input.video_rendition_id,
-        video_stream_index,
-        input.audio_stream_index,
-        &input.audio_rendition_id,
-    )?;
-
-    detach_previous_player_session(playback_registry, &input.player_id)
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-
-    let session_options = build_session_options(pool, &resumable)
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-    let session = playback_registry
-        .sessions
-        .create(session_options)
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-    playback_registry
-        .sessions
-        .attach_player(session.id(), input.player_id.clone())
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-    playback_registry
-        .player_sessions
-        .lock()
-        .await
-        .insert(input.player_id.clone(), session.id().to_string());
-
+pub(crate) fn sign_playback_url_template(file_id: &str) -> anyhow::Result<String> {
     let token = sign(
         PlaybackTokenPayload {
-            session_id: session.id().to_string(),
-            player_id: input.player_id,
-            resumable,
+            file_id: file_id.to_string(),
         },
         Duration::from_secs(6 * 60 * 60),
-    )
-    .map_err(|error| async_graphql::Error::new(error.to_string()))?;
+    )?;
 
-    Ok(MintPlaybackUrlResult {
-        url: format!("/api/hls/v/{token}/index.m3u8"),
-        packager_id: session.id().to_string(),
-    })
+    Ok(format!(
+        "/api/hls/{file_id}/{token}/{{VIDEO_PAIR_ID}}/{{AUDIO_PAIR_ID}}/index.m3u8"
+    ))
 }
 
 async fn get_stream_playlist(
     State(state): State<AppState>,
-    Path(token): Path<String>,
+    Path((file_id, token, video_pair_id, audio_pair_id)): Path<(String, String, String, String)>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let (_expires_in, payload) = verify::<PlaybackTokenPayload>(&token)
+    verify_playback_token(&token, &file_id)
         .map_err(|_| (StatusCode::NOT_FOUND, "stream not found"))?;
-    let session = get_or_create_session_from_payload(&state, &payload)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "stream not found"))?;
+    let session =
+        get_or_create_session_for_selection(&state, &file_id, &video_pair_id, &audio_pair_id)
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "stream not found"))?;
 
-    let mut response = Response::new(Body::from(rewrite_playlist(&token, &session.playlist)));
+    let mut response = Response::new(Body::from(rewrite_playlist(
+        &file_id,
+        &token,
+        &video_pair_id,
+        &audio_pair_id,
+        &session.playlist,
+    )));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/vnd.apple.mpegurl"),
@@ -178,19 +109,26 @@ async fn get_stream_playlist(
 
 async fn get_segment(
     State(state): State<AppState>,
-    Path((token, name)): Path<(String, String)>,
+    Path((file_id, token, video_pair_id, audio_pair_id, name)): Path<(
+        String,
+        String,
+        String,
+        String,
+        String,
+    )>,
     Query(query): Query<SegmentQuery>,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    let (_expires_in, payload) = verify::<PlaybackTokenPayload>(&token)
+    verify_playback_token(&token, &file_id)
         .map_err(|_| (StatusCode::NOT_FOUND, "segment not found"))?;
-    let session_context = get_or_create_session_from_payload(&state, &payload)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "segment generation failed",
-            )
-        })?;
+    let session_context =
+        get_or_create_session_for_selection(&state, &file_id, &video_pair_id, &audio_pair_id)
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "segment generation failed",
+                )
+            })?;
 
     let _ = query.start_pts;
 
@@ -237,22 +175,18 @@ async fn get_segment(
 
 async fn get_or_create_session_from_payload(
     state: &AppState,
-    payload: &PlaybackTokenPayload,
+    file_id: &str,
+    video_pair_id: &str,
+    audio_pair_id: &str,
 ) -> anyhow::Result<PlaybackSessionContext> {
-    let session_options = build_session_options(&state.pool, &payload.resumable).await?;
+    let (session_id, session_options) =
+        build_session_options_for_selection(&state.pool, file_id, video_pair_id, audio_pair_id)
+            .await?;
     let playlist = build_playlist(&session_options)?;
     let session = state
-        .playback_registry
-        .sessions
-        .get_or_create(&payload.session_id, session_options)
+        .packager_sessions
+        .get_or_create(&session_id, session_options)
         .await?;
-
-    ensure_player_binding(
-        &state.playback_registry,
-        &payload.session_id,
-        &payload.player_id,
-    )
-    .await?;
 
     Ok(PlaybackSessionContext {
         session,
@@ -261,44 +195,18 @@ async fn get_or_create_session_from_payload(
     })
 }
 
-async fn ensure_player_binding(
-    playback_registry: &PlaybackRegistry,
-    session_id: &str,
-    player_id: &str,
-) -> anyhow::Result<()> {
-    let mut player_sessions = playback_registry.player_sessions.lock().await;
-    let current = player_sessions.get(player_id).cloned();
-    if let Some(existing) = current.as_deref() {
-        if existing != session_id {
-            bail!("player {player_id} is already bound to a different playback session");
-        }
-    } else {
-        player_sessions.insert(player_id.to_string(), session_id.to_string());
-    }
-    drop(player_sessions);
-
-    playback_registry
-        .sessions
-        .attach_player(session_id, player_id.to_string())
-        .await?;
-    Ok(())
+async fn get_or_create_session_for_selection(
+    state: &AppState,
+    file_id: &str,
+    video_pair_id: &str,
+    audio_pair_id: &str,
+) -> anyhow::Result<PlaybackSessionContext> {
+    get_or_create_session_from_payload(state, file_id, video_pair_id, audio_pair_id).await
 }
 
-async fn detach_previous_player_session(
-    playback_registry: &PlaybackRegistry,
-    player_id: &str,
-) -> anyhow::Result<()> {
-    let previous = playback_registry
-        .player_sessions
-        .lock()
-        .await
-        .remove(player_id);
-    if let Some(previous_session_id) = previous {
-        playback_registry
-            .sessions
-            .detach_player(&previous_session_id, player_id)
-            .await?;
-    }
+fn verify_playback_token(token: &str, file_id: &str) -> anyhow::Result<()> {
+    let (_expires_in, payload) = verify::<PlaybackTokenPayload>(token)?;
+    anyhow::ensure!(payload.file_id == file_id, "stream not found");
     Ok(())
 }
 
@@ -334,6 +242,7 @@ pub(crate) async fn load_file_and_path(
         .one(pool)
         .await?
         .context("file not found")?;
+    anyhow::ensure!(file.unavailable_at.is_none(), "file is unavailable");
     let library = library.context("library not found")?;
     Ok((
         file.clone(),
@@ -348,13 +257,17 @@ pub(crate) async fn load_probe_data_for_playback_options(
     let mut probe = media::load_cached_probe(pool, file_id).await?;
     let keyframes = media::load_cached_keyframes(pool, file_id).await?;
 
-    if probe.is_none() {
+    if probe.is_none() || needs_default_video_keyframes(probe.as_ref(), keyframes.as_ref()) {
         let file = files::Entity::find_by_id(file_id)
             .one(pool)
             .await?
             .context("file disappeared before playback analysis job")?;
         jobs::try_run_job(pool, &FileProbeJob, file, ON_DEMAND_JOB_TIMEOUT).await?;
         probe = media::load_cached_probe(pool, file_id).await?;
+        return Ok((
+            probe.context("playback analysis finished without storing probe data")?,
+            media::load_cached_keyframes(pool, file_id).await?,
+        ));
     }
 
     Ok((
@@ -417,89 +330,100 @@ async fn load_session_analysis(
     Ok((probe, keyframes))
 }
 
+fn needs_default_video_keyframes(
+    probe: Option<&ProbeData>,
+    keyframes: Option<&VideoKeyframes>,
+) -> bool {
+    let Some(probe) = probe else {
+        return false;
+    };
+    let Some(video_stream) = probe.get_video_stream() else {
+        return false;
+    };
+    video_profile("copy")
+        .and_then(|profile| profile.compatible_with(video_stream))
+        .is_some_and(|compatibility| {
+            compatibility == Compatibility::KeyframeAligned
+                && keyframes
+                    .is_none_or(|keyframes| keyframes.video_stream_index != video_stream.index)
+        })
+}
+
 fn normalize_selection(
     probe: &ProbeData,
     keyframes: Option<&VideoKeyframes>,
-    file_id: &str,
-    video_rendition_id: &str,
-    video_stream_index: u32,
-    audio_stream_index: i32,
-    audio_rendition_id: &str,
-) -> Result<SessionResumable, async_graphql::Error> {
-    let video_profile_id = api_video_rendition_to_profile_id(video_rendition_id)
-        .ok_or_else(|| async_graphql::Error::new("Unsupported video rendition"))?;
-    let video_profile = video_profile(video_profile_id)
-        .ok_or_else(|| async_graphql::Error::new("Unsupported video rendition"))?;
+    video_pair_id: &str,
+    audio_pair_id: &str,
+) -> anyhow::Result<(VideoProfileSelection, Option<AudioProfileSelection>)> {
+    let video_selection = parse_video_pair_id(video_pair_id).context("invalid video pair")?;
+    let video_profile = video_profile(&video_selection.profile_id).context("invalid video pair")?;
     let video_stream = probe
-        .video_stream(video_stream_index)
-        .ok_or_else(|| async_graphql::Error::new("File has no playable video stream"))?;
+        .video_stream(video_selection.stream_index)
+        .context("invalid video pair")?;
     let compatibility = video_profile
         .compatible_with(video_stream)
-        .ok_or_else(|| async_graphql::Error::new("Unsupported video rendition"))?;
+        .context("invalid video pair")?;
     if compatibility == Compatibility::KeyframeAligned
-        && keyframes.is_some_and(|value| value.video_stream_index != video_stream_index)
+        && keyframes.is_none_or(|value| value.video_stream_index != video_selection.stream_index)
     {
-        return Err(async_graphql::Error::new(
-            "Cached keyframes do not match the selected video stream",
-        ));
+        anyhow::bail!("invalid video pair");
     }
 
-    let audio_profile_id = api_audio_rendition_to_profile_id(audio_rendition_id)
-        .ok_or_else(|| async_graphql::Error::new("Unsupported audio rendition"))?;
-    let audio_profile = audio_profile(audio_profile_id)
-        .ok_or_else(|| async_graphql::Error::new("Unsupported audio rendition"))?;
-    let audio_stream_index = u32::try_from(audio_stream_index)
-        .map_err(|_| async_graphql::Error::new("Invalid audio stream index"))?;
-    let audio_stream = probe
-        .stream(audio_stream_index)
-        .ok_or_else(|| async_graphql::Error::new("Invalid audio stream index"))?;
-    if audio_profile.compatible_with(audio_stream).is_none() {
-        return Err(async_graphql::Error::new("Unsupported audio rendition"));
-    }
+    let audio_selection = if audio_pair_id == AUDIO_NONE_PAIR_ID {
+        None
+    } else {
+        let audio_selection = parse_audio_pair_id(audio_pair_id).context("invalid audio pair")?;
+        let audio_profile =
+            audio_profile(&audio_selection.profile_id).context("invalid audio pair")?;
+        let audio_stream = probe
+            .stream(audio_selection.stream_index)
+            .filter(|stream| stream.kind() == lyra_probe::StreamKind::Audio)
+            .context("invalid audio pair")?;
+        anyhow::ensure!(
+            audio_profile.compatible_with(audio_stream).is_some(),
+            "invalid audio pair"
+        );
+        Some(audio_selection)
+    };
 
-    Ok(SessionResumable {
-        file_id: file_id.to_string(),
-        video_stream_index,
-        video_profile_id: video_profile_id.to_string(),
-        audio_stream_index: Some(audio_stream_index),
-        audio_profile_id: Some(audio_profile_id.to_string()),
-    })
+    Ok((video_selection, audio_selection))
 }
 
-async fn build_session_options(
+async fn build_session_options_for_selection(
     pool: &sea_orm::DatabaseConnection,
-    resumable: &SessionResumable,
-) -> anyhow::Result<SessionOptions> {
-    let (_, file_path) = load_file_and_path(pool, &resumable.file_id).await?;
+    file_id: &str,
+    video_pair_id: &str,
+    audio_pair_id: &str,
+) -> anyhow::Result<(String, SessionOptions)> {
+    let (_, file_path) = load_file_and_path(pool, file_id).await?;
+    let (probe_for_selection, keyframes_for_selection) =
+        load_probe_data_for_playback_options(pool, file_id).await?;
+    let (video_selection, audio_selection) = normalize_selection(
+        &probe_for_selection,
+        keyframes_for_selection.as_ref(),
+        video_pair_id,
+        audio_pair_id,
+    )?;
     let (probe, keyframes) = load_session_analysis(
         pool,
-        &resumable.file_id,
-        resumable.video_stream_index,
-        &resumable.video_profile_id,
+        file_id,
+        video_selection.stream_index,
+        &video_selection.profile_id,
     )
     .await?;
 
-    Ok(SessionOptions {
-        spec: SessionSpec {
-            file_path,
-            video: VideoProfileSelection {
-                stream_index: resumable.video_stream_index,
-                profile_id: resumable.video_profile_id.clone(),
+    Ok((
+        package_session_id(file_id, video_pair_id, audio_pair_id),
+        SessionOptions {
+            spec: SessionSpec {
+                file_path,
+                video: video_selection,
+                audio: audio_selection,
             },
-            audio: match (
-                resumable.audio_stream_index,
-                resumable.audio_profile_id.as_ref(),
-            ) {
-                (Some(stream_index), Some(profile_id)) => Some(AudioProfileSelection {
-                    stream_index,
-                    profile_id: profile_id.clone(),
-                }),
-                _ => None,
-            },
+            probe,
+            keyframes,
         },
-        probe,
-        keyframes,
-    })
+    ))
 }
 
 struct PlaylistData {
@@ -576,32 +500,59 @@ fn build_playlist(options: &SessionOptions) -> anyhow::Result<PlaylistData> {
     })
 }
 
-fn api_video_rendition_to_profile_id(rendition_id: &str) -> Option<&'static str> {
-    match rendition_id {
-        "original" => Some("copy"),
-        "h264" => Some("h264"),
-        _ => None,
-    }
+pub(crate) fn video_pair_id(stream_index: u32, profile_id: &str) -> String {
+    format!("v{stream_index}-{profile_id}")
 }
 
-fn api_audio_rendition_to_profile_id(rendition_id: &str) -> Option<&'static str> {
-    match rendition_id {
-        "aac" => Some("aac"),
-        _ => None,
-    }
+pub(crate) fn audio_pair_id(stream_index: u32, profile_id: &str) -> String {
+    format!("a{stream_index}-{profile_id}")
 }
 
-pub(crate) fn rewrite_playlist(token: &str, playlist: &str) -> String {
+fn parse_video_pair_id(pair_id: &str) -> Option<VideoProfileSelection> {
+    parse_pair_id(pair_id, 'v').map(|(stream_index, profile_id)| VideoProfileSelection {
+        stream_index,
+        profile_id: profile_id.to_string(),
+    })
+}
+
+fn parse_audio_pair_id(pair_id: &str) -> Option<AudioProfileSelection> {
+    parse_pair_id(pair_id, 'a').map(|(stream_index, profile_id)| AudioProfileSelection {
+        stream_index,
+        profile_id: profile_id.to_string(),
+    })
+}
+
+fn parse_pair_id(pair_id: &str, prefix: char) -> Option<(u32, &str)> {
+    let pair_id = pair_id.strip_prefix(prefix)?;
+    let (stream_index, profile_id) = pair_id.split_once('-')?;
+    Some((stream_index.parse().ok()?, profile_id))
+}
+
+fn package_session_id(file_id: &str, video_pair_id: &str, audio_pair_id: &str) -> String {
+    format!("pp-{file_id}-{video_pair_id}-{audio_pair_id}")
+}
+
+pub(crate) fn rewrite_playlist(
+    file_id: &str,
+    token: &str,
+    video_pair_id: &str,
+    audio_pair_id: &str,
+    playlist: &str,
+) -> String {
     playlist
         .lines()
         .map(|line| {
             if line.contains("URI=\"init.mp4\"") {
                 line.replace(
                     "URI=\"init.mp4\"",
-                    &format!("URI=\"/api/hls/v/{token}/init.mp4\""),
+                    &format!(
+                        "URI=\"/api/hls/{file_id}/{token}/{video_pair_id}/{audio_pair_id}/init.mp4\""
+                    ),
                 )
             } else if line.contains(".m4s") {
-                format!("/api/hls/v/{token}/{line}")
+                format!(
+                    "/api/hls/{file_id}/{token}/{video_pair_id}/{audio_pair_id}/{line}"
+                )
             } else {
                 line.to_string()
             }

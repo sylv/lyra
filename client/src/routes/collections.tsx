@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { graphql } from "../@generated/gql";
 import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { useTitle } from "../hooks/use-title";
-import { getPathForCollection } from "../lib/getPathForMedia";
+import { getPathForCollection } from "../lib/get-path-for-node";
 
 const CollectionsQuery = graphql(`
   query CollectionsIndex {

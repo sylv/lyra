@@ -2,22 +2,18 @@ import { CheckCheckIcon, FileWarningIcon, PlayIcon } from "lucide-react";
 import { Fragment, type FC, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { cn } from "../lib/utils";
-import { openPlayerMedia } from "./player/player-context";
+import { playNode } from "./player/store/player-store";
 import { UnplayedItemsTab } from "./unplayed-items-tab";
 
 interface PlayWrapperProps {
   itemId?: string | null;
   path: string;
   unavailable?: boolean | null;
-  watchProgress?: {
-    completed?: boolean;
-    progressPercent: number;
-    updatedAt: number;
-  } | null;
+  watchProgressHint?: number | null;
   children: ReactNode;
 }
 
-export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, unavailable, watchProgress }) => {
+export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, unavailable, watchProgressHint }) => {
   const navigate = useNavigate();
   const playableItemId = unavailable ? null : itemId;
 
@@ -31,23 +27,23 @@ export const PlayWrapper: FC<PlayWrapperProps> = ({ children, path, itemId, unav
             "transition-opacity duration-75 group-hover/play:opacity-100",
           )}
           onClick={() => {
-            openPlayerMedia(playableItemId, true);
+            playNode(playableItemId, true);
             navigate(path);
           }}
         >
           <PlayIcon className="h-10 w-10 text-white" />
         </button>
       )}
-      {watchProgress && !watchProgress.completed && (
+      {watchProgressHint && watchProgressHint !== 1 && (
         <Fragment>
           <div
             className="absolute bottom-0 left-0 z-10 h-1 bg-white/80"
-            style={{ width: `${watchProgress.progressPercent * 100}%` }}
+            style={{ width: `${watchProgressHint * 100}%` }}
           />
           <div className="absolute bottom-0 left-0 right-0 z-10 h-1 bg-white/20" />
         </Fragment>
       )}
-      {watchProgress && watchProgress.completed && (
+      {watchProgressHint === 1 && (
         <UnplayedItemsTab>
           <CheckCheckIcon className="size-4" strokeWidth={2.5} />
         </UnplayedItemsTab>

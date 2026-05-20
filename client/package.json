@@ -34,6 +34,7 @@
     "lucide-react": "^1.8.0",
     "media-captions": "^0.0.18",
     "motion": "^12.38.0",
+    "overlay-kit": "^1.9.0",
     "pretty-ms": "^9.3.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.5",

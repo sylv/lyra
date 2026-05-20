@@ -25,9 +25,6 @@ const SettingsImportRoute = lazy(() =>
 const SettingsLibrariesRoute = lazy(() =>
   import("./routes/settings_libraries").then((module) => ({ default: module.SettingsLibrariesRoute })),
 );
-const SettingsSessionsRoute = lazy(() =>
-  import("./routes/settings_sessions").then((module) => ({ default: module.SettingsSessionsRoute })),
-);
 const SettingsUsersRoute = lazy(() =>
   import("./routes/settings_users").then((module) => ({ default: module.SettingsUsersRoute })),
 );
@@ -56,7 +53,6 @@ export const AppRoutes: FC = () => (
     <Route path="/library/:libraryId" element={<LibraryRoute />} />
     <Route path="/settings" element={<SettingsRoute />}>
       <Route path="users" element={<SettingsUsersRoute />} />
-      <Route path="sessions" element={<SettingsSessionsRoute />} />
       <Route path="libraries" element={<SettingsLibrariesRoute />} />
       <Route path="import" element={<SettingsImportRoute />} />
       <Route path="about" element={<SettingsAboutRoute />} />

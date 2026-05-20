@@ -13,11 +13,11 @@ import { graphql } from "../@generated/gql";
 import { NodeAvailability, NodeKind, OrderBy } from "../@generated/gql/graphql";
 import { DisplayKind, NodeList } from "../components/nodes/node-list";
 import { NodePosterDetail } from "../components/nodes/node-poster-detail";
-import { openPlayerMedia } from "../components/player/player-context";
 import { ShelfCarousel } from "../components/shelf-carousel";
 import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { useTitle } from "../hooks/use-title";
-import { getPathForNode } from "../lib/getPathForMedia";
+import { getPathForNode } from "../lib/get-path-for-node";
+import { playNode } from "../components/player/store/player-store";
 
 const Query = graphql(`
   query GetNodeById($nodeId: String!) {
@@ -80,22 +80,12 @@ const Query = graphql(`
           }
         }
       }
-      watchProgress {
-        id
-        progressPercent
-        completed
-        updatedAt
-      }
+      watchProgressHint
       currentPlayable {
         id
         seasonNumber
         episodeNumber
-        watchProgress {
-          id
-          progressPercent
-          completed
-          updatedAt
-        }
+        watchProgressHint
       }
       defaultFile {
         id
@@ -105,10 +95,6 @@ const Query = graphql(`
           height
           videoCodec
           videoBitrate
-        }
-        subtitles {
-          displayName
-          languageBcp47
         }
       }
       recommendedNodes {
@@ -149,23 +135,6 @@ function formatBitrate(bitsPerSecond?: number | null): string | null {
   return `${(bitsPerSecond / 1_000_000).toFixed(1)} Mbps`;
 }
 
-type SubtitleEntry = { displayName: string; languageBcp47?: string | null };
-
-function formatSubtitles(tracks: SubtitleEntry[]): string | null {
-  if (tracks.length === 0) return null;
-  // Deduplicate by label, prefer shorter unique label list
-  const seen = new Set<string>();
-  const labels: string[] = [];
-  for (const t of tracks) {
-    const key = t.displayName;
-    if (!seen.has(key)) {
-      seen.add(key);
-      labels.push(t.displayName);
-    }
-  }
-  return labels.join(", ");
-}
-
 type NodeDetailsSectionProps = {
   node: {
     defaultFile?: {
@@ -175,7 +144,6 @@ type NodeDetailsSectionProps = {
         videoCodec?: string | null;
         videoBitrate?: number | null;
       } | null;
-      subtitles: SubtitleEntry[];
     } | null;
   };
 };
@@ -185,9 +153,8 @@ const NodeDetailsSection = ({ node }: NodeDetailsSectionProps) => {
   const resolution = formatResolution(probe?.width, probe?.height);
   const codec = formatVideoCodec(probe?.videoCodec);
   const bitrate = formatBitrate(probe?.videoBitrate);
-  const subtitleStr = node.defaultFile ? formatSubtitles(node.defaultFile.subtitles) : null;
 
-  if (!resolution && !codec && !bitrate && !subtitleStr) return null;
+  if (!resolution && !codec && !bitrate) return null;
 
   return (
     <div className="container">
@@ -209,12 +176,6 @@ const NodeDetailsSection = ({ node }: NodeDetailsSectionProps) => {
           <div className="flex gap-6">
             <dt className="text-zinc-400 w-32 shrink-0">Video Bitrate</dt>
             <dd className="text-zinc-100">{bitrate}</dd>
-          </div>
-        )}
-        {subtitleStr && (
-          <div className="flex gap-6">
-            <dt className="text-zinc-400 w-32 shrink-0">Subtitles</dt>
-            <dd className="text-zinc-100 max-w-[calc(max(20vw,200px))]">{subtitleStr}</dd>
           </div>
         )}
       </dl>
@@ -294,7 +255,7 @@ export function LibraryNodeRoute() {
       parts.push(`S${node.currentPlayable.seasonNumber}E${node.currentPlayable.episodeNumber}`);
     }
 
-    if (node.currentPlayable.watchProgress?.progressPercent) parts.unshift("Resume");
+    if (node.currentPlayable.watchProgressHint) parts.unshift("Resume");
     else parts.unshift("Play");
 
     return parts.join(" ");
@@ -329,7 +290,7 @@ export function LibraryNodeRoute() {
 
   if (node.kind === NodeKind.Episode) {
     const rootPath = node.root ? getPathForNode(node.root) : null;
-    const episodePlayText = node.watchProgress?.progressPercent ? "Resume" : "Play";
+    const episodePlayText = node.watchProgressHint ? "Resume" : "Play";
     const runtimeMinutes = node.defaultFile?.probe?.runtimeMinutes;
 
     return (
@@ -342,7 +303,7 @@ export function LibraryNodeRoute() {
                 itemId={node.id}
                 path={nodePath}
                 unavailable={node.unavailableAt != null}
-                watchProgress={node.watchProgress}
+                watchProgressHint={node.watchProgressHint}
               >
                 <Image
                   type={ImageType.Thumbnail}
@@ -373,7 +334,7 @@ export function LibraryNodeRoute() {
                     className="w-fit"
                     icon={["play", PlayIcon]}
                     iconSide="left"
-                    onClick={() => openPlayerMedia(node.id, true)}
+                    onClick={() => playNode(node.id, true)}
                   >
                     {episodePlayText}
                   </Button>
@@ -435,8 +396,6 @@ export function LibraryNodeRoute() {
   }
 
   const playableItemId = node.currentPlayable?.id;
-  const playableWatchProgress =
-    node.currentPlayable?.watchProgress ?? (playableItemId === node.id ? node.watchProgress : null);
   const runtimeMinutes = node.defaultFile?.probe?.runtimeMinutes;
 
   return (
@@ -449,7 +408,7 @@ export function LibraryNodeRoute() {
               itemId={playableItemId}
               path={nodePath}
               unavailable={node.unavailableAt != null}
-              watchProgress={playableWatchProgress}
+              watchProgressHint={node.currentPlayable?.watchProgressHint}
             >
               <Image
                 type={ImageType.Poster}
@@ -481,7 +440,7 @@ export function LibraryNodeRoute() {
                     className="w-fit"
                     icon={["play", PlayIcon]}
                     iconSide="left"
-                    onClick={() => openPlayerMedia(node.currentPlayable!.id, true)}
+                    onClick={() => playNode(node.currentPlayable!.id, true)}
                   >
                     {playText}
                   </Button>

@@ -9,7 +9,6 @@ use crate::{
     entities::{collections, libraries, node_metadata, nodes, users, watch_progress},
     graphql::types::collection::collection_item_count,
     metadata,
-    watch_session::WatchSessionRegistry,
 };
 use async_graphql::{
     Context, Enum, InputObject, Object, SimpleObject,
@@ -794,26 +793,6 @@ impl Query {
         Ok(ctx
             .data_opt::<RequestAuth>()
             .and_then(|_| auth.get_user().cloned()))
-    }
-
-    #[graphql(guard = AuthenticatedGuard::new())]
-    async fn watch_session(
-        &self,
-        ctx: &Context<'_>,
-        session_id: String,
-    ) -> Result<Option<crate::watch_session::WatchSession>, async_graphql::Error> {
-        let auth = ctx.data::<RequestAuth>()?;
-        let registry = ctx.data::<WatchSessionRegistry>()?;
-        registry.session_for_view(auth, &session_id).await
-    }
-
-    #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]
-    async fn watch_sessions(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Vec<crate::watch_session::WatchSession>, async_graphql::Error> {
-        let registry = ctx.data::<WatchSessionRegistry>()?;
-        Ok(registry.sessions_snapshot().await)
     }
 
     #[graphql(guard = PermissionGuard::new(users::UserPerms::ADMIN))]

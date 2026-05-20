@@ -2,7 +2,7 @@ import { ArrowRightIcon } from "lucide-react";
 import { type FC } from "react";
 import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../@generated/gql";
-import { getPathForCollection } from "../lib/getPathForMedia";
+import { getPathForCollection } from "../lib/get-path-for-node";
 import { NodePosterDetail } from "./nodes/node-poster-detail";
 import { ShelfCarousel } from "./shelf-carousel";
 

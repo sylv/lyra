@@ -1,203 +1,201 @@
-import { useEffect, useRef, type FC, type RefObject } from "react";
-import { useQuery } from "urql";
-import { graphql } from "../../@generated/gql";
-import { cn } from "../../lib/utils";
-import { PlayerBottomBar } from "./components/player-bottom-bar";
-import { PlayerErrorOverlay } from "./components/player-error-overlay";
-import { PlayerLoadingIndicator } from "./components/player-loading-indicator";
-import { PlayerMiddle } from "./components/player-middle";
-import { PlayerOverlayLayout } from "./components/player-overlay-layout";
-import { PlayerResumePrompt } from "./components/player-resume-prompt";
-import { PlayerSkipIntroOverlay } from "./components/player-skip-intro-overlay";
-import { PlayerSubtitleOverlay } from "./components/player-subtitle-overlay";
-import { PlayerSurface } from "./components/player-surface";
-import { PlayerTopBar } from "./components/player-top-bar";
-import { PlayerUpNextOverlay } from "./components/player-up-next-overlay";
-import { usePlayerDisplayState } from "./hooks/use-player-display-state";
-import { PlayerResumePromptProvider } from "./player-resume-prompt-state";
-import { setPlayerRuntimeState, togglePlayerFullscreen, usePlayerRuntimeStore } from "./player-runtime-store";
-import { PlayerSession } from "./player-session";
-import { PlayerVideoProvider } from "./player-video-context";
-import { PlayerVisibilityProvider } from "./player-visibility";
+// oxlint-disable jsx_a11y/click-events-have-key-events
+// oxlint-disable jsx_a11y/no-static-element-interactions
+import { useCallback, useEffect, useRef, useState, type FC } from "react";
+import { useClient } from "urql";
+import { unmask } from "../../@generated/gql";
+import { PlayerResumeDialog } from "./player-resume-dialog";
 import { PlayerVideo } from "./player-video";
+import {
+  PlayerAudioTrack,
+  PlayerQuery,
+  PlayerState,
+  PlayerSubtitleTrack,
+  PlayerVideoTrack,
+  resetPlayer,
+  setPlayerStatus,
+  usePlayerStore,
+} from "./store/player-store";
+import { PlayerBottom } from "./ui/player-bottom";
+import { cn } from "../../lib/utils";
+import { PlayerTop } from "./ui/player-top";
+import { PlayerMiddle } from "./ui/player-middle";
+import { PlayerKeybinds } from "./player-keybinds";
+import { bumpPlayerControls, usePlayerControlsStore, useShowControls } from "./store/player-controls-store";
+import { useVideoControls } from "./store/player-video-context";
+import { PlayerSubtitleOverlay } from "./components/player-subtitle-overlay";
 
-const ItemPlaybackQuery = graphql(`
-  query ItemPlayback($itemId: String!, $languageHints: [String!]) {
-    node(nodeId: $itemId) {
-      id
-      ...PlayerMetadata
-      ...PlayerSkipIntro
-      ...PlayerUpNext
-      defaultFile {
-        id
-        probe {
-          runtimeMinutes
-        }
-        playbackOptions(languageHints: $languageHints) {
-          videoRenditions {
-            renditionId
-            displayName
-            displayInfo
-            codecTag
-            onDemand
-          }
-          audioTracks {
-            streamIndex
-            displayName
-            language
-            recommended
-            renditions {
-              renditionId
-              codecName
-              bitrate
-              channels
-              sampleRate
-              codecTag
-              onDemand
-            }
-          }
-          subtitleTracks {
-            id
-            streamIndex
-            displayName
-            languageBcp47
-            flags
-            autoselect
-            renditions {
-              id
-              codecName
-              type
-              displayInfo
-              onDemand
-            }
-          }
-        }
-        timelinePreview {
-          ...PlayerTimelinePreviewSheet
-        }
-      }
-      previousPlayable {
-        id
-        ...PlayerNavigation
-      }
-      nextPlayable {
-        id
-        ...PlayerNavigation
-      }
-      watchProgress {
-        id
-        progressPercent
-        completed
-        updatedAt
-      }
-    }
-  }
-`);
+const PlayerOverlay: FC<{ portalContainer: HTMLElement | null }> = ({ portalContainer }) => {
+  const { toggleSurfacePlaying } = useVideoControls();
+  const showControls = useShowControls();
+  const paused = usePlayerStore((state) => state.paused);
 
-const useFullscreen = (containerRef: RefObject<HTMLDivElement | null>, isFullscreen: boolean) => {
+  return (
+    <div
+      className="absolute top-0 bottom-0 right-0 left-0 flex flex-col justify-between"
+      onClick={(event) => {
+        event.preventDefault();
+        toggleSurfacePlaying();
+      }}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <PlayerSubtitleOverlay />
+      <div
+        className={cn("transition-opacity duration-200", showControls || paused ? "opacity-100" : "opacity-0")}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <PlayerTop />
+      </div>
+      <PlayerMiddle />
+      <div
+        className={cn("transition-opacity duration-200", showControls || paused ? "opacity-100" : "opacity-0")}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <PlayerBottom portalContainer={portalContainer} />
+      </div>
+    </div>
+  );
+};
+
+export const Player: FC = () => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const client = useClient();
+  const targetNodeId = usePlayerStore((state) => state.targetNodeId);
+  const status = usePlayerStore((state) => state.status);
+  const [nodeId, setNodeId] = useState<string | null>(null);
+  const isFullscreen = usePlayerStore((state) => state.isFullscreen);
+  const setContainerRef = useCallback((element: HTMLDivElement | null) => {
+    containerRef.current = element;
+    setPortalContainer(element);
+  }, []);
+
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+
     if (isFullscreen) {
-      containerRef.current.requestFullscreen({ navigationUI: "hide" }).catch(() => false);
-    } else if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => false);
+      container.requestFullscreen({ navigationUI: "hide" }).catch(() => undefined);
+    } else if (document.fullscreenElement === container) {
+      document.exitFullscreen().catch(() => undefined);
     }
-  }, [containerRef, isFullscreen]);
+  }, [isFullscreen]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) {
-        togglePlayerFullscreen(false);
+      if (!document.fullscreenElement && usePlayerStore.getState().isFullscreen) {
+        usePlayerStore.setState({ isFullscreen: false });
+        bumpPlayerControls();
       }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
-};
-
-export const Player: FC<{ itemId: string }> = ({ itemId }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const isFullscreen = usePlayerRuntimeStore((state) => state.isFullscreen);
-  const aspectRatio = usePlayerRuntimeStore((state) => state.aspectRatio);
-  const languageHints = typeof navigator === "undefined" ? [] : [...navigator.languages];
-  const [{ data, fetching, error }] = useQuery({
-    query: ItemPlaybackQuery,
-    variables: { itemId, languageHints },
-  });
-  const media = data?.node ?? null;
-  const { currentTime, duration } = usePlayerDisplayState(media);
-  const miniPlayerAspectRatio = Math.max(aspectRatio, 16 / 9);
-
-  useFullscreen(containerRef, isFullscreen);
 
   useEffect(() => {
-    if (fetching && media?.id !== itemId) {
-      setPlayerRuntimeState({ buffering: true, errorMessage: null });
+    if (!targetNodeId) {
+      setNodeId(null);
+      return;
     }
-  }, [fetching, itemId, media?.id]);
+    if (targetNodeId === nodeId) return;
+    resetPlayer();
+    setPlayerStatus({ state: PlayerState.Init });
+    setNodeId(targetNodeId);
+    client
+      .query(PlayerQuery, { nodeId: targetNodeId }, { requestPolicy: "network-only" })
+      .toPromise()
+      .then((result) => {
+        if (result.error) {
+          setPlayerStatus({
+            state: PlayerState.Error,
+            errorMessage: "An error occured retrieving details from the server",
+          });
+          return;
+        }
 
-  useEffect(() => {
-    if (!error) return;
-    setPlayerRuntimeState({
-      errorMessage: "Sorry, this item is unavailable",
-      buffering: false,
-    });
-  }, [error]);
+        if (!result.data) {
+          setPlayerStatus({ state: PlayerState.Error, errorMessage: "This media is no longer available" });
+          return;
+        }
+
+        if (!result.data.node.defaultFile) {
+          setPlayerStatus({ state: PlayerState.Error, errorMessage: "Sorry, this media isn't available right now." });
+          return;
+        }
+
+        if (!result.data.node.defaultFile.probe) {
+          setPlayerStatus({
+            state: PlayerState.Error,
+            errorMessage: "Sorry, this file isn't ready to be played yet.",
+          });
+          return;
+        }
+
+        usePlayerStore.setState((state) => {
+          state.durationSeconds = result.data!.node.defaultFile!.probe!.durationSeconds ?? 0;
+          if (result.data!.node.defaultFile!.probe!.width && result.data!.node.defaultFile!.probe!.height) {
+            state.aspectRatio =
+              result.data!.node.defaultFile!.probe!.width / result.data!.node.defaultFile!.probe!.height;
+          }
+        });
+
+        const videoTracks = unmask(PlayerVideoTrack, result.data.node.defaultFile.playback.video);
+        const audioTracks = unmask(PlayerAudioTrack, result.data.node.defaultFile.playback.audio);
+        const subtitleTracks = unmask(PlayerSubtitleTrack, result.data.node.defaultFile.playback.subtitles);
+        const activeVideoTrack = videoTracks.find((track) => track.autoselect);
+        const activeAudioTrack = audioTracks.find((track) => track.autoselect) ?? null;
+        if (result.data.node.defaultFile.resumeHint) {
+          setPlayerStatus({
+            state: PlayerState.Resuming,
+            fromTimeMs: result.data.node.defaultFile.resumeHint.startMs,
+            data: result.data,
+            videoTrack: activeVideoTrack!,
+            videoTracks,
+            audioTrack: activeAudioTrack,
+            audioTracks,
+            subtitleTracks,
+          });
+        } else {
+          setPlayerStatus({
+            state: PlayerState.Mounted,
+            audioTrack: activeAudioTrack,
+            videoTrack: activeVideoTrack!,
+            audioTracks,
+            videoTracks,
+            subtitleTracks,
+            data: result.data,
+          });
+        }
+      });
+  }, [targetNodeId]);
+
+  if (status.state === PlayerState.Hidden) return null;
 
   return (
-    <PlayerVideoProvider>
-      <PlayerResumePromptProvider>
-        <PlayerVisibilityProvider>
-          <PlayerSession media={media}>
-            <div className={cn(!isFullscreen && "fixed bottom-4 right-4 z-50")}>
-              <div
-                ref={containerRef}
-                className={cn(
-                  isFullscreen ? "fixed inset-0 z-50 bg-black outline-none" : "relative rounded bg-black shadow-2xl outline-none",
-                )}
-                style={
-                  isFullscreen
-                    ? undefined
-                    : {
-                        aspectRatio: miniPlayerAspectRatio,
-                        width: `min(80dvw, max(32rem, calc(18rem * ${miniPlayerAspectRatio})))`,
-                      }
-                }
-              >
-                <PlayerVideo media={media} />
-                <PlayerSurface fullscreen={isFullscreen}>
-                  <PlayerOverlayLayout
-                    top={<PlayerTopBar media={media} portalContainer={containerRef.current} />}
-                    middle={
-                      <PlayerMiddle>
-                        <PlayerSubtitleOverlay media={media} />
-                        {media ? <PlayerSkipIntroOverlay media={media} /> : null}
-                        {media ? <PlayerUpNextOverlay media={media} /> : null}
-                      </PlayerMiddle>
-                    }
-                    bottom={
-                      media ? (
-                        <PlayerBottomBar
-                          compact={!isFullscreen}
-                          currentTime={currentTime}
-                          duration={duration}
-                          previousPlayable={media.previousPlayable}
-                          nextPlayable={media.nextPlayable}
-                          timelinePreviewSheets={Array.isArray(media.defaultFile?.timelinePreview) ? media.defaultFile.timelinePreview : []}
-                          portalContainer={containerRef.current}
-                        />
-                      ) : null
-                    }
-                  />
-                </PlayerSurface>
-                <PlayerResumePrompt portalContainer={containerRef.current} />
-                <PlayerLoadingIndicator />
-                <PlayerErrorOverlay />
-              </div>
-            </div>
-          </PlayerSession>
-        </PlayerVisibilityProvider>
-      </PlayerResumePromptProvider>
-    </PlayerVideoProvider>
+    <div
+      ref={setContainerRef}
+      className={cn(
+        "z-50 select-none",
+        isFullscreen ? "fixed left-0 right-0 top-0 bottom-0 z-50" : "fixed bottom-2 right-2",
+      )}
+      onPointerMove={() => bumpPlayerControls()}
+      onPointerEnter={() => {
+        usePlayerControlsStore.setState({ mouseIsHovering: true });
+        bumpPlayerControls();
+      }}
+      onPointerLeave={() => {
+        usePlayerControlsStore.setState({ mouseIsHovering: false });
+      }}
+    >
+      <PlayerResumeDialog />
+      <PlayerVideo>
+        <PlayerKeybinds />
+        <PlayerOverlay portalContainer={portalContainer} />
+      </PlayerVideo>
+    </div>
   );
 };

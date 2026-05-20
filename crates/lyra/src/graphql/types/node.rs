@@ -148,10 +148,14 @@ impl nodes::Model {
         NodeProperties::primary_file_for_node(pool, &self.id).await
     }
 
-    pub async fn watch_progress(
+    pub async fn watch_progress_hint(
         &self,
         ctx: &Context<'_>,
-    ) -> Result<Option<watch_progress::Model>, async_graphql::Error> {
+    ) -> Result<Option<f32>, async_graphql::Error> {
+        if !is_playable_node(self) {
+            return Ok(None);
+        }
+
         let Some(user_id) = current_user_id(ctx) else {
             return Ok(None);
         };
@@ -162,7 +166,7 @@ impl nodes::Model {
             .filter(watch_progress::Column::NodeId.eq(self.id.clone()))
             .one(pool)
             .await?;
-        Ok(progress)
+        Ok(progress.and_then(|progress| watch_progress::progress_hint(progress.progress_percent)))
     }
 
     pub async fn in_watchlist(&self, ctx: &Context<'_>) -> Result<bool, async_graphql::Error> {

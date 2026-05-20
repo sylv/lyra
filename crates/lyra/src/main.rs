@@ -11,7 +11,6 @@ use crate::{
     },
     error::AppError,
     jobs::{HeavyJobController, load_registered_jobs},
-    watch_session::WatchSessionRegistry,
 };
 use anyhow::Context;
 use async_graphql::Data;
@@ -21,7 +20,7 @@ use async_graphql_axum::{GraphQLProtocol, GraphQLRequest, GraphQLResponse, Graph
 use axum::{
     Json, Router,
     extract::{FromRef, Query as AxumQuery, State, ws::WebSocketUpgrade},
-    http::HeaderMap,
+    http::{HeaderMap, header::SET_COOKIE},
     response::{Html, IntoResponse},
     routing::{get, post},
 };
@@ -34,12 +33,11 @@ use sqlx::sqlite::{
     SqliteAutoVacuum, SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
 };
 use std::{
-    collections::HashMap,
     str::FromStr,
     sync::{Arc, atomic::AtomicI64},
     time::Duration,
 };
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Notify;
 use tokio::{signal, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tower_http::compression::CompressionLayer;
@@ -66,7 +64,6 @@ mod scanner;
 mod segment_markers;
 mod signer;
 mod subtitles;
-mod watch_session;
 
 type AppSchema = Schema<
     graphql::query::Query,
@@ -82,16 +79,24 @@ struct AppState {
     heavy_job_controller: Arc<HeavyJobController>,
     setup_code: u32,
     last_setup_code_attempt: Arc<AtomicI64>,
-    playback_registry: hls::PlaybackRegistry,
+    packager_sessions: Arc<SessionManager>,
 }
 
-async fn get_graphql(_auth: RequestAuth) -> impl IntoResponse {
-    Html(
+async fn get_graphql(auth: RequestAuth) -> impl IntoResponse {
+    let refreshed_session_cookie = auth.refreshed_session_cookie().cloned();
+    let mut response = Html(
         GraphiQLSource::build()
             .endpoint("/api/graphql")
             .subscription_endpoint("/api/graphql/ws")
             .finish(),
     )
+    .into_response();
+
+    if let Some(cookie) = refreshed_session_cookie {
+        response.headers_mut().append(SET_COOKIE, cookie);
+    }
+
+    response
 }
 
 async fn get_graphql_ws(
@@ -123,7 +128,8 @@ async fn post_graphql(
     auth: RequestAuth,
     headers: HeaderMap,
     req: GraphQLRequest,
-) -> GraphQLResponse {
+) -> impl IntoResponse {
+    let refreshed_session_cookie = auth.refreshed_session_cookie().cloned();
     let req = req.into_inner();
     let user_agent = UserAgent(
         headers
@@ -132,11 +138,15 @@ async fn post_graphql(
             .map(str::to_owned),
     );
 
-    state
-        .schema
-        .execute(req.data(auth).data(user_agent))
-        .await
-        .into()
+    let mut response =
+        GraphQLResponse::from(state.schema.execute(req.data(auth).data(user_agent)).await)
+            .into_response();
+
+    if let Some(cookie) = refreshed_session_cookie {
+        response.headers_mut().append(SET_COOKIE, cookie);
+    }
+
+    response
 }
 
 #[derive(Serialize)]
@@ -248,9 +258,6 @@ async fn main() {
 
     CONTENT_UPDATE.start();
 
-    let watch_session_registry = WatchSessionRegistry::new(pool.clone());
-    watch_session_registry.start();
-
     clear_locked_jobs(&pool)
         .await
         .expect("Failed to clear stale job locks");
@@ -293,7 +300,7 @@ async fn main() {
         });
     }
 
-    let playback_sessions = Arc::new(
+    let packager_sessions = Arc::new(
         SessionManager::new(
             get_config().get_transcode_cache_dir().join("sessions"),
             Duration::from_secs(15 * 60),
@@ -301,13 +308,9 @@ async fn main() {
         .await
         .expect("Failed to initialize playback session manager"),
     );
-    let playback_registry = hls::PlaybackRegistry {
-        sessions: playback_sessions.clone(),
-        player_sessions: Arc::new(Mutex::new(HashMap::new())),
-    };
 
     let heavy_job_controller_for_sessions = heavy_job_controller.clone();
-    let mut playback_session_count = playback_sessions.subscribe_session_count();
+    let mut playback_session_count = packager_sessions.subscribe_session_count();
     background_workers.spawn(async move {
         let mut current_count = *playback_session_count.borrow_and_update();
         heavy_job_controller_for_sessions
@@ -341,8 +344,6 @@ async fn main() {
         graphql::dataloaders::node_counts::NodeCountsLoader::new(pool.clone()),
         tokio::spawn,
     ))
-    .data(playback_registry.clone())
-    .data(watch_session_registry)
     .finish();
 
     // write the schema to a file in dev
@@ -372,7 +373,7 @@ async fn main() {
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))
         .with_state(AppState {
-            playback_registry,
+            packager_sessions,
             pool: pool.clone(),
             schema: Arc::new(schema),
             job_wake_signal,

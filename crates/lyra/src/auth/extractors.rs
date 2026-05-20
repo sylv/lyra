@@ -14,11 +14,10 @@ use crate::{
 };
 use axum::{
     extract::{FromRef, FromRequestParts, OptionalFromRequestParts},
-    http::request::Parts,
+    http::{HeaderValue, request::Parts},
 };
 use axum_extra::extract::CookieJar;
 use chrono::Utc;
-use reqwest::header::SET_COOKIE;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use std::{sync::atomic::Ordering, time::Duration};
 
@@ -26,6 +25,7 @@ pub struct RequestAuth {
     user: Option<users::Model>,
     permissions: UserPerms,
     is_setup: bool,
+    refreshed_session_cookie: Option<HeaderValue>,
 }
 
 impl RequestAuth {
@@ -45,6 +45,10 @@ impl RequestAuth {
 
     pub fn is_setup(&self) -> bool {
         self.is_setup
+    }
+
+    pub fn refreshed_session_cookie(&self) -> Option<&HeaderValue> {
+        self.refreshed_session_cookie.as_ref()
     }
 }
 
@@ -91,6 +95,7 @@ where
                 user: None,
                 permissions: UserPerms::ADMIN,
                 is_setup: true,
+                refreshed_session_cookie: None,
             });
         }
 
@@ -112,14 +117,15 @@ where
             return Err(AuthError::Unauthenticated);
         };
 
-        if expires_in <= Duration::from_hours(24 * TOKEN_REFRESH_WITHIN_EXPIRY_DAYS) {
+        let refreshed_session_cookie = if expires_in
+            <= Duration::from_hours(24 * TOKEN_REFRESH_WITHIN_EXPIRY_DAYS)
+        {
             tracing::info!("refreshing session token for user {}", user.id);
             let cookie = get_set_cookie_headers_for_session(user.id.clone(), session.id.clone())?;
-            parts.headers.insert(
-                SET_COOKIE,
-                cookie.parse().map_err(|_| AuthError::InternalError)?,
-            );
-        }
+            Some(cookie.parse().map_err(|_| AuthError::InternalError)?)
+        } else {
+            None
+        };
 
         maybe_touch_last_seen(&state.pool, &session).await?;
 
@@ -128,6 +134,7 @@ where
             user: Some(user),
             permissions,
             is_setup: false,
+            refreshed_session_cookie,
         })
     }
 }

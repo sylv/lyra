@@ -8,8 +8,7 @@ import { DynamicBackground } from "./components/dynamic-background";
 import { AppErrorBoundary } from "./components/error-boundary";
 import { IconText } from "./components/icon-text";
 import { LoadingText } from "./components/loading-text";
-import { PlayerWrapper } from "./components/player/player-wrapper";
-import { WatchSessionListener } from "./components/player/watch-session-listener";
+import { Player } from "./components/player/player";
 import { SetupWrapper } from "./components/settings/setup/setup-wrapper";
 import { Sidebar } from "./components/sidebar";
 import { Toaster } from "./components/ui/sonner";
@@ -23,7 +22,6 @@ export const App: FC = () => {
         <AppErrorBoundary className="fixed inset-0">
           <SetupWrapper>
             <ContentUpdateListener />
-            <WatchSessionListener />
             <AppErrorBoundary className="fixed inset-0">
               <Suspense
                 fallback={
@@ -54,7 +52,7 @@ export const LayoutWrapper: FC = () => {
       <Sidebar>
         <AppRoutes />
       </Sidebar>
-      <PlayerWrapper />
+      <Player />
     </>
   );
 };

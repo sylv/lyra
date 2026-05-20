@@ -1,58 +1,51 @@
-import { CaptionsRenderer, parseResponse } from "media-captions";
-import { useEffect, useRef, useState, type FC } from "react";
-import { useMutation } from "urql";
-import { graphql } from "../../../@generated/gql";
-import { type ItemPlaybackQuery } from "../../../@generated/gql/graphql";
+import { CaptionsRenderer, parseResponse, type CaptionsFileFormat } from "media-captions";
+import { useEffect, useMemo, useRef, useState, type FC } from "react";
+import { PlaybackSubtitleCodec } from "../../../@generated/gql/graphql";
 import { cn } from "../../../lib/utils";
-import { setPlayerRuntimeState, usePlayerRuntimeStore } from "../player-runtime-store";
-import { usePlayerVideoElement } from "../player-video-context";
-import { usePlayerVisibility } from "../player-visibility";
-import { listPreferredSubtitleRenditions, subtitleRenditionFormat } from "../subtitles";
+import { PlayerDynamicMiddle } from "../ui/player-dynamic-middle";
+import { PlayerState, usePlayerStore } from "../store/player-store";
 import "./player-subtitle-overlay.css";
 
-type CurrentMedia = NonNullable<ItemPlaybackQuery["node"]>;
-type ActiveSubtitle = { key: string; language: string | null };
-
-const MintSubtitleUrl = graphql(`
-  mutation MintSubtitleUrl($input: SubtitleUrlInput!) {
-    mintSubtitleUrl(input: $input) {
-      url
-    }
+const subtitleFormatRank = (format: CaptionsFileFormat) => {
+  switch (format) {
+    case "vtt":
+      return 0;
+    case "srt":
+      return 1;
+    case "ass":
+    case "ssa":
+      return 2;
   }
-`);
+};
+
+const subtitleRenditionFormat = (codec: PlaybackSubtitleCodec): CaptionsFileFormat | null => {
+  switch (codec) {
+    case PlaybackSubtitleCodec.Vtt:
+      return "vtt";
+    case PlaybackSubtitleCodec.Srt:
+      return "srt";
+    case PlaybackSubtitleCodec.Ass:
+      return "ass";
+    default:
+      return null;
+  }
+};
 
 const safeCurrentTime = (videoElement: HTMLVideoElement | null) =>
   videoElement && Number.isFinite(videoElement.currentTime) ? videoElement.currentTime : 0;
 
-const clearSubtitleRuntimeState = () => {
-  setPlayerRuntimeState({
-    activeSubtitleTrackId: null,
-    activeSubtitleRenditionId: null,
-    pendingSubtitleTrackId: null,
-  });
-};
-
-export const PlayerSubtitleOverlay: FC<{ media: CurrentMedia | null }> = ({ media }) => {
-  const { showControls } = usePlayerVisibility();
-  const isFullscreen = usePlayerRuntimeStore((state) => state.isFullscreen);
-  const selectedSubtitleTrackId = usePlayerRuntimeStore((state) => state.selectedSubtitleTrackId);
-  const videoElement = usePlayerVideoElement();
+export const PlayerSubtitleOverlay: FC = () => {
+  const status = usePlayerStore((state) => state.status);
+  const isFullscreen = usePlayerStore((state) => state.isFullscreen);
+  const selectedSubtitleTrackId = usePlayerStore((state) => state.selectedSubtitleTrackId);
+  const videoRef = usePlayerStore((state) => state.videoRef);
   const overlayRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CaptionsRenderer | null>(null);
-  const subtitleUrlCacheRef = useRef(new Map<string, string>());
-  const subtitleRequestIdRef = useRef(0);
-  const [activeSubtitle, setActiveSubtitle] = useState<ActiveSubtitle | null>(null);
-  const [, mintSubtitleUrl] = useMutation(MintSubtitleUrl);
-  const playbackOptions = media?.defaultFile?.playbackOptions ?? null;
-  const subtitleTracks = playbackOptions?.subtitleTracks ?? [];
-  const autoselectSubtitleTrack = subtitleTracks.find((track) => track.autoselect) ?? null;
-  const defaultFileId = media?.defaultFile?.id ?? null;
+  const requestIdRef = useRef(0);
+  const [activeLanguage, setActiveLanguage] = useState<string | null>(null);
 
-  const syncRendererTime = (timeSeconds: number) => {
-    if (rendererRef.current) {
-      rendererRef.current.currentTime = Number.isFinite(timeSeconds) ? Math.max(0, timeSeconds) : 0;
-    }
-  };
+  const subtitleTracks = status.state === PlayerState.Mounted ? status.subtitleTracks : [];
+  const autoselectTrack = useMemo(() => subtitleTracks.find((track) => track.autoselect) ?? null, [subtitleTracks]);
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -62,9 +55,7 @@ export const PlayerSubtitleOverlay: FC<{ media: CurrentMedia | null }> = ({ medi
     rendererRef.current = renderer;
     return () => {
       renderer.destroy();
-      if (rendererRef.current === renderer) {
-        rendererRef.current = null;
-      }
+      if (rendererRef.current === renderer) rendererRef.current = null;
     };
   }, []);
 
@@ -72,153 +63,121 @@ export const PlayerSubtitleOverlay: FC<{ media: CurrentMedia | null }> = ({ medi
     const renderer = rendererRef.current;
     if (!renderer) return;
 
-    const fileId = defaultFileId;
     const resolvedTrack =
       selectedSubtitleTrackId === ""
         ? null
         : selectedSubtitleTrackId == null
-          ? autoselectSubtitleTrack
-          : (subtitleTracks.find((track) => track.id === selectedSubtitleTrackId) ?? null);
-    const clearActiveSubtitle = () => {
-      setActiveSubtitle(null);
+          ? autoselectTrack
+          : (subtitleTracks.find((track) => track.sourceTrackId === selectedSubtitleTrackId) ?? null);
+
+    const clear = () => {
       renderer.reset();
-      clearSubtitleRuntimeState();
+      setActiveLanguage(null);
+      usePlayerStore.setState({
+        activeSubtitleTrackId: null,
+        activeSubtitleRenditionId: null,
+        pendingSubtitleTrackId: null,
+      });
     };
 
-    if (!fileId || !resolvedTrack) {
-      subtitleRequestIdRef.current += 1;
-      clearActiveSubtitle();
+    if (!resolvedTrack) {
+      requestIdRef.current += 1;
+      clear();
       return;
     }
 
-    const renditions = listPreferredSubtitleRenditions(resolvedTrack);
-    if (renditions.length === 0) {
-      subtitleRequestIdRef.current += 1;
-      clearActiveSubtitle();
+    const preferredRenditions = [...resolvedTrack.renditions]
+      .map((rendition) => ({ rendition, format: subtitleRenditionFormat(rendition.codec) }))
+      .filter((entry): entry is typeof entry & { format: CaptionsFileFormat } => entry.format != null)
+      .sort((left, right) => subtitleFormatRank(left.format) - subtitleFormatRank(right.format));
+
+    if (preferredRenditions.length === 0) {
+      requestIdRef.current += 1;
+      clear();
       return;
     }
 
     let cancelled = false;
     const controller = new AbortController();
-    const requestId = subtitleRequestIdRef.current + 1;
-    subtitleRequestIdRef.current = requestId;
-    const isRequestStale = () => cancelled || controller.signal.aborted || subtitleRequestIdRef.current !== requestId;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    const isStale = () => cancelled || controller.signal.aborted || requestIdRef.current !== requestId;
 
     renderer.reset();
-    setActiveSubtitle(null);
-    setPlayerRuntimeState({
+    setActiveLanguage(null);
+    usePlayerStore.setState({
       activeSubtitleTrackId: null,
       activeSubtitleRenditionId: null,
-      pendingSubtitleTrackId: resolvedTrack.id,
+      pendingSubtitleTrackId: resolvedTrack.sourceTrackId,
     });
 
     void (async () => {
-      for (const rendition of renditions) {
-        const format = subtitleRenditionFormat(rendition);
-        if (!format) continue;
-
-        const cacheKey = `${resolvedTrack.id}:${rendition.id}`;
-        let url = subtitleUrlCacheRef.current.get(cacheKey) ?? null;
-        if (!url) {
-          const result = await mintSubtitleUrl({
-            input: {
-              fileId,
-              trackId: resolvedTrack.id,
-              renditionId: rendition.id,
-              manual: selectedSubtitleTrackId != null && selectedSubtitleTrackId !== "",
-            },
-          });
-          if (result.error || !result.data?.mintSubtitleUrl.url) {
-            console.warn("failed to mint preferred subtitle rendition", {
-              trackId: resolvedTrack.id,
-              renditionId: rendition.id,
-              error: result.error,
-            });
-            continue;
-          }
-          url = result.data.mintSubtitleUrl.url;
-          subtitleUrlCacheRef.current.set(cacheKey, url);
-        }
-
-        if (isRequestStale() || !url) return;
-
+      for (const { rendition, format } of preferredRenditions) {
         try {
-          const track = await parseResponse(fetch(url, { signal: controller.signal }), { type: format });
-          if (isRequestStale()) return;
-
-          renderer.changeTrack(track);
-          syncRendererTime(safeCurrentTime(videoElement));
-          setActiveSubtitle({
-            key: cacheKey,
-            language: resolvedTrack.languageBcp47 ?? null,
+          const captions = await parseResponse(fetch(rendition.signedUrl, { signal: controller.signal }), {
+            type: format,
           });
-          setPlayerRuntimeState({
-            activeSubtitleTrackId: resolvedTrack.id,
-            activeSubtitleRenditionId: rendition.id,
+          if (isStale()) return;
+
+          renderer.changeTrack(captions);
+          renderer.currentTime = safeCurrentTime(videoRef.current);
+          setActiveLanguage(resolvedTrack.languageBcp47 ?? null);
+          usePlayerStore.setState({
+            activeSubtitleTrackId: resolvedTrack.sourceTrackId,
+            activeSubtitleRenditionId: rendition.variantId ?? rendition.displayInfo,
             pendingSubtitleTrackId: null,
           });
           return;
         } catch (error) {
-          if (isRequestStale()) return;
-          subtitleUrlCacheRef.current.delete(cacheKey);
-          console.warn("failed to load subtitle rendition", {
-            trackId: resolvedTrack.id,
-            renditionId: rendition.id,
-            error,
-          });
+          if (isStale()) return;
+          console.warn("failed to load subtitle rendition", { track: resolvedTrack.sourceTrackId, rendition, error });
         }
       }
 
-      clearActiveSubtitle();
-      console.error("failed to apply subtitle track");
+      clear();
     })().catch((error) => {
       if (controller.signal.aborted) return;
-      clearActiveSubtitle();
+      clear();
       console.error("failed to load subtitle track", error);
     });
 
     return () => {
       cancelled = true;
       controller.abort();
-      setActiveSubtitle(null);
+      setActiveLanguage(null);
       renderer.reset();
     };
-  }, [autoselectSubtitleTrack, defaultFileId, mintSubtitleUrl, selectedSubtitleTrackId, subtitleTracks]);
+  }, [autoselectTrack, selectedSubtitleTrackId, subtitleTracks, videoRef]);
 
-  // Keep captions on the same timeline exposed by the media element. On HLS/MSE sources,
-  // frame metadata can drift from `currentTime` and shift cues by a few seconds.
   useEffect(() => {
-    const video = videoElement;
-    if (!video || !activeSubtitle) return;
+    const video = videoRef.current;
+    const renderer = rendererRef.current;
+    if (!video || !renderer || !activeLanguage) return;
 
     let frameId: number | null = null;
-    const syncNow = () => syncRendererTime(safeCurrentTime(video));
-
+    const syncNow = () => {
+      renderer.currentTime = safeCurrentTime(video);
+    };
     const stopSync = () => {
       if (frameId == null) return;
       window.cancelAnimationFrame(frameId);
       frameId = null;
     };
-
     const tick = () => {
       syncNow();
       frameId = window.requestAnimationFrame(tick);
     };
-
     const startSync = () => {
       if (frameId != null) return;
       frameId = window.requestAnimationFrame(tick);
     };
-
     const handlePause = () => {
       stopSync();
       syncNow();
     };
 
     syncNow();
-    if (!video.paused && !video.ended) {
-      startSync();
-    }
+    if (!video.paused && !video.ended) startSync();
 
     video.addEventListener("play", startSync);
     video.addEventListener("playing", startSync);
@@ -244,20 +203,17 @@ export const PlayerSubtitleOverlay: FC<{ media: CurrentMedia | null }> = ({ medi
       video.removeEventListener("loadedmetadata", syncNow);
       video.removeEventListener("ended", handlePause);
     };
-  }, [activeSubtitle?.key, videoElement]);
+  }, [activeLanguage, videoRef]);
 
   return (
-    <div className={cn("pointer-events-none absolute inset-x-0 bottom-2 top-2 z-20")} aria-live="polite">
+    <PlayerDynamicMiddle>
       <div
         ref={overlayRef}
         data-part="captions"
-        lang={activeSubtitle?.language ?? undefined}
+        lang={activeLanguage ?? undefined}
         data-fullscreen={isFullscreen}
-        className={cn(
-          "player-subtitle-overlay absolute inset-0 transition-transform duration-300 ease-out will-change-transform",
-          showControls ? "-translate-y-20" : "translate-y-0",
-        )}
+        className={cn("player-subtitle-overlay absolute inset-0 transition-transform duration-300 ease-out")}
       />
-    </div>
+    </PlayerDynamicMiddle>
   );
 };

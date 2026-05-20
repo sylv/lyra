@@ -1,21 +1,7 @@
 import type { FC } from "react";
-import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
+import { unmask, type FragmentType } from "../../../@generated/gql";
 import { Image, ImageType, Fragment as ImageAssetFragment } from "../../image";
-
-export const PlayerItemCardFragment = graphql(`
-  fragment PlayerItemCard on Node {
-    id
-    properties {
-      displayName
-      description
-      thumbnailImage {
-        ...ImageAsset
-      }
-      seasonNumber
-      episodeNumber
-    }
-  }
-`);
+import { PlayerItemCard as PlayerItemCardFragment } from "../store/player-store";
 
 interface PlayerItemCardProps {
   item: FragmentType<typeof PlayerItemCardFragment>;
@@ -25,7 +11,13 @@ interface PlayerItemCardProps {
   countdownSeconds?: number;
 }
 
-export const PlayerItemCard: FC<PlayerItemCardProps> = ({ item: itemRaw, onPlay, onCancel, progressPercent, countdownSeconds }) => {
+export const PlayerItemCard: FC<PlayerItemCardProps> = ({
+  item: itemRaw,
+  onPlay,
+  onCancel,
+  progressPercent,
+  countdownSeconds,
+}) => {
   const item = unmask(PlayerItemCardFragment, itemRaw);
   const titleParts: string[] = [];
 
@@ -39,17 +31,19 @@ export const PlayerItemCard: FC<PlayerItemCardProps> = ({ item: itemRaw, onPlay,
     countdownSeconds != null && countdownSeconds > 0 ? `Playing in ${Math.ceil(countdownSeconds)}s` : "Play now";
 
   return (
-    <div className="flex items-center">
+    <div className="flex items-center text-white">
       <Image
         type={ImageType.Thumbnail}
         asset={item.properties.thumbnailImage as FragmentType<typeof ImageAssetFragment> | null | undefined}
         alt={item.properties.displayName}
         className="h-32 rounded-r-none object-cover"
       />
-      <div className="flex h-32 w-[20rem] flex-col gap-3 rounded-md rounded-l-none bg-black p-3 pl-5 shadow-lg">
+      <div className="flex h-32 w-80 flex-col gap-3 rounded-md rounded-l-none bg-black/70 p-3 pl-5 shadow-lg backdrop-blur-md">
         <div className="min-h-0 flex-1 overflow-hidden">
-          <p className="truncate text-sm font-semibold text-white">{titleParts.join(" ")}</p>
-          {item.properties.description ? <p className="line-clamp-3 text-xs text-white/70">{item.properties.description}</p> : null}
+          <p className="truncate text-sm font-semibold">{titleParts.join(" ")}</p>
+          {item.properties.description ? (
+            <p className="line-clamp-3 text-xs text-white/70">{item.properties.description}</p>
+          ) : null}
         </div>
         {onPlay ? (
           <div className="flex gap-2">
@@ -63,7 +57,10 @@ export const PlayerItemCard: FC<PlayerItemCardProps> = ({ item: itemRaw, onPlay,
             >
               {clampedPercent > 0 ? (
                 <div className="pointer-events-none absolute inset-0">
-                  <div className="h-full bg-white/90 transition-[width] duration-100 ease-linear" style={{ width: `${clampedPercent}%` }} />
+                  <div
+                    className="h-full bg-white/90 transition-[width] duration-100 ease-linear"
+                    style={{ width: `${clampedPercent}%` }}
+                  />
                 </div>
               ) : null}
               <span className="relative z-10">{buttonLabel}</span>

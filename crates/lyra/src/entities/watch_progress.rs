@@ -81,6 +81,28 @@ pub fn is_completed_progress(progress_percent: f32) -> bool {
     normalize_progress_percent(progress_percent) > completed_progress_threshold()
 }
 
+pub fn progress_hint(progress_percent: f32) -> Option<f32> {
+    let progress_percent = normalize_progress_percent(progress_percent);
+    if progress_percent <= minimum_progress_threshold() {
+        None
+    } else if progress_percent > completed_progress_threshold() {
+        Some(1.0)
+    } else {
+        Some(progress_percent)
+    }
+}
+
+pub fn resume_progress(progress_percent: f32) -> Option<f32> {
+    let progress_percent = normalize_progress_percent(progress_percent);
+    if progress_percent > minimum_progress_threshold()
+        && progress_percent <= completed_progress_threshold()
+    {
+        Some(progress_percent)
+    } else {
+        None
+    }
+}
+
 #[ComplexObject]
 impl Model {
     async fn progress_percent(&self) -> f32 {

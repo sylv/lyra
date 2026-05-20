@@ -28,17 +28,75 @@ impl TrackDispositionPreference {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
-pub enum SubtitleRenditionType {
-    Direct,
-    Converted,
-    Ocr,
-    Generated,
+pub enum PlaybackVideoProfileId {
+    Copy,
+    H264,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
-pub enum SubtitleKind {
-    Srt,
+pub enum PlaybackVideoCodec {
+    H264,
+    H265,
+    Av1,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct PlaybackVideoTrack {
+    pub source_track_id: String,
+    pub display_name: String,
+    pub autoselect: bool,
+    pub renditions: Vec<PlaybackVideoRendition>,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct PlaybackVideoRendition {
+    pub pair_id: String,
+    pub profile_id: PlaybackVideoProfileId,
+    pub codec: PlaybackVideoCodec,
+    pub display_info: String,
+    pub codec_tag: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum PlaybackAudioProfileId {
+    Aac,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum PlaybackAudioCodec {
+    Aac,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct PlaybackAudioTrack {
+    pub source_track_id: String,
+    pub display_name: String,
+    pub language_bcp47: Option<String>,
+    pub autoselect: bool,
+    pub renditions: Vec<PlaybackAudioRendition>,
+}
+
+#[derive(Clone, Debug, SimpleObject)]
+pub struct PlaybackAudioRendition {
+    pub pair_id: String,
+    pub profile_id: PlaybackAudioProfileId,
+    pub codec: PlaybackAudioCodec,
+    pub display_info: String,
+    pub codec_tag: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum PlaybackSubtitleKind {
+    Forced,
+    Subtitles,
+    Captions,
+    Commentary,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
+pub enum PlaybackSubtitleCodec {
     Vtt,
+    Srt,
     Ass,
     MovText,
     Text,
@@ -48,23 +106,21 @@ pub enum SubtitleKind {
 }
 
 #[derive(Clone, Debug, SimpleObject)]
-pub struct SubtitleTrack {
-    pub id: String,
-    pub stream_index: i32,
+pub struct PlaybackSubtitleTrack {
+    pub source_track_id: String,
     pub display_name: String,
     pub language_bcp47: Option<String>,
-    pub flags: Vec<String>,
+    pub kind: PlaybackSubtitleKind,
     pub autoselect: bool,
-    pub renditions: Vec<SubtitleRendition>,
+    pub renditions: Vec<PlaybackSubtitleRendition>,
 }
 
 #[derive(Clone, Debug, SimpleObject)]
-pub struct SubtitleRendition {
-    pub id: String,
-    pub codec_name: String,
-    pub r#type: SubtitleRenditionType,
+pub struct PlaybackSubtitleRendition {
+    pub variant_id: Option<String>,
+    pub signed_url: String,
     pub display_info: String,
-    pub on_demand: bool,
+    pub codec: PlaybackSubtitleCodec,
 }
 
 #[derive(Clone, Debug, SimpleObject)]
@@ -93,10 +149,11 @@ pub struct TimelinePreviewSheet {
 }
 
 #[derive(Clone, Debug, SimpleObject)]
-pub struct PlaybackOptions {
-    pub video_renditions: Vec<VideoRenditionOption>,
-    pub audio_tracks: Vec<AudioTrackOption>,
-    pub subtitle_tracks: Vec<SubtitleTrack>,
+pub struct Playback {
+    pub hls_url_template: String,
+    pub video: Vec<PlaybackVideoTrack>,
+    pub audio: Vec<PlaybackAudioTrack>,
+    pub subtitles: Vec<PlaybackSubtitleTrack>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]
@@ -138,35 +195,6 @@ pub struct CastMember {
     pub character_name: Option<String>,
     pub department: Option<String>,
     pub person: Person,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-pub struct VideoRenditionOption {
-    pub rendition_id: String,
-    pub display_name: String,
-    pub display_info: String,
-    pub codec_tag: String,
-    pub on_demand: bool,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-pub struct AudioTrackOption {
-    pub stream_index: i32,
-    pub display_name: String,
-    pub language: Option<String>,
-    pub recommended: bool,
-    pub renditions: Vec<AudioRenditionOption>,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-pub struct AudioRenditionOption {
-    pub rendition_id: String,
-    pub codec_name: String,
-    pub bitrate: Option<i32>,
-    pub channels: Option<i32>,
-    pub sample_rate: Option<i32>,
-    pub codec_tag: String,
-    pub on_demand: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]

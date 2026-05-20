@@ -22,24 +22,6 @@ type Asset {
 	aspectRatio: String
 }
 
-type AudioRenditionOption {
-	renditionId: String!
-	codecName: String!
-	bitrate: Int
-	channels: Int
-	sampleRate: Int
-	codecTag: String!
-	onDemand: Boolean!
-}
-
-type AudioTrackOption {
-	streamIndex: Int!
-	displayName: String!
-	language: String
-	recommended: Boolean!
-	renditions: [AudioRenditionOption!]!
-}
-
 type CastMember {
 	characterName: String
 	department: String
@@ -94,15 +76,7 @@ enum ContentUpdateEvent {
 
 input DisabledSubtitlesHintInput {
 	fileId: String!
-	trackId: String!
-	renditionId: String!
-}
-
-enum EffectiveWatchSessionState {
-	PLAYING
-	PAUSED
-	BUFFERING
-	INACTIVE_PLAYERS
+	sourceTrackId: String!
 }
 
 type File {
@@ -118,9 +92,9 @@ type File {
 	scannedAt: Int
 	discoveredAt: Int!
 	probe: FileProbe
-	playbackOptions(languageHints: [String!]): PlaybackOptions!
+	resumeHint: ResumeHint
+	playback(languageHint: String): Playback!
 	timelinePreview: [TimelinePreviewSheet!]!
-	subtitles(languageHints: [String!]): [SubtitleTrack!]!
 	segments: [FileSegment!]!
 }
 
@@ -250,11 +224,6 @@ type Mutation {
 	removeNodeFromWatchlist(nodeId: String!): Boolean!
 	setPreferredAudio(language: String, disposition: TrackDispositionPreference): User!
 	deleteLibrary(libraryId: String!): Boolean!
-	leaveWatchSession(sessionId: String!, playerId: String!): Boolean!
-	watchSessionHeartbeat(input: WatchSessionHeartbeatInput!): WatchSessionBeacon!
-	watchSessionAction(input: WatchSessionActionInput!): WatchSessionBeacon!
-	mintPlaybackUrl(input: PlaybackUrlInput!): PlaybackUrlPayload!
-	mintSubtitleUrl(input: SubtitleUrlInput!): SubtitleUrlPayload!
 	disabledSubtitlesHint(input: DisabledSubtitlesHintInput!): Boolean!
 }
 
@@ -277,7 +246,7 @@ type Node {
 	children: [Node!]!
 	properties: NodeProperties!
 	defaultFile: File
-	watchProgress: WatchProgress
+	watchProgressHint: Float
 	inWatchlist: Boolean!
 	currentPlayable: Node
 	nextPlayable: Node
@@ -414,23 +383,95 @@ type Person {
 	profileImage: Asset
 }
 
-type PlaybackOptions {
-	videoRenditions: [VideoRenditionOption!]!
-	audioTracks: [AudioTrackOption!]!
-	subtitleTracks: [SubtitleTrack!]!
+type Playback {
+	hlsUrlTemplate: String!
+	video: [PlaybackVideoTrack!]!
+	audio: [PlaybackAudioTrack!]!
+	subtitles: [PlaybackSubtitleTrack!]!
 }
 
-input PlaybackUrlInput {
-	fileId: String!
-	playerId: String!
-	videoRenditionId: String!
-	audioStreamIndex: Int!
-	audioRenditionId: String!
+enum PlaybackAudioCodec {
+	AAC
 }
 
-type PlaybackUrlPayload {
-	url: String!
-	packagerId: String!
+enum PlaybackAudioProfileId {
+	AAC
+}
+
+type PlaybackAudioRendition {
+	pairId: String!
+	profileId: PlaybackAudioProfileId!
+	codec: PlaybackAudioCodec!
+	displayInfo: String!
+	codecTag: String!
+}
+
+type PlaybackAudioTrack {
+	sourceTrackId: String!
+	displayName: String!
+	languageBcp47: String
+	autoselect: Boolean!
+	renditions: [PlaybackAudioRendition!]!
+}
+
+enum PlaybackSubtitleCodec {
+	VTT
+	SRT
+	ASS
+	MOV_TEXT
+	TEXT
+	TTML
+	PGS
+	VOB_SUB
+}
+
+enum PlaybackSubtitleKind {
+	FORCED
+	SUBTITLES
+	CAPTIONS
+	COMMENTARY
+}
+
+type PlaybackSubtitleRendition {
+	variantId: String
+	signedUrl: String!
+	displayInfo: String!
+	codec: PlaybackSubtitleCodec!
+}
+
+type PlaybackSubtitleTrack {
+	sourceTrackId: String!
+	displayName: String!
+	languageBcp47: String
+	kind: PlaybackSubtitleKind!
+	autoselect: Boolean!
+	renditions: [PlaybackSubtitleRendition!]!
+}
+
+enum PlaybackVideoCodec {
+	H264
+	H265
+	AV_1
+}
+
+enum PlaybackVideoProfileId {
+	COPY
+	H264
+}
+
+type PlaybackVideoRendition {
+	pairId: String!
+	profileId: PlaybackVideoProfileId!
+	codec: PlaybackVideoCodec!
+	displayInfo: String!
+	codecTag: String!
+}
+
+type PlaybackVideoTrack {
+	sourceTrackId: String!
+	displayName: String!
+	autoselect: Boolean!
+	renditions: [PlaybackVideoRendition!]!
 }
 
 type Query {
@@ -443,51 +484,18 @@ type Query {
 	collections(pinned: Boolean): [Collection!]!
 	collection(collectionId: String!): Collection
 	viewer: User
-	watchSession(sessionId: String!): WatchSession
-	watchSessions: [WatchSession!]!
 	users: [User!]!
 	activities: [Activity!]!
 }
 
+type ResumeHint {
+	id: String!
+	startMs: Int!
+	updatedAt: Int!
+}
+
 type SubscriptionRoot {
 	contentUpdates: ContentUpdateEvent!
-	watchSessionBeacons(sessionId: String!, playerId: String!): WatchSessionBeacon!
-}
-
-type SubtitleRendition {
-	id: String!
-	codecName: String!
-	type: SubtitleRenditionType!
-	displayInfo: String!
-	onDemand: Boolean!
-}
-
-enum SubtitleRenditionType {
-	DIRECT
-	CONVERTED
-	OCR
-	GENERATED
-}
-
-type SubtitleTrack {
-	id: String!
-	streamIndex: Int!
-	displayName: String!
-	languageBcp47: String
-	flags: [String!]!
-	autoselect: Boolean!
-	renditions: [SubtitleRendition!]!
-}
-
-input SubtitleUrlInput {
-	fileId: String!
-	trackId: String!
-	renditionId: String!
-	manual: Boolean
-}
-
-type SubtitleUrlPayload {
-	url: String!
 }
 
 type TimelinePreviewSheet {
@@ -516,14 +524,6 @@ type User {
 	libraries: [Library!]!
 }
 
-type VideoRenditionOption {
-	renditionId: String!
-	displayName: String!
-	displayInfo: String!
-	codecTag: String!
-	onDemand: Boolean!
-}
-
 type WatchProgress {
 	id: String!
 	userId: String!
@@ -533,97 +533,6 @@ type WatchProgress {
 	updatedAt: Int!
 	progressPercent: Float!
 	completed: Boolean!
-}
-
-type WatchSession {
-	id: String!
-	nodeId: String!
-	fileId: String!
-	intent: WatchSessionIntent!
-	basePositionMs: Int!
-	revision: Int!
-	createdAt: Int!
-	updatedAt: Int!
-	players: [WatchSessionPlayer!]!
-	baseTimeMs: Float!
-	node: Node
-	file: File
-	mode: WatchSessionMode!
-	effectiveState: EffectiveWatchSessionState!
-	currentPositionMs: Int!
-}
-
-input WatchSessionActionInput {
-	sessionId: String!
-	playerId: String!
-	kind: WatchSessionActionKind!
-	positionMs: Int
-	nodeId: String
-	targetPlayerId: String
-}
-
-enum WatchSessionActionKind {
-	PLAY
-	PAUSE
-	SEEK
-	SWITCH_ITEM
-	REMOVE_PLAYER
-}
-
-type WatchSessionBeacon {
-	sessionId: String!
-	nodeId: String!
-	fileId: String!
-	mode: WatchSessionMode!
-	intent: WatchSessionIntent!
-	effectiveState: EffectiveWatchSessionState!
-	basePositionMs: Int!
-	revision: Int!
-	players: [WatchSessionPlayer!]!
-	baseTimeMs: Float!
-}
-
-input WatchSessionHeartbeatInput {
-	sessionId: String!
-	playerId: String!
-	isBuffering: Boolean!
-	basePositionMs: Int!
-	baseTimeMs: Float!
-	recovery: WatchSessionRecoveryInput!
-}
-
-enum WatchSessionIntent {
-	PLAYING
-	PAUSED
-}
-
-enum WatchSessionMode {
-	ADVISORY
-	SYNCED
-}
-
-type WatchSessionPlayer {
-	id: String!
-	sessionId: String!
-	userId: String!
-	displayUsername: String!
-	basePositionMs: Int!
-	joinedAt: Int!
-	updatedAt: Int!
-	isBuffering: Boolean!
-	baseTimeMs: Float!
-	lastReportMs: Float!
-	user: User
-	isInactive: Boolean!
-	canRemove: Boolean!
-}
-
-input WatchSessionRecoveryInput {
-	nodeId: String!
-	fileId: String!
-	intent: WatchSessionIntent!
-	basePositionMs: Int!
-	baseTimeMs: Float!
 }
 
 """

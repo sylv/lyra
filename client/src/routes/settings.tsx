@@ -8,7 +8,6 @@ import { ADMIN_BIT } from "../lib/user-permissions";
 
 export const settingsTabs = {
   users: "/settings/users",
-  sessions: "/settings/sessions",
   libraries: "/settings/libraries",
   about: "/settings/about",
   import: "/settings/import",
@@ -29,7 +28,7 @@ export const SettingsRoute: FC = () => {
   const navigate = useNavigate();
   const pathname = location.pathname;
   const [{ data }] = useSuspenseQuery({ query: SettingsViewerQuery });
-  const viewerPermissions = data.viewer?.permissions ?? 0;
+  const viewerPermissions = data?.viewer?.permissions ?? 0;
   const canManageUsers = (viewerPermissions & ADMIN_BIT) !== 0;
   const canViewSessions = (viewerPermissions & ADMIN_BIT) !== 0;
   const canManageLibraries = (viewerPermissions & ADMIN_BIT) !== 0;
@@ -43,24 +42,17 @@ export const SettingsRoute: FC = () => {
   const fallbackTab = visibleTabs[0] ?? "about";
   const activeTab: SettingsTab = pathname.startsWith(settingsTabs.users)
     ? "users"
-    : pathname.startsWith(settingsTabs.sessions)
-      ? "sessions"
-      : pathname.startsWith(settingsTabs.libraries)
-        ? "libraries"
-        : pathname.startsWith(settingsTabs.import)
-          ? "import"
-          : "about";
+    : pathname.startsWith(settingsTabs.libraries)
+      ? "libraries"
+      : pathname.startsWith(settingsTabs.import)
+        ? "import"
+        : "about";
   const activeTabVisible =
-    activeTab === "users"
-      ? canManageUsers
-      : activeTab === "sessions"
-        ? canViewSessions
-        : activeTab === "libraries"
-          ? canManageLibraries
-          : true;
+    activeTab === "users" ? canManageUsers : activeTab === "libraries" ? canManageLibraries : true;
 
   useTitle("Settings");
 
+  if (!data) return null;
   if (!activeTabVisible) {
     return <Navigate to={settingsTabs[fallbackTab]} replace />;
   }

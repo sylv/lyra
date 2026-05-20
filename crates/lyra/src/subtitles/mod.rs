@@ -96,30 +96,6 @@ pub fn subtitle_disposition_bits(disposition: StreamDisposition) -> i64 {
     i64::from(disposition.bits())
 }
 
-pub fn disposition_names(bits: i64) -> Vec<&'static str> {
-    let Ok(bits) = u16::try_from(bits) else {
-        return Vec::new();
-    };
-    let Some(disposition) = StreamDisposition::from_bits(bits) else {
-        return Vec::new();
-    };
-
-    let mut names = Vec::new();
-    if disposition.contains(StreamDisposition::FORCED) {
-        names.push("Forced");
-    }
-    if disposition.contains(StreamDisposition::HEARING_IMPAIRED) {
-        names.push("SDH");
-    }
-    if disposition.contains(StreamDisposition::COMMENTARY) {
-        names.push("Commentary");
-    }
-    if disposition.contains(StreamDisposition::VISUAL_IMPAIRED) {
-        names.push("Visual impaired");
-    }
-    names
-}
-
 trait StreamDetailsExt {
     fn subtitle_format(&self) -> Option<SubtitleFormat>;
 }

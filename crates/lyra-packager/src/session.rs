@@ -7,7 +7,6 @@ use crate::{
 use anyhow::Context;
 use lyra_probe::{Stream, VideoKeyframes};
 use std::{
-    collections::HashSet,
     ffi::OsString,
     path::PathBuf,
     time::{Duration, Instant},
@@ -59,7 +58,6 @@ pub struct Session {
     audio_profile: Option<&'static dyn Profile>,
     compatibility: Compatibility,
     state: Mutex<SessionState>,
-    player_ids: Mutex<HashSet<String>>,
     last_used: std::sync::Mutex<Instant>,
 }
 
@@ -145,7 +143,6 @@ impl Session {
                 completed_ranges: Vec::new(),
                 shutdown: false,
             }),
-            player_ids: Mutex::new(HashSet::new()),
             last_used: std::sync::Mutex::new(Instant::now()),
         })
     }
@@ -242,18 +239,6 @@ impl Session {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.into()),
         }
-    }
-
-    pub(crate) async fn add_player(&self, player_id: String) {
-        self.touch();
-        self.player_ids.lock().await.insert(player_id);
-    }
-
-    pub(crate) async fn remove_player(&self, player_id: &str) -> bool {
-        self.touch();
-        let mut player_ids = self.player_ids.lock().await;
-        player_ids.remove(player_id);
-        player_ids.is_empty()
     }
 
     async fn archive_current_generation(&self, state: &mut SessionState) -> anyhow::Result<()> {
