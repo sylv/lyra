@@ -9,29 +9,38 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
+    #[sea_orm(column_type = "Text")]
     pub library_id: String,
+    #[sea_orm(column_type = "Text")]
     pub relative_path: String,
     pub size_bytes: i64,
     pub height: Option<i64>,
     pub width: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub edition_name: Option<String>,
+    #[sea_orm(column_type = "Blob", nullable)]
     #[graphql(skip)]
     pub audio_fingerprint: Option<Vec<u8>>,
+    #[sea_orm(column_type = "Blob", nullable)]
     #[graphql(skip)]
     pub segments_json: Option<Vec<u8>>,
+    #[sea_orm(column_type = "Blob", nullable)]
     #[graphql(skip)]
     pub keyframes_json: Option<Vec<u8>>,
-    pub subtitles_extracted_at: Option<i64>,
     pub unavailable_at: Option<i64>,
     pub scanned_at: Option<i64>,
     pub discovered_at: i64,
+    pub subtitles_extracted_at: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::file_images::Entity")]
+    FileImages,
     #[sea_orm(has_one = "super::file_probe::Entity")]
     FileProbe,
+    #[sea_orm(has_many = "super::file_subtitles::Entity")]
+    FileSubtitles,
     #[sea_orm(
         belongs_to = "super::libraries::Entity",
         from = "Column::LibraryId",
@@ -44,13 +53,23 @@ pub enum Relation {
     NodeFiles,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
-    #[sea_orm(has_many = "super::file_subtitles::Entity")]
-    FileSubtitles,
+}
+
+impl Related<super::file_images::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileImages.def()
+    }
 }
 
 impl Related<super::file_probe::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileProbe.def()
+    }
+}
+
+impl Related<super::file_subtitles::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileSubtitles.def()
     }
 }
 
@@ -72,9 +91,12 @@ impl Related<super::watch_progress::Entity> for Entity {
     }
 }
 
-impl Related<super::file_subtitles::Entity> for Entity {
+impl Related<super::images::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::FileSubtitles.def()
+        super::file_images::Relation::Images.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::file_images::Relation::Files.def().rev())
     }
 }
 

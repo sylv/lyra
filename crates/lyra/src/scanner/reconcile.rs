@@ -1,8 +1,8 @@
-use crate::entities::{files, node_closure, node_files, nodes};
+use crate::entities::{files, node_files, nodes};
 use crate::metadata::{LocalMetadataPlan, mark_root_dirty, replace_local_metadata_for_root};
 use crate::scanner::derive_nodes::{
-    RootMaterializationPlan, build_closure_rows, build_root_derivation_plans,
-    sort_nodes_topologically, verify_root_nodes,
+    RootMaterializationPlan, build_root_derivation_plans, sort_nodes_topologically,
+    verify_root_nodes,
 };
 use lyra_parser::{ParsedFile, parse_files};
 use sea_orm::sea_query::OnConflict;
@@ -25,10 +25,7 @@ pub(crate) async fn parse_file_rows(rows: &[files::Model]) -> Vec<(files::Model,
         .collect::<Vec<_>>();
     let parsed_rows = parse_files(relative_paths).await;
 
-    rows.iter()
-        .cloned()
-        .zip(parsed_rows.into_iter())
-        .collect::<Vec<_>>()
+    rows.iter().cloned().zip(parsed_rows).collect::<Vec<_>>()
 }
 
 pub(crate) async fn find_roots_for_file_ids(
@@ -227,34 +224,10 @@ pub(crate) async fn materialize_touched_root(
     }
 
     if !existing_node_ids.is_empty() {
-        node_closure::Entity::delete_many()
-            .filter(node_closure::Column::DescendantId.is_in(existing_node_ids.iter().cloned()))
-            .exec(&txn)
-            .await?;
-
         node_files::Entity::delete_many()
             .filter(node_files::Column::NodeId.is_in(existing_node_ids.iter().cloned()))
             .exec(&txn)
             .await?;
-    }
-
-    let closure_rows = build_closure_rows(
-        &plan.wanted_nodes,
-        &sorted_wanted_nodes
-            .iter()
-            .map(|node| node.id.clone())
-            .collect::<Vec<_>>(),
-    )?;
-    if !closure_rows.is_empty() {
-        node_closure::Entity::insert_many(closure_rows.into_iter().map(|row| {
-            node_closure::ActiveModel {
-                ancestor_id: Set(row.ancestor_id),
-                descendant_id: Set(row.descendant_id),
-                depth: Set(row.depth),
-            }
-        }))
-        .exec(&txn)
-        .await?;
     }
 
     let node_file_rows = sorted_wanted_nodes
@@ -482,11 +455,12 @@ async fn recompute_root_orders_with_sqlx(
 mod tests {
     use super::*;
     use crate::{
-        entities::{jobs, libraries, metadata_source::MetadataSource, node_metadata},
+        entities::{jobs, libraries, node_metadata, node_metadata::MetadataSource},
         metadata::NodeLocalMetadataInput,
         scanner::derive_nodes::WantedNode,
     };
-    use sea_orm::{ActiveEnum, Database, QueryOrder};
+    use lyra_parser::ParsedIds;
+    use sea_orm::{Database, QueryOrder};
 
     async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {
         let pool = Database::connect("sqlite::memory:").await?;
@@ -692,9 +666,9 @@ mod tests {
         .await?;
 
         jobs::Entity::insert(jobs::ActiveModel {
-            job_kind: Set(jobs::JobKind::NodeSyncMetadataRoot.code()),
+            job_kind: Set(jobs::JobKind::NodeSyncMetadataRoot),
             target_id: Set("movie-root".to_owned()),
-            state: Set(jobs::JobState::Errored.into_value()),
+            state: Set(jobs::JobState::Errored),
             locked_at: Set(None),
             retry_after: Set(Some(999)),
             last_run_at: Set(1),
@@ -886,11 +860,7 @@ mod tests {
             start_year: None,
             end_year: None,
             edition: None,
-            imdb_id: None,
-            tmdb_id: None,
-            tvdb_id: None,
-            anidb_id: None,
-            trakt_id: None,
+            ids: ParsedIds::default(),
         };
         let old_file = files::Model {
             id: "old".to_owned(),

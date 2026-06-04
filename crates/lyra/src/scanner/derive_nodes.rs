@@ -1,4 +1,4 @@
-use crate::entities::{files, node_closure, nodes};
+use crate::entities::{files, nodes};
 use crate::ids;
 use crate::metadata::{
     LocalMetadataPlan, NodeLocalMetadataInput, upsert_node_local_metadata_input,
@@ -234,38 +234,6 @@ fn node_depth(node: &WantedNode, nodes_by_id: &HashMap<String, WantedNode>) -> i
     depth
 }
 
-pub fn build_closure_rows(
-    nodes_by_id: &HashMap<String, WantedNode>,
-    descendant_ids: &[String],
-) -> anyhow::Result<Vec<node_closure::Model>> {
-    let mut rows = Vec::new();
-
-    for descendant_id in descendant_ids {
-        let mut current = Some(descendant_id.clone());
-        let mut depth = 0_i64;
-        while let Some(ancestor_id) = current {
-            let Some(cursor) = nodes_by_id.get(&ancestor_id) else {
-                anyhow::bail!("closure build missing node {ancestor_id}");
-            };
-
-            rows.push(node_closure::Model {
-                ancestor_id: ancestor_id.clone(),
-                descendant_id: descendant_id.clone(),
-                depth,
-            });
-            current = cursor.parent_id.clone();
-            depth += 1;
-        }
-    }
-
-    rows.sort_by(|a, b| {
-        a.ancestor_id
-            .cmp(&b.ancestor_id)
-            .then_with(|| a.descendant_id.cmp(&b.descendant_id))
-    });
-    Ok(rows)
-}
-
 pub fn verify_root_nodes(nodes: &[WantedNode]) -> anyhow::Result<()> {
     let by_id = nodes
         .iter()
@@ -318,21 +286,11 @@ pub fn verify_root_nodes(nodes: &[WantedNode]) -> anyhow::Result<()> {
                     anyhow::bail!("episode {} parent must be series or season", node.id);
                 }
                 match parent.kind {
-                    nodes::NodeKind::Season => {
-                        if node.season_number != parent.season_number {
-                            anyhow::bail!(
-                                "episode {} season number does not match parent",
-                                node.id
-                            );
-                        }
+                    nodes::NodeKind::Season if node.season_number != parent.season_number => {
+                        anyhow::bail!("episode {} season number does not match parent", node.id);
                     }
-                    nodes::NodeKind::Series => {
-                        if node.season_number.is_some() {
-                            anyhow::bail!(
-                                "episode {} under series cannot have season number",
-                                node.id
-                            );
-                        }
+                    nodes::NodeKind::Series if node.season_number.is_some() => {
+                        anyhow::bail!("episode {} under series cannot have season number", node.id);
                     }
                     _ => {}
                 }
@@ -431,8 +389,11 @@ fn derive_file_recommendation(
             root_id,
             root_kind,
             root_name: title.to_string(),
-            root_imdb_id: parsed.imdb_id.clone(),
-            root_tmdb_id: parsed.tmdb_id.and_then(|value| i64::try_from(value).ok()),
+            root_imdb_id: parsed.ids.imdb_id.clone(),
+            root_tmdb_id: parsed
+                .ids
+                .tmdb_id
+                .and_then(|value| i64::try_from(value).ok()),
             season: None,
             episodes: Vec::new(),
         });
@@ -453,8 +414,11 @@ fn derive_file_recommendation(
         root_id,
         root_kind,
         root_name: title.to_string(),
-        root_imdb_id: parsed.imdb_id.clone(),
-        root_tmdb_id: parsed.tmdb_id.and_then(|value| i64::try_from(value).ok()),
+        root_imdb_id: parsed.ids.imdb_id.clone(),
+        root_tmdb_id: parsed
+            .ids
+            .tmdb_id
+            .and_then(|value| i64::try_from(value).ok()),
         season,
         episodes: episode_numbers
             .into_iter()

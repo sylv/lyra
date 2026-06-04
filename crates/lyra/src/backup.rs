@@ -74,10 +74,10 @@ impl BackupManager {
 
         fs::create_dir_all(&backup_dir).await?;
 
-        if let Ok(metadata) = fs::metadata(&destination).await {
-            if metadata.is_file() {
-                fs::remove_file(&destination).await?;
-            }
+        if let Ok(metadata) = fs::metadata(&destination).await
+            && metadata.is_file()
+        {
+            fs::remove_file(&destination).await?;
         }
 
         self.run_backup_process(&destination).await?;
@@ -122,10 +122,10 @@ impl BackupManager {
         let mut temp_destination = destination.to_path_buf();
         temp_destination.set_extension("sqlite.tmp");
 
-        if let Err(err) = fs::remove_file(&temp_destination).await {
-            if err.kind() != ErrorKind::NotFound {
-                return Err(err.into());
-            }
+        if let Err(err) = fs::remove_file(&temp_destination).await
+            && err.kind() != ErrorKind::NotFound
+        {
+            return Err(err.into());
         }
 
         let temp_path = temp_destination.to_string_lossy().into_owned();
@@ -144,14 +144,14 @@ impl BackupManager {
         }
         .await;
 
-        if let Err(err) = fs::remove_file(&temp_destination).await {
-            if err.kind() != ErrorKind::NotFound {
-                warn!(
-                    error = %err,
-                    file = %temp_destination.display(),
-                    "failed to delete temporary sqlite backup"
-                );
-            }
+        if let Err(err) = fs::remove_file(&temp_destination).await
+            && err.kind() != ErrorKind::NotFound
+        {
+            warn!(
+                error = %err,
+                file = %temp_destination.display(),
+                "failed to delete temporary sqlite backup"
+            );
         }
 
         compress_result
@@ -190,15 +190,15 @@ impl BackupManager {
         let retention_target = config.backup.retention_days.max(DAILY_RETENTION_MIN) as usize;
 
         while daily_files.len() > retention_target {
-            if let Some((_, path)) = daily_files.first() {
-                if let Err(err) = fs::remove_file(path).await {
-                    warn!(
-                        error = %err,
-                        file = %path.display(),
-                        "failed to delete old backup"
-                    );
-                    break;
-                }
+            if let Some((_, path)) = daily_files.first()
+                && let Err(err) = fs::remove_file(path).await
+            {
+                warn!(
+                    error = %err,
+                    file = %path.display(),
+                    "failed to delete old backup"
+                );
+                break;
             }
             daily_files.remove(0);
         }
@@ -358,8 +358,12 @@ pub async fn run_migrations_with_backups(
     let migrator = sqlx::migrate!("../../migrations");
 
     let mut connection = pool.acquire().await?;
-    connection.ensure_migrations_table().await?;
-    let applied = connection.list_applied_migrations().await?;
+    connection
+        .ensure_migrations_table("_sqlx_migrations")
+        .await?;
+    let applied = connection
+        .list_applied_migrations("_sqlx_migrations")
+        .await?;
     drop(connection);
 
     let applied_versions: std::collections::HashSet<_> = applied
@@ -376,19 +380,19 @@ pub async fn run_migrations_with_backups(
         .collect();
     pending_migrations.sort_by_key(|migration| migration.version);
 
-    if backup_manager.is_enabled() {
-        if let Some(first_migration) = pending_migrations.first() {
-            let reason = BackupReason::BeforeMigration {
-                migration_name: first_migration.description.to_string(),
-            };
+    if backup_manager.is_enabled()
+        && let Some(first_migration) = pending_migrations.first()
+    {
+        let reason = BackupReason::BeforeMigration {
+            migration_name: first_migration.description.to_string(),
+        };
 
-            backup_manager.backup_now(reason).await.with_context(|| {
-                format!(
-                    "failed to create backup before migration {}",
-                    first_migration.description
-                )
-            })?;
-        }
+        backup_manager.backup_now(reason).await.with_context(|| {
+            format!(
+                "failed to create backup before migration {}",
+                first_migration.description
+            )
+        })?;
     }
 
     migrator.run(pool).await?;

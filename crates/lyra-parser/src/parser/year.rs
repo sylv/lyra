@@ -21,7 +21,7 @@ pub fn parse_year(input: &str, context: &mut crate::ParserContext) -> (Option<u3
 
             let end_year = capture.name("end").and_then(|end| {
                 let end_str = end.as_str();
-                let parsed = if end_str.len() < 4 {
+                if end_str.len() < 4 {
                     // If the end year is 2 digits, we assume it's in the same century or next century
                     if let Some(start_year) = start {
                         let start_century = start_year / 100 * 100;
@@ -40,8 +40,7 @@ pub fn parse_year(input: &str, context: &mut crate::ParserContext) -> (Option<u3
                     }
                 } else {
                     end_str.parse::<u32>().ok()
-                };
-                parsed
+                }
             });
 
             (start, end_year)

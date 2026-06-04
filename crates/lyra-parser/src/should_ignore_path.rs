@@ -35,7 +35,7 @@ pub fn should_ignore_path(input: &str) -> bool {
         return true;
     }
 
-    return path_is_ignored(input);
+    path_is_ignored(input)
 }
 
 pub fn path_is_ignored(input: &str) -> bool {

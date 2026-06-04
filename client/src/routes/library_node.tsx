@@ -1,19 +1,15 @@
-import { AddToCollectionModal } from "@/components/add-to-collection-modal";
 import { Button, ButtonSize, ButtonStyle } from "@/components/button";
 import { FilterButton } from "@/components/filter-button";
 import { Image, ImageType } from "@/components/image";
 import { PlayWrapper } from "@/components/play-wrapper";
 import { UnplayedItemsTab } from "@/components/unplayed-items-tab";
-import { WatchlistButton } from "@/components/watchlist-controls";
 import { useDynamicBackground } from "@/hooks/use-background";
-import { ChevronRightIcon, FolderPlusIcon, PlayIcon } from "lucide-react";
+import { ChevronRightIcon, PlayIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
 import { graphql } from "../@generated/gql";
 import { NodeAvailability, NodeKind, OrderBy } from "../@generated/gql/graphql";
 import { DisplayKind, NodeList } from "../components/nodes/node-list";
-import { NodePosterDetail } from "../components/nodes/node-poster-detail";
-import { ShelfCarousel } from "../components/shelf-carousel";
 import { useSuspenseQuery } from "../hooks/use-suspense-query";
 import { useTitle } from "../hooks/use-title";
 import { getPathForNode } from "../lib/get-path-for-node";
@@ -24,7 +20,6 @@ const Query = graphql(`
     node(nodeId: $nodeId) {
       id
       kind
-      inWatchlist
       unavailableAt
       unplayedCount
       seasonCount
@@ -65,20 +60,6 @@ const Query = graphql(`
         contentRating {
           rating
         }
-        genres {
-          name
-        }
-        cast {
-          characterName
-          department
-          person {
-            id
-            name
-            profileImage {
-              ...ImageAsset
-            }
-          }
-        }
       }
       watchProgressHint
       currentPlayable {
@@ -96,10 +77,6 @@ const Query = graphql(`
           videoCodec
           videoBitrate
         }
-      }
-      recommendedNodes {
-        id
-        ...NodePoster
       }
     }
   }
@@ -238,7 +215,6 @@ export function LibraryNodeRoute() {
     variables: queryVariables,
   });
 
-  const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
   const [selectedSeasonNumbers, setSelectedSeasonNumbers] = useState<number[]>([1]);
   const node = data?.node;
 
@@ -338,28 +314,12 @@ export function LibraryNodeRoute() {
                   >
                     {episodePlayText}
                   </Button>
-                  <Button
-                    style={ButtonStyle.Glass}
-                    size={ButtonSize.Smol}
-                    className="w-fit"
-                    icon={["add-to-collection", FolderPlusIcon]}
-                    iconSide="left"
-                    onClick={() => setIsAddToCollectionOpen(true)}
-                  >
-                    Add to Collection
-                  </Button>
-                  <WatchlistButton nodeId={node.id} inWatchlist={node.inWatchlist} />
                 </div>
                 <div className="flex items-center gap-3">
                   {runtimeMinutes && <p className="text-sm text-zinc-400">{runtimeMinutes} minutes</p>}
                   {node.properties.contentRating && (
                     <p className="text-sm text-zinc-400">{node.properties.contentRating.rating}</p>
                   )}
-                  {node.properties.genres.map((genre) => (
-                    <p key={genre.name} className="text-sm text-zinc-400">
-                      {genre.name}
-                    </p>
-                  ))}
                 </div>
                 {node.properties.description && (
                   <p className="text-sm text-zinc-400 lg:max-w-[35vw]">{node.properties.description}</p>
@@ -367,30 +327,8 @@ export function LibraryNodeRoute() {
               </div>
             </div>
           </div>
-          {node.properties.cast.length > 0 && (
-            <div className="container">
-              <ShelfCarousel title={<span className="text-xl font-semibold">Cast</span>}>
-                {/* todo: should be clickable */}
-                {node.properties.cast.map((castEntry, index) => (
-                  <div key={index} className="min-w-0 flex-[0_0_8.25rem]">
-                    <Image
-                      type={ImageType.Avatar}
-                      asset={castEntry.person.profileImage}
-                      alt={castEntry.person.name}
-                      className="w-full"
-                    />
-                    <div className="mt-2 text-sm">{castEntry.person.name}</div>
-                    <div className="text-xs text-zinc-400">
-                      {castEntry.characterName ? `as ${castEntry.characterName}` : castEntry.department}
-                    </div>
-                  </div>
-                ))}
-              </ShelfCarousel>
-            </div>
-          )}
           <NodeDetailsSection node={node} />
         </div>
-        <AddToCollectionModal nodeId={node.id} open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen} />
       </>
     );
   }
@@ -445,26 +383,9 @@ export function LibraryNodeRoute() {
                     {playText}
                   </Button>
                 )}
-                <Button
-                  style={ButtonStyle.Glass}
-                  size={ButtonSize.Smol}
-                  className="w-fit"
-                  icon={["add-to-collection", FolderPlusIcon]}
-                  iconSide="left"
-                  onClick={() => setIsAddToCollectionOpen(true)}
-                >
-                  Add to Collection
-                </Button>
-                <WatchlistButton nodeId={node.id} inWatchlist={node.inWatchlist} />
               </div>
               <div className="flex items-center gap-3">
                 {runtimeMinutes && <p className="text-sm text-zinc-400">{runtimeMinutes} minutes</p>}
-                {/* todo: should be clickable */}
-                {node.properties.genres.map((genre) => (
-                  <p key={genre.name} className="text-sm text-zinc-400">
-                    {genre.name}
-                  </p>
-                ))}
               </div>
               {node.properties.tagline && <p className="text-sm italic text-zinc-300">{node.properties.tagline}</p>}
               <p className="text-sm text-zinc-400 lg:max-w-[35vw]">{node.properties.description}</p>
@@ -511,39 +432,8 @@ export function LibraryNodeRoute() {
             </div>
           </div>
         )}
-        {node.properties.cast.length > 0 && (
-          <div className="container">
-            <ShelfCarousel title={<span className="text-xl font-semibold">Cast</span>}>
-              {/* todo: should be clickable */}
-              {node.properties.cast.map((castEntry, index) => (
-                <div key={index} className="min-w-0 flex-[0_0_8.25rem]">
-                  <Image
-                    type={ImageType.Avatar}
-                    asset={castEntry.person.profileImage}
-                    alt={castEntry.person.name}
-                    className="w-full"
-                  />
-                  <div className="mt-2 text-sm">{castEntry.person.name}</div>
-                  <div className="text-xs text-zinc-400">
-                    {castEntry.characterName ? `as ${castEntry.characterName}` : castEntry.department}
-                  </div>
-                </div>
-              ))}
-            </ShelfCarousel>
-          </div>
-        )}
         <NodeDetailsSection node={node} />
-        {node.recommendedNodes.length > 0 && (
-          <div className="container">
-            <ShelfCarousel title={<span className="text-xl font-semibold">You might also like</span>}>
-              {node.recommendedNodes.map((rec) => (
-                <NodePosterDetail key={rec.id} node={rec} className="min-w-0 flex-[0_0_8.25rem]" />
-              ))}
-            </ShelfCarousel>
-          </div>
-        )}
       </div>
-      <AddToCollectionModal nodeId={node.id} open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen} />
     </>
   );
 }

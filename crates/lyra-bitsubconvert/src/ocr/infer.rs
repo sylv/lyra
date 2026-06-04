@@ -54,7 +54,7 @@ pub fn infer(pool: &OcrPool, image: &RgbImage) -> Result<String> {
     let (texts, _scores) = rec.decoder.apply(&predictions);
 
     let mut ordered_lines: Vec<Option<String>> = vec![None; boxes.len()];
-    for (region, text) in regions.iter().zip(texts.into_iter()) {
+    for (region, text) in regions.iter().zip(texts) {
         if !text.is_empty() && region.detection_index < ordered_lines.len() {
             ordered_lines[region.detection_index] = Some(text);
         }

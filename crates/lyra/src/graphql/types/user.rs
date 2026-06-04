@@ -1,4 +1,4 @@
-use crate::entities::{libraries, library_users, user_sessions, users};
+use crate::entities::{user_sessions, users};
 use async_graphql::{ComplexObject, Context};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
@@ -14,23 +14,5 @@ impl users::Model {
             .await?;
 
         Ok(session.map(|s| s.last_seen_at))
-    }
-
-    pub async fn libraries(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Vec<libraries::Model>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-
-        let rows = library_users::Entity::find()
-            .filter(library_users::Column::UserId.eq(&self.id))
-            .find_also_related(libraries::Entity)
-            .all(pool)
-            .await?;
-
-        Ok(rows
-            .into_iter()
-            .filter_map(|(_, library)| library)
-            .collect())
     }
 }

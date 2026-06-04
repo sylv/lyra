@@ -1,12 +1,13 @@
 use super::sync;
 use crate::entities::{
-    jobs as jobs_entity, metadata_source::MetadataSource, node_metadata, nodes, nodes::NodeKind,
+    jobs as jobs_entity, node_metadata, node_metadata::MetadataSource, nodes, nodes::NodeKind,
 };
 use crate::jobs::{Job, JobExecutionPolicy, JobLease, JobOutcome};
 use crate::metadata::METADATA_RETRY_BACKOFF_SECONDS;
 use lyra_metadata::MetadataProvider;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, ExprTrait, QueryFilter, QueryOrder,
+    Select,
     sea_query::{Expr, Query},
 };
 use std::sync::Arc;

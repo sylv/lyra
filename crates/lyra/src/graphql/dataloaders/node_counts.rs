@@ -1,8 +1,8 @@
 use crate::entities::{node_closure, nodes};
 use async_graphql::dataloader::Loader;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, JoinType, QueryFilter,
-    QuerySelect, RelationTrait, sea_query::Expr,
+    ColumnTrait, DatabaseConnection, EntityTrait, ExprTrait, FromQueryResult, JoinType,
+    QueryFilter, QuerySelect, RelationTrait, sea_query::Expr,
 };
 use std::collections::HashMap;
 

@@ -182,10 +182,6 @@ where
     }
 }
 
-pub(super) fn get_user_or_auth_error(auth: &RequestAuth) -> Result<&users::Model, AuthError> {
-    auth.user.as_ref().ok_or(AuthError::Unauthenticated)
-}
-
 pub(super) async fn pending_user_by_invite_code(
     pool: &DatabaseConnection,
     invite_code: &str,

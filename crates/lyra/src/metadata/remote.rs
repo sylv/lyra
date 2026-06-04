@@ -1,4 +1,4 @@
-use crate::entities::metadata_source::MetadataSource;
+use crate::entities::node_metadata::MetadataSource;
 use crate::entities::{node_metadata, nodes, nodes::NodeKind};
 use anyhow::Context;
 use chrono::Datelike;

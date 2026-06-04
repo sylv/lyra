@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
@@ -14,7 +14,7 @@ use crate::PreviewOptions;
 use lyra_probe::get_ffmpeg_path;
 
 pub(crate) async fn extract_frame_paths(
-    video_path: &PathBuf,
+    video_path: &Path,
     options: &PreviewOptions,
     cancellation_token: &CancellationToken,
 ) -> anyhow::Result<Option<Vec<(u32, PathBuf)>>> {
@@ -52,7 +52,7 @@ pub(crate) async fn extract_frame_paths(
 }
 
 async fn extract_frames(
-    video_path: &PathBuf,
+    video_path: &Path,
     options: &PreviewOptions,
     cancellation_token: &CancellationToken,
 ) -> anyhow::Result<Option<PathBuf>> {

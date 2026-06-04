@@ -1,3 +1,5 @@
+use crate::entities::users::{SubtitleMode, SubtitleVariantPreference};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LanguageMatch {
     pub canonical: String,
@@ -87,6 +89,9 @@ pub fn dedupe_language_hints(preferred: &[String], hints: &[String]) -> Vec<Stri
     merged
 }
 
+type SubtitleScore = (bool, bool, i32, i32, i32);
+type BestSubtitleTrack<'a> = Option<(SubtitleScore, &'a SubtitleSelectionCandidate)>;
+
 pub fn select_subtitle_track(
     tracks: &[SubtitleSelectionCandidate],
     subtitle_mode: SubtitleMode,
@@ -104,7 +109,7 @@ pub fn select_subtitle_track(
         .and_then(canonicalize_language_tag)
         .map(|lang| lang.canonical);
 
-    let mut best: Option<((bool, bool, i32, i32, i32), &SubtitleSelectionCandidate)> = None;
+    let mut best: BestSubtitleTrack<'_> = None;
     for track in tracks {
         if subtitle_mode == SubtitleMode::ForcedOnly
             && track.variant != SubtitleTrackVariant::Forced
@@ -324,4 +329,3 @@ mod tests {
         assert_eq!(picked.as_deref(), Some("fr"));
     }
 }
-use crate::entities::users::{SubtitleMode, SubtitleVariantPreference};

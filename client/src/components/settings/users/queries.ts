@@ -5,11 +5,6 @@ export const UsersManagementQuery = graphql(`
     viewer {
       id
     }
-    libraries {
-      id
-      name
-      createdAt
-    }
     users {
       id
       ...UserCard
@@ -18,16 +13,16 @@ export const UsersManagementQuery = graphql(`
 `);
 
 export const CreateUserInviteMutation = graphql(`
-  mutation CreateUserInvite($username: String!, $permissions: Int!, $libraryIds: [String!]!) {
-    createUserInvite(username: $username, permissions: $permissions, libraryIds: $libraryIds) {
+  mutation CreateUserInvite($username: String!, $permissions: Int!) {
+    createUserInvite(username: $username, permissions: $permissions) {
       ...UserCard
     }
   }
 `);
 
 export const UpdateUserMutation = graphql(`
-  mutation UpdateUser($userId: String!, $username: String!, $permissions: Int!, $libraryIds: [String!]!) {
-    updateUser(userId: $userId, username: $username, permissions: $permissions, libraryIds: $libraryIds) {
+  mutation UpdateUser($userId: String!, $username: String!, $permissions: Int!) {
+    updateUser(userId: $userId, username: $username, permissions: $permissions) {
       ...UserCard
     }
   }

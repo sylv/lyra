@@ -5,16 +5,6 @@
 
 lyra is a self-hosted media server that lets you browse and watch your media with minimal fuss.
 
-## features
-
-- [x] Smart library import
-- [x] Automatically skip intros
-- [x] Synced watch sessions
-- [x] Timeline previews
-- [x] Watch state tracking
-- [x] Plex watch state import
-- [x] A lot of bugs
-
 ## running
 
 lyra only runs under docker for now. At some point that will change and this section will be better, but for now, here is a sample docker compose file:

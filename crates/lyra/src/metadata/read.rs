@@ -1,6 +1,6 @@
-use crate::entities::{metadata_source::MetadataSource, node_metadata, nodes};
+use crate::entities::{node_metadata, node_metadata::MetadataSource, nodes};
 use sea_orm::{
-    ColumnTrait, Condition, JoinType, QueryFilter, QuerySelect, RelationTrait, Select,
+    ColumnTrait, Condition, ExprTrait, JoinType, QueryFilter, QuerySelect, RelationTrait, Select,
     sea_query::{Alias, Expr, Query},
 };
 

@@ -121,7 +121,7 @@ const LibraryForm: FC<{
         <Checkbox checked={pinned} onCheckedChange={(checked) => setPinned(checked === true)} />
         <div>
           <div className="font-medium">Pinned in Sidebar</div>
-          <div className="text-xs text-zinc-400">Unpin libraries you only want to surface through collections.</div>
+          <div className="text-xs text-zinc-400">Pinned libraries are shown in the main sidebar.</div>
         </div>
       </label>
 

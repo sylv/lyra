@@ -5,7 +5,6 @@ import { graphql, unmask, type FragmentType } from "../../../@generated/gql";
 import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
 import { describePermissions } from "../../../lib/describe-permissions";
 import { formatLastSeen } from "../../../lib/format-last-seen";
-import { ADMIN_BIT, VIEW_ALL_LIBRARIES_BIT } from "../../../lib/user-permissions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,9 +31,6 @@ export const UserCardFragment = graphql(`
     username
     inviteCode
     permissions
-    libraries {
-      id
-    }
     createdAt
     lastSeenAt
   }
@@ -51,18 +47,6 @@ export const UserCard: FC<UserCardProps> = ({ user: userRaw, viewerId, totalUser
     ? `${window.location.origin}/setup/create-account?inviteCode=${encodeURIComponent(user.inviteCode)}`
     : null;
   const permissionLabels = useMemo(() => describePermissions(user.permissions), [user.permissions]);
-  const libraryAccessLabel = useMemo(() => {
-    if ((user.permissions & ADMIN_BIT) !== 0) {
-      return null;
-    }
-    if ((user.permissions & VIEW_ALL_LIBRARIES_BIT) !== 0) {
-      return "All libraries";
-    }
-    if (user.libraries.length === 0) {
-      return null;
-    }
-    return user.libraries.length === 1 ? "1 library" : `${user.libraries.length} libraries`;
-  }, [user.libraries.length, user.permissions]);
   const resetDisabled = resetting || totalUsers <= 1 || isViewer;
   const deleteDisabled = deleting || totalUsers <= 1 || isViewer;
 
@@ -99,11 +83,10 @@ export const UserCard: FC<UserCardProps> = ({ user: userRaw, viewerId, totalUser
 
   const subtext = useMemo(() => {
     const text = [...permissionLabels];
-    if (libraryAccessLabel) text.push(libraryAccessLabel);
     if (user.inviteCode) text.unshift("Pending Invite");
     if (user.id === viewerId) text.unshift("You");
     return text.join(", ");
-  }, [libraryAccessLabel, permissionLabels, user.inviteCode, user.id, viewerId]);
+  }, [permissionLabels, user.inviteCode, user.id, viewerId]);
 
   return (
     <>

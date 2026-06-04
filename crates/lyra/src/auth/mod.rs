@@ -1,7 +1,6 @@
 mod error;
 mod extractors;
 mod guards;
-mod libraries;
 mod login;
 mod sessions;
 
@@ -12,6 +11,5 @@ pub(super) const TOKEN_EXPIRY_DAYS: u64 = 45; // sessions expire after 45 days o
 pub use error::AuthError;
 pub use extractors::{LazyRequestAuth, RequestAuth};
 pub use guards::{AuthenticatedGuard, PermissionGuard};
-pub use libraries::{accessible_library_ids, ensure_library_access};
 pub use login::{find_pending_invite_user, post_login};
 pub use sessions::{create_session_for_user, get_set_cookie_headers_for_session};

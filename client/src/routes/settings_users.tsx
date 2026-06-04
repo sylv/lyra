@@ -12,7 +12,7 @@ export function SettingsUsersRoute() {
           Create and manage user accounts, set permissions, and invite others
         </p>
       </div>
-      <UserManager users={data.users} libraries={data.libraries} viewerId={data.viewer?.id ?? null} error={null} />
+      <UserManager users={data.users} viewerId={data.viewer?.id ?? null} error={null} />
     </section>
   );
 }

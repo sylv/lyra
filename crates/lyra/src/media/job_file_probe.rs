@@ -5,10 +5,11 @@ use crate::{
     json_encoding, media,
 };
 use anyhow::Context;
-use lyra_probe::{encode_probe_data_json_zstd, extract_keyframes, probe_with_cancellation};
+use lyra_probe::{extract_keyframes, probe_with_cancellation};
 use sea_orm::{
     ActiveValue::Set,
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, ExprTrait, QueryFilter, QueryOrder,
+    Select,
     sea_query::{Expr, OnConflict, Query},
 };
 
@@ -68,18 +69,18 @@ impl Job for FileProbeJob {
                 return Ok(JobOutcome::Cancelled);
             };
 
-            let probe_blob =
-                encode_probe_data_json_zstd(&probe).context("failed to encode probe payload")?;
+            let probe_blob = json_encoding::encode_json_zstd(&probe)
+                .context("failed to encode probe payload")?;
             let now = chrono::Utc::now().timestamp();
 
             file_probe::Entity::insert(file_probe::ActiveModel {
                 file_id: Set(file.id.clone()),
                 probe: Set(probe_blob),
-                generated_at: Set(now),
+                extracted_at: Set(now),
             })
             .on_conflict(
                 OnConflict::column(file_probe::Column::FileId)
-                    .update_columns([file_probe::Column::Probe, file_probe::Column::GeneratedAt])
+                    .update_columns([file_probe::Column::Probe, file_probe::Column::ExtractedAt])
                     .to_owned(),
             )
             .exec(db)
@@ -93,6 +94,16 @@ impl Job for FileProbeJob {
             })
             .exec(db)
             .await?;
+
+            // Fresh probe data satisfies the subtitle job dependency, so clear any old backoff.
+            jobs_entity::Entity::delete_many()
+                .filter(
+                    jobs_entity::Column::JobKind
+                        .eq(jobs_entity::JobKind::FileExtractSubtitles.code()),
+                )
+                .filter(jobs_entity::Column::TargetId.eq(file.id.clone()))
+                .exec(db)
+                .await?;
         }
 
         if needs_keyframes {

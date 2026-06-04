@@ -7,8 +7,9 @@ pub struct Model {
     pub id: String,
     #[sea_orm(column_type = "Text")]
     pub user_id: String,
-    pub created_at: i64,
+    #[sea_orm(column_type = "Text", nullable)]
     pub user_agent: Option<String>,
+    pub created_at: i64,
     pub last_seen_at: i64,
 }
 

@@ -31,15 +31,14 @@ impl ProbeData {
                 None => best = Some(stream),
                 Some(current_best) => {
                     // if current is default but best isn't, pick current
-                    if stream.disposition.contains(StreamDisposition::DEFAULT)
-                        && !current_best
-                            .disposition
-                            .contains(StreamDisposition::DEFAULT)
-                    {
-                        best = Some(stream);
-                    }
                     // if current is lower index than best, pick current
-                    else if stream.index < current_best.index {
+                    let stream_is_default = stream.disposition.contains(StreamDisposition::DEFAULT);
+                    let best_is_default = current_best
+                        .disposition
+                        .contains(StreamDisposition::DEFAULT);
+
+                    if !best_is_default && (stream_is_default || stream.index < current_best.index)
+                    {
                         best = Some(stream);
                     }
                 }
@@ -59,13 +58,13 @@ impl ProbeData {
             match best {
                 None => best = Some(stream),
                 Some(current_best) => {
-                    if stream.disposition.contains(StreamDisposition::DEFAULT)
-                        && !current_best
-                            .disposition
-                            .contains(StreamDisposition::DEFAULT)
+                    let stream_is_default = stream.disposition.contains(StreamDisposition::DEFAULT);
+                    let best_is_default = current_best
+                        .disposition
+                        .contains(StreamDisposition::DEFAULT);
+
+                    if !best_is_default && (stream_is_default || stream.index < current_best.index)
                     {
-                        best = Some(stream);
-                    } else if stream.index < current_best.index {
                         best = Some(stream);
                     }
                 }
@@ -107,8 +106,8 @@ pub enum Codec {
 }
 
 impl Codec {
-    pub fn from_str(value: &str) -> Self {
-        let value = value.to_ascii_lowercase();
+    pub fn from(value: impl AsRef<str>) -> Self {
+        let value = value.as_ref().to_ascii_lowercase();
         match value.as_str() {
             "av1" => Self::VideoAv1,
             "h264" | "avc" => Self::VideoH264,
@@ -160,7 +159,7 @@ impl<'de> Deserialize<'de> for Codec {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        Ok(Self::from_str(&value))
+        Ok(Self::from(value.as_str()))
     }
 }
 
@@ -343,11 +342,11 @@ mod tests {
 
     #[test]
     fn codec_parsing_normalizes_aliases_and_case() {
-        assert_eq!(Codec::from_str("hevc"), Codec::VideoH265);
-        assert_eq!(Codec::from_str("H264"), Codec::VideoH264);
-        assert_eq!(Codec::from_str("SSA"), Codec::SubtitleAss);
+        assert_eq!(Codec::from("hevc"), Codec::VideoH265);
+        assert_eq!(Codec::from("H264"), Codec::VideoH264);
+        assert_eq!(Codec::from("SSA"), Codec::SubtitleAss);
         assert_eq!(
-            Codec::from_str("SomethingCustom"),
+            Codec::from("SomethingCustom"),
             Codec::Unknown("somethingcustom".to_string())
         );
     }

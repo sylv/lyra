@@ -1,19 +1,12 @@
-use crate::config::get_config;
 use crate::entities::{
-    assets,
-    file_assets::{self, FileAssetRole},
-    files, node_files, node_metadata, node_metadata_content_ratings, node_metadata_genres,
-    node_metadata_images,
-    node_metadata_images::NodeMetadataImageKind,
-    nodes, people, root_node_cast,
+    file_images::{self, FileImageRole},
+    files, images, node_files, node_images, node_metadata, nodes,
 };
 use crate::graphql::dataloaders::{
     node_counts::NodeCountsLoader,
     node_metadata::{NodeMetadataLoader, PreferredNodeMetadata},
 };
-use crate::graphql::properties::{
-    Asset, CastMember, ContentRating, MetadataGenre, NodeProperties, Person,
-};
+use crate::graphql::properties::{Asset, ContentRating, NodeProperties};
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{ComplexObject, Context};
 use chrono::{DateTime, Datelike, Utc};
@@ -26,43 +19,41 @@ use sea_orm::{
 impl NodeProperties {
     pub async fn backdrop_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let asset_id = self
-            .active_image_asset_id(pool, NodeMetadataImageKind::Backdrop)
+        let image_id = self
+            .active_image_id(pool, images::ImageKind::Backdrop)
             .await?;
-        find_asset(pool, asset_id).await
+        find_asset(pool, image_id).await
     }
 
     pub async fn logo_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let asset_id = self
-            .active_image_asset_id(pool, NodeMetadataImageKind::Logo)
-            .await?;
-        find_asset(pool, asset_id).await
+        let image_id = self.active_image_id(pool, images::ImageKind::Logo).await?;
+        find_asset(pool, image_id).await
     }
 
     pub async fn poster_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
         if self.kind != nodes::NodeKind::Episode
-            && let Some(asset_id) = self
-                .active_image_asset_id(pool, NodeMetadataImageKind::Poster)
+            && let Some(image_id) = self
+                .active_image_id(pool, images::ImageKind::Poster)
                 .await?
         {
-            return find_asset(pool, Some(asset_id)).await;
+            return find_asset(pool, Some(image_id)).await;
         }
 
-        if let Some(asset_id) = self.poster_fallback_asset_id(pool).await? {
-            return find_asset(pool, Some(asset_id)).await;
+        if let Some(image_id) = self.poster_fallback_id(pool).await? {
+            return find_asset(pool, Some(image_id)).await;
         }
 
-        if let Some(asset_id) = self
-            .active_image_asset_id(pool, NodeMetadataImageKind::Thumbnail)
+        if let Some(image_id) = self
+            .active_image_id(pool, images::ImageKind::Thumbnail)
             .await?
         {
-            return find_asset(pool, Some(asset_id)).await;
+            return find_asset(pool, Some(image_id)).await;
         }
 
-        let asset_id = self.file_thumbnail_asset_id(pool).await?;
-        find_asset(pool, asset_id).await
+        let image_id = self.file_thumbnail_id(pool).await?;
+        find_asset(pool, image_id).await
     }
 
     pub async fn thumbnail_image(
@@ -70,65 +61,15 @@ impl NodeProperties {
         ctx: &Context<'_>,
     ) -> Result<Option<Asset>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
-        if let Some(asset_id) = self
-            .active_image_asset_id(pool, NodeMetadataImageKind::Thumbnail)
+        if let Some(image_id) = self
+            .active_image_id(pool, images::ImageKind::Thumbnail)
             .await?
         {
-            return find_asset(pool, Some(asset_id)).await;
+            return find_asset(pool, Some(image_id)).await;
         }
 
-        let asset_id = self.file_thumbnail_asset_id(pool).await?;
-        find_asset(pool, asset_id).await
-    }
-
-    pub async fn genres(&self, ctx: &Context<'_>) -> Result<Vec<MetadataGenre>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let Some(metadata_id) = self.metadata_id.clone() else {
-            return Ok(Vec::new());
-        };
-
-        let rows = node_metadata_genres::Entity::find()
-            .filter(node_metadata_genres::Column::NodeMetadataId.eq(metadata_id))
-            .order_by_asc(node_metadata_genres::Column::Position)
-            .all(pool)
-            .await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| MetadataGenre {
-                provider_id: row.provider_id,
-                external_id: row.external_id,
-                name: row.name,
-            })
-            .collect())
-    }
-
-    pub async fn cast(&self, ctx: &Context<'_>) -> Result<Vec<CastMember>, sea_orm::DbErr> {
-        if self.node_id != self.root_id {
-            return Ok(Vec::new());
-        }
-
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        let rows = root_node_cast::Entity::find()
-            .find_also_related(people::Entity)
-            .filter(root_node_cast::Column::RootNodeId.eq(self.root_id.clone()))
-            .order_by_asc(root_node_cast::Column::Position)
-            .all(pool)
-            .await?;
-        Ok(rows
-            .into_iter()
-            .filter_map(|(cast, person)| {
-                person.map(|person| CastMember {
-                    character_name: cast.character_name,
-                    department: cast.department,
-                    person: Person {
-                        id: person.id,
-                        name: person.name,
-                        birthday: person.birthday,
-                        profile_asset_id: person.profile_asset_id,
-                    },
-                })
-            })
-            .collect())
+        let image_id = self.file_thumbnail_id(pool).await?;
+        find_asset(pool, image_id).await
     }
 
     pub async fn content_rating(
@@ -140,11 +81,18 @@ impl NodeProperties {
             return Ok(None);
         };
 
-        let rows = node_metadata_content_ratings::Entity::find()
-            .filter(node_metadata_content_ratings::Column::NodeMetadataId.eq(metadata_id))
-            .order_by_asc(node_metadata_content_ratings::Column::Position)
-            .all(pool)
-            .await?;
+        let Some(metadata) = node_metadata::Entity::find_by_id(metadata_id)
+            .one(pool)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let Some(encoded) = metadata.content_ratings else {
+            return Ok(None);
+        };
+        let rows: Vec<lyra_metadata::ContentRating> =
+            crate::json_encoding::decode_json_zstd(&encoded)
+                .map_err(|error| sea_orm::DbErr::Custom(error.to_string()))?;
         Ok(select_content_rating(&rows).map(|row| ContentRating {
             country_code: row.country_code.clone(),
             rating: row.rating.clone(),
@@ -278,7 +226,7 @@ impl NodeProperties {
             .await
     }
 
-    async fn file_thumbnail_asset_id(
+    async fn file_thumbnail_id(
         &self,
         pool: &DatabaseConnection,
     ) -> Result<Option<String>, sea_orm::DbErr> {
@@ -295,43 +243,39 @@ impl NodeProperties {
             .await?;
 
         for link in links {
-            let thumbnail = file_assets::Entity::find()
-                .filter(file_assets::Column::FileId.eq(link.file_id))
-                .filter(file_assets::Column::Role.eq(FileAssetRole::Thumbnail))
-                .order_by_desc(file_assets::Column::AssetId)
+            let thumbnail = file_images::Entity::find()
+                .filter(file_images::Column::FileId.eq(link.file_id))
+                .filter(file_images::Column::Role.eq(FileImageRole::Thumbnail))
+                .order_by_desc(file_images::Column::ImageId)
                 .one(pool)
                 .await?;
 
             if let Some(thumbnail) = thumbnail {
-                return Ok(Some(thumbnail.asset_id));
+                return Ok(Some(thumbnail.image_id));
             }
         }
 
         Ok(None)
     }
 
-    async fn active_image_asset_id(
+    async fn active_image_id(
         &self,
         pool: &DatabaseConnection,
-        kind: NodeMetadataImageKind,
+        kind: images::ImageKind,
     ) -> Result<Option<String>, sea_orm::DbErr> {
-        let Some(metadata_id) = self.metadata_id.clone() else {
-            return Ok(None);
-        };
-
-        node_metadata_images::Entity::find()
-            .filter(node_metadata_images::Column::NodeMetadataId.eq(metadata_id))
-            .filter(node_metadata_images::Column::Kind.eq(kind))
-            .filter(node_metadata_images::Column::IsActive.eq(true))
-            .order_by_asc(node_metadata_images::Column::Position)
+        node_images::Entity::find()
+            .filter(node_images::Column::NodeId.eq(self.node_id.clone()))
+            .filter(node_images::Column::Kind.eq(kind))
+            .filter(node_images::Column::IsActive.eq(true))
+            .order_by_asc(node_images::Column::CreatedAt)
             .one(pool)
             .await
-            .map(|row| row.map(|row| row.asset_id))
+            .map(|row| row.map(|row| row.image_id))
     }
 
     // Rank metadata per ancestor by the existing preference order, then return the nearest
     // ancestor whose preferred row includes a poster.
-    async fn poster_fallback_asset_id(
+    async fn poster_fallback_id(
         &self,
         pool: &DatabaseConnection,
     ) -> Result<Option<String>, sea_orm::DbErr> {
@@ -342,30 +286,30 @@ impl NodeProperties {
             return Ok(None);
         }
 
-        Ok(sqlx::query_scalar::<_, String>(
+        sqlx::query_scalar::<_, String>(
             r#"
             WITH ranked_ancestor_metadata AS (
                 SELECT
                     nc.ancestor_id,
                     nc.depth,
-                    nmi.asset_id AS poster_asset_id,
+                    nmi.image_id AS poster_image_id,
                     ROW_NUMBER() OVER (
                         PARTITION BY nc.ancestor_id
-                        ORDER BY nm.source DESC, nm.updated_at DESC, nmi.position ASC
+                        ORDER BY nm.source DESC, nm.updated_at DESC, nmi.created_at ASC
                     ) AS metadata_rank
                 FROM node_closure nc
                 INNER JOIN node_metadata nm ON nm.node_id = nc.ancestor_id
-                INNER JOIN node_metadata_images nmi
-                    ON nmi.node_metadata_id = nm.id
+                INNER JOIN node_images nmi
+                    ON nmi.node_id = nm.node_id
                    AND nmi.kind = 0
                    AND nmi.is_active = 1
                 WHERE nc.descendant_id = ?
                 AND nc.depth > 0
             )
-            SELECT poster_asset_id AS "poster_asset_id?: String"
+            SELECT poster_image_id AS "poster_image_id?: String"
             FROM ranked_ancestor_metadata
             WHERE metadata_rank = 1
-            AND poster_asset_id IS NOT NULL
+            AND poster_image_id IS NOT NULL
             ORDER BY depth ASC
             LIMIT 1
             "#,
@@ -373,7 +317,7 @@ impl NodeProperties {
         .bind(self.node_id.clone())
         .fetch_optional(pool.get_sqlite_connection_pool())
         .await
-        .map_err(|error| sea_orm::DbErr::Custom(error.to_string()))?)
+        .map_err(|error| sea_orm::DbErr::Custom(error.to_string()))
     }
 
     fn release_year(&self) -> Option<String> {
@@ -381,18 +325,10 @@ impl NodeProperties {
     }
 }
 
-#[ComplexObject]
-impl Person {
-    pub async fn profile_image(&self, ctx: &Context<'_>) -> Result<Option<Asset>, sea_orm::DbErr> {
-        let pool = ctx.data_unchecked::<DatabaseConnection>();
-        find_asset(pool, self.profile_asset_id.clone()).await
-    }
-}
-
-fn select_content_rating<'a>(
-    rows: &'a [node_metadata_content_ratings::Model],
-) -> Option<&'a node_metadata_content_ratings::Model> {
-    let preferred_country = get_config()
+fn select_content_rating(
+    rows: &[lyra_metadata::ContentRating],
+) -> Option<&lyra_metadata::ContentRating> {
+    let preferred_country = crate::config::get_config()
         .metadata_content_rating_country
         .to_ascii_uppercase();
 
@@ -407,11 +343,11 @@ fn select_content_rating<'a>(
         .or_else(|| rows.iter().min_by_key(|row| content_rating_sort_key(row)))
 }
 
-fn content_rating_sort_key(row: &node_metadata_content_ratings::Model) -> (i64, i64, i64) {
+fn content_rating_sort_key(row: &lyra_metadata::ContentRating) -> (i64, i64, i64) {
     (
         release_type_rank(row.release_type),
         row.release_date.unwrap_or(i64::MAX),
-        row.position,
+        0,
     )
 }
 
@@ -505,12 +441,12 @@ fn year_from_unix_timestamp(timestamp: i64) -> Option<i32> {
 
 async fn find_asset(
     pool: &DatabaseConnection,
-    asset_id: Option<String>,
+    image_id: Option<String>,
 ) -> Result<Option<Asset>, sea_orm::DbErr> {
-    let Some(asset_id) = asset_id else {
+    let Some(image_id) = image_id else {
         return Ok(None);
     };
 
-    let model = assets::Entity::find_by_id(asset_id).one(pool).await?;
+    let model = images::Entity::find_by_id(image_id).one(pool).await?;
     Ok(model.map(Into::into))
 }

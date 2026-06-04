@@ -12,7 +12,6 @@ interface EpisodePosterDetailProps {
 const Fragment = graphql(`
   fragment EpisodeCard on Node {
     id
-    inWatchlist
     unavailableAt
     properties {
       displayName

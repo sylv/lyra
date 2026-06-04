@@ -2,12 +2,6 @@ import { lazy, type FC } from "react";
 import { Navigate, Route, Routes } from "react-router";
 
 const HomeRoute = lazy(() => import("./routes/home").then((module) => ({ default: module.HomeRoute })));
-const CollectionRoute = lazy(() =>
-  import("./routes/collection").then((module) => ({ default: module.CollectionRoute })),
-);
-const CollectionsRoute = lazy(() =>
-  import("./routes/collections").then((module) => ({ default: module.CollectionsRoute })),
-);
 const LibraryNodeRoute = lazy(() =>
   import("./routes/library_node").then((module) => ({ default: module.LibraryNodeRoute })),
 );
@@ -18,9 +12,6 @@ const PlaygroundRoute = lazy(() =>
 const SettingsRoute = lazy(() => import("./routes/settings").then((module) => ({ default: module.SettingsRoute })));
 const SettingsAboutRoute = lazy(() =>
   import("./routes/settings_about").then((module) => ({ default: module.SettingsAboutRoute })),
-);
-const SettingsImportRoute = lazy(() =>
-  import("./routes/settings_import").then((module) => ({ default: module.SettingsImportRoute })),
 );
 const SettingsLibrariesRoute = lazy(() =>
   import("./routes/settings_libraries").then((module) => ({ default: module.SettingsLibrariesRoute })),
@@ -47,14 +38,11 @@ export const AppRoutes: FC = () => (
       <Route path="create-library" element={<SetupCreateLibraryRoute />} />
     </Route>
     <Route path="/playground" element={<PlaygroundRoute />} />
-    <Route path="/collection/:collectionId" element={<CollectionRoute />} />
-    <Route path="/collections" element={<CollectionsRoute />} />
     <Route path="/library/:libraryId/node/:nodeId" element={<LibraryNodeRoute />} />
     <Route path="/library/:libraryId" element={<LibraryRoute />} />
     <Route path="/settings" element={<SettingsRoute />}>
       <Route path="users" element={<SettingsUsersRoute />} />
       <Route path="libraries" element={<SettingsLibrariesRoute />} />
-      <Route path="import" element={<SettingsImportRoute />} />
       <Route path="about" element={<SettingsAboutRoute />} />
       <Route index element={<Navigate to="/settings/about" replace />} />
     </Route>

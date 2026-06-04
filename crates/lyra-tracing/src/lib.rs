@@ -11,8 +11,8 @@ fn build_env_filter() -> EnvFilter {
         return EnvFilter::from_default_env();
     }
 
-    // Keep Lyra targets chatty by default without dragging noisy third-party
-    // dependencies like ort up to INFO when RUST_LOG is unset.
+    // without this, ort will spam a ton of logging at info/warn
+    // its a slightly nicer default.
     EnvFilter::builder()
         .with_default_directive(LevelFilter::WARN.into())
         .parse_lossy("lyra=info")

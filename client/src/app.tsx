@@ -3,7 +3,6 @@ import { Suspense, type FC } from "react";
 import { useLocation } from "react-router";
 import { Provider as UrqlProvider } from "urql";
 import { client } from "./client";
-import { ContentUpdateListener } from "./components/content-update-listener";
 import { DynamicBackground } from "./components/dynamic-background";
 import { AppErrorBoundary } from "./components/error-boundary";
 import { IconText } from "./components/icon-text";
@@ -21,7 +20,6 @@ export const App: FC = () => {
       <TooltipProvider>
         <AppErrorBoundary className="fixed inset-0">
           <SetupWrapper>
-            <ContentUpdateListener />
             <AppErrorBoundary className="fixed inset-0">
               <Suspense
                 fallback={

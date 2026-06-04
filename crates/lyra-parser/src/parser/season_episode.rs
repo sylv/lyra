@@ -2,6 +2,7 @@ use crate::pattern;
 use crate::util::parse_possible_range;
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::cmp::Reverse;
 use std::collections::HashSet;
 
 lazy_static! {
@@ -74,19 +75,19 @@ pub fn parse_season_episode(
             let mut season_numbers = Vec::new();
             let mut episode_numbers = Vec::new();
 
-            if let Some(season_number) = captures.name("season") {
-                if !context.overlaps_any(&season_number.range()) {
-                    let parsed = parse_possible_range(season_number.as_str(), false);
-                    season_numbers.extend(parsed);
-                }
+            if let Some(season_number) = captures.name("season")
+                && !context.overlaps_any(&season_number.range())
+            {
+                let parsed = parse_possible_range(season_number.as_str(), false);
+                season_numbers.extend(parsed);
             }
 
-            if let Some(episode_number) = captures.name("episode") {
-                if !context.overlaps_any(&episode_number.range()) {
-                    let parsed = parse_possible_range(episode_number.as_str(), false);
-                    // Filter out episode numbers over 1500 to avoid mistaking years for episodes
-                    episode_numbers.extend(parsed.into_iter().filter(|&ep| ep <= 1500));
-                }
+            if let Some(episode_number) = captures.name("episode")
+                && !context.overlaps_any(&episode_number.range())
+            {
+                let parsed = parse_possible_range(episode_number.as_str(), false);
+                // Filter out episode numbers over 1500 to avoid mistaking years for episodes
+                episode_numbers.extend(parsed.into_iter().filter(|&ep| ep <= 1500));
             }
 
             if !season_numbers.is_empty() || !episode_numbers.is_empty() {
@@ -101,7 +102,7 @@ pub fn parse_season_episode(
 
     // Remove overlapping matches, keeping longer ones
     let mut filtered_matches = Vec::new();
-    all_matches.sort_by(|a, b| a.range.start.cmp(&b.range.start));
+    all_matches.sort_by_key(|a| a.range.start);
 
     for current_match in all_matches {
         let mut should_keep = true;
@@ -133,7 +134,7 @@ pub fn parse_season_episode(
     }
 
     // Sort matches by position (rightmost first)
-    filtered_matches.sort_by(|a, b| b.range.start.cmp(&a.range.start));
+    filtered_matches.sort_by_key(|b| Reverse(b.range.start));
 
     let mut season_numbers = HashSet::new();
     let mut episode_numbers = HashSet::new();

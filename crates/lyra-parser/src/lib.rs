@@ -10,19 +10,20 @@ mod infer_numbers;
 mod model;
 mod parser;
 mod pattern;
-pub mod should_ignore_path;
+mod should_ignore_path;
 mod util;
 
-#[derive(Debug, Clone)]
+pub use parser::ids::ParsedIds;
+pub use should_ignore_path::should_ignore_path;
+
+#[derive(Debug, Clone, Default)]
 pub struct ParserContext {
     matched_ranges: Vec<std::ops::Range<usize>>,
 }
 
 impl ParserContext {
     pub fn new() -> Self {
-        Self {
-            matched_ranges: Vec::new(),
-        }
+        Self::default()
     }
 
     pub fn add_match(&mut self, range: std::ops::Range<usize>) {
@@ -45,13 +46,7 @@ pub struct ParsedFile {
     pub start_year: Option<u32>,
     pub end_year: Option<u32>,
     pub edition: Option<String>,
-    pub imdb_id: Option<String>,
-    pub tmdb_id: Option<u64>,
-    pub tvdb_id: Option<u64>,
-    pub anidb_id: Option<u64>,
-    pub trakt_id: Option<u64>,
-    // todo: for things like audio channels, 10bit, etc
-    // pub tags: Vec<String>,
+    pub ids: ParsedIds,
 }
 
 pub async fn parse_files(file_paths: Vec<String>) -> Vec<ParsedFile> {
@@ -62,7 +57,7 @@ pub async fn parse_files(file_paths: Vec<String>) -> Vec<ParsedFile> {
         let mut results = Vec::with_capacity(file_paths.len());
 
         for (chunk_idx, chunk) in file_paths.chunks(BATCH_SIZE).enumerate() {
-            let batched_entities = run_batched_inference(&chunk).expect("model inference failed");
+            let batched_entities = run_batched_inference(chunk).expect("model inference failed");
 
             for (inner_idx, entities) in batched_entities.into_iter().enumerate() {
                 let global_idx = chunk_idx * BATCH_SIZE + inner_idx;
@@ -74,11 +69,10 @@ pub async fn parse_files(file_paths: Vec<String>) -> Vec<ParsedFile> {
                 }
 
                 let (title, episode_title) = parse_title(&entities);
-                let (season_numbers, mut episode_numbers) =
-                    parse_season_episode(&file_name, &mut c);
-                let (start_year, end_year) = parse_year(&file_name, &mut c);
-                let edition = parse_edition(&file_name, &mut c);
-                let (imdb_id, tmdb_id, tvdb_id, anidb_id, trakt_id) = parse_ids(&file_name, &mut c);
+                let (season_numbers, mut episode_numbers) = parse_season_episode(file_name, &mut c);
+                let (start_year, end_year) = parse_year(file_name, &mut c);
+                let edition = parse_edition(file_name, &mut c);
+                let ids = parse_ids(file_name, &mut c);
 
                 if let Some(extra_numbers) = inferred_episode_numbers.get(global_idx) {
                     for &episode in extra_numbers {
@@ -96,11 +90,7 @@ pub async fn parse_files(file_paths: Vec<String>) -> Vec<ParsedFile> {
                     start_year,
                     end_year,
                     edition,
-                    imdb_id,
-                    tmdb_id,
-                    tvdb_id,
-                    anidb_id,
-                    trakt_id,
+                    ids,
                 });
             }
         }

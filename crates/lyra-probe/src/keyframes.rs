@@ -176,7 +176,7 @@ pub async fn extract_keyframes(
                     continue;
                 }
 
-                if !flags_str.as_bytes().first().is_some_and(|value| *value == b'K') {
+                if flags_str.as_bytes().first().is_none_or(|value| *value != b'K') {
                     continue;
                 }
 

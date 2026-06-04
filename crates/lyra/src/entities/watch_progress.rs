@@ -8,8 +8,12 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
+    #[sea_orm(column_type = "Text")]
     pub user_id: String,
+    #[sea_orm(column_type = "Text")]
     pub node_id: String,
+    pub tmdb_id: Option<i64>,
+    #[sea_orm(column_type = "Text")]
     pub file_id: String,
     #[graphql(skip)]
     pub progress_percent: f32,

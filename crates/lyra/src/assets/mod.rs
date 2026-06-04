@@ -1,4 +1,3 @@
-mod job_cleanup;
 mod job_download;
 mod job_thumbhash;
 mod proxy;
@@ -14,11 +13,8 @@ use tokio_util::sync::CancellationToken;
 
 pub(crate) use job_download::AssetDownloadJob;
 pub(crate) use proxy::get_assets_router;
-pub(crate) use service::{
-    create_local_asset_from_bytes, create_local_file_asset_from_bytes, download_asset_to_local,
-};
+pub(crate) use service::{create_local_asset_from_bytes, download_asset_to_local, remote_image_id};
 use std::time::Duration;
-pub(crate) use storage::get_asset_output_path_from_mime_and_encoding;
 
 const ASSET_SIGNATURE_TTL: Duration = Duration::from_hours(24);
 
@@ -42,14 +38,6 @@ pub(crate) fn register_jobs(
     wake_signal: Arc<Notify>,
     startup_scans_complete: CancellationToken,
 ) {
-    crate::jobs::register_job(
-        Arc::new(job_cleanup::AssetCleanupJob),
-        jobs,
-        heavy_jobs,
-        pool,
-        wake_signal.clone(),
-        startup_scans_complete.clone(),
-    );
     crate::jobs::register_job(
         Arc::new(job_download::AssetDownloadJob),
         jobs,

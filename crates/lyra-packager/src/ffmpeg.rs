@@ -110,10 +110,10 @@ impl FfmpegManager {
             return Ok(());
         }
 
-        if self.is_paused.load(std::sync::atomic::Ordering::SeqCst) {
-            if let Some(pid) = self.process.id() {
-                resume(&self.is_paused, pid as i32);
-            }
+        if self.is_paused.load(std::sync::atomic::Ordering::SeqCst)
+            && let Some(pid) = self.process.id()
+        {
+            resume(&self.is_paused, pid as i32);
         }
 
         loop {

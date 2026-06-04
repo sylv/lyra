@@ -1,20 +1,10 @@
-import {
-  Activity,
-  BookmarkIcon,
-  FolderIcon,
-  HomeIcon,
-  MenuIcon,
-  SearchIcon,
-  SettingsIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { Activity, HomeIcon, MenuIcon, SearchIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 import { useState, type FC, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "urql";
 import { graphql } from "../@generated/gql";
 import BrandLogo from "../assets/logo.svg";
 import { useSuspenseQuery } from "../hooks/use-suspense-query";
-import { getPathForCollection } from "../lib/get-path-for-node";
 import { ADMIN_BIT } from "../lib/user-permissions";
 import { cn } from "../lib/utils";
 import { ActivityPanel, ActivityPanelQuery } from "./activity-panel";
@@ -67,11 +57,6 @@ const LibrariesQuery = graphql(`
       name
       createdAt
       pinned
-    }
-    collections(pinned: true) {
-      id
-      name
-      createdById
     }
   }
 `);
@@ -200,14 +185,6 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
         <SidebarLink to="/" icon={HomeIcon} active={pathname === "/"} onClick={onNavigate}>
           Home
         </SidebarLink>
-        <SidebarLink
-          to="/collections"
-          icon={FolderIcon}
-          active={pathname.startsWith("/collections") || pathname.startsWith("/collection/")}
-          onClick={onNavigate}
-        >
-          Collections
-        </SidebarLink>
         {data.libraries
           .filter((library) => library.pinned)
           .map((library) => {
@@ -225,22 +202,6 @@ const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
               </SidebarLink>
             );
           })}
-        {data.collections.map((collection) => {
-          const collectionPath = getPathForCollection(collection.id);
-          const isActive = pathname.startsWith(collectionPath);
-          const isWatchlist = collection.createdById != null && collection.id === collection.createdById;
-          return (
-            <SidebarLink
-              to={collectionPath}
-              icon={isWatchlist ? BookmarkIcon : FolderIcon}
-              active={isActive}
-              key={collection.id}
-              onClick={onNavigate}
-            >
-              {collection.name}
-            </SidebarLink>
-          );
-        })}
       </div>
       <SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />
     </>

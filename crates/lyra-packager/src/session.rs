@@ -187,19 +187,19 @@ impl Session {
         anyhow::ensure!(!state.shutdown, "session has been shut down");
 
         loop {
-            if let Some(current) = state.current.as_mut() {
-                if segment_index >= current.ffmpeg.start_segment() {
-                    match current.ffmpeg.wait_for_segment(segment_index).await {
-                        Ok(()) => {
-                            let path = self.segment_path(segment_index);
-                            debug_assert!(path.exists());
-                            return Ok(path);
-                        }
-                        Err(WaitForSegmentError::OutOfRange) => {
-                            self.archive_current_generation(&mut state).await?;
-                            self.create_ffmpeg(&mut state, segment_index).await?;
-                            continue;
-                        }
+            if let Some(current) = state.current.as_mut()
+                && segment_index >= current.ffmpeg.start_segment()
+            {
+                match current.ffmpeg.wait_for_segment(segment_index).await {
+                    Ok(()) => {
+                        let path = self.segment_path(segment_index);
+                        debug_assert!(path.exists());
+                        return Ok(path);
+                    }
+                    Err(WaitForSegmentError::OutOfRange) => {
+                        self.archive_current_generation(&mut state).await?;
+                        self.create_ffmpeg(&mut state, segment_index).await?;
+                        continue;
                     }
                 }
             }
@@ -353,10 +353,10 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        if let Ok(mut state) = self.state.try_lock() {
-            if let Some(current) = state.current.as_mut() {
-                current.ffmpeg.start_kill();
-            }
+        if let Ok(mut state) = self.state.try_lock()
+            && let Some(current) = state.current.as_mut()
+        {
+            current.ffmpeg.start_kill();
         }
         let _ = std::fs::remove_dir_all(&self.work_dir);
     }

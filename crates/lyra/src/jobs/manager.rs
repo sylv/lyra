@@ -1,11 +1,10 @@
-use crate::content_update::CONTENT_UPDATE;
 use crate::entities::jobs as jobs_entity;
 use crate::jobs::job::JobOutcome;
 use crate::jobs::semaphore::{HeavyJobController, JobLease};
 use crate::{activity::ActivityHandle, jobs::job::Job};
 use anyhow::Context;
 use sea_orm::{
-    ActiveEnum, ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
     DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select, sea_query::Query,
 };
 use sqlx::query;
@@ -275,7 +274,6 @@ pub async fn run_job_for_target<J: Job>(
             );
 
             delete_job_row(pool, J::JOB_KIND, &target_id).await?;
-            CONTENT_UPDATE.emit();
         }
         Ok(JobOutcome::Cancelled) => {
             tracing::info!(
@@ -347,7 +345,7 @@ where
 {
     let now = chrono::Utc::now().timestamp();
     let mut updated: jobs_entity::ActiveModel = job_row.into();
-    updated.state = Set(jobs_entity::JobState::Errored.into_value());
+    updated.state = Set(jobs_entity::JobState::Errored);
     updated.locked_at = Set(None);
     updated.retry_after = Set(retry_after);
     updated.last_run_at = Set(now);

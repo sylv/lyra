@@ -1,6 +1,7 @@
 use crate::pattern;
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::cmp::Reverse;
 
 fn strip(name: &str) -> String {
     lazy_static! {
@@ -15,7 +16,7 @@ fn strip(name: &str) -> String {
         .to_lowercase()
         .to_string();
 
-    return APOST_FIX_REGEX.replace_all(&stripped, "$1's").to_string();
+    APOST_FIX_REGEX.replace_all(&stripped, "$1's").to_string()
 }
 
 fn normalize_edition(text: &str) -> String {
@@ -27,7 +28,7 @@ fn normalize_edition(text: &str) -> String {
     let normalized = normalized.trim();
 
     // Apply apostrophe fix to the entire string before splitting
-    let normalized = strip(&normalized);
+    let normalized = strip(normalized);
 
     // Apply proper capitalization
     let words: Vec<&str> = normalized.split_whitespace().collect();
@@ -105,7 +106,7 @@ pub fn parse_edition(input: &str, context: &mut crate::ParserContext) -> Option<
     }
 
     // Sort matches by position (descending to prefer matches at the end)
-    matches.sort_by(|a, b| b.0.cmp(&a.0));
+    matches.sort_by_key(|b| Reverse(b.0));
 
     // Return the first match (the one closest to the end)
     matches.first().map(|(_, edition)| edition.clone())

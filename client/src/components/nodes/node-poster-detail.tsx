@@ -1,15 +1,13 @@
-import { EllipsisVerticalIcon, FolderPlusIcon } from "lucide-react";
+import { EllipsisVerticalIcon } from "lucide-react";
 import type React from "react";
-import { useState, type FC } from "react";
+import { type FC } from "react";
 import { Link } from "react-router";
 import { graphql, unmask, type FragmentType } from "../../@generated/gql";
 import { getPathForNode } from "../../lib/get-path-for-node";
 import { cn } from "../../lib/utils";
-import { AddToCollectionModal } from "../add-to-collection-modal";
 import { Image, ImageType } from "../image";
 import { PlayWrapper } from "../play-wrapper";
-import { WatchlistMenuItem } from "../watchlist-controls";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { UnplayedItemsTab } from "../unplayed-items-tab";
 
 interface NodePosterDetailProps {
@@ -23,7 +21,6 @@ const Fragment = graphql(`
     id
     kind
     libraryId
-    inWatchlist
     unavailableAt
     properties {
       displayName
@@ -50,7 +47,6 @@ const Fragment = graphql(`
 export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, className, style }) => {
   const node = unmask(Fragment, nodeRaw);
   const path = getPathForNode(node);
-  const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
   const namePrefix = node.kind === "EPISODE" ? `S${node.seasonNumber}E${node.episodeNumber}` : "";
 
   return (
@@ -88,18 +84,11 @@ export const NodePosterDetail: FC<NodePosterDetailProps> = ({ node: nodeRaw, cla
               <DropdownMenuContent
                 align="end"
                 className="border-zinc-800 bg-black/95 text-zinc-100 shadow-xl shadow-black/40"
-              >
-                <DropdownMenuItem className="py-2" onSelect={() => setIsAddToCollectionOpen(true)}>
-                  <FolderPlusIcon className="size-4" />
-                  Add to Collection
-                </DropdownMenuItem>
-                <WatchlistMenuItem nodeId={node.id} inWatchlist={node.inWatchlist} />
-              </DropdownMenuContent>
+              ></DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
       </div>
-      <AddToCollectionModal nodeId={node.id} open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen} />
     </>
   );
 };

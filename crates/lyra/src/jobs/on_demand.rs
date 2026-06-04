@@ -3,7 +3,7 @@ use crate::jobs::manager::{delete_job_row, persist_job_error};
 use crate::jobs::{JobLease, JobOutcome};
 use crate::{activity::ActivityHandle, jobs::Job};
 use anyhow::Context;
-use sea_orm::{ActiveEnum, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use sqlx::query;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
@@ -79,7 +79,7 @@ async fn poll_completion<J: Job>(
                 return Ok(());
             };
 
-            if current.state == jobs_entity::JobState::Errored.to_value() {
+            if current.state == jobs_entity::JobState::Errored {
                 let message = current
                     .last_error_message
                     .clone()

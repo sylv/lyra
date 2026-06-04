@@ -1,42 +1,30 @@
-use crate::{
-    entities::assets::{self, AssetKind, AssetType},
-    ids,
-};
+use crate::entities::images::{self, ImageKind, ImageSource};
 use anyhow::Context;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait};
+use sha2::{Digest, Sha256};
 
 pub async fn create_local_asset_from_bytes<C: ConnectionTrait>(
     db: &C,
     image_bytes: &[u8],
-    kind: AssetKind,
-) -> anyhow::Result<assets::Model> {
+    kind: ImageKind,
+) -> anyhow::Result<images::Model> {
     let prepared = super::storage::prepare_image(image_bytes)?;
-    super::storage::persist_image_bytes(image_bytes, &prepared).await?;
     let now = chrono::Utc::now().timestamp();
-    let asset_id = ids::generate_prefixed_hashid("a", [prepared.hash_sha256.as_str()]);
+    let image_id = ulid::Ulid::new().to_string();
+    super::storage::persist_image_bytes(&image_id, image_bytes, &prepared).await?;
 
-    if let Some(existing) = assets::Entity::find_by_id(asset_id.clone()).one(db).await? {
-        let mut updated: assets::ActiveModel = existing.into();
-        updated.updated_at = Set(Some(now));
-        return Ok(updated.update(db).await?);
-    }
-
-    let inserted = assets::Entity::insert(assets::ActiveModel {
-        id: Set(asset_id),
+    let inserted = images::Entity::insert(images::ActiveModel {
+        id: Set(image_id),
         kind: Set(kind),
-        asset_type: Set(AssetType::Image),
+        source: Set(ImageSource::Local),
         source_url: Set(None),
-        hash_sha256: Set(Some(prepared.hash_sha256)),
         size_bytes: Set(Some(prepared.size_bytes)),
-        uncompressed_size_bytes: Set(Some(prepared.size_bytes)),
         mime_type: Set(Some(prepared.mime_type)),
-        content_encoding: Set(None),
         height: Set(Some(prepared.height)),
         width: Set(Some(prepared.width)),
         thumbhash: Set(None),
         created_at: Set(now),
         updated_at: Set(Some(now)),
-        ..Default::default()
     })
     .exec_with_returning(db)
     .await?;
@@ -46,33 +34,36 @@ pub async fn create_local_asset_from_bytes<C: ConnectionTrait>(
 
 pub async fn download_asset_to_local<C: ConnectionTrait>(
     db: &C,
-    asset: &assets::Model,
-) -> anyhow::Result<assets::Model> {
-    if asset.hash_sha256.is_some() {
-        return Ok(asset.clone());
+    image: &images::Model,
+) -> anyhow::Result<images::Model> {
+    if image.mime_type.is_some() {
+        return Ok(image.clone());
     }
 
-    let source_url = asset
+    let source_url = image
         .source_url
         .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("asset {} has no source_url", asset.id))?;
+        .ok_or_else(|| anyhow::anyhow!("image {} has no source_url", image.id))?;
 
-    let response = reqwest::get(source_url).await?.error_for_status()?;
-    let bytes = response
-        .bytes()
-        .await
-        .context("failed reading image response body")?;
+    let output_path = super::storage::get_asset_output_path(&image.id)?;
+    let bytes = if tokio::fs::try_exists(&output_path).await? {
+        tokio::fs::read(&output_path).await?
+    } else {
+        let response = reqwest::get(source_url).await?.error_for_status()?;
+        let bytes = response
+            .bytes()
+            .await
+            .context("failed reading image response body")?;
+        bytes.to_vec()
+    };
 
     let prepared = super::storage::prepare_image(&bytes)?;
-    super::storage::persist_image_bytes(&bytes, &prepared).await?;
+    super::storage::persist_image_bytes(&image.id, &bytes, &prepared).await?;
     let now = chrono::Utc::now().timestamp();
 
-    let mut updated: assets::ActiveModel = asset.clone().into();
-    updated.hash_sha256 = Set(Some(prepared.hash_sha256));
+    let mut updated: images::ActiveModel = image.clone().into();
     updated.size_bytes = Set(Some(prepared.size_bytes));
-    updated.uncompressed_size_bytes = Set(Some(prepared.size_bytes));
     updated.mime_type = Set(Some(prepared.mime_type));
-    updated.content_encoding = Set(None);
     updated.width = Set(Some(prepared.width));
     updated.height = Set(Some(prepared.height));
     updated.updated_at = Set(Some(now));
@@ -80,50 +71,8 @@ pub async fn download_asset_to_local<C: ConnectionTrait>(
     Ok(updated.update(db).await?)
 }
 
-pub async fn create_local_file_asset_from_bytes<C: ConnectionTrait>(
-    db: &C,
-    file_bytes: &[u8],
-    mime_type: &str,
-    kind: AssetKind,
-) -> anyhow::Result<assets::Model> {
-    let compressed_bytes = zstd::encode_all(std::io::Cursor::new(file_bytes), 12)
-        .context("failed to zstd-compress file asset")?;
-    let prepared = super::storage::prepare_file_bytes(&compressed_bytes, mime_type, Some("zstd"))?;
-    super::storage::persist_bytes_atomically(
-        &super::storage::get_asset_output_path(&prepared.hash_sha256, &prepared.extension)?,
-        &compressed_bytes,
-    )
-    .await?;
-    let now = chrono::Utc::now().timestamp();
-    let asset_id = ids::generate_prefixed_hashid("a", [prepared.hash_sha256.as_str()]);
-
-    if let Some(existing) = assets::Entity::find_by_id(asset_id.clone()).one(db).await? {
-        let mut updated: assets::ActiveModel = existing.into();
-        updated.updated_at = Set(Some(now));
-        return Ok(updated.update(db).await?);
-    }
-
-    let inserted = assets::Entity::insert(assets::ActiveModel {
-        id: Set(asset_id),
-        kind: Set(kind),
-        asset_type: Set(AssetType::File),
-        source_url: Set(None),
-        hash_sha256: Set(Some(prepared.hash_sha256)),
-        size_bytes: Set(Some(prepared.size_bytes)),
-        uncompressed_size_bytes: Set(Some(
-            i64::try_from(file_bytes.len()).context("file byte length exceeds i64")?,
-        )),
-        mime_type: Set(Some(prepared.mime_type)),
-        content_encoding: Set(prepared.content_encoding),
-        height: Set(None),
-        width: Set(None),
-        thumbhash: Set(None),
-        created_at: Set(now),
-        updated_at: Set(Some(now)),
-        ..Default::default()
-    })
-    .exec_with_returning(db)
-    .await?;
-
-    Ok(inserted)
+pub fn remote_image_id(source_url: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(source_url.as_bytes());
+    hex::encode(hasher.finalize())
 }

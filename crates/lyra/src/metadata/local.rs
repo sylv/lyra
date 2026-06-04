@@ -4,8 +4,6 @@ use crate::metadata::store::{
 use sea_orm::ConnectionTrait;
 use std::collections::HashMap;
 
-pub const LOCAL_METADATA_PROVIDER_ID: &str = "local";
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeLocalMetadataInput {
     pub node_id: String,

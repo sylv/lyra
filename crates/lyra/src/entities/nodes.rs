@@ -6,22 +6,25 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "nodes")]
 #[graphql(name = "Node", complex)]
 pub struct Model {
-    #[sea_orm(primary_key)]
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
+    #[sea_orm(column_type = "Text")]
     pub library_id: String,
+    #[sea_orm(column_type = "Text")]
     pub root_id: String,
+    #[sea_orm(column_type = "Text", nullable)]
     pub parent_id: Option<String>,
     pub kind: NodeKind,
-    #[graphql(skip)]
+    #[sea_orm(column_type = "Text")]
     pub name: String,
     pub order: i64,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     pub last_added_at: i64,
-    pub last_fingerprint_version: Option<i64>,
-    pub unavailable_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub unavailable_at: Option<i64>,
+    pub last_fingerprint_version: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -36,10 +39,10 @@ pub enum Relation {
     Libraries,
     #[sea_orm(has_many = "super::node_files::Entity")]
     NodeFiles,
+    #[sea_orm(has_many = "super::node_images::Entity")]
+    NodeImages,
     #[sea_orm(has_many = "super::node_metadata::Entity")]
     NodeMetadata,
-    #[sea_orm(has_many = "super::collection_items::Entity")]
-    CollectionItems,
     #[sea_orm(
         belongs_to = "Entity",
         from = "Column::ParentId",
@@ -58,8 +61,6 @@ pub enum Relation {
     SelfRef1,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
-    #[sea_orm(has_many = "super::root_node_cast::Entity")]
-    RootNodeCast,
 }
 
 impl Related<super::libraries::Entity> for Entity {
@@ -74,15 +75,15 @@ impl Related<super::node_files::Entity> for Entity {
     }
 }
 
-impl Related<super::node_metadata::Entity> for Entity {
+impl Related<super::node_images::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::NodeMetadata.def()
+        Relation::NodeImages.def()
     }
 }
 
-impl Related<super::collection_items::Entity> for Entity {
+impl Related<super::node_metadata::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::CollectionItems.def()
+        Relation::NodeMetadata.def()
     }
 }
 
@@ -92,27 +93,12 @@ impl Related<super::watch_progress::Entity> for Entity {
     }
 }
 
-impl Related<super::root_node_cast::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::RootNodeCast.def()
-    }
-}
-
 impl Related<super::files::Entity> for Entity {
     fn to() -> RelationDef {
         super::node_files::Relation::Files.def()
     }
     fn via() -> Option<RelationDef> {
         Some(super::node_files::Relation::Nodes.def().rev())
-    }
-}
-
-impl Related<super::collections::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::collection_items::Relation::Collections.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::collection_items::Relation::Nodes.def().rev())
     }
 }
 

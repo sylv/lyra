@@ -1,10 +1,7 @@
 use crate::{
     auth::RequestAuth,
     backup::{BackupManager, run_backup_worker, run_migrations_with_backups},
-    cleanup::start_cleanup_worker,
-    collections::reconcile_system_collections,
     config::get_config,
-    content_update::CONTENT_UPDATE,
     entities::{
         jobs as jobs_entity, libraries,
         users::{self},
@@ -13,13 +10,12 @@ use crate::{
     jobs::{HeavyJobController, load_registered_jobs},
 };
 use anyhow::Context;
-use async_graphql::Data;
 use async_graphql::dataloader::DataLoader;
-use async_graphql::{Schema, http::GraphiQLSource};
-use async_graphql_axum::{GraphQLProtocol, GraphQLRequest, GraphQLResponse, GraphQLWebSocket};
+use async_graphql::{EmptySubscription, Schema, http::GraphiQLSource};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     Json, Router,
-    extract::{FromRef, Query as AxumQuery, State, ws::WebSocketUpgrade},
+    extract::{FromRef, Query as AxumQuery, State},
     http::{HeaderMap, header::SET_COOKIE},
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -46,16 +42,12 @@ mod activity;
 mod assets;
 mod auth;
 mod backup;
-mod cleanup;
-mod collections;
 mod config;
-mod content_update;
 mod entities;
 mod error;
 mod graphql;
 mod hls;
 mod ids;
-mod import;
 mod jobs;
 mod json_encoding;
 mod media;
@@ -65,11 +57,7 @@ mod segment_markers;
 mod signer;
 mod subtitles;
 
-type AppSchema = Schema<
-    graphql::query::Query,
-    graphql::mutation::Mutation,
-    graphql::subscription::SubscriptionRoot,
->;
+type AppSchema = Schema<graphql::query::Query, graphql::mutation::Mutation, EmptySubscription>;
 
 #[derive(Clone, FromRef)]
 struct AppState {
@@ -84,37 +72,14 @@ struct AppState {
 
 async fn get_graphql(auth: RequestAuth) -> impl IntoResponse {
     let refreshed_session_cookie = auth.refreshed_session_cookie().cloned();
-    let mut response = Html(
-        GraphiQLSource::build()
-            .endpoint("/api/graphql")
-            .subscription_endpoint("/api/graphql/ws")
-            .finish(),
-    )
-    .into_response();
+    let mut response =
+        Html(GraphiQLSource::build().endpoint("/api/graphql").finish()).into_response();
 
     if let Some(cookie) = refreshed_session_cookie {
         response.headers_mut().append(SET_COOKIE, cookie);
     }
 
     response
-}
-
-async fn get_graphql_ws(
-    ws: WebSocketUpgrade,
-    protocol: GraphQLProtocol,
-    auth: RequestAuth,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let schema = state.schema.as_ref().clone();
-    let mut data = Data::default();
-    data.insert(auth);
-
-    ws.protocols(async_graphql::http::ALL_WEBSOCKET_PROTOCOLS)
-        .on_upgrade(move |stream| {
-            GraphQLWebSocket::new(stream, schema, protocol)
-                .with_data(data)
-                .serve()
-        })
 }
 
 #[derive(Clone)]
@@ -176,14 +141,13 @@ async fn get_init_state(
             .as_deref()
             .map(str::trim)
             .filter(|invite_code| !invite_code.is_empty())
+            && let Some(user) = auth::find_pending_invite_user(&state.pool, invite_code).await?
         {
-            if let Some(user) = auth::find_pending_invite_user(&state.pool, invite_code).await? {
-                return Ok(Json(json!({
-                    "state": InitState::CreateInvitedUser,
-                    "invite_code": invite_code,
-                    "username": user.username,
-                })));
-            }
+            return Ok(Json(json!({
+                "state": InitState::CreateInvitedUser,
+                "invite_code": invite_code,
+                "username": user.username,
+            })));
         }
 
         let user_count = users::Entity::find().count(&state.pool).await?;
@@ -209,9 +173,9 @@ async fn get_init_state(
     }
 
     // server is setup and user can do things.
-    return Ok(Json(json!({
+    Ok(Json(json!({
         "state": InitState::Ready
-    })));
+    })))
 }
 
 #[tokio::main]
@@ -220,26 +184,36 @@ async fn main() {
     lyra_probe::init_ffmpeg().unwrap();
 
     let config = get_config();
-    let db_path = config.data_dir.join("data.db");
-    let sqlx_pool = SqlitePoolOptions::new()
-        .max_connections(8)
-        .acquire_timeout(Duration::from_secs(300))
-        .connect_with(
-            // https://briandouglas.ie/sqlite-defaults/
-            SqliteConnectOptions::from_str(db_path.to_string_lossy().as_ref())
-                .expect("Failed to parse SQLite path")
-                .journal_mode(SqliteJournalMode::Wal)
-                .synchronous(SqliteSynchronous::Normal)
-                .busy_timeout(Duration::from_secs(30))
-                .foreign_keys(true)
-                .auto_vacuum(SqliteAutoVacuum::Incremental)
-                .pragma("cache_size", "-10000")
-                .pragma("temp_store", "MEMORY")
-                .create_if_missing(true)
-                .page_size(8192),
-        )
-        .await
-        .expect("Failed to connect to SQLite");
+    let sqlx_pool = {
+        let db_path = config.data_dir.join("data.db");
+        // https://briandouglas.ie/sqlite-defaults/
+        let mut conn_options = SqliteConnectOptions::from_str(db_path.to_string_lossy().as_ref())
+            .expect("Failed to parse SQLite path")
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .busy_timeout(Duration::from_secs(30))
+            .foreign_keys(true)
+            .auto_vacuum(SqliteAutoVacuum::Incremental)
+            .pragma("cache_size", "-10000")
+            .pragma("temp_store", "MEMORY")
+            .create_if_missing(true)
+            .page_size(8192);
+
+        unsafe {
+            const DEFAULT_CLOSURE_EXT_PATH: &str =
+                concat!(env!("CARGO_MANIFEST_DIR"), "/../../closure");
+            let sqlite_ext_path = std::env::var("LYRA_SQLITE_CLOSUREEXT_PATH")
+                .unwrap_or_else(|_| DEFAULT_CLOSURE_EXT_PATH.to_string());
+            conn_options = conn_options.extension(sqlite_ext_path)
+        };
+
+        SqlitePoolOptions::new()
+            .max_connections(8)
+            .acquire_timeout(Duration::from_secs(300))
+            .connect_with(conn_options)
+            .await
+            .expect("Failed to connect to SQLite")
+    };
     let backup_manager = Arc::new(BackupManager::new(sqlx_pool.clone()));
 
     tracing::info!("Running database migrations");
@@ -249,14 +223,9 @@ async fn main() {
     tracing::info!("Database migrations complete");
 
     let pool = DatabaseConnection::from(sqlx_pool);
-    reconcile_system_collections(&pool)
-        .await
-        .expect("Failed to reconcile system collections");
     let job_wake_signal = Arc::new(Notify::new());
     let heavy_job_controller = Arc::new(HeavyJobController::new());
     let startup_scans_complete = CancellationToken::new();
-
-    CONTENT_UPDATE.start();
 
     clear_locked_jobs(&pool)
         .await
@@ -274,12 +243,6 @@ async fn main() {
             scanner_startup_scans_complete,
         )
         .await
-    });
-
-    let cleanup_pool = pool.clone();
-    let cleanup_startup_scans_complete = startup_scans_complete.clone();
-    background_workers.spawn(async move {
-        start_cleanup_worker(cleanup_pool, cleanup_startup_scans_complete).await
     });
 
     let backup_manager_for_worker = backup_manager.clone();
@@ -328,7 +291,7 @@ async fn main() {
     let schema: AppSchema = Schema::build(
         graphql::query::Query,
         graphql::mutation::Mutation,
-        graphql::subscription::SubscriptionRoot,
+        EmptySubscription,
     )
     // these are mostly high for the graphiql introspection query
     // idk why its so complex
@@ -369,7 +332,6 @@ async fn main() {
         .nest("/api/hls", hls::get_hls_router())
         .nest("/api/assets", assets::get_assets_router())
         .route("/api/graphql", get(get_graphql).post(post_graphql))
-        .route("/api/graphql/ws", get(get_graphql_ws))
         .route("/api/init", get(get_init_state))
         .route("/api/login", post(auth::post_login))
         .with_state(AppState {

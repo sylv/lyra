@@ -8,17 +8,21 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub id: String,
+    #[sea_orm(column_type = "Text", unique)]
     pub username: String,
-    #[graphql(skip)]
+    #[sea_orm(column_type = "Text", nullable)]
     pub password_hash: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
     pub invite_code: Option<String>,
     pub permissions: i64,
     pub created_at: i64,
+    #[sea_orm(column_type = "Text", nullable)]
     pub preferred_audio_language: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
     pub preferred_audio_disposition: Option<String>,
     #[graphql(skip)]
     pub subtitle_mode: SubtitleMode,
-    #[graphql(skip)]
+    #[sea_orm(column_type = "Text")]
     pub preferred_subtitle_languages: String,
     #[graphql(skip)]
     pub subtitle_variant_preference: SubtitleVariantPreference,
@@ -26,26 +30,10 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::library_users::Entity")]
-    LibraryUsers,
-    #[sea_orm(has_many = "super::collections::Entity")]
-    Collections,
     #[sea_orm(has_many = "super::user_sessions::Entity")]
     UserSessions,
     #[sea_orm(has_many = "super::watch_progress::Entity")]
     WatchProgress,
-}
-
-impl Related<super::library_users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::LibraryUsers.def()
-    }
-}
-
-impl Related<super::collections::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Collections.def()
-    }
 }
 
 impl Related<super::user_sessions::Entity> for Entity {
@@ -57,15 +45,6 @@ impl Related<super::user_sessions::Entity> for Entity {
 impl Related<super::watch_progress::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::WatchProgress.def()
-    }
-}
-
-impl Related<super::libraries::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::library_users::Relation::Libraries.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::library_users::Relation::Users.def().rev())
     }
 }
 

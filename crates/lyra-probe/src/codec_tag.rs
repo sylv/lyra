@@ -118,7 +118,7 @@ fn h265_profile_idc(profile: Option<&str>, bit_depth: Option<u8>) -> Option<u8> 
 }
 
 fn h265_level_idc(level: Option<i32>) -> Option<i32> {
-    Some(level?)
+    level
 }
 
 fn av1_profile_idc(profile: Option<&str>) -> Option<u8> {

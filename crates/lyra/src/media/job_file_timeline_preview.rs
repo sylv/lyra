@@ -4,16 +4,17 @@ use crate::{
     assets as assets_api,
     config::get_config,
     entities::{
-        assets::{self as assets_entity, AssetKind},
-        file_assets::{self, FileAssetRole},
-        files, jobs as jobs_entity,
+        file_images::{self, FileImageRole},
+        files,
+        images::{self as images_entity, ImageKind},
+        jobs as jobs_entity,
     },
 };
 use anyhow::Context;
 use lyra_timeline_preview::{PreviewOptions, generate_previews};
 use sea_orm::{
     ActiveValue::Set,
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Select,
+    ColumnTrait, DatabaseConnection, EntityTrait, ExprTrait, QueryFilter, QueryOrder, Select,
     TransactionTrait,
     sea_query::{Expr, Query},
 };
@@ -36,11 +37,11 @@ impl Job for FileTimelinePreviewJob {
             .filter(
                 Expr::col((files::Entity, files::Column::Id)).not_in_subquery(
                     Query::select()
-                        .column(file_assets::Column::FileId)
-                        .from(file_assets::Entity)
+                        .column(file_images::Column::FileId)
+                        .from(file_images::Entity)
                         .and_where(
-                            Expr::col((file_assets::Entity, file_assets::Column::Role))
-                                .eq(FileAssetRole::TimelinePreviewSheet),
+                            Expr::col((file_images::Entity, file_images::Column::Role))
+                                .eq(FileImageRole::TimelinePreviewSheet),
                         )
                         .to_owned(),
                 ),
@@ -77,27 +78,27 @@ impl Job for FileTimelinePreviewJob {
             return Ok(JobOutcome::Cancelled);
         };
 
-        let mut tx = db.begin().await?;
+        let tx = db.begin().await?;
 
         // Existing assets are replaced atomically so retrying the job never leaves duplicate sheets.
-        let stale_asset_ids = file_assets::Entity::find()
-            .filter(file_assets::Column::FileId.eq(file_id.clone()))
-            .filter(file_assets::Column::Role.eq(FileAssetRole::TimelinePreviewSheet))
+        let stale_image_ids = file_images::Entity::find()
+            .filter(file_images::Column::FileId.eq(file_id.clone()))
+            .filter(file_images::Column::Role.eq(FileImageRole::TimelinePreviewSheet))
             .all(&tx)
             .await?
             .into_iter()
-            .map(|row| row.asset_id)
+            .map(|row| row.image_id)
             .collect::<Vec<_>>();
 
-        file_assets::Entity::delete_many()
-            .filter(file_assets::Column::FileId.eq(file_id.clone()))
-            .filter(file_assets::Column::Role.eq(FileAssetRole::TimelinePreviewSheet))
+        file_images::Entity::delete_many()
+            .filter(file_images::Column::FileId.eq(file_id.clone()))
+            .filter(file_images::Column::Role.eq(FileImageRole::TimelinePreviewSheet))
             .exec(&tx)
             .await?;
 
-        if !stale_asset_ids.is_empty() {
-            assets_entity::Entity::delete_many()
-                .filter(assets_entity::Column::Id.is_in(stale_asset_ids))
+        if !stale_image_ids.is_empty() {
+            images_entity::Entity::delete_many()
+                .filter(images_entity::Column::Id.is_in(stale_image_ids))
                 .exec(&tx)
                 .await?;
         }
@@ -106,7 +107,7 @@ impl Job for FileTimelinePreviewJob {
             let asset = assets_api::create_local_asset_from_bytes(
                 &tx,
                 &preview.preview_bytes,
-                AssetKind::TimelinePreviewSheet,
+                ImageKind::TimelinePreviewSheet,
             )
             .await?;
             let sheet_width_px = asset
@@ -116,19 +117,18 @@ impl Job for FileTimelinePreviewJob {
                 .height
                 .context("timeline preview asset missing height")?;
 
-            file_assets::Entity::insert(file_assets::ActiveModel {
+            file_images::Entity::insert(file_images::ActiveModel {
                 file_id: Set(file_id.clone()),
-                asset_id: Set(asset.id),
-                role: Set(FileAssetRole::TimelinePreviewSheet),
-                chapter_number: Set(None),
-                position_ms: Set(Some(duration_to_millis(preview.start_time)?)),
+                image_id: Set(asset.id),
+                role: Set(FileImageRole::TimelinePreviewSheet),
+                start_ms: Set(Some(duration_to_millis(preview.start_time)?)),
                 end_ms: Set(Some(duration_to_millis(preview.end_time)?)),
                 sheet_frame_height: Set(Some(sheet_height_px)),
                 sheet_frame_width: Set(Some(sheet_width_px)),
                 sheet_gap_size: Set(Some(lyra_timeline_preview::GAP_PX as i64)),
                 sheet_interval: Set(Some(duration_to_millis(preview.frame_interval)?)),
             })
-            .exec(&mut tx)
+            .exec(&tx)
             .await?;
         }
 

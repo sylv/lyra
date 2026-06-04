@@ -1,19 +1,16 @@
 use crate::jobs::{Job, JobLease, JobOutcome, JobScheduling};
 use crate::media::{get_job_file_path, load_cached_probe};
 use crate::{
-    entities::{
-        file_probe, file_subtitles, file_subtitles::SubtitleSource, files, jobs as jobs_entity,
-    },
+    entities::{file_probe, file_subtitles, files, jobs as jobs_entity},
     subtitles::files::{
-        extract_subtitle_bytes_batch, refresh_derived_subtitles_last_seen,
-        refresh_extracted_subtitle_metadata, subtitle_descriptor_from_stream,
-        upsert_extracted_subtitle,
+        can_extract_webvtt_subtitle, extract_webvtt_subtitle_batch,
+        subtitle_descriptor_from_stream, upsert_extracted_subtitle,
     },
 };
 use anyhow::Context;
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, Select, TransactionTrait,
+    ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait, ExprTrait,
+    QueryFilter, QueryOrder, Select, TransactionTrait,
 };
 
 #[derive(Debug, Default)]
@@ -32,14 +29,33 @@ impl Job for FileSubtitleExtractJob {
             .filter(files::Column::UnavailableAt.is_null())
             .filter(files::Column::SubtitlesExtractedAt.is_null())
             .filter(
-                Condition::all().add(
-                    sea_orm::sea_query::Expr::col((files::Entity, files::Column::Id)).in_subquery(
-                        sea_orm::sea_query::Query::select()
-                            .column(file_probe::Column::FileId)
-                            .from(file_probe::Entity)
-                            .to_owned(),
+                Condition::all()
+                    .add(
+                        sea_orm::sea_query::Expr::col((files::Entity, files::Column::Id))
+                            .in_subquery(
+                                sea_orm::sea_query::Query::select()
+                                    .column(file_probe::Column::FileId)
+                                    .from(file_probe::Entity)
+                                    .to_owned(),
+                            ),
+                    )
+                    .add(
+                        sea_orm::sea_query::Expr::col((files::Entity, files::Column::Id))
+                            .not_in_subquery(
+                                sea_orm::sea_query::Query::select()
+                                    .column(jobs_entity::Column::TargetId)
+                                    .from(jobs_entity::Entity)
+                                    .and_where(
+                                        jobs_entity::Column::JobKind
+                                            .eq(jobs_entity::JobKind::FileProbe.code()),
+                                    )
+                                    .and_where(
+                                        jobs_entity::Column::State
+                                            .eq(jobs_entity::JobState::Running),
+                                    )
+                                    .to_owned(),
+                            ),
                     ),
-                ),
             )
             .order_by_asc(files::Column::Id)
     }
@@ -58,14 +74,20 @@ impl Job for FileSubtitleExtractJob {
             return Ok(JobOutcome::Complete);
         };
 
-        let probe_data = load_cached_probe(db, &file.id)
-            .await?
-            .context("subtitle extraction requires cached probe data")?;
+        let Some(probe_data) = load_cached_probe(db, &file.id).await? else {
+            tracing::info!(
+                file_id = %file.id,
+                "deferring subtitle extraction until cached probe data is available"
+            );
+            file_probe::Entity::delete_by_id(file.id.clone())
+                .exec(db)
+                .await?;
+            return Ok(JobOutcome::Cancelled);
+        };
         let now = chrono::Utc::now().timestamp();
 
         let existing = file_subtitles::Entity::find()
             .filter(file_subtitles::Column::FileId.eq(file.id.clone()))
-            .filter(file_subtitles::Column::Source.eq(SubtitleSource::Extracted))
             .all(db)
             .await?;
 
@@ -76,21 +98,28 @@ impl Job for FileSubtitleExtractJob {
             .iter()
             .filter(|stream| stream.kind() == lyra_probe::StreamKind::Subtitle)
         {
+            if !can_extract_webvtt_subtitle(stream) {
+                tracing::warn!(
+                    file_id = %file.id,
+                    stream_index = stream.index,
+                    codec = %stream.codec,
+                    "skipping subtitle stream that cannot be extracted to WebVTT"
+                );
+                continue;
+            }
+
             let Some(descriptor) = subtitle_descriptor_from_stream(stream) else {
                 continue;
             };
 
-            let existing_row = existing.iter().find(|row| {
-                row.stream_index == descriptor.stream_index
-                    && row.derived_from_subtitle_id.is_none()
-            });
-            if existing_row.is_none() {
-                pending_extractions.push((stream, descriptor.clone()));
-            }
+            let existing_row = existing
+                .iter()
+                .find(|row| row.source_stream_index == descriptor.source_stream_index);
+            pending_extractions.push((stream, descriptor.clone()));
             descriptors.push((descriptor, existing_row.cloned()));
         }
 
-        let extracted_bytes = extract_subtitle_bytes_batch(
+        let extracted_bytes = extract_webvtt_subtitle_batch(
             &file_path,
             pending_extractions
                 .iter()
@@ -110,16 +139,18 @@ impl Job for FileSubtitleExtractJob {
             if ctx.is_cancelled() {
                 return Ok(JobOutcome::Cancelled);
             }
-            let source_row = if let Some(row) = existing_row {
-                refresh_extracted_subtitle_metadata(&tx, &row, &descriptor, now).await?
-            } else {
-                let bytes = extracted_bytes
-                    .get(&descriptor.stream_index)
-                    .context("missing extracted subtitle bytes for stream")?;
-                upsert_extracted_subtitle(&tx, &file.id, &descriptor, &bytes, now).await?
-            };
-
-            refresh_derived_subtitles_last_seen(&tx, &source_row.id, &descriptor, now).await?;
+            let bytes = extracted_bytes
+                .get(&descriptor.source_stream_index)
+                .context("missing extracted subtitle bytes for stream")?;
+            upsert_extracted_subtitle(
+                &tx,
+                &file.id,
+                existing_row.as_ref(),
+                &descriptor,
+                bytes,
+                now,
+            )
+            .await?;
         }
 
         files::Entity::update(files::ActiveModel {

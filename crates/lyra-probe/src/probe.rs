@@ -1,15 +1,8 @@
-use crate::{PROBE_ZSTD_DICTIONARY, paths::get_ffprobe_path, types::*};
+use crate::{paths::get_ffprobe_path, types::*};
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    io::{Cursor, Read, Write},
-    path::Path,
-    process::Command as StdCommand,
-};
+use std::{collections::HashMap, path::Path, process::Command as StdCommand};
 use tokio_util::sync::CancellationToken;
-
-const PROBE_ZSTD_LEVEL: i32 = 12;
 
 #[derive(Deserialize)]
 struct FfprobeOutput {
@@ -128,46 +121,6 @@ pub async fn probe_with_cancellation(
     .map(Some)
 }
 
-pub fn encode_probe_data_json_zstd(value: &ProbeData) -> Result<Vec<u8>> {
-    let json = serde_json::to_vec(value).context("failed to serialize probe JSON")?;
-    let mut encoder =
-        zstd::stream::Encoder::with_dictionary(Vec::new(), PROBE_ZSTD_LEVEL, PROBE_ZSTD_DICTIONARY)
-            .context("failed to initialize zstd encoder for probe JSON")?;
-    encoder
-        .write_all(&json)
-        .context("failed to write probe JSON into zstd encoder")?;
-    encoder
-        .finish()
-        .context("failed to finalize probe JSON zstd payload")
-}
-
-pub fn decode_probe_data_json_zstd(payload: &[u8]) -> Result<ProbeData> {
-    let decoded = decode_probe_payload(payload)?;
-    serde_json::from_slice(&decoded).context("failed to parse cached probe JSON payload")
-}
-
-fn decode_probe_payload(payload: &[u8]) -> Result<Vec<u8>> {
-    let mut decoded = Vec::new();
-    if let Ok(mut decoder) =
-        zstd::stream::Decoder::with_dictionary(Cursor::new(payload), PROBE_ZSTD_DICTIONARY)
-    {
-        decoder
-            .read_to_end(&mut decoded)
-            .context("failed to decode dictionary-compressed probe payload")?;
-        return Ok(decoded);
-    }
-
-    decoded.clear();
-    if let Ok(mut decoder) = zstd::stream::Decoder::new(Cursor::new(payload)) {
-        decoder
-            .read_to_end(&mut decoded)
-            .context("failed to decode probe payload")?;
-        return Ok(decoded);
-    }
-
-    Ok(payload.to_vec())
-}
-
 fn ffprobe_args() -> [&'static str; 6] {
     [
         "-v",
@@ -226,7 +179,7 @@ fn convert(raw: FfprobeOutput) -> Result<ProbeData> {
 }
 
 fn convert_stream(raw: FfprobeStream) -> Result<Stream> {
-    let codec = Codec::from_str(&raw.codec_name.unwrap_or_default());
+    let codec = Codec::from(raw.codec_name.unwrap_or_default());
 
     let kind = match raw.codec_type.as_deref() {
         Some("video") => StreamKind::Video,

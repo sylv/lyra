@@ -42,7 +42,7 @@ lazy_static! {
 
 lazy_static! {
     static ref ID2LABEL: HashMap<usize, String> = {
-        let cfg: ModelConfig = serde_json::from_slice(&CONFIG_BYTES).unwrap();
+        let cfg: ModelConfig = serde_json::from_slice(CONFIG_BYTES).unwrap();
         cfg.id2label
             .expect("missing id2label in config.json")
             .clone()
@@ -62,13 +62,12 @@ fn aggregate_entities(
             continue;
         }
 
-        if let Some(entity_label) = label_str.strip_prefix("I-") {
-            if let Some((current_label, _, current_end)) = current_entity.as_mut() {
-                if current_label == entity_label {
-                    *current_end = end;
-                    continue;
-                }
-            }
+        if let Some(entity_label) = label_str.strip_prefix("I-")
+            && let Some((current_label, _, current_end)) = current_entity.as_mut()
+            && current_label == entity_label
+        {
+            *current_end = end;
+            continue;
         }
 
         if let Some((label, start, end)) = current_entity.take() {
@@ -136,7 +135,7 @@ pub fn run_batched_inference(texts: &[String]) -> Result<Vec<Vec<Entity>>, Model
     let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
     let encodings = TOKENIZER
         .encode_batch(text_refs, true)
-        .map_err(|e| ModelError::TokenizationError(e))?;
+        .map_err(ModelError::TokenizationError)?;
 
     let batch_size = texts.len();
     let max_seq_len = encodings
@@ -160,7 +159,7 @@ pub fn run_batched_inference(texts: &[String]) -> Result<Vec<Vec<Entity>>, Model
         let offsets: Vec<(usize, usize)> = encoding
             .get_offsets()
             .iter()
-            .map(|(s, e)| (*s as usize, *e as usize))
+            .map(|(s, e)| ((*s), (*e)))
             .collect();
         all_offsets.push(offsets);
 

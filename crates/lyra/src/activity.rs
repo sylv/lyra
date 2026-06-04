@@ -1,4 +1,3 @@
-use crate::content_update::CONTENT_UPDATE;
 use crate::entities::jobs::JobKind;
 use lazy_static::lazy_static;
 use std::collections::{BTreeMap, HashMap};
@@ -17,13 +16,11 @@ pub enum ActivityKind {
     FileGenerateTimelinePreview,
     FileGenerateThumbnail,
     FileProbe,
-    AssetDownload,
-    AssetGenerateThumbhash,
-    AssetCleanup,
+    ImageDownload,
+    ImageGenerateThumbhash,
     NodeGenerateIntroSegments,
     NodeSyncMetadataRoot,
     FileExtractSubtitles,
-    FileProcessSubtitle,
 }
 
 impl ActivityKind {
@@ -33,13 +30,11 @@ impl ActivityKind {
             ActivityKind::FileGenerateTimelinePreview => "Timeline Preview Generation",
             ActivityKind::FileGenerateThumbnail => "Thumbnail Generation",
             ActivityKind::FileProbe => "Playback Analysis",
-            ActivityKind::AssetDownload => "Asset Download",
-            ActivityKind::AssetGenerateThumbhash => "Asset Preview Generation",
-            ActivityKind::AssetCleanup => "Asset Cleanup",
+            ActivityKind::ImageDownload => "Image Download",
+            ActivityKind::ImageGenerateThumbhash => "Image Preview Generation",
             ActivityKind::NodeGenerateIntroSegments => "Intro Detection",
             ActivityKind::NodeSyncMetadataRoot => "Metadata Sync",
             ActivityKind::FileExtractSubtitles => "Subtitle Extraction",
-            ActivityKind::FileProcessSubtitle => "Subtitle Processing",
         }
     }
 
@@ -49,13 +44,11 @@ impl ActivityKind {
             ActivityKind::FileGenerateTimelinePreview => "timeline_preview",
             ActivityKind::FileGenerateThumbnail => "thumbnail",
             ActivityKind::FileProbe => "playback_analysis",
-            ActivityKind::AssetDownload => "download",
-            ActivityKind::AssetGenerateThumbhash => "thumbhash",
-            ActivityKind::AssetCleanup => "asset_cleanup",
+            ActivityKind::ImageDownload => "download",
+            ActivityKind::ImageGenerateThumbhash => "thumbhash",
             ActivityKind::NodeGenerateIntroSegments => "intro_segments",
             ActivityKind::NodeSyncMetadataRoot => "metadata_sync",
             ActivityKind::FileExtractSubtitles => "subtitle_extract",
-            ActivityKind::FileProcessSubtitle => "subtitle_process",
         }
     }
 }
@@ -66,13 +59,11 @@ impl From<JobKind> for ActivityKind {
             JobKind::FileGenerateTimelinePreview => ActivityKind::FileGenerateTimelinePreview,
             JobKind::FileGenerateThumbnail => ActivityKind::FileGenerateThumbnail,
             JobKind::FileProbe => ActivityKind::FileProbe,
-            JobKind::AssetDownload => ActivityKind::AssetDownload,
-            JobKind::AssetGenerateThumbhash => ActivityKind::AssetGenerateThumbhash,
-            JobKind::AssetCleanup => ActivityKind::AssetCleanup,
+            JobKind::ImageDownload => ActivityKind::ImageDownload,
+            JobKind::ImageGenerateThumbhash => ActivityKind::ImageGenerateThumbhash,
             JobKind::NodeGenerateIntroSegments => ActivityKind::NodeGenerateIntroSegments,
             JobKind::NodeSyncMetadataRoot => ActivityKind::NodeSyncMetadataRoot,
             JobKind::FileExtractSubtitles => ActivityKind::FileExtractSubtitles,
-            JobKind::FileProcessSubtitle => ActivityKind::FileProcessSubtitle,
         }
     }
 }
@@ -121,7 +112,6 @@ impl ActivityRegistry {
                 state: ActivityState::default(),
             },
         );
-        CONTENT_UPDATE.emit();
         id
     }
 
@@ -132,7 +122,6 @@ impl ActivityRegistry {
         };
         activity.state.total = Some(total.max(0));
         drop(handles);
-        CONTENT_UPDATE.emit();
     }
 
     fn update_progress(&self, id: u64, progress: i64) {
@@ -142,13 +131,10 @@ impl ActivityRegistry {
         };
         activity.state.progress = Some(progress.max(0));
         drop(handles);
-        CONTENT_UPDATE.emit();
     }
 
     fn unregister(&self, id: u64) {
-        if self.handles.lock().unwrap().remove(&id).is_some() {
-            CONTENT_UPDATE.emit();
-        }
+        if self.handles.lock().unwrap().remove(&id).is_some() {}
     }
 
     pub fn snapshot(&self) -> Vec<ActivitySnapshot> {

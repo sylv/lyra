@@ -60,7 +60,7 @@ pub fn parse_possible_range(input: &str, force_range: bool) -> Vec<u32> {
         return (start..=end).collect();
     }
 
-    return numbers;
+    numbers
 }
 
 // /// Parses a string to extract a single number.

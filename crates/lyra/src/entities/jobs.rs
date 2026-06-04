@@ -5,10 +5,10 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub job_kind: i64,
+    pub job_kind: JobKind,
     #[sea_orm(column_type = "Text")]
     pub target_id: String,
-    pub state: i64,
+    pub state: JobState,
     pub locked_at: Option<i64>,
     pub retry_after: Option<i64>,
     pub last_run_at: i64,
@@ -34,19 +34,15 @@ pub enum JobKind {
     #[sea_orm(num_value = 2)]
     FileProbe,
     #[sea_orm(num_value = 4)]
-    AssetDownload,
+    ImageDownload,
     #[sea_orm(num_value = 5)]
-    AssetGenerateThumbhash,
+    ImageGenerateThumbhash,
     #[sea_orm(num_value = 6)]
     NodeGenerateIntroSegments,
     #[sea_orm(num_value = 7)]
     NodeSyncMetadataRoot,
     #[sea_orm(num_value = 8)]
     FileExtractSubtitles,
-    #[sea_orm(num_value = 9)]
-    FileProcessSubtitle,
-    #[sea_orm(num_value = 10)]
-    AssetCleanup,
 }
 
 impl JobKind {
@@ -55,13 +51,11 @@ impl JobKind {
             JobKind::FileGenerateTimelinePreview => 0,
             JobKind::FileGenerateThumbnail => 1,
             JobKind::FileProbe => 2,
-            JobKind::AssetDownload => 4,
-            JobKind::AssetGenerateThumbhash => 5,
+            JobKind::ImageDownload => 4,
+            JobKind::ImageGenerateThumbhash => 5,
             JobKind::NodeGenerateIntroSegments => 6,
             JobKind::NodeSyncMetadataRoot => 7,
             JobKind::FileExtractSubtitles => 8,
-            JobKind::FileProcessSubtitle => 9,
-            JobKind::AssetCleanup => 10,
         }
     }
 }

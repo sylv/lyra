@@ -10,7 +10,6 @@ export const settingsTabs = {
   users: "/settings/users",
   libraries: "/settings/libraries",
   about: "/settings/about",
-  import: "/settings/import",
 } as const;
 
 type SettingsTab = keyof typeof settingsTabs;
@@ -37,16 +36,13 @@ export const SettingsRoute: FC = () => {
     canViewSessions ? "sessions" : null,
     canManageLibraries ? "libraries" : null,
     "about",
-    "import",
   ].filter((tab): tab is SettingsTab => tab != null);
   const fallbackTab = visibleTabs[0] ?? "about";
   const activeTab: SettingsTab = pathname.startsWith(settingsTabs.users)
     ? "users"
     : pathname.startsWith(settingsTabs.libraries)
       ? "libraries"
-      : pathname.startsWith(settingsTabs.import)
-        ? "import"
-        : "about";
+      : "about";
   const activeTabVisible =
     activeTab === "users" ? canManageUsers : activeTab === "libraries" ? canManageLibraries : true;
 
@@ -76,7 +72,6 @@ export const SettingsRoute: FC = () => {
           {canViewSessions ? <TabsTrigger value="sessions">Sessions</TabsTrigger> : null}
           {canManageLibraries ? <TabsTrigger value="libraries">Libraries</TabsTrigger> : null}
           <TabsTrigger value="about">About</TabsTrigger>
-          <TabsTrigger value="import">Import</TabsTrigger>
         </TabsList>
         <div className="min-h-[70vh] rounded-xl border border-zinc-700/60 bg-zinc-500/20 p-6">
           <Outlet />

@@ -63,16 +63,16 @@ impl Config {
         }
     }
 
+    pub fn get_subtitle_dir(&self) -> PathBuf {
+        self.data_dir.join("subtitles")
+    }
+
     pub fn get_tmp_dir(&self) -> PathBuf {
         self.data_dir.join("tmp")
     }
 
     pub fn get_signing_key_path(&self) -> PathBuf {
         self.data_dir.join(SIGNING_KEY_FILENAME)
-    }
-
-    pub fn get_model_dir(&self) -> PathBuf {
-        self.data_dir.join("models")
     }
 }
 
@@ -108,7 +108,7 @@ fn init() -> Result<(Config, SigningKey), Box<dyn std::error::Error>> {
 
     if config.clear_transcode_cache_on_start && config.get_transcode_cache_dir().exists() {
         tracing::info!("clearing transcode cache");
-        std::fs::remove_dir_all(&config.get_transcode_cache_dir())?;
+        std::fs::remove_dir_all(config.get_transcode_cache_dir())?;
     }
 
     let temp_dir = config.get_tmp_dir();
@@ -118,10 +118,10 @@ fn init() -> Result<(Config, SigningKey), Box<dyn std::error::Error>> {
     }
 
     std::fs::create_dir_all(&config.data_dir)?;
-    std::fs::create_dir_all(&config.get_transcode_cache_dir())?;
-    std::fs::create_dir_all(&config.get_image_dir())?;
-    std::fs::create_dir_all(&config.get_asset_store_dir())?;
-    std::fs::create_dir_all(&config.get_tmp_dir())?;
+    std::fs::create_dir_all(config.get_transcode_cache_dir())?;
+    std::fs::create_dir_all(config.get_image_dir())?;
+    std::fs::create_dir_all(config.get_asset_store_dir())?;
+    std::fs::create_dir_all(config.get_tmp_dir())?;
     if config.backup.enabled {
         std::fs::create_dir_all(config.backup.get_directory(&config.data_dir))?;
     }

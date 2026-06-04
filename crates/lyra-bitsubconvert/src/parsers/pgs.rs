@@ -49,6 +49,10 @@ fn normalize_end_msecs(start_msecs: i64, end_msecs: i64) -> i64 {
     }
 }
 
+fn msecs_to_seconds(msecs: i64) -> f64 {
+    msecs as f64 / 1_000.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::normalize_end_msecs;
@@ -62,8 +66,4 @@ mod tests {
     fn normalize_end_msecs_falls_back_for_missing_end_time() {
         assert_eq!(normalize_end_msecs(1_000, 1_000), 6_000);
     }
-}
-
-fn msecs_to_seconds(msecs: i64) -> f64 {
-    msecs as f64 / 1_000.0
 }

@@ -79,7 +79,7 @@ impl Loader<String> for NodeMetadataLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{libraries, metadata_source::MetadataSource, node_metadata, nodes};
+    use crate::entities::{libraries, node_metadata, node_metadata::MetadataSource, nodes};
     use sea_orm::{ActiveValue::Set, Database};
 
     async fn setup_test_db() -> anyhow::Result<DatabaseConnection> {
@@ -138,7 +138,6 @@ mod tests {
                 id: Set("local".to_owned()),
                 node_id: Set("movie".to_owned()),
                 source: Set(MetadataSource::Local),
-                provider_id: Set("local".to_owned()),
                 name: Set("Local".to_owned()),
                 created_at: Set(1),
                 updated_at: Set(1),
@@ -148,7 +147,6 @@ mod tests {
                 id: Set("remote".to_owned()),
                 node_id: Set("movie".to_owned()),
                 source: Set(MetadataSource::Remote),
-                provider_id: Set("tmdb".to_owned()),
                 name: Set("Remote".to_owned()),
                 created_at: Set(2),
                 updated_at: Set(2),

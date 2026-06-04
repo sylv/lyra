@@ -13,4 +13,3 @@ tokio-util = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 lyra-tracing = { path = "../lyra-tracing" }
-zstd.workspace = true

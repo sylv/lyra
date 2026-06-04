@@ -22,56 +22,9 @@ type Asset {
 	aspectRatio: String
 }
 
-type CastMember {
-	characterName: String
-	department: String
-	person: Person!
-}
-
-type Collection {
-	id: String!
-	name: String!
-	description: String
-	createdById: String
-	visibility: CollectionVisibility!
-	resolverKind: CollectionResolverKind!
-	showOnHome: Boolean!
-	homePosition: Int!
-	pinned: Boolean!
-	pinnedPosition: Int!
-	createdAt: Int!
-	updatedAt: Int!
-	kind: CollectionKind
-	createdBy: User
-	canEdit: Boolean!
-	canDelete: Boolean!
-	itemCount: Int!
-	nodeList(after: String, first: Int): NodeConnection!
-}
-
-enum CollectionKind {
-	CONTINUE_WATCHING
-	RECENTLY_RELEASED
-	RECENTLY_ADDED
-}
-
-enum CollectionResolverKind {
-	MANUAL
-	FILTER
-}
-
-enum CollectionVisibility {
-	PUBLIC
-	PRIVATE
-}
-
 type ContentRating {
 	countryCode: String!
 	rating: String!
-}
-
-enum ContentUpdateEvent {
-	CONTENT_UPDATE
 }
 
 input DisabledSubtitlesHintInput {
@@ -87,10 +40,10 @@ type File {
 	height: Int
 	width: Int
 	editionName: String
-	subtitlesExtractedAt: Int
 	unavailableAt: Int
 	scannedAt: Int
 	discoveredAt: Int!
+	subtitlesExtractedAt: Int
 	probe: FileProbe
 	resumeHint: ResumeHint
 	playback(languageHint: String): Playback!
@@ -122,78 +75,14 @@ enum FileSegmentKind {
 	INTRO
 }
 
-type HomeView {
-	sections: [Collection!]!
-}
-
-type ImportWatchStateConflict {
-	rowIndex: Int!
-	sourceItemId: String
-	title: String
-	itemId: String!
-	existingProgressPercent: Float!
-	importedProgressPercent: Float!
-	reason: String!
-}
-
-input ImportWatchStateRowInput {
-	source: String!
-	sourceItemId: String
-	title: String
-	mediaType: String
-	seasonNumber: Int
-	episodeNumber: Int
-	progressPercent: Float!
-	viewedAt: Int
-	filePath: String
-	fileBasename: String
-	fileSizeBytes: Int
-	imdbId: String
-	tmdbId: Int
-}
-
-type ImportWatchStateUnmatched {
-	rowIndex: Int!
-	sourceItemId: String
-	title: String
-	reason: String!
-	ambiguous: Boolean!
-}
-
-input ImportWatchStatesInput {
-	dryRun: Boolean!
-	overwriteConflicts: Boolean!
-	rows: [ImportWatchStateRowInput!]!
-}
-
-type ImportWatchStatesResult {
-	dryRun: Boolean!
-	totalRows: Int!
-	matchedRows: Int!
-	unmatchedRows: Int!
-	conflictRows: Int!
-	willInsert: Int!
-	willOverwrite: Int!
-	imported: Int!
-	skipped: Int!
-	conflicts: [ImportWatchStateConflict!]!
-	unmatched: [ImportWatchStateUnmatched!]!
-}
-
 type Library {
 	id: String!
 	name: String!
 	path: String!
-	pinned: Boolean!
 	lastScannedAt: Int
-	unavailableAt: Int
 	createdAt: Int!
-}
-
-type MetadataGenre {
-	providerId: String!
-	externalId: String
-	name: String!
+	pinned: Boolean!
+	unavailableAt: Int
 }
 
 enum MetadataStatus {
@@ -208,20 +97,13 @@ enum MetadataStatus {
 
 type Mutation {
 	signup(username: String!, password: String!, permissions: Int, inviteCode: String): User!
-	createUserInvite(username: String!, permissions: Int!, libraryIds: [String!]!): User!
-	updateUser(userId: String!, username: String!, permissions: Int!, libraryIds: [String!]!): User!
+	createUserInvite(username: String!, permissions: Int!): User!
+	updateUser(userId: String!, username: String!, permissions: Int!): User!
 	resetUserInvite(userId: String!): User!
 	deleteUser(userId: String!): Boolean!
 	updateWatchProgress(fileId: String!, progressPercent: Float!, userId: String): [WatchProgress!]!
-	importWatchStates(input: ImportWatchStatesInput!): ImportWatchStatesResult!
 	createLibrary(name: String!, path: String!, pinned: Boolean): Library!
 	updateLibrary(libraryId: String!, name: String!, path: String!, pinned: Boolean!): Library!
-	createCollection(name: String!, description: String, visibility: CollectionVisibility!, resolverKind: CollectionResolverKind!, filter: NodeFilter, showOnHome: Boolean, homePosition: Int, pinned: Boolean, pinnedPosition: Int): Collection!
-	updateCollection(collectionId: String!, name: String!, description: String, visibility: CollectionVisibility!, resolverKind: CollectionResolverKind!, filter: NodeFilter, showOnHome: Boolean!, homePosition: Int!, pinned: Boolean!, pinnedPosition: Int!): Collection!
-	deleteCollection(collectionId: String!): Boolean!
-	addNodeToCollection(collectionId: String!, nodeId: String!): Collection!
-	addNodeToWatchlist(nodeId: String!): Boolean!
-	removeNodeFromWatchlist(nodeId: String!): Boolean!
 	setPreferredAudio(language: String, disposition: TrackDispositionPreference): User!
 	deleteLibrary(libraryId: String!): Boolean!
 	disabledSubtitlesHint(input: DisabledSubtitlesHintInput!): Boolean!
@@ -233,25 +115,24 @@ type Node {
 	rootId: String!
 	parentId: String
 	kind: NodeKind!
+	name: String!
 	order: Int!
 	seasonNumber: Int
 	episodeNumber: Int
 	lastAddedAt: Int!
-	lastFingerprintVersion: Int
-	unavailableAt: Int
 	createdAt: Int!
 	updatedAt: Int!
+	unavailableAt: Int
+	lastFingerprintVersion: Int
 	root: Node
 	parent: Node
 	children: [Node!]!
 	properties: NodeProperties!
 	defaultFile: File
 	watchProgressHint: Float
-	inWatchlist: Boolean!
 	currentPlayable: Node
 	nextPlayable: Node
 	previousPlayable: Node
-	recommendedNodes: [Node!]!
 	unplayedCount: Int
 	seasonCount: Int!
 	episodeCount: Int!
@@ -296,7 +177,6 @@ input NodeFilter {
 	libraryId: String
 	rootId: String
 	parentId: String
-	personId: String
 	kinds: [NodeKind!]
 	searchTerm: String
 	availability: NodeAvailability
@@ -331,8 +211,6 @@ type NodeProperties {
 	logoImage: Asset
 	posterImage: Asset
 	thumbnailImage: Asset
-	genres: [MetadataGenre!]!
-	cast: [CastMember!]!
 	contentRating: ContentRating
 	displayDetail: String
 }
@@ -374,13 +252,6 @@ type PageInfo {
 	When paginating forwards, the cursor to continue.
 	"""
 	endCursor: String
-}
-
-type Person {
-	id: String!
-	name: String!
-	birthday: String
-	profileImage: Asset
 }
 
 type Playback {
@@ -480,9 +351,6 @@ type Query {
 	listFiles(path: String!): [String!]!
 	library(libraryId: String!): Library!
 	libraries: [Library!]!
-	home: HomeView!
-	collections(pinned: Boolean): [Collection!]!
-	collection(collectionId: String!): Collection
 	viewer: User
 	users: [User!]!
 	activities: [Activity!]!
@@ -492,10 +360,6 @@ type ResumeHint {
 	id: String!
 	startMs: Int!
 	updatedAt: Int!
-}
-
-type SubscriptionRoot {
-	contentUpdates: ContentUpdateEvent!
 }
 
 type TimelinePreviewSheet {
@@ -515,19 +379,21 @@ enum TrackDispositionPreference {
 type User {
 	id: String!
 	username: String!
+	passwordHash: String
 	inviteCode: String
 	permissions: Int!
 	createdAt: Int!
 	preferredAudioLanguage: String
 	preferredAudioDisposition: String
+	preferredSubtitleLanguages: String!
 	lastSeenAt: Int
-	libraries: [Library!]!
 }
 
 type WatchProgress {
 	id: String!
 	userId: String!
 	nodeId: String!
+	tmdbId: Int
 	fileId: String!
 	createdAt: Int!
 	updatedAt: Int!
@@ -546,5 +412,4 @@ directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 schema {
 	query: Query
 	mutation: Mutation
-	subscription: SubscriptionRoot
 }

@@ -23,8 +23,7 @@ pub fn parse_title(entities: &[Entity]) -> (Option<String>, Option<String>) {
 
     let last_episode_title = entities
         .iter()
-        .filter(|e| e.label == "EPISODE_TITLE")
-        .last()
+        .rfind(|e| e.label == "EPISODE_TITLE")
         .map(|e| trim_title(&e.text));
 
     (Some(title), last_episode_title)
@@ -72,7 +71,7 @@ fn trim_title(title: &str) -> String {
     // todo: some of this is likely due to tokenization issues in the model. the training data is index-based which
     // then have to be aligned to labels and its probably not perfect when it does that, causing `]` to be included in the title.
     // or `]` is just included in the title tokens, but i doubt it.
-    let title = title.replace('.', " ").replace('_', " ");
+    let title = title.replace(['.', '_'], " ");
     let title = title.trim();
     let title = title.trim_start_matches('-');
     let title = title.trim_start_matches(']');

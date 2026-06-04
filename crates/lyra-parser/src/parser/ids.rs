@@ -1,6 +1,7 @@
 use crate::pattern;
 use lazy_static::lazy_static;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 lazy_static! {
     // IMDb ID pattern: tt followed by 7-12 digits
@@ -13,17 +14,16 @@ lazy_static! {
     static ref TRAKT_PATTERN: Regex = pattern!(r"(?i)\btrakt(?:id)?\s*[-=]\s*(\d{1,12})\b");
 }
 
-/// Parse IMDb, TMDb, TVDb, AniDB, and Trakt IDs from input string.
-pub fn parse_ids(
-    input: &str,
-    context: &mut crate::ParserContext,
-) -> (
-    Option<String>,
-    Option<u64>,
-    Option<u64>,
-    Option<u64>,
-    Option<u64>,
-) {
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ParsedIds {
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<u64>,
+    pub tvdb_id: Option<u64>,
+    pub anidb_id: Option<u64>,
+    pub trakt_id: Option<u64>,
+}
+
+pub fn parse_ids(input: &str, context: &mut crate::ParserContext) -> ParsedIds {
     let imdb_id = IMDB_PATTERN.find(input).map(|m| {
         context.add_match(m.range());
         m.as_str().to_ascii_lowercase()
@@ -34,7 +34,13 @@ pub fn parse_ids(
     let anidb_id = parse_numeric_id(input, &ANIDB_PATTERN, context);
     let trakt_id = parse_numeric_id(input, &TRAKT_PATTERN, context);
 
-    (imdb_id, tmdb_id, tvdb_id, anidb_id, trakt_id)
+    ParsedIds {
+        imdb_id,
+        tmdb_id,
+        tvdb_id,
+        anidb_id,
+        trakt_id,
+    }
 }
 
 fn parse_numeric_id(
@@ -59,27 +65,39 @@ mod tests {
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie Name tt1234567 (2016)", &mut context),
-            (Some("tt1234567".to_string()), None, None, None, None)
+            ParsedIds {
+                imdb_id: Some("tt1234567".to_string()),
+                ..Default::default()
+            }
         );
 
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Another Film tt12345678901 1080p", &mut context),
-            (Some("tt12345678901".to_string()), None, None, None, None)
+            ParsedIds {
+                imdb_id: Some("tt12345678901".to_string()),
+                ..Default::default()
+            }
         );
 
         // Minimum length (7 digits)
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Short ID tt1234567", &mut context),
-            (Some("tt1234567".to_string()), None, None, None, None)
+            ParsedIds {
+                imdb_id: Some("tt1234567".to_string()),
+                ..Default::default()
+            }
         );
 
         // Maximum length (12 digits)
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Long ID tt123456789012", &mut context),
-            (Some("tt123456789012".to_string()), None, None, None, None)
+            ParsedIds {
+                imdb_id: Some("tt123456789012".to_string()),
+                ..Default::default()
+            }
         );
     }
 
@@ -89,32 +107,56 @@ mod tests {
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie tmdb-12345 (2016)", &mut context),
-            (None, Some(12345), None, None, None)
+            ParsedIds {
+                tmdb_id: Some(12345),
+                ..Default::default()
+            }
         );
 
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Film tmdbid=67890 1080p", &mut context),
-            (None, Some(67890), None, None, None)
+            ParsedIds {
+                tmdb_id: Some(67890),
+                ..Default::default()
+            }
         );
 
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Title tmdb-123456789012", &mut context),
-            (None, Some(123456789012), None, None, None)
+            ParsedIds {
+                tmdb_id: Some(123456789012),
+                ..Default::default()
+            }
         );
 
         // Case insensitive
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie TMDB-12345", &mut context),
-            (None, Some(12345), None, None, None)
+            ParsedIds {
+                tmdb_id: Some(12345),
+                ..Default::default()
+            }
         );
 
         let mut context = crate::ParserContext::new();
         assert_eq!(
-            parse_ids("Film TMDbID=67890", &mut context),
-            (None, Some(67890), None, None, None)
+            parse_ids("Film [TMDbID=67890]", &mut context),
+            ParsedIds {
+                tmdb_id: Some(67890),
+                ..Default::default()
+            }
+        );
+
+        let mut context = crate::ParserContext::new();
+        assert_eq!(
+            parse_ids("Film {tmdb-67890}", &mut context),
+            ParsedIds {
+                tmdb_id: Some(67890),
+                ..Default::default()
+            }
         );
     }
 
@@ -123,7 +165,12 @@ mod tests {
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Show tvdb-101112 anidb=4455 traktid-9988", &mut context),
-            (None, None, Some(101112), Some(4455), Some(9988))
+            ParsedIds {
+                tvdb_id: Some(101112),
+                anidb_id: Some(4455),
+                trakt_id: Some(9988),
+                ..Default::default()
+            }
         );
     }
 
@@ -132,19 +179,21 @@ mod tests {
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie tt1234567 tmdb-12345 (2016)", &mut context),
-            (Some("tt1234567".to_string()), Some(12345), None, None, None)
+            ParsedIds {
+                imdb_id: Some("tt1234567".to_string()),
+                tmdb_id: Some(12345),
+                ..Default::default()
+            }
         );
 
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Film tmdbid=67890 tt9876543210 1080p", &mut context),
-            (
-                Some("tt9876543210".to_string()),
-                Some(67890),
-                None,
-                None,
-                None
-            )
+            ParsedIds {
+                imdb_id: Some("tt9876543210".to_string()),
+                tmdb_id: Some(67890),
+                ..Default::default()
+            }
         );
     }
 
@@ -154,35 +203,35 @@ mod tests {
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie tt123456", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
 
         // Too long IMDb ID (more than 12 digits)
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie tt1234567890123", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
 
         // Invalid IMDb format (no tt prefix)
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie 1234567", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
 
         // Invalid TMDb format (no separator)
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie tmdb12345", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
 
         // TMDb ID too long (more than 12 digits)
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie tmdb-1234567890123", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
     }
 
@@ -191,12 +240,12 @@ mod tests {
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Regular Movie (2016) 1080p", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Film without any IDs", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
     }
 
@@ -209,13 +258,12 @@ mod tests {
                 "Movie tt1234567 and tt7654321 tmdb-111 tmdb=222 tvdb=3 tvdb-4",
                 &mut context
             ),
-            (
-                Some("tt1234567".to_string()),
-                Some(111),
-                Some(3),
-                None,
-                None
-            )
+            ParsedIds {
+                imdb_id: Some("tt1234567".to_string()),
+                tmdb_id: Some(111),
+                tvdb_id: Some(3),
+                ..Default::default()
+            }
         );
     }
 
@@ -225,17 +273,17 @@ mod tests {
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie nottt1234567", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie tt1234567suffix", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
         let mut context = crate::ParserContext::new();
         assert_eq!(
             parse_ids("Movie sometmdb-12345", &mut context),
-            (None, None, None, None, None)
+            ParsedIds::default()
         );
     }
 }

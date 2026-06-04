@@ -1,5 +1,5 @@
 use crate::entities::{
-    assets::{self, AssetKind},
+    images::{self, ImageKind},
     jobs as jobs_entity,
 };
 use crate::jobs::{Job, JobLease, JobOutcome};
@@ -15,25 +15,25 @@ pub struct AssetThumbhashJob;
 
 #[async_trait::async_trait]
 impl Job for AssetThumbhashJob {
-    type Entity = assets::Entity;
-    type Model = assets::Model;
+    type Entity = images::Entity;
+    type Model = images::Model;
 
-    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::AssetGenerateThumbhash;
+    const JOB_KIND: jobs_entity::JobKind = jobs_entity::JobKind::ImageGenerateThumbhash;
 
     fn query(&self) -> Select<Self::Entity> {
-        assets::Entity::find()
-            .filter(assets::Column::Kind.is_in([
-                AssetKind::Poster,
-                AssetKind::Thumbnail,
-                AssetKind::Profile,
+        images::Entity::find()
+            .filter(images::Column::Kind.is_in([
+                ImageKind::Poster,
+                ImageKind::Thumbnail,
+                ImageKind::Backdrop,
             ]))
-            .filter(assets::Column::HashSha256.is_not_null())
+            .filter(images::Column::MimeType.is_not_null())
             .filter(
                 Condition::any()
-                    .add(assets::Column::Thumbhash.is_null())
-                    .add(assets::Column::Thumbhash.eq(Vec::<u8>::new())),
+                    .add(images::Column::Thumbhash.is_null())
+                    .add(images::Column::Thumbhash.eq(Vec::<u8>::new())),
             )
-            .order_by_asc(assets::Column::Id)
+            .order_by_asc(images::Column::Id)
     }
 
     fn target_id(&self, target: &Self::Model) -> String {
@@ -43,11 +43,11 @@ impl Job for AssetThumbhashJob {
     async fn run(
         &self,
         db: &DatabaseConnection,
-        asset: Self::Model,
+        image: Self::Model,
         _ctx: &JobLease,
     ) -> anyhow::Result<JobOutcome> {
-        let asset_id = asset.id.clone();
-        if asset
+        let image_id = image.id.clone();
+        if image
             .thumbhash
             .as_ref()
             .is_some_and(|thumbhash| !thumbhash.is_empty())
@@ -55,15 +55,11 @@ impl Job for AssetThumbhashJob {
             return Ok(JobOutcome::Complete);
         }
 
-        let hash_sha256 = asset
-            .hash_sha256
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("asset {asset_id} is missing hash_sha256"))?;
-        let mime_type = asset
+        let mime_type = image
             .mime_type
             .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("asset {asset_id} is missing mime_type"))?;
-        let image_path = super::storage::get_asset_output_path_from_mime(hash_sha256, mime_type)?;
+            .ok_or_else(|| anyhow::anyhow!("image {image_id} is missing mime_type"))?;
+        let image_path = super::storage::get_asset_output_path_from_mime(&image.id, mime_type)?;
         let bytes = tokio::fs::read(&image_path)
             .await
             .with_context(|| format!("failed to read image at {}", image_path.display()))?;
@@ -84,7 +80,7 @@ impl Job for AssetThumbhashJob {
         })
         .await??;
 
-        let mut updated: assets::ActiveModel = asset.into();
+        let mut updated: images::ActiveModel = image.into();
         updated.thumbhash = Set(Some(thumbhash));
         updated.update(db).await?;
 

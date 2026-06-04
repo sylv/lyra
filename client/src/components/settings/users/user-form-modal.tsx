@@ -3,7 +3,6 @@ import { useMutation } from "urql";
 import type { UserCardFragment as UserCardData } from "../../../@generated/gql/graphql";
 import { Button, ButtonStyle } from "../../button";
 import { Input } from "../../input";
-import { LibraryIcon } from "../../library-icon";
 import { Modal, ModalBody, ModalHeader } from "../../modal";
 import { CheckboxCard } from "../checkbox-card";
 import { CreateUserInviteMutation, UpdateUserMutation } from "./queries";
@@ -16,16 +15,11 @@ interface UserFormModalProps {
         mode: "edit";
         user: UserCardData;
       };
-  libraries: Array<{
-    id: string;
-    name: string;
-    createdAt: number;
-  }>;
   viewerId: string | null;
   onClose: () => void;
 }
 
-export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, libraries, viewerId, onClose }) => {
+export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, viewerId, onClose }) => {
   const title = activeForm.mode === "edit" ? "Edit User" : "New User";
   const description =
     activeForm.mode === "edit"
@@ -43,7 +37,6 @@ export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, libraries, v
       <ModalBody>
         <UserForm
           mode={activeForm.mode}
-          libraries={libraries}
           user={activeForm.mode === "edit" ? activeForm.user : undefined}
           viewerId={viewerId}
           onClose={onClose}
@@ -55,20 +48,14 @@ export const UserFormModal: FC<UserFormModalProps> = ({ activeForm, libraries, v
 
 const UserForm: FC<{
   mode: "create" | "edit";
-  libraries: Array<{
-    id: string;
-    name: string;
-    createdAt: number;
-  }>;
   onClose: () => void;
   user?: UserCardData;
   viewerId: string | null;
-}> = ({ mode, libraries, onClose, user, viewerId }) => {
+}> = ({ mode, onClose, user, viewerId }) => {
   const [{ fetching: creating }, createUserInvite] = useMutation(CreateUserInviteMutation);
   const [{ fetching: updating }, updateUser] = useMutation(UpdateUserMutation);
   const [username, setUsername] = useState(user?.username ?? "");
   const [permissions, setPermissions] = useState(user?.permissions ?? 0);
-  const [libraryIds, setLibraryIds] = useState(() => user?.libraries.map((library) => library.id) ?? []);
   const [error, setError] = useState<string | null>(null);
   const adminEnabled = (permissions & ADMIN_BIT) !== 0;
   const allLibrariesEnabled = (permissions & VIEW_ALL_LIBRARIES_BIT) !== 0;
@@ -86,7 +73,6 @@ const UserForm: FC<{
           userId: user.id,
           username: username.trim(),
           permissions,
-          libraryIds,
         });
         if (result.error) {
           throw result.error;
@@ -95,7 +81,6 @@ const UserForm: FC<{
         const result = await createUserInvite({
           username: username.trim(),
           permissions,
-          libraryIds,
         });
         if (result.error) {
           throw result.error;
@@ -167,31 +152,6 @@ const UserForm: FC<{
               );
             }}
           />
-          {libraries.map((library) => {
-            const checked = effectiveAllLibrariesEnabled || libraryIds.includes(library.id);
-            const disabled = submitting || isEditingCurrentUser || effectiveAllLibrariesEnabled;
-            const checkboxId = `${mode}-user-library-${library.id}`;
-
-            return (
-              <CheckboxCard
-                key={library.id}
-                id={checkboxId}
-                checked={checked}
-                disabled={disabled}
-                title={
-                  <span className="flex items-center gap-2">
-                    <LibraryIcon createdAt={library.createdAt} className="size-5" size={32} />
-                    <span>{library.name}</span>
-                  </span>
-                }
-                onCheckedChange={(isEnabled) => {
-                  setLibraryIds((current) =>
-                    isEnabled ? [...current, library.id] : current.filter((candidate) => candidate !== library.id),
-                  );
-                }}
-              />
-            );
-          })}
         </div>
       </div>
 

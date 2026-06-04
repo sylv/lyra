@@ -168,33 +168,9 @@ pub enum MetadataStatus {
 }
 
 #[derive(Clone, Debug, SimpleObject)]
-pub struct MetadataGenre {
-    pub provider_id: String,
-    pub external_id: Option<String>,
-    pub name: String,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
 pub struct ContentRating {
     pub country_code: String,
     pub rating: String,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-#[graphql(complex)]
-pub struct Person {
-    pub id: String,
-    pub name: String,
-    pub birthday: Option<String>,
-    #[graphql(skip)]
-    pub profile_asset_id: Option<String>,
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-pub struct CastMember {
-    pub character_name: Option<String>,
-    pub department: Option<String>,
-    pub person: Person,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Enum)]

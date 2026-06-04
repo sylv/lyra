@@ -3,7 +3,6 @@ mod reconcile;
 
 use crate::activity::{ActivityHandle, ActivityKind};
 use crate::config::get_config;
-use crate::content_update::CONTENT_UPDATE;
 use crate::entities::{files, libraries};
 use crate::ids;
 use crate::scanner::derive_nodes::group_parsed_files_by_root;
@@ -12,8 +11,8 @@ use crate::scanner::reconcile::{
 };
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait,
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, QuerySelect, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -106,7 +105,6 @@ async fn scan_library(
                 finalize_library_scan(pool, library, scan_start_time, Some(scan_start_time))
                     .await?;
                 wake_signal.notify_waiters();
-                CONTENT_UPDATE.emit();
                 return Ok(());
             }
 
@@ -154,11 +152,8 @@ async fn scan_library(
                 .keys()
                 .cloned()
                 .collect::<HashSet<_>>();
-            touched_root_ids.extend(
-                find_roots_for_file_ids(pool, &newly_unavailable_file_ids)
-                    .await?
-                    .into_iter(),
-            );
+            touched_root_ids
+                .extend(find_roots_for_file_ids(pool, &newly_unavailable_file_ids).await?);
 
             let mut processed_import_files = 0_i64;
             for root_id in touched_root_ids {
@@ -212,7 +207,6 @@ async fn scan_library(
     }
 
     wake_signal.notify_waiters();
-    CONTENT_UPDATE.emit();
     Ok(())
 }
 

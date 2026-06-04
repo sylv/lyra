@@ -1,14 +1,13 @@
-use lyra_probe::ProbeData;
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "file_probe")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub file_id: String,
     #[sea_orm(column_type = "Blob")]
     pub probe: Vec<u8>,
-    pub generated_at: i64,
+    pub extracted_at: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -32,7 +31,7 @@ impl Related<super::files::Entity> for Entity {
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
-    pub fn get_probe(&self) -> anyhow::Result<ProbeData> {
-        lyra_probe::decode_probe_data_json_zstd(&self.probe)
+    pub fn get_probe(&self) -> anyhow::Result<lyra_probe::ProbeData> {
+        crate::json_encoding::decode_json_zstd(&self.probe)
     }
 }

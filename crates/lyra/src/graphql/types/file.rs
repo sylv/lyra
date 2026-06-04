@@ -1,9 +1,7 @@
-use crate::assets::sign_asset_url;
 use crate::auth::RequestAuth;
 use crate::entities::{
-    assets,
-    file_assets::{self, FileAssetRole},
-    file_probe, file_subtitles, files, node_files, nodes, users, watch_progress,
+    file_images::{self, FileImageRole},
+    file_probe, file_subtitles, files, images, node_files, nodes, users, watch_progress,
 };
 use crate::graphql::properties::{
     FileProbe, FileSegment, FileSegmentKind, Playback, PlaybackAudioCodec, PlaybackAudioProfileId,
@@ -16,12 +14,11 @@ use crate::hls;
 use crate::jobs;
 use crate::segment_markers::StoredFileSegmentKind;
 use crate::subtitles::job_extract::FileSubtitleExtractJob;
-use crate::subtitles::job_process::FileSubtitleProcessJob;
 use crate::subtitles::language::{
     SubtitleSelectionCandidate, SubtitleTrackVariant, language_match_strength,
     select_subtitle_track,
 };
-use crate::subtitles::subtitle_kind_from_stream;
+use crate::subtitles::sign_subtitle_url;
 use async_graphql::{ComplexObject, Context, SimpleObject};
 use lyra_packager::{Compatibility, audio_profile, video_profile};
 use lyra_probe::{Codec, HDRFormat, Stream, StreamDetails, StreamKind};
@@ -214,11 +211,11 @@ impl files::Model {
     ) -> Result<Vec<TimelinePreviewSheet>, sea_orm::DbErr> {
         let pool = ctx.data_unchecked::<DatabaseConnection>();
 
-        let rows = file_assets::Entity::find()
-            .filter(file_assets::Column::FileId.eq(&self.id))
-            .filter(file_assets::Column::Role.eq(FileAssetRole::TimelinePreviewSheet))
-            .order_by_asc(file_assets::Column::PositionMs)
-            .order_by_asc(file_assets::Column::AssetId)
+        let rows = file_images::Entity::find()
+            .filter(file_images::Column::FileId.eq(&self.id))
+            .filter(file_images::Column::Role.eq(FileImageRole::TimelinePreviewSheet))
+            .order_by_asc(file_images::Column::StartMs)
+            .order_by_asc(file_images::Column::ImageId)
             .all(pool)
             .await?;
 
@@ -226,22 +223,22 @@ impl files::Model {
             return Ok(Vec::new());
         }
 
-        let asset_ids = rows
+        let image_ids = rows
             .iter()
-            .map(|row| row.asset_id.clone())
+            .map(|row| row.image_id.clone())
             .collect::<Vec<_>>();
-        let asset_models = assets::Entity::find()
-            .filter(assets::Column::Id.is_in(asset_ids))
+        let image_models = images::Entity::find()
+            .filter(images::Column::Id.is_in(image_ids))
             .all(pool)
             .await?;
-        let assets_by_id = asset_models
+        let images_by_id = image_models
             .into_iter()
             .map(|asset| (asset.id.clone(), asset))
             .collect::<HashMap<_, _>>();
 
         let mut sheets = Vec::new();
         for row in rows {
-            let Some(position_ms) = row.position_ms else {
+            let Some(position_ms) = row.start_ms else {
                 continue;
             };
             let Some(end_ms) = row.end_ms else {
@@ -257,7 +254,7 @@ impl files::Model {
                 continue;
             }
 
-            let Some(asset) = assets_by_id.get(&row.asset_id) else {
+            let Some(asset) = images_by_id.get(&row.image_id) else {
                 continue;
             };
 
@@ -388,7 +385,7 @@ async fn load_playback_subtitle_tracks(
     let mut rows_by_stream_index: HashMap<i64, Vec<file_subtitles::Model>> = HashMap::new();
     for row in subtitle_rows {
         rows_by_stream_index
-            .entry(row.stream_index)
+            .entry(row.source_stream_index)
             .or_default()
             .push(row);
     }
@@ -400,12 +397,9 @@ async fn load_playback_subtitle_tracks(
         .filter(|stream| stream.kind() == StreamKind::Subtitle)
     {
         let Some(track) = build_playback_subtitle_track(
-            pool,
             stream,
             rows_by_stream_index.get(&i64::from(stream.index)),
-        )
-        .await?
-        else {
+        ) else {
             continue;
         };
         built_tracks.push(track);
@@ -488,8 +482,7 @@ fn subtitle_streams_missing_source_rows(
 ) -> bool {
     let mut source_streams = rows
         .iter()
-        .filter(|row| row.derived_from_subtitle_id.is_none())
-        .map(|row| row.stream_index)
+        .map(|row| row.source_stream_index)
         .collect::<std::collections::HashSet<_>>();
 
     probe_data
@@ -509,95 +502,35 @@ async fn load_current_subtitle_rows(
 
     file_subtitles::Entity::find()
         .filter(file_subtitles::Column::FileId.eq(file.id.clone()))
-        .filter(file_subtitles::Column::LastSeenAt.eq(latest_seen_at))
+        .filter(file_subtitles::Column::ExtractedAt.eq(latest_seen_at))
         .all(pool)
         .await
         .map_err(|error| async_graphql::Error::new(error.to_string()))
 }
 
-async fn build_playback_subtitle_track(
-    pool: &DatabaseConnection,
+fn build_playback_subtitle_track(
     stream: &Stream,
     rows: Option<&Vec<file_subtitles::Model>>,
-) -> Result<Option<BuiltSubtitleTrack>, async_graphql::Error> {
-    let Some(kind) = subtitle_kind_from_stream(stream) else {
-        return Ok(None);
-    };
-    let Some(source_row) = rows.and_then(|rows| {
+) -> Option<BuiltSubtitleTrack> {
+    let source_row = rows.and_then(|rows| {
         rows.iter()
-            .find(|row| row.derived_from_subtitle_id.is_none())
-    }) else {
-        return Ok(None);
-    };
-    let display_name = stream
+            .find(|row| row.source_stream_index == i64::from(stream.index))
+    })?;
+    let display_name = source_row
         .display_name
         .clone()
+        .or_else(|| stream.display_name.clone())
         .unwrap_or_else(|| format!("Subtitle {}", stream.index + 1));
     let variant = track_variant(stream);
-    let mut renditions = Vec::new();
 
-    match kind {
-        file_subtitles::SubtitleKind::Vtt => {
-            renditions.push(build_subtitle_rendition(source_row, "Original".to_string()));
-        }
-        file_subtitles::SubtitleKind::Srt | file_subtitles::SubtitleKind::Ass => {
-            renditions.push(build_subtitle_rendition(
-                source_row,
-                format!("Original {}", subtitle_kind_label(kind)),
-            ));
-            let converted = ensure_processed_subtitle(
-                pool,
-                source_row,
-                file_subtitles::SubtitleSource::Converted,
-            )
-            .await?;
-            renditions.push(build_subtitle_rendition(
-                &converted,
-                format!("Converted from {}", subtitle_kind_label(kind)),
-            ));
-        }
-        file_subtitles::SubtitleKind::MovText
-        | file_subtitles::SubtitleKind::Text
-        | file_subtitles::SubtitleKind::Ttml => {
-            let converted = ensure_processed_subtitle(
-                pool,
-                source_row,
-                file_subtitles::SubtitleSource::Converted,
-            )
-            .await?;
-            renditions.push(build_subtitle_rendition(
-                &converted,
-                format!("Converted from {}", subtitle_kind_label(kind)),
-            ));
-        }
-        file_subtitles::SubtitleKind::Pgs | file_subtitles::SubtitleKind::VobSub => {
-            let ocr =
-                ensure_processed_subtitle(pool, source_row, file_subtitles::SubtitleSource::Ocr)
-                    .await?;
-            renditions.push(build_subtitle_rendition(
-                &ocr,
-                format!("Converted from {} using OCR", subtitle_kind_label(kind)),
-            ));
-        }
-    }
-
-    if let Some(generated) = rows.and_then(|rows| {
-        rows.iter().find(|row| {
-            row.source == file_subtitles::SubtitleSource::Generated
-                && row.kind == file_subtitles::SubtitleKind::Vtt
-        })
-    }) {
-        renditions.push(build_subtitle_rendition(generated, "Generated".to_string()));
-    }
-
-    Ok(Some(BuiltSubtitleTrack {
+    Some(BuiltSubtitleTrack {
         track: PlaybackSubtitleTrack {
             source_track_id: source_track_id(stream.index),
             display_name,
             language_bcp47: stream.language_bcp47.clone(),
             kind: subtitle_track_kind(stream),
             autoselect: false,
-            renditions,
+            renditions: vec![build_subtitle_rendition(source_row)],
         },
         candidate: SubtitleSelectionCandidate {
             id: source_track_id(stream.index),
@@ -605,52 +538,15 @@ async fn build_playback_subtitle_track(
             variant,
         },
         stream_index: stream.index,
-    }))
+    })
 }
 
-async fn ensure_processed_subtitle(
-    pool: &DatabaseConnection,
-    source_row: &file_subtitles::Model,
-    desired_source: file_subtitles::SubtitleSource,
-) -> Result<file_subtitles::Model, async_graphql::Error> {
-    let mut derived = file_subtitles::Entity::find()
-        .filter(file_subtitles::Column::DerivedFromSubtitleId.eq(source_row.id.clone()))
-        .filter(file_subtitles::Column::Source.eq(desired_source))
-        .filter(file_subtitles::Column::Kind.eq(file_subtitles::SubtitleKind::Vtt))
-        .one(pool)
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-    if derived.is_none() {
-        jobs::try_run_job(
-            pool,
-            &FileSubtitleProcessJob,
-            source_row.clone(),
-            ON_DEMAND_SUBTITLE_JOB_TIMEOUT,
-        )
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-        derived = file_subtitles::Entity::find()
-            .filter(file_subtitles::Column::DerivedFromSubtitleId.eq(source_row.id.clone()))
-            .filter(file_subtitles::Column::Source.eq(desired_source))
-            .filter(file_subtitles::Column::Kind.eq(file_subtitles::SubtitleKind::Vtt))
-            .one(pool)
-            .await
-            .map_err(|error| async_graphql::Error::new(error.to_string()))?;
-    }
-
-    derived.ok_or_else(|| async_graphql::Error::new("Subtitle rendition not available"))
-}
-
-fn build_subtitle_rendition(
-    row: &file_subtitles::Model,
-    display_info: String,
-) -> PlaybackSubtitleRendition {
+fn build_subtitle_rendition(row: &file_subtitles::Model) -> PlaybackSubtitleRendition {
     PlaybackSubtitleRendition {
-        variant_id: (row.kind == file_subtitles::SubtitleKind::Vtt)
-            .then(|| subtitle_variant_id(row.stream_index as u32, row.source)),
-        signed_url: sign_asset_url(&row.asset_id),
-        display_info,
-        codec: playback_subtitle_codec(row.kind),
+        variant_id: Some(format!("s{}-webvtt", row.source_stream_index)),
+        signed_url: sign_subtitle_url(&row.id),
+        display_info: "WebVTT".to_string(),
+        codec: PlaybackSubtitleCodec::Vtt,
     }
 }
 
@@ -683,42 +579,6 @@ fn subtitle_track_kind(stream: &Stream) -> PlaybackSubtitleKind {
         PlaybackSubtitleKind::Captions
     } else {
         PlaybackSubtitleKind::Subtitles
-    }
-}
-
-fn subtitle_variant_id(stream_index: u32, source: file_subtitles::SubtitleSource) -> String {
-    let suffix = match source {
-        file_subtitles::SubtitleSource::Extracted => "original",
-        file_subtitles::SubtitleSource::Converted => "converted",
-        file_subtitles::SubtitleSource::Ocr => "ocr",
-        file_subtitles::SubtitleSource::Generated => "generated",
-    };
-    format!("s{stream_index}-{suffix}")
-}
-
-fn playback_subtitle_codec(kind: file_subtitles::SubtitleKind) -> PlaybackSubtitleCodec {
-    match kind {
-        file_subtitles::SubtitleKind::Vtt => PlaybackSubtitleCodec::Vtt,
-        file_subtitles::SubtitleKind::Srt => PlaybackSubtitleCodec::Srt,
-        file_subtitles::SubtitleKind::Ass => PlaybackSubtitleCodec::Ass,
-        file_subtitles::SubtitleKind::MovText => PlaybackSubtitleCodec::MovText,
-        file_subtitles::SubtitleKind::Text => PlaybackSubtitleCodec::Text,
-        file_subtitles::SubtitleKind::Ttml => PlaybackSubtitleCodec::Ttml,
-        file_subtitles::SubtitleKind::Pgs => PlaybackSubtitleCodec::Pgs,
-        file_subtitles::SubtitleKind::VobSub => PlaybackSubtitleCodec::VobSub,
-    }
-}
-
-fn subtitle_kind_label(kind: file_subtitles::SubtitleKind) -> &'static str {
-    match kind {
-        file_subtitles::SubtitleKind::Srt => "SRT",
-        file_subtitles::SubtitleKind::Vtt => "WebVTT",
-        file_subtitles::SubtitleKind::Ass => "ASS",
-        file_subtitles::SubtitleKind::MovText => "MovText",
-        file_subtitles::SubtitleKind::Text => "Text",
-        file_subtitles::SubtitleKind::Ttml => "TTML",
-        file_subtitles::SubtitleKind::Pgs => "PGS",
-        file_subtitles::SubtitleKind::VobSub => "VobSub",
     }
 }
 
@@ -820,8 +680,8 @@ fn derive_audio_renditions(stream: &Stream) -> Vec<PlaybackAudioRendition> {
             continue;
         }
 
-        match profile.id() {
-            "aac" => renditions.push(PlaybackAudioRendition {
+        if profile.id() == "aac" {
+            renditions.push(PlaybackAudioRendition {
                 pair_id: hls::audio_pair_id(stream.index, profile.id()),
                 profile_id: PlaybackAudioProfileId::Aac,
                 codec: PlaybackAudioCodec::Aac,
@@ -829,8 +689,7 @@ fn derive_audio_renditions(stream: &Stream) -> Vec<PlaybackAudioRendition> {
                 codec_tag: lyra_probe::audio_codec_tag(&lyra_probe::Codec::AudioAac)
                     .expect("AAC codec tag must exist")
                     .to_string(),
-            }),
-            _ => {}
+            })
         }
     }
 
@@ -926,13 +785,11 @@ fn format_video_display_info(stream: &Stream, codec: PlaybackVideoCodec, origina
     } else {
         "SDR".to_string()
     });
-    if original {
-        if let Some(bit_rate) = stream.bit_rate {
-            parts.push(format!(
-                "{}Mbps",
-                (bit_rate as f64 / 1_000_000.0).round() as i64
-            ));
-        }
+    if original && let Some(bit_rate) = stream.bit_rate {
+        parts.push(format!(
+            "{}Mbps",
+            (bit_rate as f64 / 1_000_000.0).round() as i64
+        ));
     }
 
     parts.join(" ")

@@ -213,18 +213,18 @@ fn merge_segments(mut segments: Vec<IntroSegmentCandidate>) -> Vec<IntroSegmentC
 
     let mut merged = Vec::<IntroSegmentCandidate>::with_capacity(segments.len());
     for segment in segments {
-        if let Some(last) = merged.last_mut() {
-            if segment.start_seconds - last.end_seconds <= MERGE_SEGMENT_GAP_SECONDS {
-                last.end_seconds = last.end_seconds.max(segment.end_seconds);
-                // Count distinct supporting episodes so the intro threshold matches
-                // how many episodes actually share this segment.
-                last.supporting_file_indexes
-                    .extend(segment.supporting_file_indexes);
-                last.supporting_file_indexes.sort_unstable();
-                last.supporting_file_indexes.dedup();
-                last.best_score = last.best_score.max(segment.best_score);
-                continue;
-            }
+        if let Some(last) = merged.last_mut()
+            && segment.start_seconds - last.end_seconds <= MERGE_SEGMENT_GAP_SECONDS
+        {
+            last.end_seconds = last.end_seconds.max(segment.end_seconds);
+            // Count distinct supporting episodes so the intro threshold matches
+            // how many episodes actually share this segment.
+            last.supporting_file_indexes
+                .extend(segment.supporting_file_indexes);
+            last.supporting_file_indexes.sort_unstable();
+            last.supporting_file_indexes.dedup();
+            last.best_score = last.best_score.max(segment.best_score);
+            continue;
         }
         merged.push(segment);
     }

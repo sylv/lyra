@@ -7,16 +7,11 @@ import { UserFormModal } from "./user-form-modal";
 
 interface UserManagerProps {
   users: Array<{ id: string } & FragmentType<typeof UserCardFragment>>;
-  libraries: Array<{
-    id: string;
-    name: string;
-    createdAt: number;
-  }>;
   viewerId?: string | null;
   error?: string | null;
 }
 
-export const UserManager: FC<UserManagerProps> = ({ users, libraries, viewerId, error }) => {
+export const UserManager: FC<UserManagerProps> = ({ users, viewerId, error }) => {
   const [activeForm, setActiveForm] = useState<
     | { mode: "create" }
     | {
@@ -31,7 +26,6 @@ export const UserManager: FC<UserManagerProps> = ({ users, libraries, viewerId, 
       {activeForm ? (
         <UserFormModal
           activeForm={activeForm}
-          libraries={libraries}
           viewerId={viewerId ?? null}
           onClose={() => setActiveForm(null)}
         />

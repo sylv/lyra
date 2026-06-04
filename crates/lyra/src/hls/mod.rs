@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    auth::{RequestAuth, ensure_library_access},
+    auth::RequestAuth,
     entities::{files, libraries},
     jobs,
     media::{self, FileProbeJob},
@@ -208,29 +208,6 @@ fn verify_playback_token(token: &str, file_id: &str) -> anyhow::Result<()> {
     let (_expires_in, payload) = verify::<PlaybackTokenPayload>(token)?;
     anyhow::ensure!(payload.file_id == file_id, "stream not found");
     Ok(())
-}
-
-pub(crate) async fn ensure_file_access(
-    pool: &sea_orm::DatabaseConnection,
-    auth: &RequestAuth,
-    file_id: &str,
-) -> Result<files::Model, async_graphql::Error> {
-    let (file, library) = files::Entity::find_by_id(file_id)
-        .find_also_related(libraries::Entity)
-        .one(pool)
-        .await
-        .map_err(|error| async_graphql::Error::new(error.to_string()))?
-        .ok_or_else(|| async_graphql::Error::new("File not found"))?;
-
-    if file.unavailable_at.is_some() {
-        return Err(async_graphql::Error::new("File is unavailable"));
-    }
-
-    let library = library.ok_or_else(|| async_graphql::Error::new("Library not found"))?;
-    ensure_library_access(pool, auth, &library.id)
-        .await
-        .map_err(|_| async_graphql::Error::new("File not found"))?;
-    Ok(file)
 }
 
 pub(crate) async fn load_file_and_path(

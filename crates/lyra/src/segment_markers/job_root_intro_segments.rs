@@ -7,8 +7,8 @@ use anyhow::Context;
 use lyra_marker::{Fingerprint, detect_intros, fingerprint};
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
-    FromQueryResult, JoinType, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Select,
-    sea_query::Expr,
+    ExprTrait, FromQueryResult, JoinType, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    Select, sea_query::Expr,
 };
 use sqlx::{QueryBuilder, Sqlite};
 use std::{
@@ -206,7 +206,7 @@ async fn store_segments_bulk(
         return Ok(());
     }
 
-    let mut builder: QueryBuilder<'_, Sqlite> =
+    let mut builder: QueryBuilder<Sqlite> =
         QueryBuilder::new("UPDATE files SET segments_json = CASE id");
     for (file_id, payload) in updates {
         builder.push(" WHEN ");
